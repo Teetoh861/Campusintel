@@ -11,6 +11,8 @@ export interface CourseQuiz {
   courseCode: string
   title: string
   totalQuestions: number
+  maxQuizQuestions: number // Maximum questions to show in one quiz attempt (typically 50)
+  quizDurationMinutes: number // Timer duration in minutes (typically 30)
   sections: string[]
   questions: QuizQuestion[]
 }
@@ -1103,7 +1105,9 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'entrepreneurship-innovation',
     courseCode: 'ENT211',
     title: 'Entrepreneurship and Innovation - CBT Assessment',
-    totalQuestions: 50,
+    totalQuestions: 60,
+    maxQuizQuestions: 50,
+    quizDurationMinutes: 30,
     sections: [
       'Foundations & Theories',
       'Entrepreneurial Mindset',
@@ -1469,7 +1473,9 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'principles-business-administration',
     courseCode: 'BUA201',
     title: 'Principles of Business Administration I - CBT Assessment',
-    totalQuestions: 50,
+    totalQuestions: 60,
+    maxQuizQuestions: 50,
+    quizDurationMinutes: 30,
     sections: [
       'Introduction to Business',
       'Management Thought',
@@ -1834,7 +1840,9 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'leadership-governance',
     courseCode: 'BUA205',
     title: 'Leadership and Governance - CBT Assessment',
-    totalQuestions: 50,
+    totalQuestions: 60,
+    maxQuizQuestions: 50,
+    quizDurationMinutes: 30,
     sections: [
       'Leadership Overview',
       'Leadership Styles',
@@ -2199,7 +2207,9 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'consumer-behaviour',
     courseCode: 'BUA221',
     title: 'Consumer Behaviour - CBT Assessment',
-    totalQuestions: 50,
+    totalQuestions: 60,
+    maxQuizQuestions: 50,
+    quizDurationMinutes: 30,
     sections: [
       'Introduction to Consumer Behaviour',
       'Decision-Making Process',

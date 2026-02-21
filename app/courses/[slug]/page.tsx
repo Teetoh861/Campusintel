@@ -6,8 +6,9 @@ import { useParams } from 'next/navigation'
 import { getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getTopicNotesByCourseSlug } from '@/lib/data/topic-notes'
+import { getTheoryContentBySlug } from '@/lib/data/theory-questions'
 import { ResourceCard } from '@/components/resources/ResourceCard'
-import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb } from 'lucide-react'
+import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb, Calculator, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function CoursePage() {
@@ -20,6 +21,7 @@ export default function CoursePage() {
   const course = getCourseBySlug(slug)
   const quiz = getQuizByCourseSlug(slug)
   const topicNotes = getTopicNotesByCourseSlug(slug)
+  const theoryContent = getTheoryContentBySlug(slug)
 
   const toggleTopic = (idx: number) => {
     setExpandedTopics((prev) => ({ ...prev, [idx]: !prev[idx] }))
