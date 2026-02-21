@@ -44,7 +44,11 @@ export function CourseCard({ course }: CourseCardProps) {
             <div className="flex items-center gap-4 text-xs text-slate-500">
               <div className="flex items-center gap-1">
                 <FileText className="w-4 h-4" />
-                <span>{course.resources.length} resources</span>
+                {course.resources.length > 0 ? (
+                  <span>{course.resources.length} resources</span>
+                ) : (
+                  <span className="text-slate-400">No resources yet</span>
+                )}
               </div>
               <span>{course.credits} credits</span>
             </div>

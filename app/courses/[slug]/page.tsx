@@ -258,16 +258,35 @@ export default function CoursePage() {
             )}
 
             {/* Resources */}
-            {course.resources.length > 0 && (
-              <section className="bg-white rounded-lg border border-slate-200 p-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-6">Course Resources</h2>
+            <section className="bg-white rounded-lg border border-slate-200 p-6">
+              <h2 className="text-2xl font-bold text-slate-900 mb-6">Course Resources</h2>
+              {course.resources.length > 0 ? (
                 <div className="space-y-4">
                   {course.resources.map((resource) => (
                     <ResourceCard key={resource.id} resource={resource} courseCode={course.code} />
                   ))}
                 </div>
-              </section>
-            )}
+              ) : (
+                <div className="text-center py-8 px-4">
+                  <div className="max-w-sm mx-auto">
+                    <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2">No Resources Available Yet</h3>
+                    <p className="text-sm text-slate-600 mb-6">
+                      We're currently working on adding study materials for this course. Have materials to share?
+                    </p>
+                    <a
+                      href={`https://wa.me/2349018750976?text=I%20have%20materials%20for%20${encodeURIComponent(course.code + ' - ' + course.title)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 h-12 px-6 min-w-[44px] bg-blue-900 hover:bg-blue-800 text-white rounded-md text-sm font-medium transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Share Materials
+                    </a>
+                  </div>
+                </div>
+              )}
+            </section>
           </div>
 
           {/* Sidebar */}

@@ -9,7 +9,10 @@ export function Footer() {
           <div>
             <h3 className="text-lg font-bold mb-4">CampusIntel</h3>
             <p className="text-blue-100 text-sm leading-relaxed">
-              Your Academic Intelligence Hub for Department of Business Administration at University of Lagos.
+              Your Academic Intelligence Hub for Department of Business Administration at University of Lagos. The best and most trusted academic resource platform in UNILAG.
+            </p>
+            <p className="text-blue-100 text-sm leading-relaxed mt-3">
+              Have materials to share? Help your fellow students by contributing notes, past questions, and study resources.
             </p>
           </div>
 

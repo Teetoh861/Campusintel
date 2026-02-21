@@ -523,6 +523,142 @@ export const topicNotes: Record<string, CourseTopicNotes> = {
       },
     ],
   },
+  'consumer-behaviour': {
+    courseSlug: 'consumer-behaviour',
+    courseCode: 'BUA221',
+    topics: [
+      {
+        topicTitle: 'Introduction to Consumer Behaviour',
+        summary:
+          'Consumer behaviour is the study of how individuals, groups, and organizations select, buy, use, and dispose of goods, services, ideas, or experiences to satisfy needs and wants. It draws from psychology, sociology, and anthropology to understand purchasing decisions.',
+        keyPoints: [
+          'Consumer vs. Customer: A customer purchases the product; a consumer is the end-user who benefits from it.',
+          'Types of Buyers: Impulse (spontaneous, emotional), Informed (research extensively), Brand Loyal (stick to trusted brands), Price Sensitive (hunt for discounts).',
+          'Economic Impact: Consumer spending stimulates production, supports GDP, and drives economic growth.',
+          'Online vs. Offline: Online shoppers value convenience and range; offline shoppers prefer tactile product experience.',
+        ],
+        examTip: 'Remember the distinction between customer (purchaser) and consumer (end-user) - they can be different people.',
+      },
+      {
+        topicTitle: 'The 5-Stage Consumer Decision-Making Process',
+        summary:
+          'Consumers move through five distinct stages when making purchase decisions: recognizing a problem, searching for information, evaluating alternatives, making a purchase decision, and evaluating post-purchase satisfaction.',
+        keyPoints: [
+          '1. Problem Recognition: Triggered by internal stimuli (hunger) or external stimuli (advertisement).',
+          '2. Information Search: Internal (memory/past experiences) or external (reviews, friends, ads).',
+          '3. Evaluation of Alternatives: Comparing brands based on attributes, features, benefits, and costs.',
+          '4. Purchase Decision: Actual choice of what to buy, which brand, where to buy, and how to pay.',
+          '5. Post-Purchase Behaviour: Evaluating satisfaction - critical for loyalty and word-of-mouth.',
+        ],
+        examTip: 'Memorize the 5 stages in order. Post-purchase evaluation is critical because it drives future loyalty and recommendations.',
+      },
+      {
+        topicTitle: 'Cultural and Social Influences',
+        summary:
+          'Culture is the broadest and deepest influence on consumer behaviour, dictating fundamental tastes, norms, values, and traditions. Social class and sub-cultures provide additional layers of influence on purchasing decisions.',
+        keyPoints: [
+          'Culture: Dictates fundamental tastes, norms, values, traditions (food, clothing, holidays).',
+          'Sub-Culture: Smaller groups providing specific identification (nationality, religion, racial groups, geographic regions).',
+          'Social Class: Division based on wealth, education, status - heavily affects media consumption and product choices.',
+          'Social Stratification: Measured by occupation, income, and education.',
+        ],
+        examTip: 'Culture is the BROADEST influence. Social class is measured using occupation, income, and education.',
+      },
+      {
+        topicTitle: 'Reference Groups and External Influences',
+        summary:
+          'Reference groups serve as standards for evaluating behavior and purchasing decisions. They exert influence through informational guidance, normative pressure to conform, and value-expressive inspiration.',
+        keyPoints: [
+          'Reference Groups: Any group used as a standard for evaluating one\'s own behavior.',
+          'Aspirational Groups: Groups a person wants to join or emulate (celebrities, sports teams).',
+          'Dissociative Groups: Groups a person actively wants to avoid being associated with.',
+          'Informational Influence: Seeking explicit expert opinions (doctor, mechanic).',
+          'Utilitarian Influence: Buying to fit in, be rewarded, or avoid punishment by peers.',
+          'Value-Expressive Influence: Adopting group values to enhance self-image (eco-friendly products).',
+        ],
+        examTip: 'Know the three types of group influence: Informational (expert advice), Utilitarian (fitting in), Value-Expressive (self-image).',
+      },
+      {
+        topicTitle: 'Individual Psychology: Motivation and Perception',
+        summary:
+          'Motivation is the driving force behind consumer actions. Maslow\'s Hierarchy explains that humans satisfy basic needs first. Perception involves how consumers select, organize, and interpret information through selective attention, distortion, and retention.',
+        keyPoints: [
+          'Motivation: The driving force that impels consumers to action.',
+          'Maslow\'s Hierarchy: Physiological → Safety → Social → Esteem → Self-Actualization (satisfied in order).',
+          'Selective Attention: Consumers screen out most stimuli and notice only relevant information.',
+          'Selective Distortion: Consumers twist information to fit existing preconceptions.',
+          'Selective Retention: Consumers remember good points about liked products and forget competitors\' advantages.',
+        ],
+        examTip: 'Maslow\'s hierarchy must be satisfied from bottom to top. The three selective processes are barriers marketers must overcome.',
+      },
+      {
+        topicTitle: 'Learning and Attitudes',
+        summary:
+          'Consumer learning results from experience and influences future behavior. Classical conditioning associates brands with positive stimuli, while operant conditioning uses rewards. Attitudes consist of cognitive, affective, and conative components.',
+        keyPoints: [
+          'Classical Conditioning: Learning to associate a brand with positive stimulus (music, imagery).',
+          'Instrumental (Operant) Conditioning: Rewarding specific behavior (loyalty points for purchases).',
+          'Tri-component Attitude Model: (1) Cognitive (knowledge), (2) Affective (feelings), (3) Conative (action likelihood).',
+          'Cognitive Dissonance: Post-purchase tension or regret when expectations aren\'t met.',
+          'Attitudes: Enduring favorable or unfavorable evaluations toward objects/brands.',
+        ],
+        examTip: 'Classical = association, Operant = reward. The conative component predicts likelihood of purchase action.',
+      },
+      {
+        topicTitle: 'Communication and Persuasive Techniques',
+        summary:
+          'Effective marketing communication requires understanding the five components: sender, message, medium, receiver, and feedback. Credibility is critical - informal sources (friends/family) typically have higher credibility than formal sources (advertisers).',
+        keyPoints: [
+          'Five Components: Sender (initiator), Message (encoded thought), Medium (channel), Receiver (target audience), Feedback (response).',
+          'Credibility: Perceived honesty and objectivity of the source.',
+          'Informal Sources: Friends/family have higher credibility (no financial gain perceived).',
+          'Formal Sources: Commercial advertisers have lower credibility.',
+          'Communication Barriers: Psychological noise (competing messages, distractions) and selective perception.',
+        ],
+        examTip: 'Remember the 5 components. Informal sources > Formal sources in credibility because of perceived objectivity.',
+      },
+      {
+        topicTitle: 'Promotional Strategy and the AHP Model',
+        summary:
+          'The Analytic Hierarchy Process (AHP) helps determine optimal promotional mix. For Nigerian insurance companies, advertising and personal selling were found most effective, while sales promotion received minimal investment priority.',
+        keyPoints: [
+          'AHP Model: Determines best mix of promotional elements based on weighted criteria.',
+          'Best for Nigerian Insurance: Advertising (builds brand awareness and trust for intangible services).',
+          'Second Most Effective: Personal Selling (direct relationships, builds buyer conviction).',
+          'Minimal Investment: Sales Promotion (lowest direct impact on insurance policy sales).',
+          'Seven Promotional Tools: Advertising, Personal Selling, Sales Promotion, Public Relations, Publicity, Sponsorship, Direct Marketing.',
+        ],
+        examTip: 'AHP study: Advertising = best, Personal Selling = second, Sales Promotion = minimal investment.',
+      },
+      {
+        topicTitle: 'Modern Decision-Making and Digital Influences',
+        summary:
+          'Recent research shows consumer decision-making has shifted from sequential stages to continuous digital exploration. The Stimulus-Organism-Response (SOR) framework explains how external stimuli affect internal states and behavioral outcomes.',
+        keyPoints: [
+          'Shift to Continuous Exploration: Social media and digital platforms blur traditional decision-making stages.',
+          'SOR Framework: External stimuli (web design, social proof) → Internal states (emotions, cognition) → Behavioral outcomes (purchase).',
+          'Green Purchasing: Increasing priority due to health consciousness and sustainability concerns.',
+          'Choice Architecture: The way choices are presented to influence decision-making (nudging).',
+          'Digital Nudging: Subtly guiding consumer behavior in online environments (defaults, framing, badges).',
+        ],
+        examTip: 'SOR framework: Stimulus → Organism → Response. Digital nudging uses choice architecture to guide behavior.',
+      },
+      {
+        topicTitle: 'Pricing Strategies and Consumer Value Perception',
+        summary:
+          'Pricing strategies must align with consumer value perceptions. Customer-value-based pricing starts with analyzing consumer needs rather than costs. Competitive advantage mediates the relationship between pricing and performance.',
+        keyPoints: [
+          'Cost-Based Pricing: Setting prices based on total expenses of providing the product/service.',
+          'Competition-Based Pricing: Setting prices based on what competitors charge.',
+          'Customer-Value-Based Pricing: Setting prices based on perceived value to the consumer.',
+          'Penetration Pricing: Low initial prices to attract large number of buyers quickly.',
+          'Skimming Pricing: High initial prices for new, unique products.',
+          'Psychological Pricing: Using prices like $9.99 instead of $10.00 to influence perception.',
+        ],
+        examTip: 'Customer-value-based pricing is most customer-centric - it starts with analyzing consumer needs, not costs.',
+      },
+    ],
+  },
 }
 
 export function getTopicNotesByCourseSlug(slug: string): CourseTopicNotes | undefined {
