@@ -61,8 +61,8 @@ export interface CourseQuiz {
   courseCode: string
   title: string
   totalQuestions: number
-  maxQuizQuestions?: number // Maximum questions to show in one quiz attempt
-  quizDurationMinutes?: number // Timer duration in minutes
+  maxQuizQuestions: number // Maximum questions to show in one quiz attempt (typically 50)
+  quizDurationMinutes: number // Timer duration in minutes (typically 30)
   sections: string[]
   questions: QuizQuestion[]
 }

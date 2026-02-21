@@ -44,9 +44,8 @@ export default function QuizPage() {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]]
     }
-    // Limit to maxQuizQuestions if specified
-    const maxQuestions = quiz.maxQuizQuestions || quiz.questions.length
-    return arr.slice(0, maxQuestions)
+    // Limit to maxQuizQuestions (typically 50 from larger question bank)
+    return arr.slice(0, quiz.maxQuizQuestions)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quiz, shuffleKey])
 
@@ -58,9 +57,9 @@ export default function QuizPage() {
     setShowResult(true)
   }, [])
 
-  // Timer effect
+  // Timer effect - runs during active quiz
   useEffect(() => {
-    if (quizState === 'active' && quiz?.quizDurationMinutes) {
+    if (quizState === 'active' && quiz) {
       if (timeRemaining === 0) {
         setTimeRemaining(quiz.quizDurationMinutes * 60)
       }
@@ -89,7 +88,7 @@ export default function QuizPage() {
 
   // Get timer color based on remaining time
   const getTimerColor = () => {
-    if (!quiz?.quizDurationMinutes) return 'text-slate-700'
+    if (!quiz) return 'text-slate-700'
     const percentage = (timeRemaining / (quiz.quizDurationMinutes * 60)) * 100
     if (percentage > 50) return 'text-green-600'
     if (percentage > 25) return 'text-yellow-600'
@@ -174,7 +173,7 @@ export default function QuizPage() {
     setCurrentQuestion(0)
     setAnswers({})
     setShowResult(false)
-    setTimeRemaining(quiz?.quizDurationMinutes ? quiz.quizDurationMinutes * 60 : 0)
+    setTimeRemaining(quiz ? quiz.quizDurationMinutes * 60 : 0)
     setTimerExpired(false)
   }
 
@@ -207,17 +206,8 @@ export default function QuizPage() {
                 <p className="text-xs text-slate-500 mt-1">Questions</p>
               </div>
               <div className="bg-slate-50 rounded-lg p-4">
-                {quiz.quizDurationMinutes ? (
-                  <>
-                    <p className="text-2xl font-bold text-blue-900">{quiz.quizDurationMinutes} min</p>
-                    <p className="text-xs text-slate-500 mt-1">Time Limit</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-blue-900">{quiz.sections.length}</p>
-                    <p className="text-xs text-slate-500 mt-1">Sections</p>
-                  </>
-                )}
+                <p className="text-2xl font-bold text-blue-900">{quiz.quizDurationMinutes} min</p>
+                <p className="text-xs text-slate-500 mt-1">Time Limit</p>
               </div>
             </div>
 
@@ -239,16 +229,14 @@ export default function QuizPage() {
                 <li>- Select one answer per question</li>
                 <li>- You can navigate back and forth between questions</li>
                 <li>- Questions are shuffled randomly for each attempt</li>
-                {quiz.maxQuizQuestions && quiz.maxQuizQuestions < quiz.questions.length && (
+                {quiz.maxQuizQuestions < quiz.questions.length && (
                   <li className="font-medium text-blue-900">
                     - {totalQuestions} questions will be selected randomly from a bank of {quiz.questions.length} questions
                   </li>
                 )}
-                {quiz.quizDurationMinutes && (
-                  <li className="font-medium text-red-600">
-                    - Time limit: {quiz.quizDurationMinutes} minutes (Quiz auto-submits when time expires)
-                  </li>
-                )}
+                <li className="font-medium text-red-600">
+                  - Time limit: {quiz.quizDurationMinutes} minutes (Quiz auto-submits when time expires)
+                </li>
                 <li>- Submit when you are ready to see your score</li>
                 <li>- No data is saved -- your score is shown once and not stored</li>
                 <li>- You can retake the quiz as many times as you want</li>
@@ -374,7 +362,7 @@ export default function QuizPage() {
           )}
 
           <div className="flex items-center gap-4">
-            {quiz.quizDurationMinutes && quizState === 'active' && (
+            {quizState === 'active' && (
               <div className={`flex items-center gap-2 text-sm font-bold ${getTimerColor()}`}>
                 <Timer className="w-4 h-4" />
                 <span>{formatTime(timeRemaining)}</span>
