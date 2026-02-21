@@ -47,3 +47,22 @@ export interface Bookmark {
   courseId: string
   savedAt: string
 }
+
+export interface QuizQuestion {
+  id: number
+  question: string
+  options: string[]
+  correctAnswer: number // index of correct option (0-based)
+  section: string
+}
+
+export interface CourseQuiz {
+  courseSlug: string
+  courseCode: string
+  title: string
+  totalQuestions: number
+  maxQuizQuestions?: number // Maximum questions to show in one quiz attempt
+  quizDurationMinutes?: number // Timer duration in minutes
+  sections: string[]
+  questions: QuizQuestion[]
+}
