@@ -60,15 +60,13 @@ export default function HomePage() {
             </div>
             <div>
               <p className="text-3xl font-bold text-blue-900">
-                {courses.reduce((sum, c) => sum + c.resources.length, 0)}
-              </p>
-              <p className="text-sm text-slate-500 mt-1">Resources</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold text-blue-900">
                 {courses.reduce((sum, c) => sum + c.textbooks.length, 0)}
               </p>
               <p className="text-sm text-slate-500 mt-1">Textbooks</p>
+            </div>
+            <div>
+              <p className="text-3xl font-bold text-blue-900">50+</p>
+              <p className="text-sm text-slate-500 mt-1">Quiz Questions / Course</p>
             </div>
           </div>
         </div>
@@ -78,7 +76,7 @@ export default function HomePage() {
       <section className="bg-slate-50 py-12 md:py-16">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl font-bold text-blue-900 mb-2">
-            Find Your Resources
+            Start Practicing
           </h2>
           <p className="text-slate-500 mb-8">200 Level, First Semester -- Department of Business Administration</p>
 
@@ -120,8 +118,12 @@ export default function HomePage() {
                     </span>
                   </div>
                   <h3 className="font-bold text-slate-900 mb-1">{course.title}</h3>
-                  <p className="text-sm text-slate-500">
-                    {course.credits} credits &middot; {course.resources.length} resources
+                  <p className="text-sm text-slate-500 mb-2">
+                    {course.credits} credits
+                  </p>
+                  <p className="text-xs font-semibold text-blue-900 flex items-center gap-1">
+                    <ArrowRight className="w-3 h-3" />
+                    Click to view notes, quizzes & study materials
                   </p>
                 </div>
               </Link>
@@ -140,9 +142,9 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
                 <BookOpen className="w-6 h-6 text-blue-900" />
               </div>
-              <h3 className="font-bold text-slate-900 mb-2">Complete Resources</h3>
+              <h3 className="font-bold text-slate-900 mb-2">Study Notes & Quizzes</h3>
               <p className="text-slate-600 text-sm leading-relaxed">
-                Textbooks, lecture notes, past exam questions -- all organized by course.
+                Topic-by-topic study notes with calculator tips, plus timed practice quizzes for each course.
               </p>
             </div>
 
@@ -174,7 +176,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
           <h2 className="text-3xl md:text-4xl font-bold text-balance">Ready to Excel?</h2>
           <p className="text-blue-200 text-lg max-w-2xl mx-auto">
-            Start exploring courses and resources. Need help? Reach out on WhatsApp.
+            Start exploring courses, study notes, and practice quizzes. Need help? Reach out on WhatsApp.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
