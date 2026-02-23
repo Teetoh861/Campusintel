@@ -7,8 +7,7 @@ import { getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getTopicNotesByCourseSlug } from '@/lib/data/topic-notes'
 import { getTheoryContentBySlug } from '@/lib/data/theory-questions'
-import { ResourceCard } from '@/components/resources/ResourceCard'
-import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb, Calculator, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function CoursePage() {
@@ -259,35 +258,17 @@ export default function CoursePage() {
               </section>
             )}
 
-            {/* Resources */}
-            <section className="bg-white rounded-lg border border-slate-200 p-6">
-              <h2 className="text-2xl font-bold text-slate-900 mb-6">Course Resources</h2>
-              {course.resources.length > 0 ? (
-                <div className="space-y-4">
-                  {course.resources.map((resource) => (
-                    <ResourceCard key={resource.id} resource={resource} courseCode={course.code} />
-                  ))}
+            {/* Disclaimer */}
+            <section className="bg-amber-50 rounded-lg border border-amber-200 p-5">
+              <div className="flex items-start gap-3">
+                <HelpCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-bold text-amber-900 mb-1">Disclaimer</h3>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    All quiz questions and study notes on this platform are compiled based on course notes, lecture outlines, and recommended textbooks. They are strictly for practice purposes only and do not represent actual exam questions. Always refer to your official course materials and lecturers for authoritative guidance.
+                  </p>
                 </div>
-              ) : (
-                <div className="text-center py-8 px-4">
-                  <div className="max-w-sm mx-auto">
-                    <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">No Resources Available Yet</h3>
-                    <p className="text-sm text-slate-600 mb-6">
-                      We're currently working on adding study materials for this course. Have materials to share?
-                    </p>
-                    <a
-                      href={`https://wa.me/2349018750976?text=I%20have%20materials%20for%20${encodeURIComponent(course.code + ' - ' + course.title)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 h-12 px-6 min-w-[44px] bg-blue-900 hover:bg-blue-800 text-white rounded-md text-sm font-medium transition-colors"
-                    >
-                      <Upload className="w-4 h-4" />
-                      Share Materials
-                    </a>
-                  </div>
-                </div>
-              )}
+              </div>
             </section>
           </div>
 
