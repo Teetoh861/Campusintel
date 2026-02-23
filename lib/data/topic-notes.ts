@@ -705,6 +705,291 @@ export const topicNotes: Record<string, CourseTopicNotes> = {
       },
     ],
   },
+  'business-statistics': {
+    courseSlug: 'business-statistics',
+    courseCode: 'BUA203',
+    topics: [
+      {
+        topicTitle: 'Core Theoretical Framework - Descriptive vs Inferential Statistics',
+        summary:
+          'Statistics is the science of collecting, organizing, presenting, analyzing, and interpreting data to make informed business decisions. The field is divided into descriptive statistics (summarizing data) and inferential statistics (making predictions about populations based on samples).',
+        keyPoints: [
+          'Descriptive Statistics: Methods for organizing and summarizing information (e.g., mean, charts, frequency distributions).',
+          'Inferential Statistics: Using sample data to make predictions or draw conclusions about a larger population.',
+          'Population: The complete set of all individuals or items of interest.',
+          'Sample: A subset of the population selected for study.',
+          'Parameter: A descriptive measure calculated from a population (e.g., population mean μ).',
+          'Statistic: A descriptive measure calculated from a sample (e.g., sample mean x̄).',
+        ],
+        examTip: 'Always distinguish between population (parameter) and sample (statistic). This is frequently tested in MCQs.',
+      },
+      {
+        topicTitle: 'Levels of Data Measurement - Nominal, Ordinal, Interval, Ratio',
+        summary:
+          'Understanding the four levels of measurement is crucial for selecting appropriate statistical methods. Each level has specific characteristics and determines which operations (addition, ranking, etc.) can be performed.',
+        keyPoints: [
+          'Nominal: Labels or categories with no inherent order (e.g., gender, color, marital status). Only counting and mode are appropriate.',
+          'Ordinal: Data with a meaningful order but unequal intervals (e.g., ranking, education level, satisfaction rating).',
+          'Interval: Numeric data with equal intervals but no true zero (e.g., temperature in Celsius, IQ scores).',
+          'Ratio: Numeric data with equal intervals AND a true zero point allowing ratios (e.g., height, weight, income, age).',
+          'True Zero: A value of zero means "none" or "absence" - only found in ratio scales.',
+        ],
+        examTip: 'Remember the hierarchy: Ratio > Interval > Ordinal > Nominal. Ratio is the highest level with all properties.',
+      },
+      {
+        topicTitle: 'Data Sources and Variables',
+        summary:
+          'Data can be classified by source (primary vs secondary) and by type (qualitative vs quantitative). Understanding variable types determines appropriate analysis methods.',
+        keyPoints: [
+          'Primary Data: Collected firsthand specifically for the current research purpose (e.g., surveys, experiments, interviews).',
+          'Secondary Data: Already existing data collected by others for different purposes (e.g., journals, government reports).',
+          'Qualitative Variables: Non-numeric categories or labels (e.g., gender, nationality).',
+          'Quantitative Variables: Numeric measurements that can be counted or measured.',
+          'Discrete Quantitative: Countable values with gaps (e.g., number of children, students in a class).',
+          'Continuous Quantitative: Measurable values on a continuum (e.g., weight, height, temperature).',
+        ],
+        examTip: 'Number of children = discrete. Weight = continuous. This distinction appears frequently in exams.',
+      },
+      {
+        topicTitle: 'Data Presentation - Frequency Distributions and Histograms',
+        summary:
+          'Organizing large datasets into frequency distributions makes patterns visible. Understanding class intervals, boundaries, and midpoints is essential for constructing and interpreting frequency tables and histograms.',
+        keyPoints: [
+          'Range: Maximum value - Minimum value. First step in creating grouped data.',
+          'Class Width (Interval): The difference between upper and lower class boundaries.',
+          'Class Midpoint: (Upper Boundary + Lower Boundary) / 2. Represents the center of each class.',
+          'Histogram: A bar graph with adjacent bars representing continuous data.',
+          'Ogive: A cumulative frequency graph used to find medians and quartiles graphically.',
+          'Frequency Density: Used when class intervals are unequal. Calculated as Frequency / Class Width.',
+          'Relative Frequency: Frequency / Total Frequency. The sum of all relative frequencies = 1.0.',
+          'Pie Chart: Best for showing proportions or percentages of a whole.',
+        ],
+        examTip: 'Class Midpoint formula is heavily tested. Always add boundaries, never subtract when finding midpoint.',
+      },
+      {
+        topicTitle: 'Measures of Central Tendency - Mean, Median, Mode',
+        summary:
+          'Central tendency measures locate the "center" of a dataset. Each measure has strengths and weaknesses depending on data characteristics and the presence of outliers.',
+        keyPoints: [
+          'Arithmetic Mean: The average. x̄ = Σx / n for ungrouped data; x̄ = Σfx / Σf for grouped data.',
+          'Median: The middle value when data is ordered. Also Q2, D5, P50. Best for skewed data with outliers.',
+          'Mode: The most frequently occurring value. Can be used for qualitative data.',
+          'Symmetrical Distribution: Mean = Median = Mode.',
+          'Positively Skewed (Right Tail): Mean > Median > Mode.',
+          'Negatively Skewed (Left Tail): Mean < Median < Mode.',
+          'Weighted Mean: Used when some values have more importance. x̄w = Σ(w × x) / Σw.',
+          'Geometric Mean: Used for growth rates and ratios. GM = ⁿ√(x1 × x2 × ... × xn).',
+          'Harmonic Mean: Used for rates (e.g., speed). HM = n / Σ(1/x).',
+          'Property: Sum of deviations from the mean always equals zero: Σ(x - x̄) = 0.',
+        ],
+        examTip: 'For skewed distributions, Median is the best measure. Mean is most affected by outliers.',
+      },
+      {
+        topicTitle: 'Partition Values - Quartiles, Deciles, Percentiles',
+        summary:
+          'Partition values divide ordered datasets into equal parts. They are essential for understanding data distribution and identifying position within a dataset.',
+        keyPoints: [
+          'Quartiles (Q): Divide data into 4 equal parts. Q1 = 25th percentile, Q2 = Median = 50th percentile, Q3 = 75th percentile.',
+          'Deciles (D): Divide data into 10 equal parts. D1 to D9. D5 = Median.',
+          'Percentiles (P): Divide data into 100 equal parts. P1 to P99. P50 = Median.',
+          'Relationships: D7 = P70; Q1 = P25; Q3 = P75.',
+          'For Grouped Data: Use the formula with Lower Boundary (XL), cumulative frequency (f0), frequency of median class (fD5), and class width (c).',
+        ],
+        examTip: 'Know the equivalencies: Q2 = D5 = P50 = Median. These appear in multiple forms on exams.',
+      },
+      {
+        topicTitle: 'Measures of Dispersion - Range, Variance, Standard Deviation',
+        summary:
+          'Dispersion measures quantify the spread or variability in a dataset. They complement central tendency measures by describing how data points differ from the center.',
+        keyPoints: [
+          'Range: Maximum - Minimum. Simplest measure but highly affected by outliers.',
+          'Variance: Average of squared deviations from the mean. σ² = Σ(x - x̄)² / N.',
+          'Standard Deviation: Square root of variance. σ = √(Variance). Expressed in same units as data.',
+          'Interquartile Range (IQR): Q3 - Q1. Resistant to outliers.',
+          'Quartile Deviation (Semi-IQR): (Q3 - Q1) / 2. Also called semi-interquartile range.',
+          'Coefficient of Variation (CV): (Standard Deviation / Mean) × 100. Unitless, used to compare variability across different datasets.',
+          'Mean Deviation: Is minimized when calculated from the Median.',
+          'Property: If variance = 0, all values are identical.',
+          'Property: Standard Deviation is always positive or zero.',
+        ],
+        examTip: 'If SD = 4, then Variance = 16. CV allows comparison between datasets with different units or scales.',
+      },
+      {
+        topicTitle: 'Skewness and Kurtosis',
+        summary:
+          'Skewness measures asymmetry in a distribution, while kurtosis measures the peakedness. These shape characteristics affect which statistical methods are appropriate.',
+        keyPoints: [
+          'Skewness: Measures the direction and degree of asymmetry in a distribution.',
+          'Positive Skew (Right Skew): Long tail to the right. Mean > Median.',
+          'Negative Skew (Left Skew): Long tail to the left. Mean < Median.',
+          'Kurtosis: Measures the flatness or peakedness of a distribution relative to the normal distribution.',
+          'Leptokurtic: Peaked distribution (tall and thin).',
+          'Mesokurtic: Normal distribution (bell-shaped curve).',
+          'Platykurtic: Flat distribution (short and wide).',
+        ],
+        examTip: 'Right skew = positive skew = tail points right. Mesokurtic = normal distribution.',
+      },
+      {
+        topicTitle: 'Probability Foundations - Sample Space and Events',
+        summary:
+          'Probability quantifies the likelihood of events. Understanding basic probability rules is essential for inferential statistics and business decision-making under uncertainty.',
+        keyPoints: [
+          'Sample Space: The set of all possible outcomes of a random experiment.',
+          'Event: A subset of the sample space (one or more outcomes).',
+          'Probability Range: 0 ≤ P(E) ≤ 1. Impossible event = 0, Certain event = 1.',
+          'Complement Rule: P(not A) = 1 - P(A).',
+          'Mutually Exclusive Events: Cannot occur simultaneously. P(A and B) = 0.',
+          'Addition Rule (Mutually Exclusive): P(A or B) = P(A) + P(B).',
+          'Independent Events: Occurrence of one does not affect the other.',
+          'Multiplication Rule (Independent): P(A and B) = P(A) × P(B).',
+          'Conditional Probability: P(A|B) = Probability of A given that B has occurred.',
+          'Classical Probability: Based on equally likely outcomes. P(E) = (Number of favorable outcomes) / (Total outcomes).',
+        ],
+        examTip: 'For mutually exclusive events, use addition. For independent events, use multiplication.',
+      },
+      {
+        topicTitle: 'Sampling Methods and Techniques',
+        summary:
+          'Sampling involves selecting a subset of a population for study. Different sampling methods suit different research objectives and resource constraints.',
+        keyPoints: [
+          'Census: Studying every member of the population. Accurate but expensive and time-consuming.',
+          'Sampling: Studying a subset. More practical and cost-effective.',
+          'Simple Random Sampling: Every member has equal chance of selection.',
+          'Systematic Sampling: Selecting every kth member from a list (e.g., every 10th person).',
+          'Stratified Sampling: Divide population into strata (subgroups), then sample from each stratum.',
+          'Cluster Sampling: Divide population into clusters, randomly select clusters, study all members in selected clusters.',
+          'Convenience Sampling: Non-probabilistic. Select easily accessible members.',
+          'Quota Sampling: Non-probabilistic. Set quotas for different subgroups.',
+          'Sampling Error: Natural variation that occurs because we study a sample, not the entire population.',
+        ],
+        examTip: 'Stratified sampling ensures all subgroups are represented. Quota sampling is non-probabilistic.',
+      },
+      {
+        topicTitle: 'Sampling Distributions and Central Limit Theorem',
+        summary:
+          'The sampling distribution of the mean describes how sample means vary across different samples from the same population. The Central Limit Theorem is fundamental to inferential statistics.',
+        keyPoints: [
+          'Sampling Distribution: The probability distribution of a sample statistic (e.g., sample mean).',
+          'Standard Error: The standard deviation of a sampling distribution. SE = σ / √n.',
+          'Property: As sample size (n) increases, standard error decreases.',
+          'Central Limit Theorem (CLT): As sample size gets large (typically n ≥ 30), the sampling distribution of the mean approaches a normal distribution, regardless of the population\'s shape.',
+          'Importance: CLT allows us to use normal distribution methods for inference even when population distribution is unknown.',
+          'Point Estimate: A single numerical value used to estimate a population parameter (e.g., using sample mean to estimate population mean).',
+        ],
+        examTip: 'CLT is one of the most important theorems in statistics. Sample size ≥ 30 is the general rule for CLT to apply.',
+      },
+    ],
+  },
+  'business-mathematics': {
+    courseSlug: 'business-mathematics',
+    courseCode: 'BUA210',
+    topics: [
+      {
+        topicTitle: 'Set Theory & Logic',
+        summary:
+          'Set theory provides the foundational logic for categorizing business data and market segments. A set is a well-defined collection of distinct objects, and operations on sets (union, intersection, complement) are essential for solving problems in market research and data classification.',
+        keyPoints: [
+          'Union (A U B): Elements in A, or B, or both.',
+          'Intersection (A n B): Elements common to both A and B.',
+          'Complement (A\'): Elements in the universal set (U) not in A.',
+          'Key Formula: n(A U B) = n(A) + n(B) - n(A n B)',
+          'De Morgan\'s Laws: (A U B)\' = A\' n B\' and (A n B)\' = A\' U B\'',
+          'Power Set: A set with n elements has 2^n subsets and (2^n - 1) proper subsets.',
+          'Symmetric Difference: A Delta B = elements in A or B but NOT both.',
+          'Venn Diagrams: Essential for three-set problems in market research -- draw and label carefully.',
+          'CALCULATOR TIP: For 3-set Venn diagrams, always start from the center intersection (A n B n C) and work outwards. Use the formula: n(A U B U C) = n(A) + n(B) + n(C) - n(A n B) - n(A n C) - n(B n C) + n(A n B n C).',
+        ],
+        examTip: 'Always draw a Venn diagram for union/intersection questions. Start from the innermost region. Remember: n(neither) = Total - n(A U B).',
+      },
+      {
+        topicTitle: 'Arithmetic Progression (AP)',
+        summary:
+          'An Arithmetic Progression is a sequence where each term increases by a constant difference (d). Used for modeling linear growth patterns like salary increments and simple interest.',
+        keyPoints: [
+          'nth Term Formula: Tn = a + (n - 1)d, where a = first term, d = common difference.',
+          'Sum of n Terms: Sn = n/2 [2a + (n - 1)d] OR Sn = n/2 [a + l] where l = last term.',
+          'Finding d: d = T2 - T1 (difference between consecutive terms).',
+          'Finding a from two terms: If T7 = 20 and T13 = 38, then 6d = 18, so d = 3, then a = T7 - 6d = 20 - 18 = 2.',
+          'CALCULATOR TIP (AP nth term): Example -- Find 15th term of 10, 14, 18... Type: a=10, d=4, then 10 + (15-1) x 4 = 10 + 56 = 66.',
+          'CALCULATOR TIP (AP Sum): For sum of first 20 terms of 5, 10, 15... Type: 20/2 x [2(5) + (20-1)(5)] = 10 x [10 + 95] = 10 x 105 = 1050.',
+        ],
+        examTip: 'When given two terms (e.g., T7 and T13), set up simultaneous equations using Tn = a + (n-1)d to find both a and d.',
+      },
+      {
+        topicTitle: 'Geometric Progression (GP) & Financial Mathematics',
+        summary:
+          'A Geometric Progression is a sequence where each term is multiplied by a constant ratio (r). Vital for compound interest, depreciation, annuities, and growth models in business.',
+        keyPoints: [
+          'nth Term: Tn = ar^(n-1), where a = first term, r = common ratio.',
+          'Sum of n Terms: Sn = a(r^n - 1)/(r - 1) when r > 1, or Sn = a(1 - r^n)/(1 - r) when r < 1.',
+          'Sum to Infinity: S = a/(1 - r), only valid when |r| < 1.',
+          'Reducing Balance Depreciation: Value after n years = Cost x (1 - rate)^n.',
+          'Simple Interest: I = PRT/100. If money doubles in 5 years: P x R x 5/100 = P, so R = 20%.',
+          'Effective vs. Nominal Rate: Effective rate accounts for compounding frequency.',
+          'CALCULATOR TIP (Depreciation): $20,000 at 10% for 5 years: Type 20000 x 0.9^5 = $11,809.80.',
+          'CALCULATOR TIP (Finding r): If T2 = 6 and T4 = 54, then ar = 6 and ar^3 = 54. Divide: r^2 = 9, so r = 3.',
+          'CALCULATOR TIP (Sum to infinity): For GP 1, 1/2, 1/4... a=1, r=0.5. Type: 1/(1-0.5) = 2.',
+        ],
+        examTip: 'Sum to infinity ONLY exists when |r| < 1. For depreciation, always use the reducing balance formula with (1 - rate)^n.',
+      },
+      {
+        topicTitle: 'Matrix Algebra',
+        summary:
+          'Matrices are the primary tool for solving systems of linear equations in resource allocation and input-output analysis. Key operations include determinants, inverses, and Cramer\'s Rule.',
+        keyPoints: [
+          'Determinant of 2x2 [[a,b],[c,d]]: |A| = ad - bc. If |A| = 0, the matrix is Singular (no inverse).',
+          'Adjoint of 2x2: Swap main diagonal, negate off-diagonal: Adj([[a,b],[c,d]]) = [[d,-b],[-c,a]].',
+          'Inverse: A^(-1) = (1/|A|) x Adj(A). Only exists if |A| is not 0.',
+          'Cramer\'s Rule: For 2x + 3y = 13, x - 2y = -4: Delta = (2)(-2) - (3)(1) = -7. Delta_x = (13)(-2) - (3)(-4) = -14. x = -14/-7 = 2.',
+          'Matrix Multiplication: Rows of first x Columns of second. A(mxn) x B(nxp) = C(mxp). Matrices must be conformable.',
+          'Identity Matrix: Diagonal of 1s, all else 0. A x I = A.',
+          'Trace: Sum of main diagonal elements.',
+          'CALCULATOR TIP (Cramer\'s Rule): Calculate Delta first, then Delta_x and Delta_y separately. x = Delta_x/Delta, y = Delta_y/Delta.',
+          'CALCULATOR TIP (Determinant): For 2x2, just compute ad - bc directly. For 3x3, expand along the first row using cofactors.',
+        ],
+        examTip: 'Always check the determinant first. If det = 0, the system has no unique solution. For Cramer\'s Rule, carefully replace the correct column.',
+      },
+      {
+        topicTitle: 'Differential Calculus (Marginal Analysis)',
+        summary:
+          'Differentiation is the study of rates of change, essential for Marginal Analysis in business. It helps find Marginal Cost, Marginal Revenue, and optimal production levels.',
+        keyPoints: [
+          'Power Rule: d/dx(x^n) = nx^(n-1). The derivative of a constant is 0.',
+          'Product Rule: d/dx(uv) = u(dv/dx) + v(du/dx).',
+          'Quotient Rule: d/dx(u/v) = [v(du/dx) - u(dv/dx)] / v^2.',
+          'Chain Rule: d/dx[f(g(x))] = f\'(g(x)) x g\'(x). Example: d/dx(4x+5)^3 = 3(4x+5)^2 x 4 = 12(4x+5)^2.',
+          'Optimization: Set f\'(x) = 0 to find critical points. If f\'\'(x) < 0 = Maximum. If f\'\'(x) > 0 = Minimum.',
+          'Marginal Cost (MC) = derivative of Total Cost (TC). Marginal Revenue (MR) = derivative of Total Revenue (TR).',
+          'Profit Maximization: Set MR = MC, or differentiate Profit function and set Pi\'(Q) = 0.',
+          'Average Cost: AC = TC/Q. Differentiate and set to 0 to find minimum average cost.',
+          'd/dx(e^x) = e^x. d/dx(ln x) = 1/x. d/dx(e^(kx)) = ke^(kx).',
+          'CALCULATOR TIP (Optimization): For TR = 100Q - Q^2, set MR = 0: 100 - 2Q = 0, Q = 50. Always verify with second derivative.',
+          'CALCULATOR TIP (Profit Max): For Pi = 50Q - Q^2 - 200, Pi\' = 50 - 2Q = 0, Q = 25. Check: Pi\'\' = -2 < 0, confirmed maximum.',
+        ],
+        examTip: 'Marginal Cost = derivative of TC. Profit max: set Pi\' = 0 then check Pi\'\' < 0. A zero derivative means a turning point, NOT zero profit.',
+      },
+      {
+        topicTitle: 'Integral Calculus (Reversing Differentiation)',
+        summary:
+          'Integration is the reverse of differentiation. In business, it is used to find Total Cost from Marginal Cost, Total Revenue from Marginal Revenue, and to calculate Consumer and Producer Surplus.',
+        keyPoints: [
+          'Basic Rule: integral of x^n dx = x^(n+1)/(n+1) + C (for n not equal to -1).',
+          'integral of 1/x dx = ln|x| + C.',
+          'integral of e^(kx) dx = e^(kx)/k + C.',
+          'The Constant of Integration (C) represents Fixed Cost when integrating MC to get TC.',
+          'TC from MC: TC = integral of MC dx + Fixed Cost. Example: MC = 10Q + 5, FC = 200. TC = 5Q^2 + 5Q + 200.',
+          'TR from MR: TR = integral of MR dx. Note: When Q=0, TR=0, so C=0 for TR functions.',
+          'Definite Integral: Evaluate at upper limit minus lower limit. Represents area under the curve.',
+          'Consumer Surplus = integral from 0 to Q* of Demand function dx - (P* x Q*).',
+          'Producer Surplus = (P* x Q*) - integral from 0 to Q* of Supply function dx.',
+          'CALCULATOR TIP (Definite integral): For integral of 3x^2 from 1 to 3: [x^3] from 1 to 3 = 27 - 1 = 26.',
+          'CALCULATOR TIP (TC from MC): Integrate MC term by term. Add power by 1, divide by new power. Always add Fixed Cost as C.',
+          'CALCULATOR TIP (Area): For y = x^2 from 0 to 4: [x^3/3] from 0 to 4 = 64/3 = 21.33.',
+        ],
+        examTip: 'C in integration of MC = Fixed Cost. C in integration of MR = 0 (because TR = 0 when Q = 0). Always interpret C in the business context.',
+      },
+    ],
+  },
 }
 
 export function getTopicNotesByCourseSlug(slug: string): CourseTopicNotes | undefined {
