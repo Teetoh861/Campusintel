@@ -414,6 +414,40 @@ export const courses: Course[] = [
       },
     ],
   },
+  {
+    id: '9',
+    slug: 'use-of-english',
+    code: 'GST111',
+    title: 'Use of English (DE Students)',
+    overview:
+      'Communication skills course covering listening, phonetics, syllable structure, stress patterns, reading strategies, comprehension, and summary writing. Designed for Direct Entry students.',
+    level: 100,
+    semester: 1,
+    credits: 2,
+    difficulty: 'Medium',
+    textbooks: [
+      {
+        title: 'Use of English: A Communication Skills Approach',
+        author: 'UNILAG GST Unit',
+        edition: 'Current Edition',
+      },
+    ],
+    topics: [
+      { chapter: '1', description: 'Listening Skills' },
+      { chapter: '2', description: 'The Sounds of English (Phonetics)' },
+      { chapter: '3', description: 'Syllable, Stress and Intonation' },
+      { chapter: '4', description: 'Strategies for Effective Reading' },
+      { chapter: '5', description: 'Comprehension and Summary' },
+    ],
+    examFocus: [
+      'Listening skills and note-taking strategies',
+      'Phonetic symbols and organs of speech',
+      'Syllable structure and stress patterns',
+      'Reading types: skimming, scanning, study reading',
+      'Comprehension question types and summary writing',
+    ],
+    resources: [],
+  },
 ]
 
 export function getCourseBySlug(slug: string): Course | undefined {
