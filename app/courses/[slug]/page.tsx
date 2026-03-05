@@ -7,7 +7,7 @@ import { getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getTopicNotesByCourseSlug } from '@/lib/data/topic-notes'
 import { getTheoryContentBySlug } from '@/lib/data/theory-questions'
-import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb, HelpCircle, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function CoursePage() {
@@ -162,6 +162,32 @@ export default function CoursePage() {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-8">
+            {/* Key Takeaways - What to Prioritize */}
+            {course.keyTakeaways && course.keyTakeaways.length > 0 && (
+              <section className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg border border-blue-200 p-6">
+                <h2 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2">
+                  <Star className="w-6 h-6 text-blue-900 fill-blue-900" />
+                  What to Prioritize
+                </h2>
+                <p className="text-sm text-slate-600 mb-6">Core principles from your lecturer that you must carry with you beyond the exam.</p>
+                <div className="space-y-4">
+                  {course.keyTakeaways.map((takeaway, idx) => (
+                    <div key={idx} className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-400 transition-colors">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-900 text-white flex items-center justify-center text-sm font-bold">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-bold text-slate-900 mb-2">{takeaway.title}</h3>
+                          <p className="text-sm text-slate-600 leading-relaxed">{takeaway.description}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Textbooks */}
             {course.textbooks.length > 0 && (
               <section className="bg-white rounded-lg border border-slate-200 p-6">

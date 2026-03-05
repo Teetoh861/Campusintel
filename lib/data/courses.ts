@@ -72,11 +72,41 @@ export const courses: Course[] = [
     code: 'BUA201',
     title: 'Principles of Business Administration I',
     overview:
-      'Foundation course covering business functions, marketing fundamentals, organizational structure, and management concepts essential for business administration.',
+      'Foundation course covering business functions, marketing fundamentals, organizational structure, management concepts, business environment analysis, and contemporary issues in Nigerian business administration.',
     level: 200,
     semester: 1,
     credits: 3,
     difficulty: 'Medium',
+    keyTakeaways: [
+      {
+        title: 'The True Purpose of Business Goes Beyond Profit',
+        description: 'While classical thinkers like Adam Smith viewed businesses narrowly as profit-maximizing machines, the modern view sees businesses as social institutions responsible for value creation, employment generation, and wealth distribution for all stakeholders.',
+      },
+      {
+        title: 'Management is Universal and Interconnected',
+        description: 'Wherever there are people and goals, management is required. The four core functions—Planning, Organising, Leading, and Controlling—are deeply interrelated. You cannot control what you have not planned. Success is measured by Effectiveness (doing the right things) and Efficiency (using the least resources).',
+      },
+      {
+        title: 'Constantly Scan the Dynamic Business Environment',
+        description: 'No business operates in a vacuum. Always apply the PESTLE framework (Political, Economic, Sociocultural, Technological, Legal, Environmental) to analyze forces shaping your industry and adapt to opportunities and threats.',
+      },
+      {
+        title: 'The Reality of the Nigerian Business Context',
+        description: 'As managers in Nigeria, you will face infrastructure deficits, economic volatility (inflation, FX constraints), and security threats. You must act as an "Organizational Stabiliser" and Change Agent while managing cultural rigidity, employee burnout, and the skills gap.',
+      },
+      {
+        title: 'Organizations are Open Systems Requiring Integration',
+        description: 'Systems Theory views businesses as open systems that receive inputs, transform them, and produce outputs. Cross-functional integration is critical—Marketing, Operations, HR, and Finance must work together, not in silos.',
+      },
+      {
+        title: 'Understand Business Ownership and Liability',
+        description: 'A Sole Proprietorship carries unlimited personal liability—your personal assets can be seized to pay business debts. Incorporating as a company (like a PLC) creates a separate legal entity and provides limited liability protection.',
+      },
+      {
+        title: 'Ethics, Governance, and Responsible Leadership',
+        description: 'Management is a recognized profession requiring adherence to ethical codes like NIM. Uphold the NCCG 2018 principles: Responsibility, Accountability, Transparency, and Fairness. Strive to be a Transformational or Servant Leader who guides with honesty and empathy.',
+      },
+    ],
     textbooks: [
       {
         title: 'Principles of Business',
@@ -94,12 +124,19 @@ export const courses: Course[] = [
       { chapter: '3-4', description: 'Marketing Fundamentals and Segmentation' },
       { chapter: '5-6', description: 'Management Concepts and Principles' },
       { chapter: '7-8', description: 'Business Environment and Strategy' },
+      { chapter: '9-10', description: 'Contemporary Issues and Change Management in Nigeria' },
+      { chapter: '11-12', description: 'Business Ownership, Ethics, and Corporate Governance' },
     ],
     examFocus: [
       'Definition of business functions',
       'Organizational structure types and benefits',
       'Market segmentation strategies',
       'Management theories and applications',
+      'PESTLE analysis and business environment',
+      'Contemporary challenges in Nigerian business',
+      'Business ownership types and liability',
+      'Corporate governance principles (NCCG 2018)',
+      'Leadership theories and styles',
       'Theory explanations and definitions',
     ],
     resources: [
