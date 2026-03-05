@@ -20,6 +20,11 @@ export interface Resource {
   downloadCount?: number
 }
 
+export interface KeyTakeaway {
+  title: string
+  description: string
+}
+
 export interface Course {
   id: string
   slug: string
@@ -36,6 +41,7 @@ export interface Course {
     test?: number
     exam?: number
   }
+  keyTakeaways?: KeyTakeaway[] // Core principles students must remember
   
   textbooks: Textbook[]
   topics: Topic[]
