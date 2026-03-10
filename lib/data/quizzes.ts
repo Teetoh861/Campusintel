@@ -5004,7 +5004,7 @@ export const quizzes: Record<string, CourseQuiz> = {
     title: 'Business Statistics I - CBT Assessment',
     totalQuestions: 239,
     maxQuizQuestions: 50,
-    quizDurationMinutes: 30,
+    quizDurationMinutes: 40,
     sections: [
       'Basic Concepts & Data Collection',
       'Data Presentation & Frequency Distributions',
