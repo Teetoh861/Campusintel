@@ -5002,7 +5002,7 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'business-statistics',
     courseCode: 'BUA203',
     title: 'Business Statistics I - CBT Assessment',
-    totalQuestions: 190,
+    totalQuestions: 191,
     maxQuizQuestions: 50,
     quizDurationMinutes: 30,
     sections: [
@@ -6362,6 +6362,13 @@ export const quizzes: Record<string, CourseQuiz> = {
         section: 'Measures of Central Tendency',
         question: 'Which measure of location is most robust (least affected) when a dataset contains extreme outliers?',
         options: ['Geometric Mean', 'Arithmetic Mean', 'Mid-range', 'Median'],
+        correctAnswer: 3,
+      },
+      {
+        id: 191,
+        section: 'Basic Concepts & Data Collection',
+        question: 'A researcher uses data previously collected and published by the National Bureau of Statistics for a new study. This type of data is classified as:',
+        options: ['Primary data', 'Qualitative data', 'Experimental data', 'Secondary data'],
         correctAnswer: 3,
       },
     ],
