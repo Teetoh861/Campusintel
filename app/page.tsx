@@ -1,13 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight, BookOpen, GraduationCap, MessageCircle, Users, Sparkles, MapPin, Clock, Target, Rocket, Building } from 'lucide-react'
+import { ArrowRight, BookOpen, GraduationCap, MessageCircle, Users, Sparkles, MapPin, Clock, Target, Rocket, Building, Bell } from 'lucide-react'
 import { courses } from '@/lib/data/courses'
-import { tutors, getAvailableTutors } from '@/lib/data/tutors'
 
 export default function HomePage() {
-  const availableTutors = getAvailableTutors()
-
   return (
     <div>
       {/* Hero Section */}
@@ -72,8 +69,8 @@ export default function HomePage() {
               <p className="text-sm text-slate-500 mt-1">Quiz Qs / Course</p>
             </div>
             <div>
-              <p className="text-3xl font-bold text-green-600">{availableTutors.length}</p>
-              <p className="text-sm text-slate-500 mt-1">Tutors Available</p>
+              <p className="text-3xl font-bold text-amber-600">Soon</p>
+              <p className="text-sm text-slate-500 mt-1">Peer Tutors</p>
             </div>
           </div>
         </div>
@@ -97,19 +94,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Academic Support Section - NEW */}
+      {/* Academic Support Section */}
       <section className="bg-white py-12 md:py-16 border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
             <div className="flex items-center justify-center gap-2 mb-3">
               <Sparkles className="w-6 h-6 text-blue-900" />
-              <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">New</span>
+              <span className="text-sm font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full">Coming Soon</span>
             </div>
             <h2 className="text-2xl md:text-3xl font-bold text-blue-900 mb-2">
               Academic Support
             </h2>
             <p className="text-slate-600 max-w-xl mx-auto">
-              Beyond study materials, get personalized help from top-performing students who have excelled in your courses.
+              Beyond study materials, we are building a way to connect you with top-performing students who can help you master difficult courses.
             </p>
           </div>
 
@@ -122,13 +119,16 @@ export default function HomePage() {
                     <Users className="w-6 h-6 text-white" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-bold text-slate-900 text-lg mb-2">Find a Tutor</h3>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-bold text-slate-900 text-lg">Find a Tutor</h3>
+                      <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Coming Soon</span>
+                    </div>
                     <p className="text-sm text-slate-600 mb-4">
-                      Connect with {tutors.length} verified peer tutors who scored A grades in courses like Statistics, Mathematics, and Accounting.
+                      Connect with verified peer tutors who scored A grades in courses like Statistics, Mathematics, and Accounting.
                     </p>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-green-600 font-medium">{availableTutors.length} available now</span>
-                      <span className="text-slate-500">From N2,000/hr</span>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Bell className="w-4 h-4 text-blue-600" />
+                      <span className="text-blue-600 font-medium">Join the waitlist</span>
                     </div>
                   </div>
                   <ArrowRight className="w-5 h-5 text-blue-900 flex-shrink-0" />
@@ -144,9 +144,12 @@ export default function HomePage() {
                     <GraduationCap className="w-6 h-6 text-white" />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-bold text-slate-900 text-lg mb-2">Become a Tutor</h3>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-bold text-slate-900 text-lg">Become a Tutor</h3>
+                      <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded">Apply Now</span>
+                    </div>
                     <p className="text-sm text-slate-600 mb-4">
-                      Are you a 300L+ student with strong grades? Earn money by helping juniors succeed while reinforcing your own knowledge.
+                      Are you a 300L+ student with strong grades? Apply to earn money by helping juniors succeed.
                     </p>
                     <div className="flex items-center gap-4 text-sm">
                       <span className="text-green-600 font-medium">Set your own rates</span>
@@ -235,14 +238,14 @@ export default function HomePage() {
               </div>
               <h3 className="font-bold text-slate-900 mb-2">Peer Tutoring</h3>
               <p className="text-slate-600 text-sm leading-relaxed">
-                Get 1-on-1 help from verified top students who have mastered the courses.
+                Coming soon: Get 1-on-1 help from verified top students who have mastered the courses.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Expansion Roadmap - NEW */}
+      {/* Expansion Roadmap */}
       <section className="bg-slate-50 py-12 md:py-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
@@ -270,7 +273,7 @@ export default function HomePage() {
                     <span className="text-xs font-semibold text-white bg-blue-900 px-2 py-0.5 rounded">Current</span>
                   </div>
                   <p className="text-sm text-slate-600">
-                    Complete coverage of all first semester courses with quizzes, notes, and tutoring support.
+                    Complete coverage of all first semester courses with quizzes, notes, and study materials.
                   </p>
                 </div>
               </div>
@@ -284,11 +287,11 @@ export default function HomePage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-slate-700">Phase 2: 200L Second Semester</h3>
+                    <h3 className="font-bold text-slate-700">Phase 2: 200L Second Semester + Tutoring</h3>
                     <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Q2 2026</span>
                   </div>
                   <p className="text-sm text-slate-500">
-                    Adding all second semester courses for 200 level Business Administration students.
+                    Adding second semester courses and launching peer tutoring marketplace.
                   </p>
                 </div>
               </div>
