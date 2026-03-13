@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Menu, X, BookOpen, Bookmark, MessageCircle, Home } from 'lucide-react'
+import { Menu, X, BookOpen, Bookmark, MessageCircle, Home, Users } from 'lucide-react'
 
 export function MobileNav() {
   const [isOpen, setIsOpen] = useState(false)
@@ -12,6 +12,7 @@ export function MobileNav() {
   const menuItems = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/courses', label: 'Courses', icon: BookOpen },
+    { href: '/tutors', label: 'Find Tutors', icon: Users },
     { href: '/bookmarks', label: 'Bookmarks', icon: Bookmark },
     { href: '/contact', label: 'Contact Us', icon: MessageCircle },
   ]
