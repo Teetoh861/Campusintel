@@ -26,6 +26,16 @@ export function Footer() {
                 </a>
               </li>
               <li>
+                <a href="/tutors" className="hover:text-white transition-colors">
+                  Find a Tutor
+                </a>
+              </li>
+              <li>
+                <a href="/become-a-tutor" className="hover:text-white transition-colors">
+                  Become a Tutor
+                </a>
+              </li>
+              <li>
                 <a href="/bookmarks" className="hover:text-white transition-colors">
                   My Bookmarks
                 </a>
