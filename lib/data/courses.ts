@@ -286,7 +286,7 @@ export const courses: Course[] = [
     level: 200,
     semester: 1,
     credits: 3,
-    difficulty: 'Very High',
+    difficulty: 'Hard',
     textbooks: [
       {
         title: 'Business Mathematics',

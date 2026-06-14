@@ -34,7 +34,7 @@ export interface Course {
   level: number // 200, 300, 400
   semester: number // 1, 2
   credits: number
-  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Very High'
+  difficulty: 'Easy' | 'Medium' | 'Hard'
   lecturer?: string
   assessmentStructure?: {
     assignment?: number
