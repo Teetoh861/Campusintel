@@ -7,7 +7,7 @@ export const courses: Course[] = [
     code: 'ENT211',
     title: 'Entrepreneurship and Innovation',
     overview:
-      'Introduction to entrepreneurship, innovation, opportunity recognition and business creation. Explores the fundamentals of identifying business opportunities and launching ventures.',
+      "Introduction to entrepreneurship and innovation, from recognising opportunities and developing business ideas to funding and launching new ventures, and entrepreneurship's role in economic development.",
     level: 200,
     semester: 1,
     credits: 2,
@@ -167,38 +167,6 @@ export const courses: Course[] = [
     ],
   },
   {
-    id: 'test-comp-1',
-    slug: 'bua201-test-compilation',
-    code: 'BUA201',
-    title: 'BUA201 Test Compilation',
-    overview:
-      'A compilation of actual test questions from the UNILAG E-Learning Portal for BUA 201 (Principles of Business Administration I). This timed assessment covers corporate governance, business ownership, marketing concepts, business environment, management functions, HRM, and financial management.',
-    level: 200,
-    semester: 1,
-    credits: 0,
-    difficulty: 'Medium',
-    textbooks: [],
-    topics: [
-      { chapter: 'Test', description: 'Corporate Governance & Fiduciary Duty' },
-      { chapter: 'Test', description: 'Business Ownership Structures' },
-      { chapter: 'Test', description: 'Marketing Mix & Segmentation (STP)' },
-      { chapter: 'Test', description: 'Business Environment & PESTLE Analysis' },
-      { chapter: 'Test', description: 'Management Functions & Managerial Roles' },
-      { chapter: 'Test', description: 'Human Resource Management' },
-      { chapter: 'Test', description: 'Financial Statements & Cash Flow' },
-    ],
-    examFocus: [
-      'Corporate governance frameworks and fiduciary duty',
-      'Sole proprietorship vs partnership vs corporation',
-      'Marketing mix and market segmentation',
-      'PESTLE analysis and macro-environmental forces',
-      'Management functions: planning, organising, leading, controlling',
-      'HRM core responsibilities',
-      'Financial statements and cash flow management',
-    ],
-    resources: [],
-  },
-  {
     id: '3',
     slug: 'business-statistics',
     code: 'BUA203',
@@ -244,7 +212,7 @@ export const courses: Course[] = [
     code: 'BUA205',
     title: 'Leadership and Governance',
     overview:
-      'Comprehensive study of leadership theories, styles, organizational ethics, governance frameworks, and stakeholder management in public and private sectors.',
+      'Leadership theories and styles, organisational ethics, governance frameworks, and stakeholder management across the public and private sectors.',
     level: 200,
     semester: 1,
     credits: 2,
@@ -318,7 +286,7 @@ export const courses: Course[] = [
     level: 200,
     semester: 1,
     credits: 3,
-    difficulty: 'Very High',
+    difficulty: 'Hard',
     textbooks: [
       {
         title: 'Business Mathematics',
@@ -354,7 +322,7 @@ export const courses: Course[] = [
     code: 'BUA221',
     title: 'Consumer Behaviour',
     overview:
-      'Study of consumer decision processes, buyer types, and the psychological, cultural, and social factors influencing consumer choices and market behavior.',
+      'Study of consumer decision processes, buyer types, and the psychological, cultural, and social factors influencing consumer choices and market behaviour.',
     level: 200,
     semester: 1,
     credits: 2,
@@ -419,7 +387,7 @@ export const courses: Course[] = [
     code: 'ACC201',
     title: 'Financial Accounting I',
     overview:
-      'Fundamentals of financial accounting covering the IASB conceptual framework, IFRS 15 revenue recognition, IAS 1 financial statement presentation, IAS 2 inventories, IAS 8 accounting policies, IAS 16 property and equipment, IAS 20 government grants, and IAS 23 borrowing costs.',
+      'Fundamentals of financial accounting under IFRS: the IASB conceptual framework and the key standards governing revenue, financial-statement presentation, inventories, accounting policies, property plant and equipment, government grants, and borrowing costs.',
     level: 200,
     semester: 1,
     credits: 2,
@@ -487,7 +455,7 @@ export const courses: Course[] = [
     id: '9',
     slug: 'use-of-english',
     code: 'GST111',
-    title: 'Use of English (DE Students)',
+    title: 'Communication in English',
     overview:
       'Communication skills course covering listening, phonetics, syllable structure, stress patterns, reading strategies, comprehension, and summary writing. Designed for Direct Entry students.',
     level: 100,
@@ -517,6 +485,40 @@ export const courses: Course[] = [
     ],
     resources: [],
   },
+  {
+    id: '8',
+    slug: 'nigerian-peoples-and-culture',
+    code: 'GST112',
+    title: 'Nigerian Peoples and Culture',
+    overview:
+      "A General Studies course for Direct Entry students surveying Nigerian peoples and culture. It covers the concept, characteristics and components of culture; an ethno-historical survey of Nigeria's major groups and geopolitical zones; the roles of Christianity and Islam in political culture; gender and culture; the Nigerian Civil War; and the political economy from agriculture to oil.",
+    level: 100,
+    semester: 2,
+    credits: 2,
+    difficulty: 'Medium',
+    textbooks: [],
+    topics: [
+      { chapter: '1', description: 'Culture and Society' },
+      { chapter: '2', description: 'Nigeria: Ethno-Historical Survey' },
+      { chapter: '3', description: 'Historical Foundation of Nigerian Culture' },
+      { chapter: '4', description: 'Christianity and Political Culture' },
+      { chapter: '5', description: 'Islam and Political Culture' },
+      { chapter: '6', description: 'Nigerian Cultural Heritage: Marriage and Naming' },
+      { chapter: '7', description: 'Gender and Culture' },
+      { chapter: '8', description: 'Political Economy and Intergroup Relations' },
+    ],
+    examFocus: [
+      'Concept, characteristics and components of culture',
+      'Geopolitical zones and major ethnic groups of Nigeria',
+      'Introduction of Christianity and the role of Badagry',
+      'Spread of Islam in Kanem-Borno and Hausaland',
+      "Pre-colonial women and the Aba Women's Riot of 1929",
+      'The Nigerian Civil War: causes, key figures and outcomes',
+      'Political economy: agriculture, oil at Oloibiri, and national development',
+      'The 1914 amalgamation and intergroup relations',
+    ],
+    resources: [],
+  }
 ]
 
 export function getCourseBySlug(slug: string): Course | undefined {

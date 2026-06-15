@@ -62,14 +62,14 @@ export default function HomePage() {
               <p className="text-3xl font-bold text-blue-900">
                 {courses.reduce((sum, c) => sum + c.textbooks.length, 0)}
               </p>
-              <p className="text-sm text-slate-500 mt-1">Textbooks</p>
+              <p className="text-sm text-slate-500 mt-1">Recommended Textbooks</p>
             </div>
             <div>
               <p className="text-3xl font-bold text-blue-900">50+</p>
               <p className="text-sm text-slate-500 mt-1">Quiz Qs / Course</p>
             </div>
             <div>
-              <p className="text-3xl font-bold text-amber-600">Soon</p>
+              <p className="text-3xl font-bold text-amber-600">Coming Soon</p>
               <p className="text-sm text-slate-500 mt-1">Peer Tutors</p>
             </div>
           </div>

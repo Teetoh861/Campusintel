@@ -12,7 +12,6 @@ export const metadata: Metadata = {
   title: 'CampusIntel - Academic Resource Hub | UNILAG Business Administration',
   description:
     'Your Academic Intelligence Hub for Department of Business Administration at University of Lagos. Access course materials, textbooks, quizzes, exam resources, and connect with peer tutors.',
-  generator: 'v0.app',
   keywords: ['UNILAG', 'University of Lagos', 'Business Administration', 'study materials', 'past questions', 'quizzes', 'peer tutoring', 'BUA203', 'BUA210', 'ACC201'],
   authors: [{ name: 'CampusIntel' }],
   openGraph: {
