@@ -7,7 +7,7 @@ export const courses: Course[] = [
     code: 'ENT211',
     title: 'Entrepreneurship and Innovation',
     overview:
-      'Introduction to entrepreneurship, innovation, opportunity recognition and business creation. Explores the fundamentals of identifying business opportunities and launching ventures.',
+      "Introduction to entrepreneurship and innovation, from recognising opportunities and developing business ideas to funding and launching new ventures, and entrepreneurship's role in economic development.",
     level: 200,
     semester: 1,
     credits: 2,
@@ -212,7 +212,7 @@ export const courses: Course[] = [
     code: 'BUA205',
     title: 'Leadership and Governance',
     overview:
-      'Comprehensive study of leadership theories, styles, organizational ethics, governance frameworks, and stakeholder management in public and private sectors.',
+      'Leadership theories and styles, organisational ethics, governance frameworks, and stakeholder management across the public and private sectors.',
     level: 200,
     semester: 1,
     credits: 2,
@@ -322,7 +322,7 @@ export const courses: Course[] = [
     code: 'BUA221',
     title: 'Consumer Behaviour',
     overview:
-      'Study of consumer decision processes, buyer types, and the psychological, cultural, and social factors influencing consumer choices and market behavior.',
+      'Study of consumer decision processes, buyer types, and the psychological, cultural, and social factors influencing consumer choices and market behaviour.',
     level: 200,
     semester: 1,
     credits: 2,
@@ -387,7 +387,7 @@ export const courses: Course[] = [
     code: 'ACC201',
     title: 'Financial Accounting I',
     overview:
-      'Fundamentals of financial accounting covering the IASB conceptual framework, IFRS 15 revenue recognition, IAS 1 financial statement presentation, IAS 2 inventories, IAS 8 accounting policies, IAS 16 property and equipment, IAS 20 government grants, and IAS 23 borrowing costs.',
+      'Fundamentals of financial accounting under IFRS: the IASB conceptual framework and the key standards governing revenue, financial-statement presentation, inventories, accounting policies, property plant and equipment, government grants, and borrowing costs.',
     level: 200,
     semester: 1,
     credits: 2,
