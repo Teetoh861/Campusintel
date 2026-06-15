@@ -496,13 +496,7 @@ export const courses: Course[] = [
     semester: 2,
     credits: 2,
     difficulty: 'Medium',
-    textbooks: [
-      {
-        title: 'Nigerian Peoples and Culture',
-        author: 'University of Lagos, General Studies Unit',
-        edition: 'Current Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1', description: 'Culture and Society' },
       { chapter: '2', description: 'Nigeria: Ethno-Historical Survey' },
