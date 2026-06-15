@@ -1,0 +1,92 @@
+/* ============================================================
+   CampusIntel — small pages (bookmarks · tutors · become-a-tutor · contact)
+   Builds on campusintel.css. Reuses .course-cover, .hero-motif,
+   .crumb, .coverage, .course-grid, .course, .btn, .dir-count, .dir-empty.
+   Only the page-specific bits live here.
+   ============================================================ */
+
+/* dossier-cover shared header bits ----------------------------------- */
+.pg-kicker{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--n-600);margin-top:6px;}
+.pg-kicker .sig{width:8px;height:8px;border-radius:50%;background:var(--t-600);flex:none;}      /* the one teal signal */
+.pg-kicker .sep{color:var(--n-400);}
+.pg-title{font-family:var(--serif);font-weight:400;font-size:clamp(34px,8vw,58px);line-height:1;letter-spacing:-.02em;color:var(--n-900);margin-top:16px;}
+.pg-lede{font-size:17px;line-height:1.55;color:var(--n-700);max-width:54ch;margin-top:18px;text-wrap:pretty;}
+.pg-body{padding:40px 0 0;}
+
+/* generic section margins on these pages */
+@media(min-width:768px){ .pg-body{padding:52px 0 0;} }
+
+/* ============================================================
+   BOOKMARKS
+   ============================================================ */
+.bm-headrow{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:26px;}
+.bm-headrow .bm-h{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--n-600);}
+/* unsave control appended into the locked card footer (JS) — quiet, mono */
+.course .bm-cf-right{display:flex;align-items:center;gap:14px;}
+.bm-unsave{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--n-600);background:transparent;border:0;cursor:pointer;padding:6px 0;display:inline-flex;align-items:center;gap:6px;transition:color .14s;}
+.bm-unsave:hover{color:var(--r-700);}
+.bm-unsave .x{font-size:12px;}
+
+/* ============================================================
+   TUTORS — coming soon
+   ============================================================ */
+.coming{border:var(--hair);background:var(--n-0);padding:40px 26px;position:relative;}
+.coming .cm-status{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--n-700);border:1px solid var(--n-300);padding:8px 14px;}
+.coming .cm-status .sig{width:8px;height:8px;border-radius:50%;background:var(--t-600);flex:none;}   /* the one teal signal */
+.coming h2{font-family:var(--serif);font-weight:400;font-size:clamp(26px,5vw,38px);line-height:1.06;letter-spacing:-.01em;color:var(--n-900);margin-top:22px;max-width:22ch;}
+.coming p{font-size:15.5px;line-height:1.6;color:var(--n-700);margin-top:16px;max-width:56ch;text-wrap:pretty;}
+.coming .cm-list{border-top:var(--hair);margin-top:28px;}
+.coming .cm-li{display:grid;grid-template-columns:90px 1fr;gap:18px;align-items:baseline;padding:15px 0;border-bottom:var(--hair);}
+.coming .cm-li .cl-k{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--n-600);}
+.coming .cm-li .cl-v{font-size:15px;line-height:1.5;color:var(--n-800);}
+.coming .cm-cta{display:flex;flex-direction:column;gap:12px;margin-top:30px;}
+
+/* ============================================================
+   BECOME A TUTOR — dossier form
+   ============================================================ */
+.form-wrap{border:var(--hair);background:var(--n-0);padding:30px 24px;}
+.form-intro{font-size:15px;line-height:1.55;color:var(--n-700);max-width:56ch;margin-bottom:6px;}
+.form-sig{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--t-700);margin:18px 0 28px;}
+.form-sig .sig{width:8px;height:8px;border-radius:50%;background:var(--t-600);flex:none;}            /* the one teal signal */
+.field{display:flex;flex-direction:column;gap:9px;margin-bottom:22px;}
+.field .flrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+.field label{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--n-700);}
+.field .opt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-500);}
+.field input,.field textarea,.field select{
+  font-family:var(--sans);font-size:15px;color:var(--n-900);background:var(--n-0);
+  border:1px solid var(--n-300);padding:13px 15px;width:100%;min-height:52px;
+  transition:border-color .14s,box-shadow .14s;border-radius:0;
+}
+.field textarea{min-height:128px;resize:vertical;line-height:1.5;font-family:var(--sans);}
+.field input::placeholder,.field textarea::placeholder{color:var(--n-400);}
+.field input:focus,.field textarea:focus,.field select:focus{outline:0;border-color:var(--p-600);box-shadow:0 0 0 3px var(--p-50);}
+.field select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--n-600) 50%),linear-gradient(135deg,var(--n-600) 50%,transparent 50%);background-position:calc(100% - 19px) calc(50% - 2px),calc(100% - 14px) calc(50% - 2px);background-size:5px 5px,5px 5px;background-repeat:no-repeat;cursor:pointer;}
+.field .counter{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--n-500);}
+.field .counter.over{color:var(--r-700);}
+.form-actions{display:flex;flex-direction:column;gap:12px;margin-top:4px;}
+.form-note{font-family:var(--mono);font-size:11px;line-height:1.6;letter-spacing:.04em;color:var(--n-600);margin-top:18px;}
+
+/* ============================================================
+   CONTACT — dossier entries
+   ============================================================ */
+.contact-list{border-top:var(--hair);}
+.contact-row{display:flex;align-items:center;gap:18px;padding:22px 0;border-bottom:var(--hair);transition:background .14s;}
+.contact-row .cr-main{flex:1;min-width:0;}
+.contact-row .cr-k{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--n-600);}
+.contact-row .cr-v{font-family:var(--mono);font-size:clamp(17px,3.5vw,21px);font-weight:500;letter-spacing:.01em;color:var(--n-900);margin-top:9px;word-break:break-word;}
+.contact-row .cr-go{flex:none;font-family:var(--mono);font-size:12px;color:var(--n-500);transition:transform .14s,color .14s;}
+.contact-row:hover{background:var(--n-50);}
+.contact-row:hover .cr-go{color:var(--n-900);transform:translateX(3px);}
+/* the primary WhatsApp entry — the one teal signal */
+.contact-row.primary{padding:24px;margin:0 -24px;background:var(--t-50);border:1px solid var(--t-600);}
+.contact-row.primary .cr-k{color:var(--t-700);}
+.contact-row.primary .cr-k .sig{width:8px;height:8px;border-radius:50%;background:var(--t-600);}
+.contact-row.primary .cr-go{color:var(--t-700);}
+.contact-meta{font-family:var(--mono);font-size:11.5px;line-height:1.6;letter-spacing:.04em;color:var(--n-600);margin-top:24px;}
+
+@media(min-width:768px){
+  .form-wrap{padding:40px 40px;max-width:680px;}
+  .coming{padding:48px 44px;}
+  .coming .cm-cta{flex-direction:row;}
+  .contact-list{max-width:680px;}
+}

@@ -1,50 +1,57 @@
+// Root layout — wires fonts to the CSS variables that styles/campusintel.css
+// expects (--serif / --sans / --mono) and loads the design CSS globally.
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Instrument_Serif } from 'next/font/google'
+import { GeistSans } from 'geist/font/sans'
+import { GeistMono } from 'geist/font/mono'
 
+import '../styles/campusintel.css'
 import './globals.css'
-import { MobileNav } from '@/components/navigation/MobileNav'
-import { Footer } from '@/components/common/Footer'
 
-const _geist = Geist({ subsets: ['latin'] })
-const _geistMono = Geist_Mono({ subsets: ['latin'] })
+import { Nav } from '@/components/chrome/Nav'
+import { Footer } from '@/components/chrome/Footer'
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ['latin'],
+  weight: '400',
+  style: ['normal', 'italic'],
+  variable: '--font-serif',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: 'CampusIntel - Academic Resource Hub | UNILAG Business Administration',
+  title: 'CampusIntel · The inside track on every paper',
   description:
-    'Your Academic Intelligence Hub for Department of Business Administration at University of Lagos. Access course materials, textbooks, quizzes, exam resources, and connect with peer tutors.',
-  keywords: ['UNILAG', 'University of Lagos', 'Business Administration', 'study materials', 'past questions', 'quizzes', 'peer tutoring', 'BUA203', 'BUA210', 'ACC201'],
-  authors: [{ name: 'CampusIntel' }],
+    'Academic intelligence for the University of Lagos. Past questions, decoded exam patterns and the materials that actually move your grade.',
   openGraph: {
-    title: 'CampusIntel - Your Academic Intelligence Hub',
-    description: 'Access course materials, quizzes, and connect with peer tutors for UNILAG Business Administration.',
+    title: 'CampusIntel · Academic Intelligence',
+    description: 'The inside track on every paper.',
     type: 'website',
     locale: 'en_NG',
     siteName: 'CampusIntel',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CampusIntel - Academic Resource Hub',
-    description: 'Your Academic Intelligence Hub for UNILAG Business Administration students.',
+    title: 'CampusIntel · Academic Intelligence',
+    description: 'The inside track on every paper.',
   },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  themeColor: '#1e3a8a',
+  themeColor: '#FAF8F4',
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
+  const fontClass = `${instrumentSerif.variable} ${GeistSans.variable} ${GeistMono.variable}`
   return (
-    <html lang="en" className="bg-white">
-      <body className="font-sans antialiased bg-white text-slate-900">
-        <MobileNav />
-        <main className="min-h-screen">{children}</main>
+    <html lang="en" className={fontClass}>
+      <body>
+        <Nav />
+        <main id="top">{children}</main>
         <Footer />
       </body>
     </html>
