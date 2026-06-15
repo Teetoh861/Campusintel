@@ -455,7 +455,7 @@ export const courses: Course[] = [
     id: '9',
     slug: 'use-of-english',
     code: 'GST111',
-    title: 'Use of English (DE Students)',
+    title: 'Communication in English',
     overview:
       'Communication skills course covering listening, phonetics, syllable structure, stress patterns, reading strategies, comprehension, and summary writing. Designed for Direct Entry students.',
     level: 100,
@@ -485,6 +485,46 @@ export const courses: Course[] = [
     ],
     resources: [],
   },
+  {
+    id: '8',
+    slug: 'nigerian-peoples-and-culture',
+    code: 'GST112',
+    title: 'Nigerian Peoples and Culture',
+    overview:
+      "A General Studies course for Direct Entry students surveying Nigerian peoples and culture. It covers the concept, characteristics and components of culture; an ethno-historical survey of Nigeria's major groups and geopolitical zones; the roles of Christianity and Islam in political culture; gender and culture; the Nigerian Civil War; and the political economy from agriculture to oil.",
+    level: 100,
+    semester: 2,
+    credits: 2,
+    difficulty: 'Medium',
+    textbooks: [
+      {
+        title: 'Nigerian Peoples and Culture',
+        author: 'University of Lagos, General Studies Unit',
+        edition: 'Current Edition',
+      },
+    ],
+    topics: [
+      { chapter: '1', description: 'Culture and Society' },
+      { chapter: '2', description: 'Nigeria: Ethno-Historical Survey' },
+      { chapter: '3', description: 'Historical Foundation of Nigerian Culture' },
+      { chapter: '4', description: 'Christianity and Political Culture' },
+      { chapter: '5', description: 'Islam and Political Culture' },
+      { chapter: '6', description: 'Nigerian Cultural Heritage: Marriage and Naming' },
+      { chapter: '7', description: 'Gender and Culture' },
+      { chapter: '8', description: 'Political Economy and Intergroup Relations' },
+    ],
+    examFocus: [
+      'Concept, characteristics and components of culture',
+      'Geopolitical zones and major ethnic groups of Nigeria',
+      'Introduction of Christianity and the role of Badagry',
+      'Spread of Islam in Kanem-Borno and Hausaland',
+      "Pre-colonial women and the Aba Women's Riot of 1929",
+      'The Nigerian Civil War: causes, key figures and outcomes',
+      'Political economy: agriculture, oil at Oloibiri, and national development',
+      'The 1914 amalgamation and intergroup relations',
+    ],
+    resources: [],
+  }
 ]
 
 export function getCourseBySlug(slug: string): Course | undefined {

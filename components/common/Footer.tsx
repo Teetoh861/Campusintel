@@ -88,7 +88,7 @@ export function Footer() {
         {/* Divider */}
         <div className="border-t border-blue-800 pt-8">
           <p className="text-center text-blue-100 text-sm">
-            © 2025 CampusIntel. Department of Business Administration, University of Lagos.
+            © {new Date().getFullYear()} CampusIntel. Department of Business Administration, University of Lagos.
           </p>
         </div>
       </div>
