@@ -35,6 +35,8 @@ export interface Course {
   semester: number // 1, 2
   credits: number
   difficulty: 'Easy' | 'Medium' | 'Hard'
+  featured?: boolean // shown in the homepage's curated set
+  examCritical?: boolean // gets the teal "Exam-critical" treatment + "Start quiz" CTA
   lecturer?: string
   assessmentStructure?: {
     assignment?: number

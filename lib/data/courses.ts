@@ -12,6 +12,7 @@ export const courses: Course[] = [
     semester: 1,
     credits: 2,
     difficulty: 'Easy',
+    featured: true,
     textbooks: [
       {
         title: 'Entrepreneurship: Successfully Launching New Ventures',
@@ -77,6 +78,7 @@ export const courses: Course[] = [
     semester: 1,
     credits: 3,
     difficulty: 'Medium',
+    featured: true,
     keyTakeaways: [
       {
         title: 'The True Purpose of Business Goes Beyond Profit',
@@ -392,6 +394,8 @@ export const courses: Course[] = [
     semester: 1,
     credits: 2,
     difficulty: 'Hard',
+    featured: true,
+    examCritical: true,
     textbooks: [
       {
         title: 'Financial Accounting',

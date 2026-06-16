@@ -2,6 +2,7 @@
 
 import { Resource } from '@/lib/types'
 import { FileText, MessageCircle, LinkIcon, FileJson } from 'lucide-react'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 interface ResourceCardProps {
   resource: Resource
@@ -35,10 +36,9 @@ export function ResourceCard({ resource, courseCode }: ResourceCardProps) {
     return <span className={`text-xs font-semibold px-2 py-1 rounded ${badge.color}`}>{badge.label}</span>
   }
 
-  const whatsappMessage = encodeURIComponent(
+  const whatsappUrl = buildWhatsAppUrl(
     `Hi, I need the resource: "${resource.title}"${courseCode ? ` for ${courseCode}` : ''}. Please send it to me.`
   )
-  const whatsappUrl = `https://wa.me/2349018750976?text=${whatsappMessage}`
 
   return (
     <a

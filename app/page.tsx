@@ -1,380 +1,337 @@
-'use client'
-
+// Homepage — server-rendered. Layout, copy and section numbering follow
+// _design/home.html. Real course data flows in from lib/data/courses.ts;
+// stat figures are derived from that data where possible.
 import Link from 'next/link'
-import { ArrowRight, BookOpen, GraduationCap, MessageCircle, Users, Sparkles, MapPin, Clock, Target, Rocket, Building, Bell } from 'lucide-react'
 import { courses } from '@/lib/data/courses'
+import type { Course } from '@/lib/types'
+import { quizzes } from '@/lib/data/quizzes'
+import { Card, type CardProps } from '@/components/chrome/Card'
+import { HeroMotif } from '@/components/chrome/HeroMotif'
+import type { DifficultyLevel } from '@/components/chrome/SignalBar'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
+
+const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
+
+const intelIndex = (i: number) => `Intel ${String(i + 1).padStart(2, '0')}`
+
+const toLevel = (d: Course['difficulty']): DifficultyLevel =>
+  d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
+
+// Hard cap on the curated set the homepage surfaces. Even if more courses are
+// flagged featured later, only the first three reach this section; the rest
+// belong to /courses.
+const HOMEPAGE_FEATURED_COUNT = 3
+
+function cardPropsFor(course: Course, index: number): CardProps {
+  const quiz = quizzes[course.slug]
+  const critical = course.examCritical === true
+  return {
+    intelIndex: intelIndex(index),
+    code: course.code,
+    title: course.title,
+    // The teal flag is the visual signal for exam-critical; the CTA changes
+    // alongside it (secondary "Start quiz" added) but "View course" stays
+    // primary on every card so no dossier is unreachable.
+    flag: critical
+      ? { kind: 'critical', label: 'Exam-critical' }
+      : { kind: 'tracked', label: 'Tracked' },
+    level: String(course.level),
+    credits: `${course.credits} CR`,
+    questions: quiz ? String(quiz.totalQuestions) : '—',
+    timeLimit: quiz ? `${quiz.quizDurationMinutes} MIN` : '—',
+    difficulty: toLevel(course.difficulty),
+    cta: {
+      label: 'View course',
+      href: `/courses/${course.slug}`,
+      variant: 'primary',
+    },
+    secondaryCta: critical
+      ? {
+          label: 'Start quiz',
+          href: `/courses/${course.slug}/quiz`,
+          variant: 'secondary',
+          withArrow: true,
+        }
+      : undefined,
+  }
+}
+
+function pickFeatured(all: ReadonlyArray<Course>): ReadonlyArray<Course> {
+  const flagged = all.filter((c) => c.featured).slice(0, HOMEPAGE_FEATURED_COUNT)
+  // Fallback: if nothing is flagged, never render an empty section.
+  return flagged.length > 0 ? flagged : all.slice(0, HOMEPAGE_FEATURED_COUNT)
+}
 
 export default function HomePage() {
+  const courseCount = courses.length
+  const textbookCount = courses.reduce((sum, c) => sum + c.textbooks.length, 0)
+  const courseCountLabel = String(courseCount).padStart(2, '0')
+  // Source order is preserved by pickFeatured. The render order then pulls
+  // examCritical to the front so the lone teal moment leads the grid, matching
+  // the comp. Array.prototype.sort is stable in modern engines, so the rest
+  // keep their relative source order. courses.ts itself is untouched.
+  const featured = [...pickFeatured(courses)].sort(
+    // Coerce undefined→0 so the comparator is well-defined for unflagged
+    // courses (Number(undefined) is NaN, which would leave the sort unstable).
+    (a, b) => Number(b.examCritical === true) - Number(a.examCritical === true),
+  )
+
   return (
-    <div>
-      {/* Hero Section */}
-      <section className="bg-blue-900 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">
-          <div className="text-center space-y-6">
-            <div className="w-16 h-16 bg-white/10 rounded-xl flex items-center justify-center mx-auto">
-              <BookOpen className="w-8 h-8 text-white" />
-            </div>
-
-            <h1 className="text-4xl md:text-5xl font-bold text-balance">
-              CampusIntel
-            </h1>
-            <p className="text-xl text-blue-100 font-medium">
-              Your Academic Intelligence Hub
-            </p>
-
-            <p className="text-blue-200 max-w-2xl mx-auto text-balance leading-relaxed">
-              Access course materials, textbooks, lecture notes, quizzes, and past exam questions for Department of Business Administration, University of Lagos -- 200 Level, First Semester.
-            </p>
-
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-              <Link
-                href="/courses"
-                className="inline-flex items-center justify-center gap-2 bg-white text-blue-900 hover:bg-blue-50 h-14 px-8 text-base font-semibold rounded-md transition-colors min-h-[56px]"
-              >
-                Explore All Courses
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-
-              <a
-                href="https://wa.me/2349018750976?text=Hello%2C%20I%20need%20help%20with%20CampusIntel"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 border-2 border-white/30 text-white hover:bg-white/10 h-14 px-8 text-base font-semibold rounded-md transition-colors min-h-[56px]"
-              >
-                <MessageCircle className="w-5 h-5" />
-                WhatsApp Us
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Quick Stats */}
-      <section className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div>
-              <p className="text-3xl font-bold text-blue-900">{courses.length}</p>
-              <p className="text-sm text-slate-500 mt-1">Courses</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold text-blue-900">
-                {courses.reduce((sum, c) => sum + c.textbooks.length, 0)}
-              </p>
-              <p className="text-sm text-slate-500 mt-1">Recommended Textbooks</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold text-blue-900">50+</p>
-              <p className="text-sm text-slate-500 mt-1">Quiz Qs / Course</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold text-amber-600">Coming Soon</p>
-              <p className="text-sm text-slate-500 mt-1">Peer Tutors</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Browse Section */}
-      <section className="bg-slate-50 py-12 md:py-16">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl font-bold text-blue-900 mb-2">
-            Start Practicing
-          </h2>
-          <p className="text-slate-500 mb-8">200 Level, First Semester -- Department of Business Administration</p>
-
-          <Link
-            href="/courses"
-            className="flex items-center justify-center gap-2 w-full bg-blue-900 hover:bg-blue-800 text-white h-14 text-base font-semibold rounded-md transition-colors"
-          >
-            View All {courses.length} Courses
-            <ArrowRight className="w-5 h-5" />
-          </Link>
-        </div>
-      </section>
-
-      {/* Academic Support Section */}
-      <section className="bg-white py-12 md:py-16 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <Sparkles className="w-6 h-6 text-blue-900" />
-              <span className="text-sm font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full">Coming Soon</span>
-            </div>
-            <h2 className="text-2xl md:text-3xl font-bold text-blue-900 mb-2">
-              Academic Support
-            </h2>
-            <p className="text-slate-600 max-w-xl mx-auto">
-              Beyond study materials, we are building a way to connect you with top-performing students who can help you master difficult courses.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Find a Tutor Card */}
-            <Link href="/tutors" className="block">
-              <div className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg border border-blue-200 p-6 hover:border-blue-400 hover:shadow-md transition-all h-full">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-blue-900 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Users className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-bold text-slate-900 text-lg">Find a Tutor</h3>
-                      <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Coming Soon</span>
-                    </div>
-                    <p className="text-sm text-slate-600 mb-4">
-                      Connect with verified peer tutors who scored A grades in courses like Statistics, Mathematics, and Accounting.
-                    </p>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Bell className="w-4 h-4 text-blue-600" />
-                      <span className="text-blue-600 font-medium">Join the waitlist</span>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-5 h-5 text-blue-900 flex-shrink-0" />
-                </div>
-              </div>
+    <>
+      <header className="hero" data-screen-label="Hero">
+        <HeroMotif />
+        <div className="wrap">
+          <span className="hero-stamp">
+            <ApertureStamp />
+            University of Lagos · Academic Intelligence
+          </span>
+          <h1>Know what&apos;s coming.</h1>
+          <p className="hero-lead">
+            Intelligence on your courses: past questions, decoded exam patterns,
+            and the materials that actually move your grade.
+          </p>
+          <div className="hero-cta">
+            <Link className="btn btn-primary" href="/courses">
+              Browse courses <span className="arrow">&rarr;</span>
             </Link>
-
-            {/* Become a Tutor Card */}
-            <Link href="/become-a-tutor" className="block">
-              <div className="bg-gradient-to-br from-green-50 to-slate-50 rounded-lg border border-green-200 p-6 hover:border-green-400 hover:shadow-md transition-all h-full">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <GraduationCap className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-bold text-slate-900 text-lg">Become a Tutor</h3>
-                      <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded">Apply Now</span>
-                    </div>
-                    <p className="text-sm text-slate-600 mb-4">
-                      Are you a 300L+ student with strong grades? Apply to earn money by helping juniors succeed.
-                    </p>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-green-600 font-medium">Set your own rates</span>
-                      <span className="text-slate-500">Flexible schedule</span>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-5 h-5 text-green-600 flex-shrink-0" />
-                </div>
-              </div>
-            </Link>
+            <a
+              className="btn btn-secondary"
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Message on WhatsApp
+            </a>
           </div>
+        </div>
+      </header>
+
+      <section className="stats-band" aria-label="At a glance">
+        <div className="wrap">
+          <div className="stats ticks">
+            <div className="stat">
+              <div className="v"><span className="num">{courseCountLabel}</span></div>
+              <div className="k">Courses decoded</div>
+            </div>
+            <div className="stat">
+              <div className="v">
+                <span className="num">{textbookCount}</span>
+                <span className="u">+</span>
+              </div>
+              <div className="k">Recommended textbooks</div>
+            </div>
+            <div className="stat">
+              <div className="v">
+                <span className="num">50</span>
+                <span className="u">+</span>
+              </div>
+              <div className="k">Questions / course</div>
+            </div>
+            <div className="stat">
+              <div className="v soon"><span className="soon-txt">Coming soon</span></div>
+              <div className="k">Peer tutors</div>
+            </div>
+          </div>
+          <p className="coverage">
+            <span className="cov-k">Now covering</span>
+            {' '}<span className="cov-sep">·</span>{' '}Business Administration
+            {' '}<span className="cov-sep">·</span>{' '}200 Level
+            {' '}<span className="cov-sep">·</span>{' '}First Semester
+          </p>
         </div>
       </section>
 
-      {/* Course Preview */}
-      <section className="bg-slate-50 py-12 md:py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold text-blue-900 mb-8 text-center">
-            Available Courses
-          </h2>
+      <section className="sec" id="courses" data-screen-label="Course intel">
+        <div className="wrap">
+          <div className="sec-head">
+            <div>
+              <div className="sk"><span className="n">01 /</span> Course intel</div>
+              <h2>The intel on your courses</h2>
+            </div>
+            <p className="note">
+              Every course is a dossier: the codes, the question bank, the time
+              pressure, the difficulty. Read it before you sit it.
+            </p>
+          </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courses.map((course) => (
-              <Link key={course.id} href={`/courses/${course.slug}`} className="block">
-                <div className="border border-slate-200 rounded-lg p-5 hover:border-blue-900 hover:shadow-md transition-all bg-white h-full">
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="text-xs font-bold text-blue-900 bg-blue-50 px-2 py-1 rounded">
-                      {course.code}
-                    </span>
-                    <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                      course.difficulty === 'Easy'
-                        ? 'bg-green-100 text-green-700'
-                        : course.difficulty === 'Medium'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : course.difficulty === 'Hard'
-                            ? 'bg-orange-100 text-orange-700'
-                            : 'bg-red-100 text-red-700'
-                    }`}>
-                      {course.difficulty}
-                    </span>
-                  </div>
-                  <h3 className="font-bold text-slate-900 mb-1">{course.title}</h3>
-                  <p className="text-sm text-slate-500 mb-2">
-                    {course.credits} credits
-                  </p>
-                  <p className="text-xs font-semibold text-blue-900 flex items-center gap-1">
-                    <ArrowRight className="w-3 h-3" />
-                    Click to view notes, quizzes & study materials
-                  </p>
-                </div>
-              </Link>
+          <div className="course-grid">
+            {featured.map((course, i) => (
+              <Card key={course.id} {...cardPropsFor(course, i)} />
             ))}
           </div>
-        </div>
-      </section>
 
-      {/* Features Section */}
-      <section className="bg-white py-12 md:py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl font-bold text-blue-900 mb-12 text-center">Why CampusIntel?</h2>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <BookOpen className="w-6 h-6 text-blue-900" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-2">Study Notes & Quizzes</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">
-                Topic-by-topic study notes with calculator tips, plus timed practice quizzes for each course.
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <GraduationCap className="w-6 h-6 text-blue-900" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-2">Exam Focus Areas</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">
-                Know exactly what to study with curated exam focus topics for each course.
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Users className="w-6 h-6 text-blue-900" />
-              </div>
-              <h3 className="font-bold text-slate-900 mb-2">Peer Tutoring</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">
-                Coming soon: Get 1-on-1 help from verified top students who have mastered the courses.
-              </p>
-            </div>
+          <div className="viewall">
+            <Link className="glink" href="/courses">
+              View all {courseCount} courses <span className="arrow">&rarr;</span>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Expansion Roadmap */}
-      <section className="bg-slate-50 py-12 md:py-16">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <Rocket className="w-6 h-6 text-blue-900" />
+      <section className="sec" id="bookmarks" data-screen-label="What you get">
+        <div className="wrap">
+          <div className="sec-head">
+            <div>
+              <div className="sk"><span className="n">02 /</span> The dossier</div>
+              <h2>What&apos;s inside every file</h2>
             </div>
-            <h2 className="text-2xl md:text-3xl font-bold text-blue-900 mb-2">
-              Expansion Roadmap
-            </h2>
-            <p className="text-slate-600">
-              CampusIntel is growing. Here is what is coming next.
+            <p className="note">
+              Four kinds of intelligence per course, decoded down to what the
+              exam actually rewards.
             </p>
           </div>
 
-          <div className="space-y-4">
-            {/* Current Phase */}
-            <div className="bg-white rounded-lg border-2 border-blue-900 p-5">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-blue-900 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Target className="w-5 h-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-slate-900">Phase 1: Business Admin 200L</h3>
-                    <span className="text-xs font-semibold text-white bg-blue-900 px-2 py-0.5 rounded">Current</span>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    Complete coverage of all first semester courses with quizzes, notes, and study materials.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Coming Soon */}
-            <div className="bg-white rounded-lg border border-slate-200 p-5 opacity-80">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Clock className="w-5 h-5 text-slate-500" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-slate-700">Phase 2: 200L Second Semester + Tutoring</h3>
-                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Q2 2026</span>
-                  </div>
-                  <p className="text-sm text-slate-500">
-                    Adding second semester courses and launching peer tutoring marketplace.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg border border-slate-200 p-5 opacity-70">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Building className="w-5 h-5 text-slate-500" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-slate-700">Phase 3: More Departments</h3>
-                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Coming</span>
-                  </div>
-                  <p className="text-sm text-slate-500">
-                    Expanding to Accounting, Economics, and other departments at UNILAG.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg border border-slate-200 p-5 opacity-60">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-5 h-5 text-slate-500" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-slate-700">Phase 4: More Universities</h3>
-                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Future</span>
-                  </div>
-                  <p className="text-sm text-slate-500">
-                    Bringing CampusIntel to other Nigerian universities.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 text-center">
-            <p className="text-sm text-slate-500 mb-4">Want us to cover your department or university sooner?</p>
-            <a
-              href="https://wa.me/2349018750976?text=I%20want%20CampusIntel%20to%20expand%20to%20my%20department%2Funiversity"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-semibold text-green-600 hover:text-green-700 bg-green-50 px-4 py-3 rounded-lg min-h-[44px]"
-            >
-              <MessageCircle className="w-5 h-5" />
-              Let us know on WhatsApp
-            </a>
+          <div className="index">
+            <DossierItem
+              n="Intel 01"
+              title="Study notes, topic by topic"
+              tag="Per topic"
+              body="Decoded summaries for every topic on the syllabus: the signal pulled out of the 400-page textbook."
+            />
+            <DossierItem
+              n="Intel 02"
+              title="Timed practice quizzes"
+              tag="Timed"
+              body="50+ questions per course, run under real exam time pressure so the clock never surprises you."
+            />
+            <DossierItem
+              n="Intel 03"
+              title="Curated exam-focus areas"
+              tag="Exam-weighted"
+              body="The topics that actually recur, flagged from years of past papers, ranked by how often they're tested."
+            />
+            <DossierItem
+              n="Intel 04"
+              title="Theory questions"
+              tag="Long-answer"
+              body="Model long-answer questions with the structure examiners reward: not just the right point, the right shape."
+            />
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="bg-blue-900 text-white py-12 md:py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
-          <h2 className="text-3xl md:text-4xl font-bold text-balance">Ready to Excel?</h2>
-          <p className="text-blue-200 text-lg max-w-2xl mx-auto">
-            Start exploring courses, study notes, and practice quizzes. Need help? Reach out on WhatsApp.
-          </p>
+      <section className="sec" id="tutors" data-screen-label="Academic support">
+        <div className="wrap">
+          <div className="sec-head">
+            <div>
+              <div className="sk"><span className="n">03 /</span> Support</div>
+              <h2>Backup, when you need a person</h2>
+            </div>
+            <p className="note">
+              Self-serve intel covers most of it. Peer tutoring is the human
+              layer, rolling out next.
+            </p>
+          </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Link
-              href="/courses"
-              className="inline-flex items-center justify-center bg-white text-blue-900 hover:bg-blue-50 h-14 px-8 text-base font-semibold rounded-md transition-colors min-h-[56px]"
-            >
-              Browse All Courses
-            </Link>
-
-            <a
-              href="https://wa.me/2349018750976"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 border-2 border-white/30 text-white hover:bg-white/10 h-14 px-8 text-base font-semibold rounded-md transition-colors min-h-[56px]"
-            >
-              <MessageCircle className="w-5 h-5" />
-              Message Us
-            </a>
+          <div className="support ticks">
+            <div className="sup-head">
+              <span className="sup-label">Support // Peer tutoring</span>
+              <span className="sup-soon">Coming soon</span>
+            </div>
+            <div className="sup-body">
+              <div>
+                <h3>One-on-one help from students who&apos;ve aced the paper.</h3>
+                <p>
+                  Pair with a senior who has already decoded the course. Sessions
+                  open next semester. If you&apos;re 300L or above, you can be on
+                  the other side of the table.
+                </p>
+              </div>
+              <div className="sup-links">
+                <div className="sl-row">
+                  <Link className="glink" href="/tutors">
+                    Join the waitlist <span className="arrow">&rarr;</span>
+                  </Link>
+                  <span className="sl-note">Get notified when tutoring opens</span>
+                </div>
+                <div className="sl-row">
+                  <Link className="glink" href="/become-a-tutor">
+                    Apply to tutor <span className="arrow">&rarr;</span>
+                  </Link>
+                  <span className="sl-note">300L+ students · earn while you help</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
+
+      <section className="sec" id="contact" data-screen-label="Closing CTA">
+        <div className="wrap">
+          <div className="closing">
+            <ClosingMotif />
+            <div className="cl-inner">
+              <span className="cl-kicker">File 001 · University of Lagos</span>
+              <h2>Walk in already knowing.</h2>
+              <p>
+                Pull the intel on your courses before the hall does. Start with
+                the question bank that matters.
+              </p>
+              <div className="cl-cta">
+                <Link className="btn btn-primary" href="/courses">
+                  Browse courses <span className="arrow">&rarr;</span>
+                </Link>
+                <a
+                  className="btn btn-secondary"
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Message on WhatsApp
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
+function ClosingMotif() {
+  // The closing CTA sits the motif centered behind the headline, scaled up
+  // and even fainter (--n-100). Distinct enough from .hero-motif that it
+  // gets its own inline render rather than reusing HeroMotif.
+  return (
+    <svg className="cl-motif" viewBox="0 0 100 100" aria-hidden="true">
+      <path
+        d="M 76.2 68.35 A 32 32 0 1 1 76.2 31.65"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+      <circle cx="84.5" cy="50" r="3.1" fill="currentColor" />
+    </svg>
+  )
+}
+
+function ApertureStamp() {
+  return (
+    <svg className="ap" viewBox="0 0 100 100" width={13} height={13} aria-hidden="true">
+      <path
+        d="M 76.2 68.35 A 32 32 0 1 1 76.2 31.65"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={13}
+        strokeLinecap="round"
+      />
+      <circle cx="84.5" cy="50" r={9} fill="#0E9180" />
+    </svg>
+  )
+}
+
+type DossierItemProps = { n: string; title: string; tag: string; body: string }
+
+function DossierItem({ n, title, tag, body }: DossierItemProps) {
+  return (
+    <div className="ix">
+      <div className="ix-row-idx"><span className="ix-idx">{n}</span></div>
+      <div className="ix-top">
+        <h3>{title}</h3>
+        <span className="ix-tag">{tag}</span>
+      </div>
+      <p>{body}</p>
     </div>
   )
 }

@@ -3750,7 +3750,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: 'The evolution of management thought shows that:',
         options: ['Management ideas never change', 'Management theories evolve with organisational needs', 'Classical theory is always correct', 'Behavioural theory replaced all others'],
         correctAnswer: 1,
-      },,
+      },
 {
         id: 321,
         section: 'Exam Practice (Past Test Questions)',

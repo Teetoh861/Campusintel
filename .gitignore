@@ -8,3 +8,8 @@ node_modules/
 .next/
 .env*.local
 .DS_Store
+next-env.d.ts
+
+# Design scratch + build artifacts
+_design/
+tsconfig.tsbuildinfo

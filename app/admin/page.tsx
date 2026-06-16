@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Lock, MessageCircle, Upload, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { courses } from '@/lib/data/courses'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 const ADMIN_PASSWORD = 'admin123' // Simple hardcoded password for MVP
 
@@ -71,7 +72,7 @@ export default function AdminPage() {
               For full admin features, please contact us on WhatsApp:
             </p>
             <a
-              href="https://wa.me/2349018750976?text=I%20need%20admin%20access%20to%20CampusIntel"
+              href={buildWhatsAppUrl('I need admin access to CampusIntel')}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -195,7 +196,7 @@ export default function AdminPage() {
               To upload lecture notes, PDFs, or past questions for any course, use the button below:
             </p>
             <a
-              href="https://wa.me/2349018750976?text=I%20have%20course%20materials%20to%20upload%20to%20CampusIntel"
+              href={buildWhatsAppUrl('I have course materials to upload to CampusIntel')}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -213,7 +214,7 @@ export default function AdminPage() {
               Export or backup system data and manage course information:
             </p>
             <a
-              href="https://wa.me/2349018750976?text=I%20need%20to%20modify%20course%20data%20in%20CampusIntel"
+              href={buildWhatsAppUrl('I need to modify course data in CampusIntel')}
               target="_blank"
               rel="noopener noreferrer"
             >
