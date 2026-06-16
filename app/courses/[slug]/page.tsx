@@ -432,19 +432,16 @@ function Resources({
     <>
       <div className="resources">
         {items.map((r) => (
-          <a
+          <Link
             key={r.id}
             className="res"
-            href={r.url ?? '#'}
-            {...(r.url
-              ? { target: '_blank', rel: 'noopener noreferrer' }
-              : {})}
+            href={`/courses/${slug}/materials`}
           >
             <span className="res-ic">[ {resourceTag(r.type)} ]</span>
             <span className="res-name">{r.title}</span>
             {r.fileSize ? <span className="res-size">{r.fileSize}</span> : null}
-            <span className="res-dl">Download ↓</span>
-          </a>
+            <span className="res-dl">Request &rarr;</span>
+          </Link>
         ))}
       </div>
       <div className="res-materials">{materialsLink}</div>
