@@ -248,7 +248,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
                   kicker="Resources"
                   h2="Files to download"
                 >
-                  <Resources items={course.resources} />
+                  <Resources items={course.resources} slug={course.slug} />
                 </Section>
               ) : null}
             </div>
@@ -397,7 +397,25 @@ function TheoryList({ items }: { items: ReadonlyArray<TheoryQuestion> }) {
   )
 }
 
-function Resources({ items }: { items: ReadonlyArray<Resource> }) {
+function Resources({
+  items,
+  slug,
+}: {
+  items: ReadonlyArray<Resource>
+  slug: string
+}) {
+  // Standing path to the WhatsApp request/share page — offered whether or not
+  // this course has hosted files, so students can always ask for or contribute
+  // materials.
+  const materialsLink = (
+    <Link className="glink" href={`/courses/${slug}/materials`}>
+      Request or share materials{' '}
+      <span className="arrow" aria-hidden="true">
+        &rarr;
+      </span>
+    </Link>
+  )
+
   if (items.length === 0) {
     return (
       <div className="res-empty ticks">
@@ -406,27 +424,31 @@ function Resources({ items }: { items: ReadonlyArray<Resource> }) {
           Lecture notes, past questions and worked examples will appear here as
           coverage expands. Check back soon.
         </p>
+        <div className="res-materials">{materialsLink}</div>
       </div>
     )
   }
   return (
-    <div className="resources">
-      {items.map((r) => (
-        <a
-          key={r.id}
-          className="res"
-          href={r.url ?? '#'}
-          {...(r.url
-            ? { target: '_blank', rel: 'noopener noreferrer' }
-            : {})}
-        >
-          <span className="res-ic">[ {resourceTag(r.type)} ]</span>
-          <span className="res-name">{r.title}</span>
-          {r.fileSize ? <span className="res-size">{r.fileSize}</span> : null}
-          <span className="res-dl">Download ↓</span>
-        </a>
-      ))}
-    </div>
+    <>
+      <div className="resources">
+        {items.map((r) => (
+          <a
+            key={r.id}
+            className="res"
+            href={r.url ?? '#'}
+            {...(r.url
+              ? { target: '_blank', rel: 'noopener noreferrer' }
+              : {})}
+          >
+            <span className="res-ic">[ {resourceTag(r.type)} ]</span>
+            <span className="res-name">{r.title}</span>
+            {r.fileSize ? <span className="res-size">{r.fileSize}</span> : null}
+            <span className="res-dl">Download ↓</span>
+          </a>
+        ))}
+      </div>
+      <div className="res-materials">{materialsLink}</div>
+    </>
   )
 }
 

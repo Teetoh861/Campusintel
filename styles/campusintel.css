@@ -418,6 +418,10 @@ img,svg{display:block;}
 .res-empty{border-top:var(--hair);border-bottom:var(--hair);padding:26px 2px;}
 .res-empty .re-label{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--n-600);}
 .res-empty p{font-size:15px;line-height:1.55;color:var(--n-600);margin-top:9px;max-width:54ch;}
+/* Request/share materials entry point — sits under the empty state or below
+   the resource list. */
+.res-materials{margin-top:18px;}
+.resources + .res-materials{margin-top:20px;}
 
 @media(max-width:520px){
   .res .res-size{display:none;}
