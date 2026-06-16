@@ -8,7 +8,7 @@
 // is already centralized in WHATSAPP_NUMBER.
 import { WHATSAPP_NUMBER } from './whatsapp'
 
-export const CONTACT_EMAIL = 'support@campusintel.com'
+export const CONTACT_EMAIL = 'support@campusintell.com'
 
 // Local-format (Nigerian) rendering of the support number, derived from
 // WHATSAPP_NUMBER: "2349018750976" -> "0901-875-0976". Falls back to the raw
