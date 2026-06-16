@@ -32,6 +32,10 @@ export type CardProps = {
   difficulty: DifficultyLevel
   difficultyLabel?: string
   cta: CardCta
+  // Optional extra action sitting next to the primary CTA. Used for the
+  // exam-critical treatment where "View course" stays primary and "Start
+  // quiz" is offered as an additional secondary action.
+  secondaryCta?: CardCta
   updated?: string
   ticks?: boolean
 }
@@ -49,6 +53,7 @@ export function Card({
   difficulty,
   difficultyLabel,
   cta,
+  secondaryCta,
   updated,
   ticks = true,
 }: CardProps) {
@@ -56,6 +61,8 @@ export function Card({
   const ctaVariant = cta.variant ?? 'secondary'
   const ctaClass = `btn btn-${ctaVariant} btn-sm`
   const diffLabel = difficultyLabel ?? difficulty.toUpperCase()
+  const secondaryVariant = secondaryCta?.variant ?? 'secondary'
+  const secondaryClass = `btn btn-${secondaryVariant} btn-sm`
 
   return (
     <article className={articleClass}>
@@ -89,14 +96,38 @@ export function Card({
       </div>
 
       <div className="cf">
-        <Link className={ctaClass} href={cta.href}>
-          {cta.label}
-          {cta.withArrow ? <span className="arrow">&rarr;</span> : null}
-        </Link>
+        {secondaryCta ? (
+          // Wrap both actions in a single flex item so the .cf row stays a
+          // tidy [actions group] [updated] layout. The pair sits primary-then-
+          // secondary in the same row, wrapping to a column on cards too
+          // narrow to fit them — mirroring the .hero-cta column→row pattern.
+          <div style={cfActionsStyle}>
+            <Link className={ctaClass} href={cta.href}>
+              {cta.label}
+              {cta.withArrow ? <span className="arrow">&rarr;</span> : null}
+            </Link>
+            <Link className={secondaryClass} href={secondaryCta.href}>
+              {secondaryCta.label}
+              {secondaryCta.withArrow ? <span className="arrow">&rarr;</span> : null}
+            </Link>
+          </div>
+        ) : (
+          <Link className={ctaClass} href={cta.href}>
+            {cta.label}
+            {cta.withArrow ? <span className="arrow">&rarr;</span> : null}
+          </Link>
+        )}
         {updated ? <span className="upd">{updated}</span> : null}
       </div>
     </article>
   )
+}
+
+const cfActionsStyle = {
+  display: 'flex',
+  flexWrap: 'wrap' as const,
+  alignItems: 'center',
+  gap: 8,
 }
 
 type RowProps = {

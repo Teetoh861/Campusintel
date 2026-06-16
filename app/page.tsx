@@ -29,6 +29,9 @@ function cardPropsFor(course: Course, index: number): CardProps {
     intelIndex: intelIndex(index),
     code: course.code,
     title: course.title,
+    // The teal flag is the visual signal for exam-critical; the CTA changes
+    // alongside it (secondary "Start quiz" added) but "View course" stays
+    // primary on every card so no dossier is unreachable.
     flag: critical
       ? { kind: 'critical', label: 'Exam-critical' }
       : { kind: 'tracked', label: 'Tracked' },
@@ -37,18 +40,19 @@ function cardPropsFor(course: Course, index: number): CardProps {
     questions: quiz ? String(quiz.totalQuestions) : '—',
     timeLimit: quiz ? `${quiz.quizDurationMinutes} MIN` : '—',
     difficulty: toLevel(course.difficulty),
-    cta: critical
+    cta: {
+      label: 'View course',
+      href: `/courses/${course.slug}`,
+      variant: 'primary',
+    },
+    secondaryCta: critical
       ? {
           label: 'Start quiz',
           href: `/courses/${course.slug}/quiz`,
-          variant: 'primary',
+          variant: 'secondary',
           withArrow: true,
         }
-      : {
-          label: 'View course',
-          href: `/courses/${course.slug}`,
-          variant: 'secondary',
-        },
+      : undefined,
   }
 }
 

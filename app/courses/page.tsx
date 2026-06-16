@@ -25,6 +25,9 @@ function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
       intelIndex: fileIndex(i),
       code: course.code,
       title: course.title,
+      // Teal flag stays the lone visual signal for exam-critical. The CTA
+      // pair (primary "View course" + secondary "Start quiz") keeps every
+      // dossier reachable, including the critical one.
       flag: critical
         ? { kind: 'critical', label: 'Exam-critical' }
         : { kind: 'tracked', label: 'Tracked' },
@@ -33,18 +36,19 @@ function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
       questions: quiz ? String(quiz.totalQuestions) : '—',
       timeLimit: quiz ? `${quiz.quizDurationMinutes} MIN` : '—',
       difficulty: toLevel(course.difficulty),
-      cta: critical
+      cta: {
+        label: 'View course',
+        href: `/courses/${course.slug}`,
+        variant: 'primary',
+      },
+      secondaryCta: critical
         ? {
             label: 'Start quiz',
             href: `/courses/${course.slug}/quiz`,
-            variant: 'primary',
+            variant: 'secondary',
             withArrow: true,
           }
-        : {
-            label: 'View course',
-            href: `/courses/${course.slug}`,
-            variant: 'secondary',
-          },
+        : undefined,
     }
     return {
       id: course.id,
