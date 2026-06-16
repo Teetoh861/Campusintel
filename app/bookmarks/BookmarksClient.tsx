@@ -6,7 +6,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import { Card, type CardProps } from '@/components/chrome/Card'
 
@@ -14,6 +14,9 @@ import { Card, type CardProps } from '@/components/chrome/Card'
 // codes (e.g. ["ACC201", "BUA203"]). We also accept slugs so a future
 // "save" toggle on the course page can write whichever is most convenient.
 const STORAGE_KEY = 'ci_bookmarks_v1'
+// Same-tab sync signal shared with app/courses/[slug]/BookmarkButton.tsx, so
+// removing here updates a bookmark button mounted elsewhere on the page.
+const CHANGE_EVENT = 'ci:bookmarks-changed'
 
 export type BookmarkableCourse = {
   id: string
@@ -42,6 +45,32 @@ export function BookmarksClient({ catalog }: Props) {
   useEffect(() => {
     setSavedKeys(readSavedKeysSafe())
     setStatus('ready')
+    // Stay in step if the set changes elsewhere (another tab, or a bookmark
+    // button on this same document).
+    const resync = () => setSavedKeys(readSavedKeysSafe())
+    window.addEventListener('storage', resync)
+    window.addEventListener(CHANGE_EVENT, resync)
+    return () => {
+      window.removeEventListener('storage', resync)
+      window.removeEventListener(CHANGE_EVENT, resync)
+    }
+  }, [])
+
+  // Remove a course from the saved set: drop both its slug and code (storage
+  // accepts either form), persist, update the list in place, and notify any
+  // bookmark button mounted on this document.
+  const removeCourse = useCallback((course: BookmarkableCourse) => {
+    const next = readSavedKeysSafe().filter(
+      (k) => k !== course.slug && k !== course.code,
+    )
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      // Storage unavailable — still drop it from the in-memory list below so
+      // the UI responds to the click.
+    }
+    setSavedKeys(next)
+    window.dispatchEvent(new Event(CHANGE_EVENT))
   }, [])
 
   const byKey = new Map<string, BookmarkableCourse>()
@@ -133,6 +162,19 @@ export function BookmarksClient({ catalog }: Props) {
                 key={c.id}
                 {...c.cardProps}
                 intelIndex={fileIndex(i)}
+                footerAction={
+                  <button
+                    type="button"
+                    className="bm-unsave"
+                    onClick={() => removeCourse(c)}
+                    aria-label={`Remove ${c.code} from bookmarks`}
+                  >
+                    <span className="x" aria-hidden="true">
+                      ✕
+                    </span>{' '}
+                    Remove
+                  </button>
+                }
               />
             ))}
           </div>

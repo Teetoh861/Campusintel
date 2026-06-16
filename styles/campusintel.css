@@ -77,6 +77,12 @@ img,svg{display:block;}
 .btn-ghost{background:transparent;color:var(--p-600);}
 .btn-ghost:hover{background:var(--p-50);}
 .btn-ghost:active{background:var(--p-100);color:var(--p-700);}
+/* Saved/bookmarked state — teal signal tint (same tokens as the quiz timer)
+   so an active bookmark reads unmistakably without competing with the primary
+   Start-quiz button. */
+.btn-saved{background:var(--t-50);color:var(--t-700);border-color:var(--t-500);}
+.btn-saved:hover{background:var(--t-50);border-color:var(--t-600);}
+.btn-saved:active{background:var(--t-50);border-color:var(--t-700);}
 .btn-sm{min-height:42px;padding:10px 18px;font-size:14px;}
 
 /* inline ghost link with arrow */

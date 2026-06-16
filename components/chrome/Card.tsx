@@ -38,6 +38,10 @@ export type CardProps = {
   secondaryCta?: CardCta
   updated?: string
   ticks?: boolean
+  // Optional interactive node appended to the right of the card footer. Only
+  // the bookmarks list sets this (a Remove control); when absent the footer
+  // renders exactly as before, so homepage/directory cards are unchanged.
+  footerAction?: React.ReactNode
 }
 
 export function Card({
@@ -56,6 +60,7 @@ export function Card({
   secondaryCta,
   updated,
   ticks = true,
+  footerAction,
 }: CardProps) {
   const articleClass = ticks ? 'course ticks' : 'course'
   const ctaVariant = cta.variant ?? 'secondary'
@@ -117,7 +122,17 @@ export function Card({
             {cta.withArrow ? <span className="arrow">&rarr;</span> : null}
           </Link>
         )}
-        {updated ? <span className="upd">{updated}</span> : null}
+        {footerAction ? (
+          // Bookmarks-only branch: group the (optional) updated stamp and the
+          // Remove control on the footer's right. Non-bookmark cards never set
+          // footerAction, so they keep the original [cta] [upd] markup.
+          <div className="bm-cf-right">
+            {updated ? <span className="upd">{updated}</span> : null}
+            {footerAction}
+          </div>
+        ) : updated ? (
+          <span className="upd">{updated}</span>
+        ) : null}
       </div>
     </article>
   )

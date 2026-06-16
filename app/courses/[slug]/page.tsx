@@ -19,6 +19,7 @@ import type {
 } from '@/lib/types'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
+import { BookmarkButton } from './BookmarkButton'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -112,9 +113,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
             <Link className="btn btn-primary" href={quizHref}>
               Start quiz <span className="arrow">&rarr;</span>
             </Link>
-            <Link className="btn btn-secondary" href="/bookmarks">
-              Bookmark course
-            </Link>
+            <BookmarkButton slug={course.slug} />
           </div>
 
           <div className="cover-meta">
@@ -276,9 +275,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 <Link className="btn btn-primary" href={quizHref}>
                   Start quiz <span className="arrow">&rarr;</span>
                 </Link>
-                <Link className="btn btn-secondary" href="/bookmarks">
-                  Bookmark course
-                </Link>
+                <BookmarkButton slug={course.slug} />
               </div>
             </div>
           </div>
