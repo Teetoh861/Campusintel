@@ -2,10 +2,10 @@
 // Server Component (no interactivity); the copyright year is computed at
 // render time so it stays current without manual edits.
 import Link from 'next/link'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import { CONTACT_EMAIL } from '@/lib/contact'
 
-const WHATSAPP_URL =
-  'https://wa.me/2349018750976?text=Hello%2C%20I%20need%20help%20with%20CampusIntel'
-const EMAIL = 'hello@campusintel.ng'
+const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
 
 export function Footer() {
   const year = new Date().getFullYear()
@@ -41,7 +41,7 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href={`mailto:${EMAIL}`}>{EMAIL}</a>
+                <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
               </li>
               <li><Link href="/become-a-tutor">Apply to tutor</Link></li>
             </ul>

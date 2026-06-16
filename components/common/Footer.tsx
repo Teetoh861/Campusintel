@@ -1,4 +1,6 @@
 import { Mail, MessageCircle, MapPin } from 'lucide-react'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import { CONTACT_EMAIL, contactPhoneDisplay } from '@/lib/contact'
 
 export function Footer() {
   return (
@@ -42,7 +44,7 @@ export function Footer() {
               </li>
               <li>
                 <a
-                  href="https://wa.me/2349018750976?text=I%20want%20to%20submit%20course%20resources"
+                  href={buildWhatsAppUrl('I want to submit course resources')}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-white transition-colors"
@@ -60,18 +62,18 @@ export function Footer() {
               <div className="flex items-center gap-2">
                 <MessageCircle className="w-4 h-4" />
                 <a
-                  href="https://wa.me/2349018750976"
+                  href={buildWhatsAppUrl()}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-white transition-colors"
                 >
-                  WhatsApp: 0901-875-0976
+                  WhatsApp: {contactPhoneDisplay()}
                 </a>
               </div>
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4" />
                 <a
-                  href="mailto:support@campusintel.com"
+                  href={`mailto:${CONTACT_EMAIL}`}
                   className="hover:text-white transition-colors"
                 >
                   Email Us

@@ -8,9 +8,9 @@ import { quizzes } from '@/lib/data/quizzes'
 import { Card, type CardProps } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
-const WHATSAPP_URL =
-  'https://wa.me/2349018750976?text=Hello%2C%20I%20need%20help%20with%20CampusIntel'
+const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
 
 const intelIndex = (i: number) => `Intel ${String(i + 1).padStart(2, '0')}`
 

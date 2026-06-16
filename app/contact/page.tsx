@@ -5,8 +5,7 @@ import Link from 'next/link'
 import '../../styles/pages.css'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import { buildWhatsAppUrl, WHATSAPP_NUMBER } from '@/lib/whatsapp'
-
-const EMAIL = 'hello@campusintel.ng'
+import { CONTACT_EMAIL } from '@/lib/contact'
 
 // Pretty-print a digits-only number for display. Conservatively NG-specific:
 // +234 ### ### #### when the input is a 13-digit number starting 234,
@@ -71,10 +70,10 @@ export default function ContactPage() {
               <span className="cr-go">&rarr;</span>
             </a>
 
-            <a className="contact-row" href={`mailto:${EMAIL}`}>
+            <a className="contact-row" href={`mailto:${CONTACT_EMAIL}`}>
               <div className="cr-main">
                 <div className="cr-k">Email</div>
-                <div className="cr-v">{EMAIL}</div>
+                <div className="cr-v">{CONTACT_EMAIL}</div>
               </div>
               <span className="cr-go">&rarr;</span>
             </a>
