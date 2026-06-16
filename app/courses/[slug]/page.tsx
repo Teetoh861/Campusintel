@@ -1,406 +1,456 @@
-'use client'
-
-import { useState, useEffect } from 'react'
+// Course detail (/courses/[slug]) — server-rendered dossier. Section order
+// and structure follow _design/course.html exactly; the section index
+// numbers (01, 02, …) are computed dynamically so any section omitted for
+// lack of data leaves no gap in the sequence.
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { getCourseBySlug } from '@/lib/data/courses'
+import { notFound } from 'next/navigation'
+import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getTopicNotesByCourseSlug } from '@/lib/data/topic-notes'
-import { getTheoryContentBySlug } from '@/lib/data/theory-questions'
-import { ArrowLeft, Bookmark, Share2, BookOpen, Target, Zap, Upload, BarChart3, MessageCircle, GraduationCap, ChevronDown, ChevronUp, Lightbulb, HelpCircle, Star } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import {
+  getTheoryContentBySlug,
+  type TheoryQuestion,
+} from '@/lib/data/theory-questions'
+import type {
+  Course,
+  Topic,
+  Textbook,
+  KeyTakeaway,
+  Resource,
+} from '@/lib/types'
+import { HeroMotif } from '@/components/chrome/HeroMotif'
+import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
 
-export default function CoursePage() {
-  const params = useParams()
-  const slug = params.slug as string
+type PageProps = { params: Promise<{ slug: string }> }
 
-  const [isBookmarked, setIsBookmarked] = useState(false)
-  const [expandedTopics, setExpandedTopics] = useState<Record<number, boolean>>({})
+export function generateStaticParams() {
+  return courses.map((c) => ({ slug: c.slug }))
+}
 
+const toLevel = (d: Course['difficulty']): DifficultyLevel =>
+  d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
+
+const semesterLabel = (n: number) =>
+  n === 1 ? 'First' : n === 2 ? 'Second' : String(n)
+
+// Section descriptors — each appears in the page only when its data is
+// present. Numbers are assigned at render time from the visible subset, so
+// e.g. a course with no key takeaways has Overview = 01, Topics = 02, ….
+type SectionId =
+  | 'overview'
+  | 'takeaways'
+  | 'topics'
+  | 'exam'
+  | 'textbooks'
+  | 'theory'
+  | 'resources'
+
+type SectionDescriptor = {
+  id: SectionId
+  tocLabel: string
+  headLabel: string
+}
+
+const SECTION_ORDER: ReadonlyArray<SectionDescriptor> = [
+  { id: 'overview', tocLabel: 'Overview', headLabel: 'Overview' },
+  { id: 'takeaways', tocLabel: 'Key takeaways', headLabel: 'Key takeaways' },
+  { id: 'topics', tocLabel: 'Topics', headLabel: 'Topics' },
+  { id: 'exam', tocLabel: 'Exam focus', headLabel: 'Exam focus' },
+  { id: 'textbooks', tocLabel: 'Textbooks', headLabel: 'Recommended textbooks' },
+  { id: 'theory', tocLabel: 'Theory questions', headLabel: 'Theory questions' },
+  { id: 'resources', tocLabel: 'Resources', headLabel: 'Resources' },
+]
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+export default async function CourseDetailPage({ params }: PageProps) {
+  const { slug } = await params
   const course = getCourseBySlug(slug)
+  if (!course) notFound()
   const quiz = getQuizByCourseSlug(slug)
-  const topicNotes = getTopicNotesByCourseSlug(slug)
-  const theoryContent = getTheoryContentBySlug(slug)
+  const theory = getTheoryContentBySlug(slug)
 
-  const toggleTopic = (idx: number) => {
-    setExpandedTopics((prev) => ({ ...prev, [idx]: !prev[idx] }))
+  const takeaways = course.keyTakeaways ?? []
+  const theoryQuestions = theory?.theoryQuestions ?? []
+
+  // Build the list of sections that will actually render. Drives both the
+  // TOC and the per-section "01 / Overview" headers.
+  const visible: ReadonlyArray<SectionDescriptor> = SECTION_ORDER.filter((s) => {
+    if (s.id === 'overview') return Boolean(course.overview)
+    if (s.id === 'takeaways') return takeaways.length > 0
+    if (s.id === 'topics') return course.topics.length > 0
+    if (s.id === 'exam') return course.examFocus.length > 0
+    if (s.id === 'textbooks') return course.textbooks.length > 0
+    if (s.id === 'theory') return theoryQuestions.length > 0
+    if (s.id === 'resources') return true // resources renders empty-state when none
+    return false
+  })
+
+  const sectionNumber = (id: SectionId) => {
+    const i = visible.findIndex((s) => s.id === id)
+    return i >= 0 ? pad2(i + 1) : ''
   }
+  const isVisible = (id: SectionId) => visible.some((s) => s.id === id)
 
-  useEffect(() => {
-    if (!course) return
-    try {
-      const bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]')
-      setIsBookmarked(bookmarks.includes(course.id))
-    } catch {
-      // ignore
-    }
-  }, [course])
+  const quizHref = `/courses/${course.slug}/quiz`
 
-  if (!course) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center px-4">
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Course Not Found</h1>
-          <p className="text-slate-600 mb-6">The course you are looking for does not exist.</p>
-          <Link
-            href="/courses"
-            className="inline-flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-white h-12 px-6 rounded-md text-sm font-medium transition-colors min-h-[48px]"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Courses
-          </Link>
+  return (
+    <>
+      <header className="course-cover" data-screen-label="Cover">
+        <HeroMotif />
+        <div className="wrap">
+          <nav className="crumb" aria-label="Breadcrumb">
+            <Link href="/courses">Courses</Link>
+            <span className="sep">/</span>
+            <span className="cur">{course.code}</span>
+          </nav>
+
+          <div className="cover-code">{course.code}</div>
+          <h1 className="cover-title">{course.title}</h1>
+          <p className="cover-desc">{course.overview}</p>
+
+          <div className="cover-cta">
+            <Link className="btn btn-primary" href={quizHref}>
+              Start quiz <span className="arrow">&rarr;</span>
+            </Link>
+            <Link className="btn btn-secondary" href="/bookmarks">
+              Bookmark course
+            </Link>
+          </div>
+
+          <div className="cover-meta">
+            <Meta k="Level" v={String(course.level)} />
+            <Meta k="Semester" v={semesterLabel(course.semester)} />
+            <Meta k="Credits" v={`${course.credits} CR`} />
+            <div className="cmeta">
+              <div className="k">Difficulty</div>
+              <div className="v">
+                <SignalBar level={toLevel(course.difficulty)} />
+                {' '}
+                {course.difficulty}
+              </div>
+            </div>
+            <Meta k="Questions" v={quiz ? String(quiz.totalQuestions) : '—'} />
+            <Meta
+              k="Time limit"
+              v={quiz ? `${quiz.quizDurationMinutes} MIN` : '—'}
+            />
+          </div>
         </div>
+      </header>
+
+      <div className="cbody">
+        <div className="wrap">
+          <div className="cbody-grid">
+            <aside className="crail" aria-label="On this page">
+              <div className="rail-label">Contents</div>
+              <nav className="toc">
+                {visible.map((s, i) => (
+                  <Link key={s.id} href={`#${s.id}`}>
+                    <span className="tn">{pad2(i + 1)}</span> {s.tocLabel}
+                  </Link>
+                ))}
+              </nav>
+              <Link className="btn btn-primary" href={quizHref}>
+                Start quiz <span className="arrow">&rarr;</span>
+              </Link>
+            </aside>
+
+            <div className="cmain">
+              {isVisible('overview') ? (
+                <Section
+                  id="overview"
+                  num={sectionNumber('overview')}
+                  kicker="Overview"
+                  h2="The paper, decoded"
+                >
+                  <div className="dsec-body">
+                    <p>{course.overview}</p>
+                  </div>
+                </Section>
+              ) : null}
+
+              {isVisible('takeaways') ? (
+                <Section
+                  id="takeaways"
+                  num={sectionNumber('takeaways')}
+                  kicker="Key takeaways"
+                  h2="Core principles"
+                >
+                  <Takeaways items={takeaways} />
+                </Section>
+              ) : null}
+
+              {isVisible('topics') ? (
+                <Section
+                  id="topics"
+                  num={sectionNumber('topics')}
+                  kicker="Topics"
+                  h2="Syllabus contents"
+                >
+                  <Topics items={course.topics} />
+                </Section>
+              ) : null}
+
+              {isVisible('exam') ? (
+                // The one teal moment on this page lives inside the exam-focus
+                // block. The section header itself stays monochrome — the
+                // .examfocus container provides the signal treatment.
+                <section
+                  className="dsec"
+                  id="exam"
+                  data-screen-label="Exam focus"
+                >
+                  <div className="dsec-head">
+                    <div className="sk">
+                      <span className="n">{sectionNumber('exam')} /</span> Exam focus
+                    </div>
+                  </div>
+                  <div className="examfocus">
+                    <span className="signal">
+                      <span className="sdot" />
+                      The signal · exam intelligence
+                    </span>
+                    <h2 className="ef-h2">What the exam actually tests</h2>
+                    <p className="ef-lead">
+                      High-yield areas pulled from past papers. If your time is
+                      short, study these first.
+                    </p>
+                    <ExamFocus items={course.examFocus} />
+                  </div>
+                </section>
+              ) : null}
+
+              {isVisible('textbooks') ? (
+                <Section
+                  id="textbooks"
+                  num={sectionNumber('textbooks')}
+                  kicker="Recommended textbooks"
+                  h2="The reading"
+                >
+                  <Textbooks items={course.textbooks} />
+                </Section>
+              ) : null}
+
+              {isVisible('theory') ? (
+                <Section
+                  id="theory"
+                  num={sectionNumber('theory')}
+                  kicker="Theory questions"
+                  h2="Likely written questions"
+                >
+                  <TheoryList items={theoryQuestions} />
+                </Section>
+              ) : null}
+
+              {isVisible('resources') ? (
+                <Section
+                  id="resources"
+                  num={sectionNumber('resources')}
+                  kicker="Resources"
+                  h2="Files to download"
+                >
+                  <Resources items={course.resources} />
+                </Section>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section className="sec" id="quiz" data-screen-label="Quiz entry">
+        <div className="wrap">
+          <div className="closing">
+            <ClosingMotif />
+            <div className="cl-inner">
+              <span className="cl-kicker">
+                {course.code}
+                {quiz ? ` · ${quiz.totalQuestions} questions` : null}
+                {quiz ? ` · ${quiz.quizDurationMinutes} minutes` : null}
+              </span>
+              <h2>Sit the mock.</h2>
+              <p>
+                Run the full question bank under exam conditions. You will know
+                exactly where you stand before the hall does.
+              </p>
+              <div className="cl-cta">
+                <Link className="btn btn-primary" href={quizHref}>
+                  Start quiz <span className="arrow">&rarr;</span>
+                </Link>
+                <Link className="btn btn-secondary" href="/bookmarks">
+                  Bookmark course
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
+type SectionProps = {
+  id: SectionId
+  num: string
+  kicker: string
+  h2: string
+  children: React.ReactNode
+}
+
+function Section({ id, num, kicker, h2, children }: SectionProps) {
+  return (
+    <section className="dsec" id={id} data-screen-label={kicker}>
+      <div className="dsec-head">
+        <div className="sk">
+          <span className="n">{num} /</span> {kicker}
+        </div>
+      </div>
+      <h2 className="dsec-h2">{h2}</h2>
+      {children}
+    </section>
+  )
+}
+
+function Meta({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="cmeta">
+      <div className="k">{k}</div>
+      <div className="v">{v}</div>
+    </div>
+  )
+}
+
+function Takeaways({ items }: { items: ReadonlyArray<KeyTakeaway> }) {
+  return (
+    <ol className="takeaways">
+      {items.map((t, i) => (
+        <li key={i}>
+          <span className="tk-n">{pad2(i + 1)}</span>
+          <div>
+            <h3>{t.title}</h3>
+            <p>{t.description}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function Topics({ items }: { items: ReadonlyArray<Topic> }) {
+  return (
+    <div className="topics">
+      {items.map((t, i) => (
+        <div key={i} className="trow">
+          <span className="tch">CH {t.chapter}</span>
+          <span className="td">{t.description}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ExamFocus({ items }: { items: ReadonlyArray<string> }) {
+  return (
+    <ol className="focus-list">
+      {items.map((line, i) => (
+        <li key={i}>
+          <span className="fl-n">/{pad2(i + 1)}</span>
+          <div>
+            <h3>{line}</h3>
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function Textbooks({ items }: { items: ReadonlyArray<Textbook> }) {
+  return (
+    <div className="books">
+      {items.map((b, i) => (
+        <div key={i} className="book">
+          <div className="bk-main">
+            <h3>{b.title}</h3>
+            <div className="bk-meta">
+              {b.author}
+              {b.edition ? (
+                <>
+                  {' '}<span className="sep">·</span> {b.edition}
+                </>
+              ) : null}
+            </div>
+          </div>
+          {/* First entry is marked Core text per the comp; rest are References */}
+          <span className="bk-tag">{i === 0 ? 'Core text' : 'Reference'}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TheoryList({ items }: { items: ReadonlyArray<TheoryQuestion> }) {
+  return (
+    <ol className="theory">
+      {items.map((q) => (
+        <li key={q.id}>
+          <span className="q-n">Q{q.id}</span>
+          <p>{q.question}</p>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function Resources({ items }: { items: ReadonlyArray<Resource> }) {
+  if (items.length === 0) {
+    return (
+      <div className="res-empty ticks">
+        <div className="re-label">No files yet</div>
+        <p>
+          Lecture notes, past questions and worked examples will appear here as
+          coverage expands. Check back soon.
+        </p>
       </div>
     )
   }
-
-  const handleBookmark = () => {
-    try {
-      const bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]')
-      if (isBookmarked) {
-        const updated = bookmarks.filter((id: string) => id !== course.id)
-        localStorage.setItem('bookmarks', JSON.stringify(updated))
-      } else {
-        if (!bookmarks.includes(course.id)) {
-          bookmarks.push(course.id)
-          localStorage.setItem('bookmarks', JSON.stringify(bookmarks))
-        }
-      }
-      setIsBookmarked(!isBookmarked)
-    } catch {
-      // ignore
-    }
-  }
-
-  const handleShare = async () => {
-    const url = window.location.href
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: course.title, url })
-      } else {
-        await navigator.clipboard.writeText(url)
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   return (
-    <div className="bg-slate-50 min-h-screen py-8 md:py-12 pb-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Back Button */}
-        <Link href="/courses" className="inline-flex items-center gap-2 text-blue-900 hover:text-blue-800 mb-6">
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to Courses</span>
-        </Link>
-
-        {/* Course Header */}
-        <div className="bg-white rounded-lg border border-slate-200 p-6 md:p-8 mb-8">
-          <div className="mb-4">
-            <div className="flex flex-wrap items-center gap-3 mb-3">
-              <span className="text-sm font-bold text-blue-900 bg-blue-50 px-3 py-1 rounded-full">
-                {course.code}
-              </span>
-              <span className="text-sm font-semibold text-slate-500">Level {course.level}</span>
-              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
-                course.difficulty === 'Easy'
-                  ? 'bg-green-100 text-green-700'
-                  : course.difficulty === 'Medium'
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : course.difficulty === 'Hard'
-                      ? 'bg-orange-100 text-orange-700'
-                      : 'bg-red-100 text-red-700'
-              }`}>
-                {course.difficulty}
-              </span>
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-3">{course.title}</h1>
-            <p className="text-lg text-slate-600 leading-relaxed">{course.overview}</p>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-3 pt-6 border-t border-slate-200">
-            {quiz && (
-              <Link
-                href={`/courses/${slug}/quiz`}
-                className="inline-flex items-center justify-center gap-2 h-12 px-6 min-w-[44px] bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors min-h-[48px]"
-              >
-                <GraduationCap className="w-4 h-4" />
-                Take Quiz ({quiz.totalQuestions} Qs)
-              </Link>
-            )}
-
-            <Button
-              onClick={handleBookmark}
-              className={`gap-2 h-12 min-w-[44px] ${
-                isBookmarked
-                  ? 'bg-blue-900 text-white hover:bg-blue-800'
-                  : 'border-2 border-blue-900 text-blue-900 hover:bg-blue-50 bg-transparent'
-              }`}
-            >
-              <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-current' : ''}`} />
-              {isBookmarked ? 'Bookmarked' : 'Bookmark'}
-            </Button>
-
-            <a
-              href={`https://wa.me/2349018750976?text=I%20would%20like%20to%20upload%20materials%20for%20${encodeURIComponent(course.code + ' - ' + course.title)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 h-12 px-4 min-w-[44px] border border-blue-900 text-blue-900 hover:bg-blue-50 rounded-md text-sm font-medium transition-colors"
-            >
-              <Upload className="w-4 h-4" />
-              Upload Material
-            </a>
-
-            <Button onClick={handleShare} variant="outline" className="h-12 min-w-[44px] gap-2 border-slate-300 text-slate-700 hover:bg-slate-100">
-              <Share2 className="w-4 h-4" />
-              Share
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Key Takeaways - What to Prioritize */}
-            {course.keyTakeaways && course.keyTakeaways.length > 0 && (
-              <section className="bg-gradient-to-br from-blue-50 to-slate-50 rounded-lg border border-blue-200 p-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2">
-                  <Star className="w-6 h-6 text-blue-900 fill-blue-900" />
-                  What to Prioritize
-                </h2>
-                <p className="text-sm text-slate-600 mb-6">Core principles from your lecturer that you must carry with you beyond the exam.</p>
-                <div className="space-y-4">
-                  {course.keyTakeaways.map((takeaway, idx) => (
-                    <div key={idx} className="bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-400 transition-colors">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-900 text-white flex items-center justify-center text-sm font-bold">
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-bold text-slate-900 mb-2">{takeaway.title}</h3>
-                          <p className="text-sm text-slate-600 leading-relaxed">{takeaway.description}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Textbooks */}
-            {course.textbooks.length > 0 && (
-              <section className="bg-white rounded-lg border border-slate-200 p-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                  <BookOpen className="w-6 h-6 text-blue-900" />
-                  Recommended Textbooks
-                </h2>
-                <div className="space-y-4">
-                  {course.textbooks.map((book, idx) => (
-                    <div key={idx} className="border border-slate-200 rounded-lg p-4 hover:border-blue-900 transition">
-                      <h3 className="font-semibold text-slate-900 mb-2">{book.title}</h3>
-                      <p className="text-sm text-slate-600">
-                        {book.author} - {book.edition}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Topics with Expandable Notes */}
-            {course.topics.length > 0 && (
-              <section className="bg-white rounded-lg border border-slate-200 p-6">
-                <h2 className="text-2xl font-bold text-slate-900 mb-6">Key Topics</h2>
-                <div className="space-y-3">
-                  {course.topics.map((topic, idx) => {
-                    const note = topicNotes?.topics[idx]
-                    const isExpanded = expandedTopics[idx]
-
-                    return (
-                      <div key={idx} className="border border-slate-200 rounded-lg overflow-hidden">
-                        <button
-                          onClick={() => note && toggleTopic(idx)}
-                          className={`w-full flex items-start gap-3 p-4 text-left transition-colors ${
-                            note ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'
-                          }`}
-                        >
-                          <div className="w-1 self-stretch bg-blue-900 rounded-full flex-shrink-0" />
-                          <div className="flex-1">
-                            <p className="font-semibold text-slate-900">Chapter {topic.chapter}</p>
-                            <p className="text-slate-600 text-sm mt-1">{topic.description}</p>
-                          </div>
-                          {note && (
-                            <div className="flex-shrink-0 mt-1">
-                              {isExpanded ? (
-                                <ChevronUp className="w-5 h-5 text-blue-900" />
-                              ) : (
-                                <ChevronDown className="w-5 h-5 text-slate-400" />
-                              )}
-                            </div>
-                          )}
-                        </button>
-
-                        {/* Expandable Notes */}
-                        {note && isExpanded && (
-                          <div className="px-4 pb-4 border-t border-slate-100">
-                            <div className="pt-4 space-y-4">
-                              <div>
-                                <h4 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                                  <BookOpen className="w-4 h-4 text-blue-900" />
-                                  Summary
-                                </h4>
-                                <p className="text-sm text-slate-600 leading-relaxed">{note.summary}</p>
-                              </div>
-
-                              <div>
-                                <h4 className="text-sm font-semibold text-slate-900 mb-2">Key Points:</h4>
-                                <ul className="space-y-2">
-                                  {note.keyPoints.map((point, pIdx) => (
-                                    <li key={pIdx} className="text-sm text-slate-600 flex items-start gap-2">
-                                      <span className="text-blue-900 font-bold mt-0.5 flex-shrink-0">-</span>
-                                      <span className="leading-relaxed">{point}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-
-                              {note.examTip && (
-                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-3">
-                                  <Lightbulb className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                                  <div>
-                                    <p className="text-xs font-bold text-yellow-800 mb-1">EXAM TIP</p>
-                                    <p className="text-sm text-yellow-800">{note.examTip}</p>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
-            )}
-
-            {/* Disclaimer */}
-            <section className="bg-amber-50 rounded-lg border border-amber-200 p-5">
-              <div className="flex items-start gap-3">
-                <HelpCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-bold text-amber-900 mb-1">Disclaimer</h3>
-                  <p className="text-sm text-amber-800 leading-relaxed">
-                    All quiz questions and study notes on this platform are compiled based on course notes, lecture outlines, and recommended textbooks. They are strictly for practice purposes only and do not represent actual exam questions. Always refer to your official course materials and lecturers for authoritative guidance.
-                  </p>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          {/* Sidebar */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Quick Info */}
-            <div className="bg-white rounded-lg border border-slate-200 p-6">
-              <h3 className="font-bold text-slate-900 mb-4">Course Information</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-500">Code</p>
-                  <p className="text-sm font-semibold text-slate-900">{course.code}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-500">Level</p>
-                  <p className="text-sm font-semibold text-slate-900">{course.level}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-500">Credits</p>
-                  <p className="text-sm font-semibold text-slate-900">{course.credits}</p>
-                </div>
-                <div className="flex items-center justify-between border-t border-slate-200 pt-4">
-                  <p className="text-sm text-slate-500 flex items-center gap-1">
-                    <Zap className="w-4 h-4" />
-                    Difficulty
-                  </p>
-                  <p className={`text-sm font-bold ${
-                    course.difficulty === 'Easy'
-                      ? 'text-green-600'
-                      : course.difficulty === 'Medium'
-                        ? 'text-yellow-600'
-                        : course.difficulty === 'Hard'
-                          ? 'text-orange-600'
-                          : 'text-red-600'
-                  }`}>
-                    {course.difficulty}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Assessment Structure */}
-            {course.assessmentStructure && (
-              <div className="bg-slate-50 rounded-lg border border-slate-200 p-6">
-                <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-slate-700" />
-                  Assessment Breakdown
-                </h3>
-                <div className="space-y-3">
-                  {course.assessmentStructure.assignment !== undefined && (
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-700">Assignment</p>
-                      <span className="text-sm font-semibold text-slate-900">{course.assessmentStructure.assignment}%</span>
-                    </div>
-                  )}
-                  {course.assessmentStructure.test !== undefined && (
-                    <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                      <p className="text-sm text-slate-700">Test</p>
-                      <span className="text-sm font-semibold text-slate-900">{course.assessmentStructure.test}%</span>
-                    </div>
-                  )}
-                  {course.assessmentStructure.exam !== undefined && (
-                    <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                      <p className="text-sm text-slate-700">Exam</p>
-                      <span className="text-sm font-semibold text-blue-900">{course.assessmentStructure.exam}%</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Exam Focus */}
-            {course.examFocus.length > 0 && (
-              <div className="bg-blue-50 rounded-lg border border-blue-200 p-6">
-                <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <Target className="w-5 h-5 text-blue-900" />
-                  Exam Focus Areas
-                </h3>
-                <ul className="space-y-2">
-                  {course.examFocus.map((focus, idx) => (
-                    <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
-                      <span className="text-blue-900 font-bold mt-0.5">-</span>
-                      {focus}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* WhatsApp Support */}
-            <div className="bg-green-50 rounded-lg border border-green-200 p-6 text-center">
-              <p className="text-sm font-semibold text-slate-900 mb-2">Need help with this course?</p>
-              <p className="text-xs text-slate-600 mb-4">Get study support or request materials</p>
-              <a
-                href={`https://wa.me/2349018750976?text=I%20need%20help%20with%20${encodeURIComponent(course.code + ' - ' + course.title)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full bg-green-600 hover:bg-green-700 text-white h-12 rounded-md text-sm font-medium transition-colors min-h-[48px]"
-              >
-                <MessageCircle className="w-4 h-4" />
-                WhatsApp Support
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="resources">
+      {items.map((r) => (
+        <a
+          key={r.id}
+          className="res"
+          href={r.url ?? '#'}
+          {...(r.url
+            ? { target: '_blank', rel: 'noopener noreferrer' }
+            : {})}
+        >
+          <span className="res-ic">[ {resourceTag(r.type)} ]</span>
+          <span className="res-name">{r.title}</span>
+          {r.fileSize ? <span className="res-size">{r.fileSize}</span> : null}
+          <span className="res-dl">Download ↓</span>
+        </a>
+      ))}
     </div>
+  )
+}
+
+function resourceTag(type: Resource['type']) {
+  if (type === 'pdf') return 'PDF'
+  if (type === 'past-question') return 'PQ'
+  if (type === 'notes') return 'NOTES'
+  return 'LINK'
+}
+
+function ClosingMotif() {
+  return (
+    <svg className="cl-motif" viewBox="0 0 100 100" aria-hidden="true">
+      <path
+        d="M 76.2 68.35 A 32 32 0 1 1 76.2 31.65"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+      <circle cx="84.5" cy="50" r="3.1" fill="currentColor" />
+    </svg>
   )
 }
