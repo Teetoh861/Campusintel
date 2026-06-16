@@ -457,7 +457,7 @@ export const courses: Course[] = [
     code: 'GST111',
     title: 'Communication in English',
     overview:
-      'Communication skills course covering listening, phonetics, syllable structure, stress patterns, reading strategies, comprehension, and summary writing. Designed for Direct Entry students.',
+      'Communication skills course covering listening, phonetics, syllable structure, stress patterns, reading strategies, comprehension, and summary writing. A 100-level General Studies course required of all UNILAG students; Direct Entry students take it in 200 Level.',
     level: 100,
     semester: 1,
     credits: 2,
@@ -491,7 +491,7 @@ export const courses: Course[] = [
     code: 'GST112',
     title: 'Nigerian Peoples and Culture',
     overview:
-      "A General Studies course for Direct Entry students surveying Nigerian peoples and culture. It covers the concept, characteristics and components of culture; an ethno-historical survey of Nigeria's major groups and geopolitical zones; the roles of Christianity and Islam in political culture; gender and culture; the Nigerian Civil War; and the political economy from agriculture to oil.",
+      "A General Studies course surveying Nigerian peoples and culture. It covers the concept, characteristics and components of culture; an ethno-historical survey of Nigeria's major groups and geopolitical zones; the roles of Christianity and Islam in political culture; gender and culture; the Nigerian Civil War; and the political economy from agriculture to oil. A 100-level course required of all UNILAG students; Direct Entry students take it in 200 Level.",
     level: 100,
     semester: 2,
     credits: 2,
