@@ -8,6 +8,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
+import { btnBase, btnGhostOnBlue, btnLight, cx } from '@/components/chrome/ui'
 
 const STORAGE_KEY = 'ci_bookmarks_v1'
 // Same-tab sync signal. The native `storage` event only fires in *other*
@@ -42,7 +43,16 @@ function writeKeys(keys: ReadonlyArray<string>): void {
   }
 }
 
-export function BookmarkButton({ slug }: { slug: string }) {
+// variant places the button on a navy field: 'cover' = white-outline (the
+// course cover), 'closing' = light/paper (the closing quiz band). Both toggle
+// the same ci_bookmarks_v1 entry.
+export function BookmarkButton({
+  slug,
+  variant = 'cover',
+}: {
+  slug: string
+  variant?: 'cover' | 'closing'
+}) {
   // `mounted` keeps SSR output stable (always the unsaved label) so the
   // client hydration matches; the real saved state lands after the effect.
   const [mounted, setMounted] = useState(false)
@@ -76,33 +86,37 @@ export function BookmarkButton({ slug }: { slug: string }) {
 
   const isSaved = mounted && saved
 
+  const variantClass = variant === 'closing' ? btnLight : btnGhostOnBlue
+  // Saved affordance per field: keep the light fill on the closing band; add a
+  // faint white fill + brighter border on the white-outline cover button.
+  const savedClass = variant === 'closing' ? 'bg-ci-white' : 'bg-white/10 border-white/70'
+
   return (
     <>
       <button
         type="button"
         onClick={toggle}
         aria-pressed={isSaved}
-        className={`btn ${isSaved ? 'btn-saved' : 'btn-secondary'}`}
+        className={cx(btnBase, variantClass, isSaved && savedClass)}
       >
         {isSaved ? (
           <>
             Bookmarked{' '}
-            <span className="arrow" aria-hidden="true">
-              ✓
-            </span>
+            <span aria-hidden="true">✓</span>
           </>
         ) : (
           'Bookmark course'
         )}
       </button>
       {/* Path to the saved list — surfaced only once this course is saved, so
-          it's relevant exactly when shown. Subtle .glink treatment. */}
+          it's relevant exactly when shown. Quiet white-on-navy link. */}
       {isSaved ? (
-        <Link className="glink" href="/bookmarks">
+        <Link
+          className="inline-flex items-center gap-2 text-[15px] font-semibold text-ci-blue-200 transition-colors hover:text-white"
+          href="/bookmarks"
+        >
           View bookmarks{' '}
-          <span className="arrow" aria-hidden="true">
-            &rarr;
-          </span>
+          <span aria-hidden="true">&rarr;</span>
         </Link>
       ) : null}
     </>
