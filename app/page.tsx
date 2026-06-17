@@ -33,6 +33,9 @@ function cardPropsFor(course: Course, index: number): CardProps {
     intelIndex: intelIndex(index),
     code: course.code,
     title: course.title,
+    // Punchy homepage tagline under the title (falls back to the full overview
+    // for any future featured course without one).
+    desc: course.tagline ?? course.overview,
     // The amber flag is the visual signal for exam-critical; the CTA changes
     // alongside it (amber "Start quiz" added) while "View course" stays the
     // primary action on every card so no course is unreachable.
@@ -192,7 +195,7 @@ export default function HomePage() {
           <div className="mb-[42px] flex flex-wrap items-end justify-between gap-6">
             <div>
               <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
-                Featured courses
+                Featured files
               </span>
               <h2 className="mt-[14px] max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
                 Start with the courses that move your grade.

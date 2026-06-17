@@ -31,6 +31,9 @@ export interface Course {
   code: string
   title: string
   overview: string
+  // Short, punchy one-liner for the homepage featured cards (falls back to
+  // overview where unset). Distinct from the longer overview prose.
+  tagline?: string
   level: number // 200, 300, 400
   semester: number // 1, 2
   credits: number

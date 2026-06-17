@@ -17,8 +17,10 @@ export function Footer() {
   const year = new Date().getFullYear()
   return (
     <footer className="border-t border-ci-border bg-ci-paper" data-screen-label="Footer">
-      <div className={WRAP}>
-        <div className="grid grid-cols-1 gap-9 pb-10 pt-14 min-[680px]:grid-cols-[2fr_1fr_1fr] min-[680px]:gap-10">
+      {/* .wrap padding per spec: 56px top / gutter sides / 40px bottom, so the
+          bottom bar keeps proper breathing room above the footer edge. */}
+      <div className={`${WRAP} pt-14 pb-10`}>
+        <div className="grid grid-cols-1 gap-9 min-[680px]:grid-cols-[2fr_1fr_1fr] min-[680px]:gap-10">
           <div>
             <Link href="/" className="inline-flex items-center gap-3 text-ci-navy" aria-label="CampusIntel home">
               <BookLogo size={32} />

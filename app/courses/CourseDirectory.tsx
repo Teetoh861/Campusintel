@@ -1,12 +1,13 @@
-// CourseDirectory — the client island for /courses. Owns search query + the
-// three segmented filters (level, semester, difficulty) and renders the
-// filterbar, results count, course grid and empty state. Card markup itself
-// is precomputed on the server (cardProps) so this component stays focused
-// on user interaction and bundles light.
+// CourseDirectory — Variant B client island for /courses. Owns the search
+// query + three segmented filters (level, semester, difficulty) and renders the
+// sticky filter bar, result count, reused homepage .ccard grid and empty state.
+// Visual reskin only: the filter behaviour is unchanged from the dossier
+// version. Card markup is precomputed on the server (cardProps).
 'use client'
 
 import { useMemo, useState } from 'react'
 import { Card, type CardProps } from '@/components/chrome/Card'
+import { btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 import type { Course } from '@/lib/types'
 
 export type DirectoryItem = {
@@ -43,6 +44,8 @@ const DIFFICULTY_OPTIONS: ReadonlyArray<Option<DifficultyFilter>> = [
   { val: 'medium', label: 'Medium' },
   { val: 'hard', label: 'Hard' },
 ]
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 type Props = {
   items: ReadonlyArray<DirectoryItem>
@@ -85,92 +88,86 @@ export function CourseDirectory({ items, totalCount }: Props) {
     setDifficulty('all')
   }
 
-  const dsearchClass = trimmed ? 'dsearch has-val' : 'dsearch'
-  const fcountClass = isFiltered ? 'fcount filtered' : 'fcount'
-
   return (
     <>
-      <div className="filterbar" data-screen-label="Search and filter">
-        <div className="wrap">
-          <div className="fb-in">
-            <div className={dsearchClass}>
+      {/* ===================== STICKY SEARCH + FILTERS ===================== */}
+      <div
+        className="sticky top-[74px] z-40 border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px]"
+        data-screen-label="Search and filter"
+      >
+        <div className={WRAP}>
+          <div className="flex flex-col gap-[14px] py-4 min-[900px]:flex-row min-[900px]:flex-wrap min-[900px]:items-center min-[900px]:gap-5 min-[900px]:py-[18px]">
+            {/* search */}
+            <label className="flex min-h-[52px] items-center gap-3 rounded-[11px] border border-ci-border-2 bg-ci-white px-4 py-3 transition-[border-color,box-shadow] duration-150 focus-within:border-ci-navy focus-within:shadow-[0_0_0_3px_var(--ci-blue-50)] min-[900px]:flex-[1_1_280px] min-[900px]:min-w-[260px]">
               <MagnifyingGlass />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by code or title — try ACC201"
+                placeholder="Search a course code or title"
                 aria-label="Search courses by code or title"
                 autoComplete="off"
+                className="min-w-0 flex-1 border-0 bg-transparent text-[15.5px] text-ci-ink outline-none placeholder:text-ci-gray-400"
               />
-              <button
-                type="button"
-                className="clearx"
-                aria-label="Clear search"
-                onClick={() => setQuery('')}
-              >
-                ×
-              </button>
-            </div>
-            <div className="filters">
-              <Seg
-                label="Level"
-                value={level}
-                options={LEVEL_OPTIONS}
-                onChange={setLevel}
-              />
-              <Seg
-                label="Semester"
-                value={semester}
-                options={SEMESTER_OPTIONS}
-                onChange={setSemester}
-              />
-              <Seg
-                label="Difficulty"
-                value={difficulty}
-                options={DIFFICULTY_OPTIONS}
-                onChange={setDifficulty}
-              />
-              <div className={fcountClass}>
-                <span className="rc">
-                  Showing <b>{filtered.length}</b> of {totalCount}
-                </span>
-                <button type="button" className="reset" onClick={reset}>
-                  Reset
+              {query !== '' ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setQuery('')}
+                  className="inline-flex h-7 w-7 flex-none items-center justify-center rounded-[6px] text-[18px] leading-none text-ci-gray-500 transition-colors hover:bg-ci-paper-2 hover:text-ci-ink"
+                >
+                  &times;
                 </button>
+              ) : null}
+            </label>
+
+            {/* filters + count */}
+            <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[14px] min-[900px]:flex-[2_1_100%]">
+              <Seg label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
+              <Seg label="Semester" value={semester} options={SEMESTER_OPTIONS} onChange={setSemester} />
+              <Seg label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} />
+
+              <div className="ml-auto flex items-center gap-4">
+                <span className="text-[13.5px] font-medium text-ci-gray-600">
+                  Showing <b className="font-bold text-ci-navy-900">{filtered.length}</b> of {totalCount}
+                </span>
+                {isFiltered ? (
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="text-[13.5px] font-semibold text-ci-navy transition-colors hover:text-ci-navy-700"
+                  >
+                    Reset
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <section className="dir-grid-sec" data-screen-label="Course grid">
-        <div className="wrap">
+      {/* ===================== GRID / EMPTY ===================== */}
+      <section className="pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Course grid">
+        <div className={WRAP}>
           {filtered.length > 0 ? (
-            <div className="course-grid">
+            <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2 min-[900px]:grid-cols-3 min-[900px]:gap-6">
               {filtered.map((item) => (
                 <Card key={item.id} {...item.cardProps} />
               ))}
             </div>
           ) : (
-            <div className="dir-empty ticks show">
-              <div className="de-mark">No file match</div>
-              <h3>
-                Nothing in the index for{' '}
-                <span className="de-q">
-                  {trimmed ? `“${trimmed}”` : 'that'}
-                </span>
+            <div className="rounded-[20px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[56px_28px] text-center">
+              <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">No matches</div>
+              <h3 className="mt-[14px] text-[26px] font-extrabold tracking-[-0.02em] text-ci-navy-900">
+                Nothing for{' '}
+                <span className="font-bold text-ci-navy">{trimmed ? `“${trimmed}”` : 'that'}</span>
               </h3>
-              <p>
-                No course matches your search and filters. Clear them to see all{' '}
-                {totalCount} files, or check back as coverage expands.
+              <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-[1.55] text-ci-gray-600">
+                No course matches your search and filters. Clear them to see all {totalCount} courses, or
+                check back as coverage expands.
               </p>
-              <div className="de-cta">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={reset}
-                >
+              <div className="mt-6 inline-flex">
+                <button type="button" onClick={reset} className={cx(btnBase, btnSm, btnGhost)}>
                   Reset filters
                 </button>
               </div>
@@ -191,15 +188,16 @@ type SegProps<T extends string> = {
 
 function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>) {
   return (
-    <div className="fgroup">
-      <span className="flabel">{label}</span>
-      <div className="seg">
+    <div className="flex items-center gap-[10px]">
+      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">{label}</span>
+      <div className="inline-flex overflow-hidden rounded-[9px] border border-ci-border-2 bg-ci-white">
         {options.map((o) => (
           <button
             key={o.val}
             type="button"
             aria-pressed={value === o.val}
             onClick={() => onChange(o.val)}
+            className="min-h-[40px] border-r border-ci-border px-[14px] py-[9px] text-[13.5px] font-semibold text-ci-gray-600 transition-colors last:border-r-0 hover:bg-ci-paper-2 hover:text-ci-navy aria-pressed:bg-ci-navy aria-pressed:text-white"
           >
             {o.label}
           </button>
@@ -211,17 +209,9 @@ function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>)
 
 function MagnifyingGlass() {
   return (
-    <svg className="mag" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.6" />
-      <line
-        x1="10.8"
-        y1="10.8"
-        x2="14.5"
-        y2="14.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
+    <svg className="h-[17px] w-[17px] flex-none text-ci-gray-500" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.7" />
+      <line x1="12.2" y1="12.2" x2="16" y2="16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   )
 }

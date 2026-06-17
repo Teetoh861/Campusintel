@@ -25,6 +25,10 @@ export type CardProps = {
   intelIndex?: string
   code: string
   title: string
+  // Short tagline shown under the title, above the meta row. When present it
+  // also acts as the flexible spacer that keeps footers aligned across a grid
+  // row; when absent an empty flex spacer does the same job.
+  desc?: string
   flag?: CardFlag
   level: string
   credits: string
@@ -51,6 +55,7 @@ const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 export function Card({
   code,
   title,
+  desc,
   flag,
   level,
   credits,
@@ -90,7 +95,13 @@ export function Card({
         {title}
       </h3>
 
-      {/* spacer keeps footers aligned across the grid (no desc field) */}
+      {/* Optional one-line description, clamped to two lines so a longer course
+          overview can't break footer alignment. A separate flex-1 spacer keeps
+          meta + footer pinned to the bottom and aligned across the grid row,
+          whether or not a card has a description. */}
+      {desc ? (
+        <p className="mt-[11px] line-clamp-2 text-[15px] leading-[1.5] text-ci-gray-600">{desc}</p>
+      ) : null}
       <div className="flex-1" />
 
       <div className="mt-5 flex flex-wrap items-center gap-[7px] text-[13px] font-medium text-ci-gray-500">
@@ -104,36 +115,49 @@ export function Card({
         </span>
       </div>
 
-      <div className="mt-5 flex items-center justify-between gap-[14px] border-t border-ci-border pt-[18px]">
-        <span className="inline-flex items-center gap-[9px]">
-          <SignalBar level={difficulty} />
-          <span className="text-[12.5px] font-semibold tracking-[0.04em] text-ci-gray-600">
-            {diffLabel}
+      {/* Footer is two stacked rows: the difficulty indicator sits ABOVE a
+          separate actions row. The actions row is locked to a single line
+          (nowrap) with a fixed min-height, so a card with one action (View
+          course) and an exam-critical card with two (View course + Start quiz)
+          have the same footer height and stay aligned across the grid at every
+          breakpoint. The exam-critical card's extra button never pushes its
+          footer out of line with its row-mates. */}
+      <div className="mt-5 border-t border-ci-border pt-[18px]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-[9px]">
+            <SignalBar level={difficulty} />
+            <span className="text-[12.5px] font-semibold tracking-[0.04em] text-ci-gray-600">
+              {diffLabel}
+            </span>
           </span>
-        </span>
-
-        <div className="flex items-center gap-4">
-          {secondaryCta ? (
-            <Link
-              href={secondaryCta.href}
-              className="group inline-flex items-center gap-2 text-[15px] font-semibold text-ci-accent-600 transition-[gap] duration-150 hover:gap-3"
-            >
-              {secondaryCta.label}
-              {secondaryCta.withArrow ? <Arrow /> : null}
-            </Link>
+          {footerAction ? (
+            <span className="inline-flex items-center gap-3 whitespace-nowrap">
+              {updated ? <span className="text-[12.5px] text-ci-gray-500">{updated}</span> : null}
+              {footerAction}
+            </span>
           ) : null}
+        </div>
+
+        <div className="mt-[15px] flex min-h-[38px] flex-nowrap items-center gap-[10px]">
+          {/* Primary action — always present on every card, never replaced.
+              Navy text link. */}
           <Link
             href={cta.href}
-            className="group inline-flex items-center gap-2 text-[15px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-3"
+            className="group inline-flex items-center gap-2 whitespace-nowrap text-[15px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-3"
           >
             {cta.label}
             {cta.withArrow ? <Arrow /> : null}
           </Link>
-          {footerAction ? (
-            <span className="inline-flex items-center gap-3">
-              {updated ? <span className="text-[12.5px] text-ci-gray-500">{updated}</span> : null}
-              {footerAction}
-            </span>
+          {/* Exam-critical only — the lone amber "Start quiz", added alongside
+              (not instead of) View course. Filled amber pill button. */}
+          {secondaryCta ? (
+            <Link
+              href={secondaryCta.href}
+              className="group inline-flex min-h-[36px] items-center gap-[6px] whitespace-nowrap rounded-[8px] bg-ci-accent px-3 py-2 text-[13px] font-bold text-ci-navy-900 transition-[background-color,transform] duration-150 hover:-translate-y-px hover:bg-ci-accent-600"
+            >
+              {secondaryCta.label}
+              {secondaryCta.withArrow ? <Arrow /> : null}
+            </Link>
           ) : null}
         </div>
       </div>

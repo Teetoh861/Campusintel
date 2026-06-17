@@ -6,6 +6,8 @@ export const courses: Course[] = [
     slug: 'entrepreneurship-innovation',
     code: 'ENT211',
     title: 'Entrepreneurship and Innovation',
+    tagline:
+      'From opportunity to business model, the frameworks and the cases that count.',
     overview:
       "Introduction to entrepreneurship and innovation, from recognising opportunities and developing business ideas to funding and launching new ventures, and entrepreneurship's role in economic development.",
     level: 200,
@@ -72,6 +74,8 @@ export const courses: Course[] = [
     slug: 'principles-business-administration',
     code: 'BUA201',
     title: 'Principles of Business Administration I',
+    tagline:
+      'The foundations: planning, organising and the management theory examiners love.',
     overview:
       'Foundation course covering business functions, marketing fundamentals, organizational structure, management concepts, business environment analysis, and contemporary issues in Nigerian business administration.',
     level: 200,
@@ -388,6 +392,8 @@ export const courses: Course[] = [
     slug: 'financial-accounting-1',
     code: 'ACC201',
     title: 'Financial Accounting I',
+    tagline:
+      'Double-entry, final accounts and the ratios that show up year after year.',
     overview:
       'Fundamentals of financial accounting under IFRS: the IASB conceptual framework and the key standards governing revenue, financial-statement presentation, inventories, accounting policies, property plant and equipment, government grants, and borrowing costs.',
     level: 200,
