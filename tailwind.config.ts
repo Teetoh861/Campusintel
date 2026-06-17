@@ -15,6 +15,33 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Variant B — "continuous blue" tokens (source: _design/variant-b-handoff).
+        // Drive new markup off these (bg-ci-navy, text-ci-paper, border-ci-border…).
+        ci: {
+          paper: '#FBFAF7',
+          'paper-2': '#F4F1EA',
+          white: '#FFFFFF',
+          ink: '#262320',
+          'gray-700': '#565047',
+          'gray-600': '#6B6459',
+          'gray-500': '#938B7D',
+          'gray-400': '#B4AC9E',
+          border: '#E7E2D8',
+          'border-2': '#DAD3C6',
+          'blue-50': '#E9EFF6',
+          'blue-100': '#D2E0EC',
+          'blue-150': '#C9D6EE',
+          'blue-200': '#A6C0DA',
+          'blue-400': '#5285B4',
+          'blue-600': '#14568F',
+          navy: '#003E7E',
+          'navy-700': '#00346A',
+          'navy-900': '#002850',
+          accent: '#E0A33E',
+          'accent-600': '#C6862A',
+          'accent-100': '#F7E8CC',
+          'accent-50': '#FBF3E2',
+        },
         // Cobalt-indigo (primary)
         p: {
           50: 'var(--p-50)',
@@ -114,17 +141,29 @@ const config: Config = {
         },
       },
       fontFamily: {
+        // Hanken Grotesk is the default sans (Variant B). The --font-hanken var
+        // is set by next/font in app/layout.tsx.
+        sans: ['var(--font-hanken)', 'Hanken Grotesk', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         serif: ['var(--serif)'],
-        sans: ['var(--sans)'],
         mono: ['var(--mono)'],
       },
       maxWidth: {
         wrap: 'var(--maxw)',
+        'ci-content': '1200px',
+      },
+      boxShadow: {
+        'ci-card': '0 1px 2px rgba(38,35,32,.04), 0 12px 28px -10px rgba(38,35,32,.14)',
+        'ci-soft': '0 1px 2px rgba(38,35,32,.03), 0 18px 50px -22px rgba(27,35,84,.22)',
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        'ci-btn': '11px',
+        'ci-btn-sm': '9px',
+        'ci-card': '16px',
+        'ci-card-lg': '18px',
+        'ci-panel': '24px',
       },
       keyframes: {
         'accordion-down': {

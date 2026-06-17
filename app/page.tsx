@@ -1,6 +1,7 @@
-// Homepage — server-rendered. Layout, copy and section numbering follow
-// _design/home.html. Real course data flows in from lib/data/courses.ts;
-// stat figures are derived from that data where possible.
+// Homepage — Variant B ("continuous blue"). Server-rendered. Structure and copy
+// follow _design/variant-b-handoff (component-spec.md + the V3 reference), built
+// with Tailwind utilities driven by the ci-* tokens. Real course data flows in
+// from lib/data/courses.ts; stat figures derive from it where possible.
 import Link from 'next/link'
 import { courses } from '@/lib/data/courses'
 import type { Course } from '@/lib/types'
@@ -9,8 +10,11 @@ import { Card, type CardProps } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import { Arrow, btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnLight, btnSm, cx } from '@/components/chrome/ui'
 
 const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 const intelIndex = (i: number) => `Intel ${String(i + 1).padStart(2, '0')}`
 
@@ -29,14 +33,14 @@ function cardPropsFor(course: Course, index: number): CardProps {
     intelIndex: intelIndex(index),
     code: course.code,
     title: course.title,
-    // The teal flag is the visual signal for exam-critical; the CTA changes
-    // alongside it (secondary "Start quiz" added) but "View course" stays
-    // primary on every card so no dossier is unreachable.
+    // The amber flag is the visual signal for exam-critical; the CTA changes
+    // alongside it (amber "Start quiz" added) while "View course" stays the
+    // primary action on every card so no course is unreachable.
     flag: critical
       ? { kind: 'critical', label: 'Exam-critical' }
       : { kind: 'tracked', label: 'Tracked' },
     level: String(course.level),
-    credits: `${course.credits} CR`,
+    credits: `${course.credits} credits`,
     questions: quiz ? String(quiz.totalQuestions) : '—',
     timeLimit: quiz ? `${quiz.quizDurationMinutes} MIN` : '—',
     difficulty: toLevel(course.difficulty),
@@ -44,6 +48,7 @@ function cardPropsFor(course: Course, index: number): CardProps {
       label: 'View course',
       href: `/courses/${course.slug}`,
       variant: 'primary',
+      withArrow: true,
     },
     secondaryCta: critical
       ? {
@@ -66,213 +71,55 @@ export default function HomePage() {
   const courseCount = courses.length
   const textbookCount = courses.reduce((sum, c) => sum + c.textbooks.length, 0)
   const courseCountLabel = String(courseCount).padStart(2, '0')
-  // Source order is preserved by pickFeatured. The render order then pulls
-  // examCritical to the front so the lone teal moment leads the grid, matching
-  // the comp. Array.prototype.sort is stable in modern engines, so the rest
-  // keep their relative source order. courses.ts itself is untouched.
+  // Source order is preserved by pickFeatured; the render order then pulls
+  // examCritical to the front so the lone amber moment leads the grid.
+  // Array.prototype.sort is stable, so the rest keep their relative order.
   const featured = [...pickFeatured(courses)].sort(
-    // Coerce undefined→0 so the comparator is well-defined for unflagged
-    // courses (Number(undefined) is NaN, which would leave the sort unstable).
     (a, b) => Number(b.examCritical === true) - Number(a.examCritical === true),
   )
 
+  // The hero product-preview points at one real course: the exam-critical
+  // featured course (first flagged). Falls back to the lead featured course so
+  // the preview is never empty if the flag is removed entirely.
+  const previewCourse = courses.find((c) => c.examCritical === true) ?? featured[0]
+  const previewQuiz = previewCourse ? quizzes[previewCourse.slug] : undefined
+  // A second, different course peeks out behind the main preview (decorative).
+  const behindCourse = featured.find((c) => c.slug !== previewCourse?.slug) ?? courses[1]
+
   return (
     <>
-      <header className="hero" data-screen-label="Hero">
-        <HeroMotif />
-        <div className="wrap">
-          <span className="hero-stamp">
-            <ApertureStamp />
-            University of Lagos · Academic Intelligence
-          </span>
-          <h1>Know what&apos;s coming.</h1>
-          <p className="hero-lead">
-            Intelligence on your courses: past questions, decoded exam patterns,
-            and the materials that actually move your grade.
-          </p>
-          <div className="hero-cta">
-            <Link className="btn btn-primary" href="/courses">
-              Browse courses <span className="arrow">&rarr;</span>
-            </Link>
-            <a
-              className="btn btn-secondary"
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Message on WhatsApp
-            </a>
-          </div>
-        </div>
-      </header>
-
-      <section className="stats-band" aria-label="At a glance">
-        <div className="wrap">
-          <div className="stats ticks">
-            <div className="stat">
-              <div className="v"><span className="num">{courseCountLabel}</span></div>
-              <div className="k">Courses decoded</div>
-            </div>
-            <div className="stat">
-              <div className="v">
-                <span className="num">{textbookCount}</span>
-                <span className="u">+</span>
-              </div>
-              <div className="k">Recommended textbooks</div>
-            </div>
-            <div className="stat">
-              <div className="v">
-                <span className="num">50</span>
-                <span className="u">+</span>
-              </div>
-              <div className="k">Questions / course</div>
-            </div>
-            <div className="stat">
-              <div className="v soon"><span className="soon-txt">Coming soon</span></div>
-              <div className="k">Peer tutors</div>
-            </div>
-          </div>
-          <p className="coverage">
-            <span className="cov-k">Now covering</span>
-            {' '}<span className="cov-sep">·</span>{' '}Business Administration
-            {' '}<span className="cov-sep">·</span>{' '}200 Level
-            {' '}<span className="cov-sep">·</span>{' '}First Semester
-          </p>
-        </div>
-      </section>
-
-      <section className="sec" id="courses" data-screen-label="Course intel">
-        <div className="wrap">
-          <div className="sec-head">
+      {/* ================= HERO ================= */}
+      <header className="relative overflow-hidden bg-ci-navy" data-screen-label="Hero">
+        <div className={cx(WRAP, 'pb-16 pt-14 min-[900px]:pb-24 min-[900px]:pt-[88px]')}>
+          <div className="grid grid-cols-1 items-center gap-[52px] min-[900px]:grid-cols-[1.05fr_.95fr] min-[900px]:gap-16">
             <div>
-              <div className="sk"><span className="n">01 /</span> Course intel</div>
-              <h2>The intel on your courses</h2>
-            </div>
-            <p className="note">
-              Every course is a dossier: the codes, the question bank, the time
-              pressure, the difficulty. Read it before you sit it.
-            </p>
-          </div>
-
-          <div className="course-grid">
-            {featured.map((course, i) => (
-              <Card key={course.id} {...cardPropsFor(course, i)} />
-            ))}
-          </div>
-
-          <div className="viewall">
-            <Link className="glink" href="/courses">
-              View all {courseCount} courses <span className="arrow">&rarr;</span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="sec" id="bookmarks" data-screen-label="What you get">
-        <div className="wrap">
-          <div className="sec-head">
-            <div>
-              <div className="sk"><span className="n">02 /</span> The dossier</div>
-              <h2>What&apos;s inside every file</h2>
-            </div>
-            <p className="note">
-              Four kinds of intelligence per course, decoded down to what the
-              exam actually rewards.
-            </p>
-          </div>
-
-          <div className="index">
-            <DossierItem
-              n="Intel 01"
-              title="Study notes, topic by topic"
-              tag="Per topic"
-              body="Decoded summaries for every topic on the syllabus: the signal pulled out of the 400-page textbook."
-            />
-            <DossierItem
-              n="Intel 02"
-              title="Timed practice quizzes"
-              tag="Timed"
-              body="50+ questions per course, run under real exam time pressure so the clock never surprises you."
-            />
-            <DossierItem
-              n="Intel 03"
-              title="Curated exam-focus areas"
-              tag="Exam-weighted"
-              body="The topics that actually recur, flagged from years of past papers, ranked by how often they're tested."
-            />
-            <DossierItem
-              n="Intel 04"
-              title="Theory questions"
-              tag="Long-answer"
-              body="Model long-answer questions with the structure examiners reward: not just the right point, the right shape."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="sec" id="tutors" data-screen-label="Academic support">
-        <div className="wrap">
-          <div className="sec-head">
-            <div>
-              <div className="sk"><span className="n">03 /</span> Support</div>
-              <h2>Backup, when you need a person</h2>
-            </div>
-            <p className="note">
-              Self-serve intel covers most of it. Peer tutoring is the human
-              layer, rolling out next.
-            </p>
-          </div>
-
-          <div className="support ticks">
-            <div className="sup-head">
-              <span className="sup-label">Support // Peer tutoring</span>
-              <span className="sup-soon">Coming soon</span>
-            </div>
-            <div className="sup-body">
-              <div>
-                <h3>One-on-one help from students who&apos;ve aced the paper.</h3>
-                <p>
-                  Pair with a senior who has already decoded the course. Sessions
-                  open next semester. If you&apos;re 300L or above, you can be on
-                  the other side of the table.
-                </p>
-              </div>
-              <div className="sup-links">
-                <div className="sl-row">
-                  <Link className="glink" href="/tutors">
-                    Join the waitlist <span className="arrow">&rarr;</span>
-                  </Link>
-                  <span className="sl-note">Get notified when tutoring opens</span>
-                </div>
-                <div className="sl-row">
-                  <Link className="glink" href="/become-a-tutor">
-                    Apply to tutor <span className="arrow">&rarr;</span>
-                  </Link>
-                  <span className="sl-note">300L+ students · earn while you help</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="sec" id="contact" data-screen-label="Closing CTA">
-        <div className="wrap">
-          <div className="closing">
-            <ClosingMotif />
-            <div className="cl-inner">
-              <span className="cl-kicker">File 001 · University of Lagos</span>
-              <h2>Walk in already knowing.</h2>
-              <p>
-                Pull the intel on your courses before the hall does. Start with
-                the question bank that matters.
+              <span className="mb-6 inline-flex items-center gap-[10px]">
+                <span className="h-[7px] w-[7px] rounded-full bg-ci-accent" />
+                <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-blue-150">
+                  University of Lagos
+                </span>
+              </span>
+              <h1 className="text-balance text-[clamp(43px,8.5vw,76px)] font-extrabold leading-[.99] tracking-[-0.035em] text-white">
+                The inside track on{' '}
+                <span className="relative whitespace-nowrap">
+                  every paper
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-0 bottom-[0.07em] h-[0.13em] rounded-[2px] bg-ci-accent opacity-90"
+                  />
+                </span>
+                .
+              </h1>
+              <p className="mt-[26px] max-w-[30ch] text-[clamp(18px,2.4vw,21px)] leading-[1.5] text-ci-blue-200">
+                Study notes, past questions and exam focus areas, decoded for the courses you&apos;re
+                sitting this semester.
               </p>
-              <div className="cl-cta">
-                <Link className="btn btn-primary" href="/courses">
-                  Browse courses <span className="arrow">&rarr;</span>
+              <div className="mt-9 flex flex-wrap gap-[13px]">
+                <Link className={cx(btnBase, btnAccent)} href="/courses">
+                  Browse courses <Arrow />
                 </Link>
                 <a
-                  className="btn btn-secondary"
+                  className={cx(btnBase, btnGhostOnBlue)}
                   href={WHATSAPP_URL}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -280,6 +127,201 @@ export default function HomePage() {
                   Message on WhatsApp
                 </a>
               </div>
+              <div className="mt-[30px] flex items-center gap-3 text-sm text-ci-blue-200">
+                <span className="flex">
+                  {['A', 'O', 'E', '+'].map((initial, i) => (
+                    <span
+                      key={initial}
+                      className={cx(
+                        'grid h-[30px] w-[30px] place-items-center rounded-full border-2 border-ci-navy bg-ci-blue-600 text-xs font-bold text-white',
+                        i > 0 && '-ml-[9px]',
+                      )}
+                    >
+                      {initial}
+                    </span>
+                  ))}
+                </span>
+                Trusted by students across the University of Lagos.
+              </div>
+            </div>
+
+            <div className="relative flex justify-center">
+              <HeroMotif tone="on-blue" />
+              {previewCourse ? (
+                <HeroPreview
+                  code={previewCourse.code}
+                  title={previewCourse.title}
+                  desc={previewCourse.overview}
+                  href={`/courses/${previewCourse.slug}`}
+                  level={String(previewCourse.level)}
+                  credits={previewCourse.credits}
+                  questions={previewQuiz?.totalQuestions}
+                  quizMinutes={previewQuiz?.quizDurationMinutes}
+                  examCritical={previewCourse.examCritical === true}
+                  behindCode={behindCourse?.code}
+                  behindTitle={behindCourse?.title}
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ================= STATS ================= */}
+      <section className="border-b border-ci-border bg-ci-paper-2" aria-label="At a glance">
+        <div className={cx(WRAP, 'py-[34px]')}>
+          {/* Mobile: 2-col grid. >=680px: a flex row with space-between so the
+              first stat is flush-left, the last flush-right, and the middle two
+              fall on the 1/3 and 2/3 marks with equal gaps between all four. */}
+          <div className="grid w-full grid-cols-2 gap-x-5 gap-y-[30px] min-[680px]:flex min-[680px]:justify-between">
+            <Stat value={courseCountLabel} label="Courses" />
+            <Stat value={String(textbookCount)} label="Textbooks indexed" />
+            <Stat value="50" plus label="Questions per course" />
+            <Stat value="Peer" label="Tutors coming soon" soon />
+          </div>
+          <p className="mt-6 border-t border-ci-border pt-5 text-[14.5px] font-medium text-ci-gray-600">
+            Now serving <b className="font-bold text-ci-navy-900">Business Administration</b> · 200 Level ·
+            First Semester
+          </p>
+        </div>
+      </section>
+
+      {/* ================= FEATURED COURSES ================= */}
+      <section className="py-[72px] min-[900px]:py-[104px]" id="courses" data-screen-label="Featured courses">
+        <div className={WRAP}>
+          <div className="mb-[42px] flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
+                Featured courses
+              </span>
+              <h2 className="mt-[14px] max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
+                Start with the courses that move your grade.
+              </h2>
+            </div>
+            <Link className={cx(btnBase, btnSm, btnGhost)} href="/courses">
+              View all {courseCount} courses <Arrow />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-3">
+            {featured.map((course, i) => (
+              <Card key={course.id} {...cardPropsFor(course, i)} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ================= WHAT YOU GET ================= */}
+      <section
+        className="border-y border-ci-border bg-ci-paper-2 py-[72px] min-[900px]:py-[104px]"
+        id="features"
+        data-screen-label="What you get"
+      >
+        <div className={WRAP}>
+          <div className="mb-[42px] flex flex-col gap-4">
+            <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
+              What you get
+            </span>
+            <h2 className="max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
+              Everything you need to walk in prepared.
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-[14px] min-[680px]:grid-cols-3">
+            <Feature
+              title="Study notes and calculator tips"
+              body="Decoded summaries topic by topic, with the calculator shortcuts that save you minutes in the hall."
+              icon={<NotesIcon />}
+            />
+            <Feature
+              title="Timed practice quizzes"
+              body="50+ questions per course under real exam pressure, so the clock never catches you off guard."
+              icon={<TimerIcon />}
+            />
+            <Feature
+              title="Exam focus areas"
+              body="The topics that actually recur, ranked from years of past papers, so you study what the exam rewards."
+              icon={<TargetIcon />}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ================= PEER TUTORING ================= */}
+      <section className="py-[72px] min-[900px]:py-[104px]" id="tutoring" data-screen-label="Peer tutoring">
+        <div className={WRAP}>
+          <div className="overflow-hidden rounded-[24px] border border-ci-border bg-ci-paper-2">
+            <div className="p-[40px_28px] min-[900px]:p-[56px_52px]">
+              <div className="min-[900px]:grid min-[900px]:grid-cols-2 min-[900px]:items-center min-[900px]:gap-12">
+                <div>
+                  <div className="mb-[14px] flex flex-wrap items-center gap-[14px]">
+                    <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
+                      Peer tutoring
+                    </span>
+                    <span className="inline-flex items-center gap-2 rounded-full border border-ci-blue-200 bg-ci-blue-50 px-[15px] py-[7px] text-[12.5px] font-bold uppercase tracking-[0.12em] text-ci-navy">
+                      <span className="h-[6px] w-[6px] rounded-full bg-ci-navy" />
+                      Coming soon
+                    </span>
+                  </div>
+                  <h2 className="max-w-[20ch] text-[clamp(27px,4vw,38px)] font-extrabold leading-[1.05] tracking-[-0.03em] text-ci-navy-900">
+                    A real person for the parts that don&apos;t click.
+                  </h2>
+                  <p className="mt-[14px] max-w-[54ch] text-[17px] leading-[1.55] text-ci-gray-600">
+                    Pair with a senior who has already aced the paper, or share what you know with juniors.
+                    Rolling out next semester.
+                  </p>
+                </div>
+
+                <div className="mt-[30px] grid grid-cols-1 gap-[14px] min-[680px]:grid-cols-2 min-[900px]:mt-0">
+                  <PathCard
+                    title="Find a tutor"
+                    body="Book focused sessions on the exam-critical topics."
+                    linkLabel="Join the waitlist"
+                    href="/tutors"
+                    icon={<PersonIcon />}
+                  />
+                  <PathCard
+                    title="Become a tutor"
+                    body="300L and above can help juniors and earn for sessions."
+                    linkLabel="Apply to tutor"
+                    href="/become-a-tutor"
+                    icon={<StarIcon />}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ================= CLOSING CTA ================= */}
+      <section className="relative overflow-hidden bg-ci-navy text-ci-paper" id="contact" data-screen-label="Closing CTA">
+        <svg
+          className="absolute right-[-40px] top-[-30px] z-[1] h-[280px] w-[280px] text-ci-blue-600 opacity-50"
+          viewBox="0 0 200 200"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="100" cy="100" r="90" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 12" strokeLinecap="round" />
+        </svg>
+        <div className={cx(WRAP, 'relative z-[2] py-[72px] min-[900px]:py-[104px]')}>
+          <div className="flex flex-col items-start min-[900px]:items-center min-[900px]:text-center">
+            <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-accent">
+              University of Lagos
+            </span>
+            <h2 className="mt-[18px] max-w-[16ch] text-balance text-[clamp(34px,6vw,60px)] font-extrabold leading-none tracking-[-0.035em] text-white">
+              Walk in already knowing.
+            </h2>
+            <p className="mt-5 max-w-[44ch] text-[18px] leading-[1.55] text-ci-blue-200">
+              Every course, every past question, every exam focus area in one place.
+            </p>
+            <div className="mt-[34px] flex flex-wrap gap-[13px]">
+              <Link className={cx(btnBase, btnAccent)} href="/courses">
+                Start studying <Arrow />
+              </Link>
+              <a className={cx(btnBase, btnLight)} href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
+                Message on WhatsApp
+              </a>
             </div>
           </div>
         </div>
@@ -288,50 +330,222 @@ export default function HomePage() {
   )
 }
 
-function ClosingMotif() {
-  // The closing CTA sits the motif centered behind the headline, scaled up
-  // and even fainter (--n-100). Distinct enough from .hero-motif that it
-  // gets its own inline render rather than reusing HeroMotif.
-  return (
-    <svg className="cl-motif" viewBox="0 0 100 100" aria-hidden="true">
-      <path
-        d="M 76.2 68.35 A 32 32 0 1 1 76.2 31.65"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-      <circle cx="84.5" cy="50" r="3.1" fill="currentColor" />
-    </svg>
-  )
+// ---- Hero product-preview (.pcard) — a real course, data-driven ----
+const PREVIEW_DESC_FALLBACK = 'Double-entry, final accounts and the ratios examiners keep coming back to.'
+
+type HeroPreviewProps = {
+  code: string
+  title: string
+  desc?: string
+  href: string
+  level: string
+  credits: number
+  questions?: number
+  quizMinutes?: number
+  examCritical: boolean
+  behindCode?: string
+  behindTitle?: string
 }
 
-function ApertureStamp() {
+function HeroPreview({
+  code,
+  title,
+  desc,
+  href,
+  level,
+  credits,
+  questions,
+  quizMinutes,
+  examCritical,
+  behindCode,
+  behindTitle,
+}: HeroPreviewProps) {
   return (
-    <svg className="ap" viewBox="0 0 100 100" width={13} height={13} aria-hidden="true">
-      <path
-        d="M 76.2 68.35 A 32 32 0 1 1 76.2 31.65"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={13}
-        strokeLinecap="round"
-      />
-      <circle cx="84.5" cy="50" r={9} fill="#0E9180" />
-    </svg>
-  )
-}
+    <div className="relative z-[2] w-full max-w-[380px] px-0 pb-[18px] pt-[30px] min-[900px]:max-w-[400px]">
+      {/* faded second course card peeking out behind for depth (decorative) */}
+      {behindCode && behindTitle ? (
+        <div
+          aria-hidden
+          className="absolute left-1/2 top-[-26px] z-[1] w-[88%] -translate-x-1/2 -rotate-[2.5deg] overflow-hidden rounded-[18px] border border-ci-border bg-ci-white opacity-[0.92] shadow-ci-card"
+        >
+          <div className="flex items-center justify-between gap-3 px-5 pb-[26px] pt-[13px]">
+            <span className="text-[12px] font-bold tracking-[0.08em] text-ci-navy">{behindCode}</span>
+            <span className="truncate text-[15px] font-bold text-ci-navy-900">{behindTitle}</span>
+          </div>
+        </div>
+      ) : null}
 
-type DossierItemProps = { n: string; title: string; tag: string; body: string }
-
-function DossierItem({ n, title, tag, body }: DossierItemProps) {
-  return (
-    <div className="ix">
-      <div className="ix-row-idx"><span className="ix-idx">{n}</span></div>
-      <div className="ix-top">
-        <h3>{title}</h3>
-        <span className="ix-tag">{tag}</span>
+      <div className="relative z-[2] overflow-hidden rounded-[18px] border border-ci-border bg-ci-white shadow-ci-soft">
+        <div className="p-[22px_22px_18px]">
+          <div className="flex items-start justify-between gap-[14px]">
+            <div>
+              <div className="text-[13px] font-bold tracking-[0.08em] text-ci-navy">{code}</div>
+              <div className="mt-[7px] text-[21px] font-bold leading-[1.12] tracking-[-0.02em] text-ci-navy-900">
+                {title}
+              </div>
+            </div>
+            {examCritical ? (
+              <span className="flex-none rounded-[7px] border border-ci-accent-100 bg-ci-accent-50 px-[9px] py-[5px] text-[11px] font-bold uppercase tracking-[0.08em] text-ci-accent-600">
+                Exam-critical
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-[13px] line-clamp-2 text-[15px] leading-[1.5] text-ci-gray-600">
+            {desc ?? PREVIEW_DESC_FALLBACK}
+          </p>
+        </div>
+        <div className="flex items-center gap-4 border-t border-ci-border bg-ci-paper px-[22px] py-[15px]">
+          <span className="text-[12.5px] font-medium text-ci-gray-600">
+            <b className="font-bold text-ci-navy-900">{level}</b> level
+          </span>
+          <span className="text-[12.5px] font-medium text-ci-gray-600">
+            <b className="font-bold text-ci-navy-900">{credits}</b> credits
+          </span>
+          {questions ? (
+            <span className="text-[12.5px] font-medium text-ci-gray-600">
+              <b className="font-bold text-ci-navy-900">{questions}</b> questions
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center justify-between px-[22px] py-4">
+          <div className="flex flex-col gap-[5px]">
+            <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-ci-gray-500">
+              {quizMinutes ? 'Timed quiz' : 'Course pack'}
+            </span>
+            <span className="text-[14px] font-bold text-ci-navy-900">
+              {quizMinutes ? `${quizMinutes} min` : 'Notes and past papers'}
+            </span>
+          </div>
+          <Link className={cx(btnBase, btnSm, 'bg-ci-navy text-ci-paper hover:bg-ci-navy-700')} href={href}>
+            View course
+          </Link>
+        </div>
       </div>
-      <p>{body}</p>
     </div>
+  )
+}
+
+// ---- small composables ----
+type StatProps = { value: string; label: string; plus?: boolean; soon?: boolean }
+
+function Stat({ value, label, plus, soon }: StatProps) {
+  return (
+    <div>
+      <div className="text-[clamp(30px,5vw,40px)] font-extrabold leading-none tracking-[-0.02em] text-ci-navy-900 [font-variant-numeric:tabular-nums]">
+        {value}
+        {plus ? <span className="text-ci-accent-600">+</span> : null}
+      </div>
+      <div
+        className={cx(
+          'mt-[10px] text-[13.5px] font-medium text-ci-gray-600',
+          soon && "inline-flex items-center gap-[7px] before:h-[5px] before:w-[5px] before:rounded-full before:bg-ci-gray-400 before:content-['']",
+        )}
+      >
+        {label}
+      </div>
+    </div>
+  )
+}
+
+function Feature({ title, body, icon }: { title: string; body: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-[16px] border border-transparent p-[30px_26px] transition-[background-color,border-color] duration-200 hover:border-ci-border hover:bg-ci-white">
+      <span className="block h-[46px] w-[46px] text-ci-navy">{icon}</span>
+      <h3 className="mt-[22px] text-[20px] font-bold tracking-[-0.018em] text-ci-navy-900">{title}</h3>
+      <p className="mt-[10px] text-[15.5px] leading-[1.55] text-ci-gray-600">{body}</p>
+    </div>
+  )
+}
+
+function PathCard({
+  title,
+  body,
+  linkLabel,
+  href,
+  icon,
+}: {
+  title: string
+  body: string
+  linkLabel: string
+  href: string
+  icon: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col rounded-[14px] border border-ci-border bg-ci-white p-6">
+      {/* flex-1 keeps the two links on a shared baseline regardless of copy */}
+      <div className="flex flex-[1_0_auto] flex-col gap-2">
+        <span className="mb-2 block h-[34px] w-[34px] text-ci-navy">{icon}</span>
+        <h4 className="text-[18px] font-bold tracking-[-0.015em] text-ci-navy-900">{title}</h4>
+        <p className="text-[14.5px] leading-[1.5] text-ci-gray-600">{body}</p>
+      </div>
+      <Link
+        href={href}
+        className="group mt-0 inline-flex items-center gap-[7px] whitespace-nowrap pt-[14px] text-[14.5px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-[11px]"
+      >
+        {linkLabel} <Arrow />
+      </Link>
+    </div>
+  )
+}
+
+// ---- feature / path icons (line-art, currentColor + amber accents) ----
+function NotesIcon() {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" className="h-full w-full">
+      <rect x="9" y="7" width="22" height="30" rx="3.5" stroke="currentColor" strokeWidth="2.2" />
+      <line x1="14.5" y1="14" x2="25.5" y2="14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <line x1="14.5" y1="19.5" x2="25.5" y2="19.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <line x1="14.5" y1="25" x2="21" y2="25" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <rect x="28" y="24" width="13" height="17" rx="3" fill="#F4F1EA" stroke="currentColor" strokeWidth="2.2" />
+      <line x1="31" y1="29.5" x2="38" y2="29.5" stroke="#E0A33E" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="32" cy="34.5" r="1.2" fill="currentColor" />
+      <circle cx="37" cy="34.5" r="1.2" fill="currentColor" />
+    </svg>
+  )
+}
+
+function TimerIcon() {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" className="h-full w-full">
+      <circle cx="24" cy="26" r="15" stroke="currentColor" strokeWidth="2.2" />
+      <path d="M24 17.5V26l5.5 3.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="19" y1="6.5" x2="29" y2="6.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <line x1="24" y1="6.5" x2="24" y2="11" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M37 14l2.5-2.5" stroke="#E0A33E" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function TargetIcon() {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" className="h-full w-full">
+      <circle cx="24" cy="24" r="15" stroke="currentColor" strokeWidth="2.2" />
+      <circle cx="24" cy="24" r="8.5" stroke="currentColor" strokeWidth="2.2" />
+      <circle cx="24" cy="24" r="2.4" fill="#E0A33E" />
+      <line x1="24" y1="2.5" x2="24" y2="9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <line x1="24" y1="39" x2="24" y2="45.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 34 34" fill="none" className="h-full w-full">
+      <circle cx="17" cy="11" r="6" stroke="currentColor" strokeWidth="2.1" />
+      <path d="M6 29c0-6 5-9.5 11-9.5S28 23 28 29" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 34 34" fill="none" className="h-full w-full">
+      <path
+        d="M17 4l3.7 7.5 8.3 1.2-6 5.8 1.4 8.2L17 24l-7.4 3.9 1.4-8.2-6-5.8 8.3-1.2L17 4z"
+        stroke="currentColor"
+        strokeWidth="2.1"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }

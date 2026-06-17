@@ -1,17 +1,95 @@
-/* globals.css — Tailwind directives + the bridge that maps next/font
-   CSS variables onto the names styles/campusintel.css expects.
-   Design tokens, base styles and chrome live in styles/campusintel.css. */
+/* globals.css — Tailwind directives, Variant B ("continuous blue") design
+   tokens, and the bridge that maps next/font output onto the legacy design
+   names that styles/campusintel.css still expects (dossier pages, until they
+   are reskinned chunk by chunk). */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Map next/font output (set on <html>) onto the design-system names.
-   Loaded AFTER campusintel.css so these definitions win. */
+/* =============================================================
+   Variant B design tokens (source: _design/variant-b-handoff).
+   Tailwind ci-* utilities mirror these; CSS vars stay available
+   for the few places that read them directly (e.g. HeroMotif blob).
+   ============================================================= */
 :root {
-  --serif: var(--font-serif), Georgia, serif;
-  --sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif;
-  --mono: var(--font-geist-mono), "SF Mono", ui-monospace, monospace;
+  /* warm neutrals */
+  --ci-paper: #FBFAF7;
+  --ci-paper-2: #F4F1EA;
+  --ci-white: #FFFFFF;
+  --ci-ink: #262320;
+  --ci-gray-700: #565047;
+  --ci-gray-600: #6B6459;
+  --ci-gray-500: #938B7D;
+  --ci-gray-400: #B4AC9E;
+  --ci-border: #E7E2D8;
+  --ci-border-2: #DAD3C6;
+
+  /* academic blue ramp (from #003e7e) */
+  --ci-blue-50: #E9EFF6;
+  --ci-blue-100: #D2E0EC;
+  --ci-blue-150: #C9D6EE;
+  --ci-blue-200: #A6C0DA;
+  --ci-blue-400: #5285B4;
+  --ci-blue-600: #14568F;
+  --ci-navy: #003E7E;
+  --ci-navy-700: #00346A;
+  --ci-navy-900: #002850;
+
+  /* single amber accent */
+  --ci-accent: #E0A33E;
+  --ci-accent-600: #C6862A;
+  --ci-accent-100: #F7E8CC;
+  --ci-accent-50: #FBF3E2;
+
+  /* shadows */
+  --ci-shadow-card: 0 1px 2px rgba(38, 35, 32, .04), 0 12px 28px -10px rgba(38, 35, 32, .14);
+  --ci-shadow-soft: 0 1px 2px rgba(38, 35, 32, .03), 0 18px 50px -22px rgba(27, 35, 84, .22);
+
+  /* type / layout */
+  --ci-font: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  --ci-maxw: 1200px;
+  --ci-gutter: 24px;
+
+  /* radii */
+  --ci-radius-btn: 11px;
+  --ci-radius-btn-sm: 9px;
+  --ci-radius-card: 16px;
+  --ci-radius-card-lg: 18px;
+  --ci-radius-panel: 24px;
+  --ci-radius-pill: 999px;
+}
+
+@media (min-width: 900px) {
+  :root {
+    --ci-gutter: 40px;
+  }
+}
+
+/* Legacy font bridge: dossier pages (styles/campusintel.css) still read
+   var(--serif)/--sans/--mono. Instrument Serif + Geist are gone, so point the
+   sans face at Hanken Grotesk and fall the others back to system stacks until
+   those pages are reskinned. Loaded after campusintel.css so these win. */
+:root {
+  --serif: Georgia, "Times New Roman", serif;
+  --sans: var(--font-hanken), -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  /* Variant B base type. The bg/text colors are applied via utilities on
+     <body> in app/layout.tsx (font-sans bg-ci-paper text-ci-ink). */
+  body {
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--ci-accent-100);
+    color: var(--ci-navy-900);
+  }
 }
 
 @layer utilities {

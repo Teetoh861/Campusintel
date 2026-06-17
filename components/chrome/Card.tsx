@@ -1,13 +1,15 @@
-// Card — course "dossier" card. Ports _design/bundle/course.bundle.html into
-// a reusable Server Component used across the homepage grid, the course
-// directory and the bookmarks list. Course-specific data flows in via props;
-// the card itself stays presentational.
+// Card — Variant B course card (.ccard). White-on-warm surface, 1px border,
+// soft hover lift; the exam-critical flag adds an amber tag + warm gradient
+// wash. Reskin only: CardProps is unchanged so the homepage grid, the course
+// directory and the bookmarks list keep passing the same data. The 3-bar
+// difficulty indicator lives in <SignalBar>. (component-spec.md → Card)
 import Link from 'next/link'
 import { SignalBar, type DifficultyLevel } from './SignalBar'
+import { Arrow, cx } from './ui'
 
 export type CardFlag = {
-  // 'critical' is the lone teal accent for an exam-critical course;
-  // 'tracked' is the muted default for everything else.
+  // 'critical' is the lone amber accent for an exam-critical course;
+  // 'tracked' is the muted default (no tag is rendered for it).
   kind: 'critical' | 'tracked'
   label: string
 }
@@ -34,18 +36,19 @@ export type CardProps = {
   cta: CardCta
   // Optional extra action sitting next to the primary CTA. Used for the
   // exam-critical treatment where "View course" stays primary and "Start
-  // quiz" is offered as an additional secondary action.
+  // quiz" is offered as an additional amber action.
   secondaryCta?: CardCta
   updated?: string
   ticks?: boolean
   // Optional interactive node appended to the right of the card footer. Only
   // the bookmarks list sets this (a Remove control); when absent the footer
-  // renders exactly as before, so homepage/directory cards are unchanged.
+  // renders exactly as before.
   footerAction?: React.ReactNode
 }
 
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 export function Card({
-  intelIndex,
   code,
   title,
   flag,
@@ -53,109 +56,87 @@ export function Card({
   credits,
   questions,
   questionsRange,
-  timeLimit,
   difficulty,
   difficultyLabel,
   cta,
   secondaryCta,
   updated,
-  ticks = true,
   footerAction,
 }: CardProps) {
-  const articleClass = ticks ? 'course ticks' : 'course'
-  const ctaVariant = cta.variant ?? 'secondary'
-  const ctaClass = `btn btn-${ctaVariant} btn-sm`
-  const diffLabel = difficultyLabel ?? difficulty.toUpperCase()
-  const secondaryVariant = secondaryCta?.variant ?? 'secondary'
-  const secondaryClass = `btn btn-${secondaryVariant} btn-sm`
+  const critical = flag?.kind === 'critical'
+  const diffLabel = difficultyLabel ?? titleCase(difficulty)
 
   return (
-    <article className={articleClass}>
-      <div className="ch">
-        <div>
-          {intelIndex ? <div className="cx-idx">{intelIndex}</div> : null}
-          <div className="code">{code}</div>
-          <div className="ttl">{title}</div>
-        </div>
-        {flag ? (
-          <div className={flag.kind === 'critical' ? 'flag' : 'flag plain'}>
-            <span className="fd" />
-            <span className="ft">{flag.label}</span>
-          </div>
+    <article
+      className={cx(
+        'relative flex flex-col rounded-[16px] border p-[26px_24px] transition-[transform,box-shadow,border-color] duration-200',
+        'hover:-translate-y-[3px] hover:shadow-ci-card hover:border-ci-border-2',
+        critical
+          ? 'border-ci-accent-100 bg-[linear-gradient(180deg,var(--ci-accent-50),var(--ci-white)_38%)]'
+          : 'border-ci-border bg-ci-white',
+      )}
+    >
+      <div className="mb-4 flex items-start justify-between gap-[14px]">
+        <span className="text-[13px] font-bold tracking-[0.08em] text-ci-navy">{code}</span>
+        {critical && flag ? (
+          <span className="inline-flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.09em] text-ci-accent-600">
+            <span className="h-[6px] w-[6px] rounded-full bg-ci-accent" />
+            {flag.label}
+          </span>
         ) : null}
       </div>
 
-      <div className="readout">
-        <Row k="Level" v={level} />
-        <Row k="Credits" v={credits} />
-        <Row k="Questions">
-          {questions}
-          {questionsRange ? <span className="dv">{questionsRange}</span> : null}
-        </Row>
-        <Row k="Time limit" v={timeLimit} />
-        <Row k="Difficulty">
+      <h3 className="text-[22px] font-bold leading-[1.12] tracking-[-0.02em] text-ci-navy-900">
+        {title}
+      </h3>
+
+      {/* spacer keeps footers aligned across the grid (no desc field) */}
+      <div className="flex-1" />
+
+      <div className="mt-5 flex flex-wrap items-center gap-[7px] text-[13px] font-medium text-ci-gray-500">
+        <span>{level} level</span>
+        <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
+        <span>{credits}</span>
+        <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
+        <span>
+          {questions} questions
+          {questionsRange ? <span className="ml-1 text-ci-gray-400">{questionsRange}</span> : null}
+        </span>
+      </div>
+
+      <div className="mt-5 flex items-center justify-between gap-[14px] border-t border-ci-border pt-[18px]">
+        <span className="inline-flex items-center gap-[9px]">
           <SignalBar level={difficulty} />
-          {' '}
-          {diffLabel}
-        </Row>
-      </div>
+          <span className="text-[12.5px] font-semibold tracking-[0.04em] text-ci-gray-600">
+            {diffLabel}
+          </span>
+        </span>
 
-      <div className="cf">
-        {secondaryCta ? (
-          // Wrap both actions in a single flex item so the .cf row stays a
-          // tidy [actions group] [updated] layout. The pair sits primary-then-
-          // secondary in the same row, wrapping to a column on cards too
-          // narrow to fit them — mirroring the .hero-cta column→row pattern.
-          <div style={cfActionsStyle}>
-            <Link className={ctaClass} href={cta.href}>
-              {cta.label}
-              {cta.withArrow ? <span className="arrow">&rarr;</span> : null}
-            </Link>
-            <Link className={secondaryClass} href={secondaryCta.href}>
+        <div className="flex items-center gap-4">
+          {secondaryCta ? (
+            <Link
+              href={secondaryCta.href}
+              className="group inline-flex items-center gap-2 text-[15px] font-semibold text-ci-accent-600 transition-[gap] duration-150 hover:gap-3"
+            >
               {secondaryCta.label}
-              {secondaryCta.withArrow ? <span className="arrow">&rarr;</span> : null}
+              {secondaryCta.withArrow ? <Arrow /> : null}
             </Link>
-          </div>
-        ) : (
-          <Link className={ctaClass} href={cta.href}>
+          ) : null}
+          <Link
+            href={cta.href}
+            className="group inline-flex items-center gap-2 text-[15px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-3"
+          >
             {cta.label}
-            {cta.withArrow ? <span className="arrow">&rarr;</span> : null}
+            {cta.withArrow ? <Arrow /> : null}
           </Link>
-        )}
-        {footerAction ? (
-          // Bookmarks-only branch: group the (optional) updated stamp and the
-          // Remove control on the footer's right. Non-bookmark cards never set
-          // footerAction, so they keep the original [cta] [upd] markup.
-          <div className="bm-cf-right">
-            {updated ? <span className="upd">{updated}</span> : null}
-            {footerAction}
-          </div>
-        ) : updated ? (
-          <span className="upd">{updated}</span>
-        ) : null}
+          {footerAction ? (
+            <span className="inline-flex items-center gap-3">
+              {updated ? <span className="text-[12.5px] text-ci-gray-500">{updated}</span> : null}
+              {footerAction}
+            </span>
+          ) : null}
+        </div>
       </div>
     </article>
-  )
-}
-
-const cfActionsStyle = {
-  display: 'flex',
-  flexWrap: 'wrap' as const,
-  alignItems: 'center',
-  gap: 8,
-}
-
-type RowProps = {
-  k: string
-  v?: string
-  children?: React.ReactNode
-}
-
-function Row({ k, v, children }: RowProps) {
-  return (
-    <div className="r">
-      <span className="k">{k}</span>
-      <span className="v">{children ?? v}</span>
-    </div>
   )
 }

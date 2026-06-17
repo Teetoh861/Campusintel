@@ -1,9 +1,8 @@
-// Root layout — wires fonts to the CSS variables that styles/campusintel.css
-// expects (--serif / --sans / --mono) and loads the design CSS globally.
+// Root layout — Variant B ("continuous blue"). Loads Hanken Grotesk via
+// next/font (exposed as --font-hanken, the var tailwind's font-sans points at)
+// and loads the design CSS globally. Instrument Serif / Geist are gone.
 import type { Metadata, Viewport } from 'next'
-import { Instrument_Serif } from 'next/font/google'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
+import { Hanken_Grotesk } from 'next/font/google'
 
 import '../styles/campusintel.css'
 import './globals.css'
@@ -11,12 +10,11 @@ import './globals.css'
 import { Nav } from '@/components/chrome/Nav'
 import { Footer } from '@/components/chrome/Footer'
 
-const instrumentSerif = Instrument_Serif({
+const hanken = Hanken_Grotesk({
   subsets: ['latin'],
-  weight: '400',
-  style: ['normal', 'italic'],
-  variable: '--font-serif',
+  weight: ['400', '500', '600', '700', '800'],
   display: 'swap',
+  variable: '--font-hanken',
 })
 
 export const metadata: Metadata = {
@@ -40,16 +38,15 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#FAF8F4',
+  themeColor: '#003E7E',
 }
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const fontClass = `${instrumentSerif.variable} ${GeistSans.variable} ${GeistMono.variable}`
   return (
-    <html lang="en" className={fontClass}>
-      <body>
+    <html lang="en" className={hanken.variable}>
+      <body className="font-sans bg-ci-paper text-ci-ink">
         <Nav />
         <main id="top">{children}</main>
         <Footer />
