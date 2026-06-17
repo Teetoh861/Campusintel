@@ -1,35 +1,23 @@
-// Become a tutor (/become-a-tutor) — server shell around the client form.
-// The cover is static so it can be a Server Component; only the form itself
-// (state, counter, WhatsApp handoff) is a client island.
-import Link from 'next/link'
-import '../../styles/pages.css'
-import { HeroMotif } from '@/components/chrome/HeroMotif'
+// Become a tutor (/become-a-tutor) — Variant B server shell around the client
+// form. VISUAL RESKIN ONLY: the blue cover is static (Server Component); only
+// the form (state, counter, WhatsApp handoff) is a client island.
+import { BlueCover } from '@/components/chrome/BlueCover'
 import { TutorForm } from './TutorForm'
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 export default function BecomeTutorPage() {
   return (
     <>
-      <header className="course-cover" data-screen-label="Cover">
-        <HeroMotif />
-        <div className="wrap">
-          <nav className="crumb" aria-label="Breadcrumb">
-            <Link href="/tutors">Tutors</Link>
-            <span className="sep">/</span>
-            <span className="cur">Apply</span>
-          </nav>
-          <div className="pg-kicker">
-            Recruitment <span className="sep">·</span> 300L and above
-          </div>
-          <h1 className="pg-title">Apply to tutor</h1>
-          <p className="pg-lede">
-            Know a course cold? Help juniors decode it, and get paid for the
-            sessions you run. Tell us what you can teach.
-          </p>
-        </div>
-      </header>
+      <BlueCover
+        crumbs={[{ label: 'Tutors', href: '/tutors' }, { label: 'Apply' }]}
+        kicker="Recruitment · 300L and above"
+        title="Apply to tutor"
+        lede="Know a course cold? Help juniors decode it, and get paid for the sessions you run. Tell us what you can teach."
+      />
 
-      <section className="pg-body" data-screen-label="Application form">
-        <div className="wrap">
+      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Application form">
+        <div className={WRAP}>
           <TutorForm />
         </div>
       </section>

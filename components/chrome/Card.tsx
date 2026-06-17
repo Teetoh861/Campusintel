@@ -48,6 +48,10 @@ export type CardProps = {
   // the bookmarks list sets this (a Remove control); when absent the footer
   // renders exactly as before.
   footerAction?: React.ReactNode
+  // Optional control pinned to the card's top-right corner (the bookmarks
+  // Remove ×). Absolutely positioned over the card; the header padding leaves
+  // room so it never collides with the exam-critical tag.
+  cornerAction?: React.ReactNode
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -67,6 +71,7 @@ export function Card({
   secondaryCta,
   updated,
   footerAction,
+  cornerAction,
 }: CardProps) {
   const critical = flag?.kind === 'critical'
   const diffLabel = difficultyLabel ?? titleCase(difficulty)
@@ -81,7 +86,8 @@ export function Card({
           : 'border-ci-border bg-ci-white',
       )}
     >
-      <div className="mb-4 flex items-start justify-between gap-[14px]">
+      {cornerAction ? <div className="absolute right-3 top-3 z-[1]">{cornerAction}</div> : null}
+      <div className={cx('mb-4 flex items-start justify-between gap-[14px]', Boolean(cornerAction) && 'pr-8')}>
         <span className="text-[13px] font-bold tracking-[0.08em] text-ci-navy">{code}</span>
         {critical && flag ? (
           <span className="inline-flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.09em] text-ci-accent-600">

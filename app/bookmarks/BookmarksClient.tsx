@@ -1,14 +1,14 @@
-// BookmarksClient — the client island for /bookmarks. Reads the locally
-// saved set from localStorage on mount, validates the payload, intersects
-// it with the known catalogue, and renders the matches as Card components
-// in the homepage / directory grid. When nothing's saved (or before mount,
-// when localStorage hasn't been read yet) the dossier empty state shows.
+// BookmarksClient — Variant B client island for /bookmarks. VISUAL RESKIN
+// ONLY: the localStorage read/write, validation, catalogue intersection, the
+// Remove control and the hydration/empty logic are all unchanged. Saved courses
+// render in the shared .ccard grid with a top-right Remove (×); when nothing is
+// saved (or pre-hydration) the warm dashed empty state shows alone.
 'use client'
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
-import { HeroMotif } from '@/components/chrome/HeroMotif'
 import { Card, type CardProps } from '@/components/chrome/Card'
+import { Arrow, btnAccent, btnBase, cx } from '@/components/chrome/ui'
 
 // Storage shape mirrors the comp's bookmarks.js: a JSON array of course
 // codes (e.g. ["ACC201", "BUA203"]). We also accept slugs so a future
@@ -17,6 +17,8 @@ const STORAGE_KEY = 'ci_bookmarks_v1'
 // Same-tab sync signal shared with app/courses/[slug]/BookmarkButton.tsx, so
 // removing here updates a bookmark button mounted elsewhere on the page.
 const CHANGE_EVENT = 'ci:bookmarks-changed'
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 export type BookmarkableCourse = {
   id: string
@@ -32,8 +34,6 @@ type Props = {
 type HydrationStatus = 'pending' | 'ready'
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
-
-const fileIndex = (i: number) => `File ${pad2(i + 1)}`
 
 export function BookmarksClient({ catalog }: Props) {
   const [status, setStatus] = useState<HydrationStatus>('pending')
@@ -92,32 +92,29 @@ export function BookmarksClient({ catalog }: Props) {
 
   const count = matches.length
   const countLabel = pad2(count)
-  // Treat the pre-hydration pass the same as "no bookmarks": render the
-  // dossier empty state alone. Avoids the SSR'd "00 Saved" cover that the
-  // user would see flash before the localStorage read completes, and means
-  // the empty case is always a single clean block — no stacked redundancy
-  // between cover count and empty-state heading.
+  // Treat the pre-hydration pass the same as "no bookmarks": render the empty
+  // state alone. Avoids the SSR'd "00 Saved" cover flashing before the
+  // localStorage read completes, and keeps the empty case a single clean block.
   const showEmpty = status !== 'ready' || count === 0
 
   if (showEmpty) {
     return (
-      <section className="pg-body" data-screen-label="Saved grid">
-        <div className="wrap">
-          <nav className="crumb" aria-label="Breadcrumb">
-            <Link href="/">Home</Link>
-            <span className="sep">/</span>
-            <span className="cur">Bookmarks</span>
+      <section className="bg-ci-paper pb-20 pt-12 min-[900px]:pt-16" data-screen-label="Saved grid">
+        <div className={WRAP}>
+          <nav className="mb-10 flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-gray-500" aria-label="Breadcrumb">
+            <Link href="/" className="transition-colors hover:text-ci-navy">Home</Link>
+            <span className="text-ci-gray-400">/</span>
+            <span className="text-ci-navy-900">Bookmarks</span>
           </nav>
-          <div className="dir-empty ticks show">
-            <div className="de-mark">No saved files yet</div>
-            <h3>Your bookmarks are empty</h3>
-            <p>
-              Bookmark a course from its file and it lands here, ready for
-              your next study run.
+          <div className="mx-auto max-w-[540px] rounded-[20px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[48px_28px] text-center">
+            <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">No saved files yet</div>
+            <h3 className="mt-[14px] text-[26px] font-extrabold tracking-[-0.02em] text-ci-navy-900">Your bookmarks are empty</h3>
+            <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-[1.55] text-ci-gray-600">
+              Bookmark a course from its page and it lands here, ready for your next study run.
             </p>
-            <div className="de-cta">
-              <Link className="btn btn-primary" href="/courses">
-                Browse courses <span className="arrow">&rarr;</span>
+            <div className="mt-6 inline-flex">
+              <Link className={cx(btnBase, btnAccent)} href="/courses">
+                Browse courses <Arrow />
               </Link>
             </div>
           </div>
@@ -128,51 +125,60 @@ export function BookmarksClient({ catalog }: Props) {
 
   return (
     <>
-      <header className="course-cover" data-screen-label="Cover">
-        <HeroMotif />
-        <div className="wrap">
-          <nav className="crumb" aria-label="Breadcrumb">
-            <Link href="/">Home</Link>
-            <span className="sep">/</span>
-            <span className="cur">Bookmarks</span>
+      <header
+        className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ci-navy),var(--ci-navy-900))] text-white"
+        data-screen-label="Cover"
+      >
+        <svg
+          className="absolute right-[-60px] top-[-50px] z-0 h-[300px] w-[300px] text-ci-blue-600 opacity-50"
+          viewBox="0 0 200 200"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="100" cy="100" r="90" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 12" strokeLinecap="round" />
+        </svg>
+        <div className={`${WRAP} relative z-[1] pb-[42px] pt-[30px] min-[900px]:pb-[52px] min-[900px]:pt-10`}>
+          <nav className="mb-[26px] flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200" aria-label="Breadcrumb">
+            <Link href="/" className="transition-colors hover:text-white">Home</Link>
+            <span className="text-white/35">/</span>
+            <span className="text-white">Bookmarks</span>
           </nav>
-          <div className="dir-count">
-            <span className="num">{countLabel}</span>
-            <span className="lab">Saved</span>
+          <div className="flex items-baseline gap-[10px]">
+            <span className="text-[clamp(46px,8vw,68px)] font-extrabold leading-[0.9] tracking-[-0.02em] text-ci-accent [font-variant-numeric:tabular-nums]">
+              {countLabel}
+            </span>
+            <span className="text-[14px] font-semibold tracking-[0.04em] text-ci-blue-200">Saved</span>
           </div>
-          <h1 className="dir-title">Saved Files</h1>
-          <p className="dir-lede">
-            Your shortlist of intelligence files. Bookmarked courses stay here
-            on this device, ready for the next study run.
+          <h1 className="mt-3 text-balance text-[clamp(36px,6.5vw,58px)] font-extrabold leading-none tracking-[-0.035em] text-white">
+            Saved files
+          </h1>
+          <p className="mt-5 max-w-[54ch] text-[clamp(16px,2.1vw,19px)] leading-[1.5] text-ci-blue-150">
+            Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.
           </p>
         </div>
       </header>
 
-      <section className="pg-body" data-screen-label="Saved grid">
-        <div className="wrap">
-          <div className="bm-headrow">
-            <span className="bm-h">Saved to this device</span>
-            <span className="bm-h">
+      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Saved grid">
+        <div className={WRAP}>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-[13.5px] font-medium text-ci-gray-600">
+            <span>Saved to this device</span>
+            <span className="[font-variant-numeric:tabular-nums]">
               {countLabel} {count === 1 ? 'file' : 'files'}
             </span>
           </div>
-          <div className="course-grid">
-            {matches.map((c, i) => (
+          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2 min-[900px]:grid-cols-3 min-[900px]:gap-6">
+            {matches.map((c) => (
               <Card
                 key={c.id}
                 {...c.cardProps}
-                intelIndex={fileIndex(i)}
-                footerAction={
+                cornerAction={
                   <button
                     type="button"
-                    className="bm-unsave"
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-[16px] leading-none text-ci-gray-500 transition-colors hover:bg-r-50 hover:text-r-600"
                     onClick={() => removeCourse(c)}
                     aria-label={`Remove ${c.code} from bookmarks`}
                   >
-                    <span className="x" aria-hidden="true">
-                      ✕
-                    </span>{' '}
-                    Remove
+                    <span aria-hidden="true">&times;</span>
                   </button>
                 }
               />

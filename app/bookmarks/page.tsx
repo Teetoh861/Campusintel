@@ -2,11 +2,6 @@
 // in localStorage, so the count + grid + empty state are owned by the client
 // child. Precomputing CardProps for every course on the server keeps the
 // client island free of data-shaping logic.
-// directory.css owns .dir-count / .dir-title / .dir-lede / .dir-empty —
-// pages.css references those classes without redefining them, so the
-// bookmarks page needs both stylesheets just like the comp does.
-import '../../styles/directory.css'
-import '../../styles/pages.css'
 import { courses } from '@/lib/data/courses'
 import { quizzes } from '@/lib/data/quizzes'
 import type { Course } from '@/lib/types'
@@ -26,18 +21,20 @@ function buildCardProps(course: Course): CardProps {
   return {
     code: course.code,
     title: course.title,
+    desc: course.tagline ?? course.overview,
     flag: critical
       ? { kind: 'critical', label: 'Exam-critical' }
       : { kind: 'tracked', label: 'Tracked' },
     level: String(course.level),
-    credits: `${course.credits} CR`,
-    questions: quiz ? String(quiz.totalQuestions) : '—',
-    timeLimit: quiz ? `${quiz.quizDurationMinutes} MIN` : '—',
+    credits: `${course.credits} credits`,
+    questions: quiz ? String(quiz.totalQuestions) : '0',
+    timeLimit: quiz ? `${quiz.quizDurationMinutes} min` : '',
     difficulty: toLevel(course.difficulty),
     cta: {
       label: 'View course',
       href: `/courses/${course.slug}`,
       variant: 'primary',
+      withArrow: true,
     },
     secondaryCta: critical
       ? {

@@ -1,11 +1,12 @@
-// Contact (/contact) — three dossier entries: WhatsApp (the lone teal
-// signal), phone (tel:), email (mailto:). The number is pulled from the
-// shared env helper, so it's correct everywhere by construction.
-import Link from 'next/link'
-import '../../styles/pages.css'
-import { HeroMotif } from '@/components/chrome/HeroMotif'
+// Contact (/contact) — Variant B. VISUAL RESKIN ONLY: three method rows with
+// WhatsApp highlighted (amber-tinted), then phone (tel:) and email (mailto:) as
+// clean white rows. The number comes from the shared env helper; the email from
+// lib/contact.ts so it's correct everywhere by construction.
+import { BlueCover } from '@/components/chrome/BlueCover'
 import { buildWhatsAppUrl, WHATSAPP_NUMBER } from '@/lib/whatsapp'
 import { CONTACT_EMAIL } from '@/lib/contact'
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 // Pretty-print a digits-only number for display. Conservatively NG-specific:
 // +234 ### ### #### when the input is a 13-digit number starting 234,
@@ -25,63 +26,58 @@ export default function ContactPage() {
   const waHref = buildWhatsAppUrl()
   return (
     <>
-      <header className="course-cover" data-screen-label="Cover">
-        <HeroMotif />
-        <div className="wrap">
-          <nav className="crumb" aria-label="Breadcrumb">
-            <Link href="/">Home</Link>
-            <span className="sep">/</span>
-            <span className="cur">Contact</span>
-          </nav>
-          <div className="pg-kicker">
-            Direct line <span className="sep">·</span> We read everything
-          </div>
-          <h1 className="pg-title">Get in touch</h1>
-          <p className="pg-lede">
-            Questions, a course you want decoded, or a correction on the intel:
-            reach us on whichever line suits you. WhatsApp is fastest.
-          </p>
-        </div>
-      </header>
+      <BlueCover
+        crumbs={[{ label: 'Home', href: '/' }, { label: 'Contact' }]}
+        kicker="Direct line · We read everything"
+        title="Get in touch"
+        lede="Questions, a course you want decoded, or a correction on the intel: reach us on whichever line suits you. WhatsApp is fastest."
+      />
 
-      <section className="pg-body" data-screen-label="Contact methods">
-        <div className="wrap">
-          <div className="contact-list">
+      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Contact methods">
+        <div className={WRAP}>
+          <div className="mx-auto flex max-w-[680px] flex-col gap-4">
+            {/* WhatsApp: the highlighted/primary method (amber-tinted) */}
             <a
-              className="contact-row primary"
+              className="group flex items-center justify-between gap-4 rounded-[14px] border border-ci-accent-100 bg-ci-accent-50 p-[18px_22px] transition-[transform,box-shadow] duration-150 hover:-translate-y-[2px] hover:shadow-ci-card"
               href={waHref}
               target="_blank"
               rel="noopener noreferrer"
             >
-              <div className="cr-main">
-                <div className="cr-k">
-                  <span className="sig" />WhatsApp · fastest
+              <div className="min-w-0">
+                <div className="inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ci-accent-600">
+                  <span className="h-[7px] w-[7px] rounded-full bg-ci-accent" />
+                  WhatsApp · fastest
                 </div>
-                <div className="cr-v">{phoneDisplay}</div>
+                <div className="mt-1 text-[18px] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{phoneDisplay}</div>
               </div>
-              <span className="cr-go">&rarr;</span>
+              <span className="text-[18px] text-ci-accent-600 transition-transform duration-150 group-hover:translate-x-[3px]">&rarr;</span>
             </a>
 
-            <a className="contact-row" href={telHref}>
-              <div className="cr-main">
-                <div className="cr-k">Call</div>
-                <div className="cr-v">{phoneDisplay}</div>
+            <a
+              className="group flex items-center justify-between gap-4 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-[2px] hover:border-ci-border-2 hover:shadow-ci-card"
+              href={telHref}
+            >
+              <div className="min-w-0">
+                <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Call</div>
+                <div className="mt-1 text-[18px] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{phoneDisplay}</div>
               </div>
-              <span className="cr-go">&rarr;</span>
+              <span className="text-[18px] text-ci-navy transition-transform duration-150 group-hover:translate-x-[3px]">&rarr;</span>
             </a>
 
-            <a className="contact-row" href={`mailto:${CONTACT_EMAIL}`}>
-              <div className="cr-main">
-                <div className="cr-k">Email</div>
-                <div className="cr-v">{CONTACT_EMAIL}</div>
+            <a
+              className="group flex items-center justify-between gap-4 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-[2px] hover:border-ci-border-2 hover:shadow-ci-card"
+              href={`mailto:${CONTACT_EMAIL}`}
+            >
+              <div className="min-w-0">
+                <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Email</div>
+                <div className="mt-1 break-words text-[18px] font-bold text-ci-navy-900">{CONTACT_EMAIL}</div>
               </div>
-              <span className="cr-go">&rarr;</span>
+              <span className="text-[18px] text-ci-navy transition-transform duration-150 group-hover:translate-x-[3px]">&rarr;</span>
             </a>
           </div>
 
-          <p className="contact-meta">
-            Typical response · within a day on WhatsApp · Mon–Sat, 9:00–18:00
-            WAT
+          <p className="mx-auto mt-6 max-w-[680px] text-[14px] text-ci-gray-600">
+            Typical response · within a day on WhatsApp · Mon to Sat, 9:00 to 18:00 WAT
           </p>
         </div>
       </section>
