@@ -1,22 +1,25 @@
-// ResultsScreen — the debrief. Score hero, weakest-section line, per-section
-// breakdown with tick or proportional bars, and a review list that defaults
-// to surfacing missed questions. Every visible figure traces back to the
-// shared per-question correctness map from QuizClient.
+// ResultsScreen — Variant B debrief (warm off-white). VISUAL RESKIN ONLY:
+// navy score hero (AA-safe, not amber), section breakdown with per-position
+// ticks (green correct / muted-red missed), and a review list defaulting to
+// missed. Every figure still traces to the shared per-question map; color is
+// never the only signal (glyphs + text labels carry meaning). No logic changed.
 'use client'
 
 import Link from 'next/link'
-import { HeroMotif } from '@/components/chrome/HeroMotif'
 import type { QuizQuestion } from '@/lib/types'
 import type { AnswersMap, ReviewFilter, SectionStat } from './types'
+import { Arrow, btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const
 
 // Verdict thresholds (percent). Match the comp.
 const STRONG_PCT = 70
 const PASS_PCT = 50
-// Section tag thresholds. ≥80% mastered, <70% revisit, neutral between.
+// Section tag thresholds. >=80% mastered, <70% revisit, neutral between.
 const MASTERED_PCT = 80
 const REVISIT_PCT = 70
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 type Props = {
   courseCode: string
@@ -63,63 +66,67 @@ export function ResultsScreen({
     .filter((r) => (reviewFilter === 'all' ? true : !r.ok))
 
   return (
-    <>
-      <section className="quiz-results">
-        <HeroMotif />
-        <div className="wrap">
-          <div className="qr-kicker">
-            <span className="sd" />Assessment Debrief · {courseCode}
-          </div>
-          <div className="qr-scorewrap">
-            <div className="qr-score">
-              {correctCount}<span className="of"> / {total}</span>
-            </div>
-            <div className="qr-meta">
-              <div className="qr-pct">{pct}%</div>
-              <span className="qr-msep" />
-              <div className="qr-verdict">{verdict}</div>
-            </div>
-          </div>
-          {weakest ? (
-            <p className="qr-line">
-              Your weakest section is {weakest.name}. Start your revision there.
-            </p>
-          ) : null}
+    <section className="bg-ci-paper pb-20 pt-12 min-[900px]:pt-16">
+      {/* score hero */}
+      <div className={WRAP}>
+        <div className="inline-flex items-center gap-[9px] text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
+          <span className="h-[7px] w-[7px] rounded-full bg-ci-accent" />
+          Assessment Debrief · {courseCode}
         </div>
-      </section>
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          <div className="text-[clamp(56px,12vw,88px)] font-extrabold leading-none tracking-[-0.03em] text-ci-navy-900 [font-variant-numeric:tabular-nums]">
+            {correctCount}
+            <span className="text-ci-gray-400"> / {total}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-[clamp(20px,4vw,26px)] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{pct}%</div>
+            <span className="h-[18px] w-px bg-ci-border-2" />
+            <div className="text-[15px] font-medium text-ci-gray-600">{verdict}</div>
+          </div>
+        </div>
+        {weakest ? (
+          <p className="mt-4 max-w-[60ch] text-[16px] leading-[1.55] text-ci-gray-600">
+            Your weakest section is {weakest.name}. Start your revision there.
+          </p>
+        ) : null}
+      </div>
 
-      <section className="quiz-active">
-        <div className="wrap" style={resultsWrapStyle}>
-          <div className="qr-sec">
-            <div className="dsec-head">
-              <span className="sk">
-                <span className="n">01 /</span> Section intelligence
-              </span>
+      <div className={cx(WRAP, 'mt-12')}>
+        <div className="mx-auto max-w-[760px]">
+          {/* section breakdown */}
+          <div>
+            <div className="mb-4 text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
+              <span className="text-ci-accent-600">01 /</span> Section intelligence
             </div>
-            <div className="breakdown">
+            <div className="flex flex-col gap-5">
               {sections.map((s) => (
                 <BreakdownRow key={s.name} stat={s} tickLimit={tickLimit} />
               ))}
             </div>
           </div>
 
-          <div className="qr-review">
-            <div className="dsec-head">
-              <span className="sk">
-                <span className="n">02 /</span> Review
-              </span>
+          {/* review */}
+          <div className="mt-12">
+            <div className="mb-4 text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
+              <span className="text-ci-accent-600">02 /</span> Review
             </div>
-            <div className="review-filter">
+            <div className="mb-5 inline-flex overflow-hidden rounded-[9px] border border-ci-border-2 bg-ci-white">
               <button
                 type="button"
-                className={reviewFilter === 'missed' ? 'active' : ''}
+                className={cx(
+                  'border-r border-ci-border px-[14px] py-[9px] text-[13.5px] font-semibold transition-colors',
+                  reviewFilter === 'missed' ? 'bg-ci-navy text-white' : 'text-ci-gray-600 hover:text-ci-navy',
+                )}
                 onClick={() => onReviewFilterChange('missed')}
               >
                 Missed ({missedCount})
               </button>
               <button
                 type="button"
-                className={reviewFilter === 'all' ? 'active' : ''}
+                className={cx(
+                  'px-[14px] py-[9px] text-[13.5px] font-semibold transition-colors',
+                  reviewFilter === 'all' ? 'bg-ci-navy text-white' : 'text-ci-gray-600 hover:text-ci-navy',
+                )}
                 onClick={() => onReviewFilterChange('all')}
               >
                 All {total}
@@ -127,50 +134,35 @@ export function ResultsScreen({
             </div>
 
             {reviewItems.length === 0 ? (
-              <div className="res-empty">
-                <div className="re-label">Nothing missed</div>
-                <p>
-                  You answered every question correctly in this attempt. Switch
-                  to “All” to review the full paper.
+              <div className="rounded-[16px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[40px_24px] text-center">
+                <div className="text-[15px] font-bold text-ci-navy-900">Nothing missed</div>
+                <p className="mx-auto mt-2 max-w-[42ch] text-[14.5px] text-ci-gray-600">
+                  You answered every question correctly in this attempt. Switch to “All” to review the full
+                  paper.
                 </p>
               </div>
             ) : (
-              <div className="rev-list">
+              <div className="flex flex-col gap-4">
                 {reviewItems.map(({ q, i, ok }) => (
-                  <ReviewCard
-                    key={i}
-                    q={q}
-                    n={i + 1}
-                    your={answers[i]}
-                    ok={ok}
-                  />
+                  <ReviewCard key={i} q={q} n={i + 1} your={answers[i]} ok={ok} />
                 ))}
               </div>
             )}
           </div>
 
-          <div className="qr-cta">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onRetake}
-            >
-              Retake assessment <span className="arrow">&rarr;</span>
+          {/* actions */}
+          <div className="mt-12 flex flex-wrap gap-[13px]">
+            <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetake}>
+              Retake assessment <Arrow />
             </button>
-            <Link className="btn btn-secondary" href={`/courses/${courseSlug}`}>
+            <Link className={cx(btnBase, btnGhost)} href={`/courses/${courseSlug}`}>
               Back to course
             </Link>
           </div>
         </div>
-      </section>
-    </>
+      </div>
+    </section>
   )
-}
-
-const resultsWrapStyle = {
-  maxWidth: 760,
-  marginLeft: 'auto',
-  marginRight: 'auto',
 }
 
 function BreakdownRow({
@@ -187,38 +179,43 @@ function BreakdownRow({
   const ariaLabel = `${stat.correct} of ${stat.total} correct, ${missed} missed`
 
   return (
-    <div className="bd-row">
-      <div className="bd-name">
-        SECTION {stat.letter} · {stat.name.toUpperCase()}
-        {mastered ? <span className="bd-tag">Mastered</span> : null}
-        {!mastered && revisit ? (
-          <span className="bd-tag weak">Revisit</span>
+    <div className="rounded-[14px] border border-ci-border bg-ci-white p-[18px_20px] shadow-ci-card">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-[12.5px] font-bold uppercase tracking-[0.08em] text-ci-navy">
+          Section {stat.letter} · {stat.name.toUpperCase()}
+        </span>
+        {mastered ? (
+          <span className="rounded-full bg-g-50 px-[10px] py-[3px] text-[11px] font-bold uppercase tracking-[0.06em] text-g-700">Mastered</span>
         ) : null}
+        {!mastered && revisit ? (
+          <span className="rounded-full bg-r-50 px-[10px] py-[3px] text-[11px] font-bold uppercase tracking-[0.06em] text-r-700">Revisit</span>
+        ) : null}
+        <span className="ml-auto text-[13.5px] font-medium text-ci-gray-600 [font-variant-numeric:tabular-nums]">
+          {stat.correct} / {stat.total}
+          {missed > 0 ? (
+            <span className="text-r-600"> · {missed} missed</span>
+          ) : (
+            <span className="text-ci-gray-500"> · {pct}%</span>
+          )}
+        </span>
       </div>
-      <div className="bd-fig">
-        {stat.correct} / {stat.total}
-        {missed > 0 ? (
-          <span className="bd-miss"> · {missed} missed</span>
-        ) : (
-          <span className="bd-pct"> · {pct}%</span>
-        )}
-      </div>
+
       {stat.total <= tickLimit ? (
-        // Discrete ticks — each one is the REAL result at that position in
-        // the attempt order. No left-fill of greens followed by reds.
-        <div className="bd-bar ticks" role="img" aria-label={ariaLabel}>
+        // Discrete ticks — each one is the REAL result at that position in the
+        // attempt order. No left-fill of greens followed by reds.
+        <div className="mt-3 flex flex-wrap gap-[3px]" role="img" aria-label={ariaLabel}>
           {stat.marks.map((m) => (
             <span
               key={m.qIdx}
-              className={`bd-tick${m.ok ? '' : ' miss'}`}
+              className={cx('h-[10px] w-[10px] rounded-[2px]', m.ok ? 'bg-g-600' : 'bg-r-300')}
               title={`Q${m.qIdx + 1} · ${m.ok ? 'correct' : 'missed'}`}
             />
           ))}
         </div>
       ) : (
-        <div className="bd-bar" role="img" aria-label={ariaLabel}>
-          <span className="bd-fill hit" style={{ width: `${pct}%` }} />
-          <span className="bd-fill miss" style={{ width: `${100 - pct}%` }} />
+        <div className="mt-3 flex h-[10px] w-full overflow-hidden rounded-full" role="img" aria-label={ariaLabel}>
+          <span className="block h-full bg-g-600" style={{ width: `${pct}%` }} />
+          <span className="block h-full bg-r-300" style={{ width: `${100 - pct}%` }} />
         </div>
       )}
     </div>
@@ -236,39 +233,59 @@ function ReviewCard({
   your: number | undefined
   ok: boolean
 }) {
-  const statusClass = ok ? 'rev-status correct' : 'rev-status wrong'
   const statusIc = ok ? '✓' : '✗'
   const statusLabel = ok ? 'Correct' : 'Missed'
 
   return (
-    <div className="rev">
-      <div className="rev-head">
-        <span className="rev-n">Q{n}</span>
-        <span className="rev-sec">Section {q.section}</span>
-        <span className={statusClass}>
-          <span className="ic">{statusIc}</span>
+    <div className="rounded-[16px] border border-ci-border bg-ci-white p-5 shadow-ci-card">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-[13px] font-bold text-ci-navy [font-variant-numeric:tabular-nums]">Q{n}</span>
+        <span className="text-[13px] text-ci-gray-500">Section {q.section}</span>
+        <span
+          className={cx(
+            'ml-auto inline-flex items-center gap-[6px] rounded-full px-[10px] py-[4px] text-[12px] font-bold',
+            ok ? 'bg-g-50 text-g-700' : 'bg-r-50 text-r-700',
+          )}
+        >
+          <span aria-hidden="true">{statusIc}</span>
           {statusLabel}
         </span>
       </div>
-      <div className="rev-stem">{q.question}</div>
-      <div className="rev-opts">
+      <div className="mt-3 text-[15.5px] font-semibold leading-[1.4] text-ci-navy-900">{q.question}</div>
+      <div className="mt-4 flex flex-col gap-2">
         {q.options.map((text, oi) => {
           const isCorrect = oi === q.correctAnswer
           const isYour = oi === your && !isCorrect
-          const cls = `rev-opt${isCorrect ? ' correct' : isYour ? ' yourwrong' : ''}`
           const tag = isCorrect ? (
-            <span className="ro-tag">
-              <span className="ic">✓</span> Correct
+            <span className="ml-auto inline-flex flex-none items-center gap-[5px] text-[12.5px] font-bold text-g-700">
+              <span aria-hidden="true">✓</span> Correct
             </span>
           ) : isYour ? (
-            <span className="ro-tag">
-              <span className="ic">✗</span> Your answer
+            <span className="ml-auto inline-flex flex-none items-center gap-[5px] text-[12.5px] font-bold text-r-700">
+              <span aria-hidden="true">✗</span> Your answer
             </span>
           ) : null
           return (
-            <div key={oi} className={cls}>
-              <span className="ro-l">{OPTION_LETTERS[oi]}</span>
-              <span className="ro-t">{text}</span>
+            <div
+              key={oi}
+              className={cx(
+                'flex items-center gap-3 rounded-[10px] border p-3',
+                isCorrect
+                  ? 'border-g-600 bg-g-50'
+                  : isYour
+                  ? 'border-r-600 bg-r-50'
+                  : 'border-ci-border bg-ci-white',
+              )}
+            >
+              <span
+                className={cx(
+                  'flex h-7 w-7 flex-none items-center justify-center rounded-[7px] border text-[13px] font-bold',
+                  isCorrect ? 'border-g-600 text-g-700' : isYour ? 'border-r-600 text-r-700' : 'border-ci-border-2 text-ci-navy',
+                )}
+              >
+                {OPTION_LETTERS[oi]}
+              </span>
+              <span className="text-[14.5px] leading-[1.4] text-ci-ink">{text}</span>
               {tag}
             </div>
           )

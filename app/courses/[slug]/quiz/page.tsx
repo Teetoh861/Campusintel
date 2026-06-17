@@ -5,7 +5,6 @@
 import { notFound } from 'next/navigation'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import '../../../../styles/quiz.css'
 import { QuizClient } from './QuizClient'
 
 type PageProps = { params: Promise<{ slug: string }> }

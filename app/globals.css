@@ -97,3 +97,10 @@
     text-wrap: balance;
   }
 }
+
+/* The quiz active screen is distraction-free. QuizClient sets
+   <body data-screen="active|intro|results">; hide the global footer while a
+   timed attempt is running. (Shell/CSS hook only — no quiz logic involved.) */
+body[data-screen='active'] footer {
+  display: none;
+}
