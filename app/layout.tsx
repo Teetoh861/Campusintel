@@ -3,6 +3,7 @@
 // and loads the design CSS globally. Instrument Serif / Geist are gone.
 import type { Metadata, Viewport } from 'next'
 import { Hanken_Grotesk } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
 
 import '../styles/campusintel.css'
 import './globals.css'
@@ -50,6 +51,7 @@ export default function RootLayout({
         <Nav />
         <main id="top">{children}</main>
         <Footer />
+        <Analytics />
       </body>
     </html>
   )
