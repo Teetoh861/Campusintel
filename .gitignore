@@ -13,3 +13,6 @@ next-env.d.ts
 # Design scratch + build artifacts
 _design/
 tsconfig.tsbuildinfo
+
+# Internal audit tracker (private, never commit)
+_audit/
