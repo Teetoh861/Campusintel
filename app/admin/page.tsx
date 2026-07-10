@@ -1,27 +1,24 @@
-'use client'
-
-import { useState } from 'react'
-import { Lock, MessageCircle, Upload, BarChart3 } from 'lucide-react'
+import { cookies } from 'next/headers'
+import { MessageCircle, Upload, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { courses } from '@/lib/data/courses'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import { COOKIE_NAME, verifySessionToken } from '@/lib/admin-auth'
+import AdminLoginForm from './AdminLoginForm'
+import AdminLogoutButton from './AdminLogoutButton'
 
-const ADMIN_PASSWORD = 'admin123' // Simple hardcoded password for MVP
+export default async function AdminPage() {
+  // Server-side auth gate. The session cookie is read and its signature +
+  // expiry verified here; nothing below the guard is sent to the client when
+  // the visitor is unauthenticated. Fails closed via verifySessionToken.
+  const cookieStore = await cookies()
+  const token = cookieStore.get(COOKIE_NAME)?.value
+  const isAuthenticated = await verifySessionToken(token)
 
-export default function AdminPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true)
-      setError('')
-      setPassword('')
-    } else {
-      setError('Incorrect password')
-      setPassword('')
-    }
+  if (!isAuthenticated) {
+    // Render ONLY the login form — no dashboard markup or data reaches the
+    // browser pre-auth.
+    return <AdminLoginForm />
   }
 
   // Calculate statistics
@@ -32,61 +29,6 @@ export default function AdminPage() {
     0
   )
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-white">
-        <div className="w-full max-w-md bg-white rounded-lg border border-slate-200 p-8 shadow-lg">
-          <div className="text-center mb-8">
-            <div className="w-12 h-12 bg-blue-900 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">Admin Access</h1>
-            <p className="text-slate-600 text-sm mt-2">Enter your password to continue</p>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="Enter admin password"
-                className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-blue-900 focus:ring-2 focus:ring-blue-100 outline-none"
-                autoFocus
-              />
-              {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
-            </div>
-
-            <Button
-              onClick={handleLogin}
-              className="w-full bg-blue-900 hover:bg-blue-800 text-white font-semibold"
-            >
-              Login
-            </Button>
-          </div>
-
-          <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm text-slate-600 mb-3">
-              For full admin features, please contact us on WhatsApp:
-            </p>
-            <a
-              href={buildWhatsAppUrl('I need admin access to CampusIntel')}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button className="w-full border-blue-900 text-blue-900 hover:bg-blue-100 gap-2">
-                <MessageCircle className="w-4 h-4" />
-                Contact Admin
-              </Button>
-            </a>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="bg-slate-50 min-h-screen py-8 md:py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -96,13 +38,7 @@ export default function AdminPage() {
             <h1 className="text-3xl md:text-4xl font-bold text-blue-900">Admin Dashboard</h1>
             <p className="text-slate-600 mt-2">Manage CampusIntel resources and courses</p>
           </div>
-          <Button
-            onClick={() => setIsAuthenticated(false)}
-            variant="outline"
-            className="border-slate-300 text-slate-700 hover:bg-slate-100"
-          >
-            Logout
-          </Button>
+          <AdminLogoutButton />
         </div>
 
         {/* Main Content */}
