@@ -1,92 +1,64 @@
 # CampusIntel
 
-Educational resource hub for University of Lagos, Department of Business
-Administration, 200 Level First Semester students. Course materials,
-textbook references, topic notes, practice quizzes, and peer-tutor
-connections in one place.
+Academic study platform for University of Lagos students. Currently
+serving the Department of Business Administration (200 Level, First
+Semester), built to expand department by department and, later, to
+other universities.
 
-> **Status:** Pre-launch. In active development.
+Live: https://campusintell.com
 
-## Features
+## What it does
 
-- Course directory with search and filtering
-- Per-course detail pages: overview, textbooks, topic notes, exam focus,
-  theory questions, downloadable resources
-- Timed multiple-choice course quizzes with sectioned results
-- Bookmarks for quick access to saved courses (stored locally in browser)
-- Peer-tutor waitlist and tutor application flows
-- Contact channels via WhatsApp, phone, and email
+- Browse courses with overviews, topics, exam focus, recommended
+  textbooks, theory questions, and shareable study materials
+- Take timed, sectioned multiple-choice quizzes with scoring and a
+  per-question review
+- Bookmark courses (saved on-device)
+- Request or share study materials, join the tutor waitlist, and
+  contact the team via WhatsApp
 
-## Tech Stack
+## Tech stack
 
-Next.js 16 (App Router) · React 19 · TypeScript 5.7 (strict) · Tailwind 3.4
-with shadcn/ui (Radix primitives, lucide-react) · react-hook-form with zod
-validation · next-themes · recharts. Package manager: pnpm 9. Runtime:
-Node 22.
+- Next.js 16 (App Router), React 19, TypeScript 5.7 (strict)
+- Tailwind CSS 3.4 + shadcn/ui (Radix, lucide-react)
+- react-hook-form + zod, next-themes, recharts
+- Design system: Hanken Grotesk; navy, warm off-white, amber accent,
+  exposed as ci-* Tailwind tokens
 
-## Getting Started
+## Getting started
 
 Prerequisites: Node 22+ and pnpm 9+.
 
-```bash
-git clone https://github.com/Teetoh861/Campusintel.git
-cd Campusintel
-pnpm install
-cp .env.example .env.local
-pnpm dev
-```
+    pnpm install
+    pnpm dev
 
-The dev server runs at http://localhost:3000.
+The dev server runs at http://localhost:3000. See package.json for the
+authoritative script list (dev, build, start, lint).
 
-## Project Structure
-app/                  # Next.js App Router routes
-(root pages)/       # /, /courses, /bookmarks, /tutors, /contact, etc.
-courses/[slug]/     # Single course page + nested /quiz route
-admin/              # Admin dashboard (auth-gated)
-components/
-common/             # Shared layout pieces (Footer, etc.)
-navigation/         # Navigation components (MobileNav)
-ui/                 # shadcn/ui primitives
-lib/
-data/               # Hardcoded content (courses, quizzes, notes, theory questions)
-types.ts            # Domain types (Course, Topic, QuizQuestion, etc.)
-utils.ts            # Shared utilities (cn helper)
-public/               # Static assets
+## Environment
 
-Content currently lives in `lib/data/` as TypeScript modules. A future
-migration will move this content to a headless CMS so it can be edited
-without code changes.
+Copy .env.example to .env.local and fill in the values:
 
-## Environment Variables
+    cp .env.example .env.local
 
-All environment variables are documented in `.env.example`. Copy it to
-`.env.local` for local development. Variables prefixed `NEXT_PUBLIC_` are
-exposed to the browser; everything else stays server-side.
+Required: NEXT_PUBLIC_WHATSAPP_NUMBER (international format, digits
+only). .env.local is gitignored.
 
-## Scripts
+## Project structure
 
-| Command       | Description                          |
-| ------------- | ------------------------------------ |
-| `pnpm dev`    | Start the development server (Turbo) |
-| `pnpm build`  | Build the production bundle          |
-| `pnpm start`  | Run the production server locally    |
-| `pnpm lint`   | Run Next.js lint checks              |
+    app/                    App Router routes
+    components/chrome/       Shared design system (Nav, Footer, Card...)
+    components/ui/           shadcn primitives
+    lib/data/                Content (courses, quizzes, notes)
+    lib/whatsapp.ts          WhatsApp link helper + number
+    lib/contact.ts           Contact details
 
-## Contributing
+## Branches
 
-- Branch from `main` using a short, single-word, feature-based name
-  (e.g. `cleanup`, `cms`, `design-system`).
-- Commit messages follow Conventional Commits
-  (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`).
-- Run `pnpm lint && pnpm build` before opening a PR.
-- One branch, one focused PR. Keep scope tight.
-- See `SECURITY.md` for security policy and reporting.
+- main: production (auto-deploys); current design is Variant B
+- variant-a-dossier: previous design, preserved as a fallback
 
-## License
+## Ownership
 
-License pending. All rights reserved by the project owner until a license
-is selected.
-
-## Owner
-
-Maintained by Teetoh861 (https://github.com/Teetoh861).
+Owned by @Teetoh861. Changes go through pull requests reviewed by the
+owner; main is not force-pushed.
