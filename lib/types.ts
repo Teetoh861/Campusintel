@@ -25,6 +25,16 @@ export interface KeyTakeaway {
   description: string
 }
 
+export interface FormulaEntry {
+  name: string        // e.g. "Break-Even Quantity"
+  formula: string     // e.g. "BEQ = FC / (P − v)"
+  explanation: string // one plain-language line: what it does / when to use it
+  // A worked example ONLY when the study guide actually prints one for this
+  // formula (verbatim). Omitted when the guide shows no worked calculation —
+  // never fabricated. The render hides the "Example" block when absent.
+  example?: string
+}
+
 export interface Course {
   id: string
   slug: string
@@ -47,7 +57,10 @@ export interface Course {
     exam?: number
   }
   keyTakeaways?: KeyTakeaway[] // Core principles students must remember
-  
+  // Quick-reference formula cards; populated only by quantitative courses.
+  // Other courses omit this field entirely (no empty section renders).
+  formulaSheet?: FormulaEntry[]
+
   textbooks: Textbook[]
   topics: Topic[]
   examFocus: string[]

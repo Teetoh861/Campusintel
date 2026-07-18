@@ -18,6 +18,7 @@ import type {
   Textbook,
   KeyTakeaway,
   Resource,
+  FormulaEntry,
 } from '@/lib/types'
 import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
 import { Arrow, btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
@@ -45,6 +46,7 @@ type SectionId =
   | 'takeaways'
   | 'topics'
   | 'exam'
+  | 'formulas'
   | 'textbooks'
   | 'theory'
   | 'resources'
@@ -60,6 +62,7 @@ const SECTION_ORDER: ReadonlyArray<SectionDescriptor> = [
   { id: 'takeaways', tocLabel: 'Key takeaways', headLabel: 'Key takeaways' },
   { id: 'topics', tocLabel: 'Topics', headLabel: 'Topics' },
   { id: 'exam', tocLabel: 'Exam focus', headLabel: 'Exam focus' },
+  { id: 'formulas', tocLabel: 'Formula sheet', headLabel: 'Formula sheet' },
   { id: 'textbooks', tocLabel: 'Textbooks', headLabel: 'Recommended textbooks' },
   { id: 'theory', tocLabel: 'Theory questions', headLabel: 'Theory questions' },
   { id: 'resources', tocLabel: 'Resources', headLabel: 'Resources' },
@@ -76,12 +79,14 @@ export default async function CourseDetailPage({ params }: PageProps) {
 
   const takeaways = course.keyTakeaways ?? []
   const theoryQuestions = theory?.theoryQuestions ?? []
+  const formulaSheet = course.formulaSheet ?? []
 
   const visible: ReadonlyArray<SectionDescriptor> = SECTION_ORDER.filter((s) => {
     if (s.id === 'overview') return Boolean(course.overview)
     if (s.id === 'takeaways') return takeaways.length > 0
     if (s.id === 'topics') return course.topics.length > 0
     if (s.id === 'exam') return course.examFocus.length > 0
+    if (s.id === 'formulas') return formulaSheet.length > 0
     if (s.id === 'textbooks') return course.textbooks.length > 0
     if (s.id === 'theory') return theoryQuestions.length > 0
     if (s.id === 'resources') return true // resources renders its empty-state when none
@@ -205,6 +210,12 @@ export default async function CourseDetailPage({ params }: PageProps) {
                     <ExamFocus items={course.examFocus} />
                   </div>
                 </section>
+              ) : null}
+
+              {isVisible('formulas') ? (
+                <Section id="formulas" num={sectionNumber('formulas')} kicker="Formula sheet" h2="Formulas & worked examples">
+                  <FormulaSheet items={formulaSheet} />
+                </Section>
               ) : null}
 
               {isVisible('textbooks') ? (
@@ -374,6 +385,37 @@ function Textbooks({ items }: { items: ReadonlyArray<Textbook> }) {
           <span className="flex-none self-start rounded-[7px] border border-ci-blue-100 bg-ci-blue-50 px-[10px] py-[5px] text-[11px] font-bold uppercase tracking-[0.08em] text-ci-navy min-[640px]:self-auto">
             {i === 0 ? 'Core text' : 'Reference'}
           </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Formula sheet — one card per formula. The formula string is kept as clean
+// Unicode text (σ, μ, Σ, √, ±, ≤, ≥, superscripts — no LaTeX) and rides in an
+// overflow-x-auto rail so a long formula scrolls inside its own card rather
+// than forcing the page to scroll on mobile.
+function FormulaSheet({ items }: { items: ReadonlyArray<FormulaEntry> }) {
+  return (
+    <div className="grid grid-cols-1 gap-[14px] min-[720px]:grid-cols-2">
+      {items.map((f, i) => (
+        <div
+          key={i}
+          className="flex flex-col rounded-[16px] border border-ci-border bg-ci-white p-[22px_24px] shadow-ci-card"
+        >
+          <h3 className="text-[17px] font-bold tracking-[-0.015em] text-ci-navy-900">{f.name}</h3>
+          <div className="mt-3 overflow-x-auto rounded-[10px] border border-ci-blue-100 bg-ci-blue-50 px-[14px] py-[12px]">
+            <code className="block whitespace-nowrap font-mono text-[15px] font-semibold leading-[1.5] text-ci-navy">
+              {f.formula}
+            </code>
+          </div>
+          <p className="mt-3 text-[14.5px] leading-[1.55] text-ci-gray-600">{f.explanation}</p>
+          {f.example ? (
+            <div className="mt-[14px] border-t border-ci-border pt-[12px]">
+              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-ci-accent-600">Example</div>
+              <p className="mt-[6px] text-[14px] leading-[1.55] text-ci-gray-700">{f.example}</p>
+            </div>
+          ) : null}
         </div>
       ))}
     </div>

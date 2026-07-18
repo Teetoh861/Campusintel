@@ -16,3 +16,6 @@ tsconfig.tsbuildinfo
 
 # Internal audit tracker (private, never commit)
 _audit/
+
+# Raw source docs for content entry (not committed)
+_source/
