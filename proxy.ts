@@ -11,7 +11,7 @@ import { COOKIE_NAME, verifySessionToken } from '@/lib/admin-auth'
 // Middleware therefore just verifies the cookie for an early, cheap gate and
 // passes the request through, letting the page be the single source of truth.
 // The page re-verifies (fail closed) regardless of what middleware concludes.
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const token = req.cookies.get(COOKIE_NAME)?.value
   await verifySessionToken(token)
   return NextResponse.next()
