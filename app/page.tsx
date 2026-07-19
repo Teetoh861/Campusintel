@@ -184,7 +184,7 @@ export default function HomePage() {
           </div>
           <p className="mt-6 border-t border-ci-border pt-5 text-[14.5px] font-medium text-ci-gray-600">
             Now serving <b className="font-bold text-ci-navy-900">Business Administration</b> · 200 Level ·
-            First Semester
+            First and Second Semester
           </p>
         </div>
       </section>
