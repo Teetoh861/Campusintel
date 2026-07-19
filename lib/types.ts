@@ -78,6 +78,9 @@ export interface QuizQuestion {
   options: string[]
   correctAnswer: number // index of correct option (0-based)
   section: string
+  // Optional explanatory note shown in the results review. Present only when
+  // the source bank prints one for that question — never fabricated.
+  explanation?: string
 }
 
 export interface CourseQuiz {

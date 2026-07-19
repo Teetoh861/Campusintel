@@ -923,7 +923,7 @@ export const courses: Course[] = [
     credits: 3,
     difficulty: "Hard",
     featured: false,
-    examCritical: false,
+    examCritical: true,
     textbooks: [
       { title: "Problems & Solutions in Financial Management", author: "Shiro, Abass A.", edition: "" },
       { title: "Financial Management", author: "Pandey, I. M.", edition: "" },
