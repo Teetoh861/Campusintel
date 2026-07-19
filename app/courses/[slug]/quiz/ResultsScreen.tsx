@@ -291,6 +291,12 @@ function ReviewCard({
           )
         })}
       </div>
+      {q.explanation ? (
+        <div className="mt-4 rounded-[10px] border border-ci-border-2 bg-ci-paper-2 p-4">
+          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Explanation</div>
+          <p className="mt-2 text-[14px] leading-[1.55] text-ci-gray-600">{q.explanation}</p>
+        </div>
+      ) : null}
     </div>
   )
 }
