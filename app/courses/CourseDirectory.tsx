@@ -57,8 +57,15 @@ export function CourseDirectory({ items, totalCount }: Props) {
   const [level, setLevel] = useState<LevelFilter>('all')
   const [semester, setSemester] = useState<SemesterFilter>('all')
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('all')
+  // Mobile-only: the three segmented filters collapse behind a toggle so the
+  // sticky bar stays compact. On desktop (min-[900px]) they're always inline
+  // and this flag is irrelevant.
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const trimmed = query.trim()
+  // Count of the three segment filters that are narrowed (search excluded) —
+  // surfaced on the collapsed mobile toggle so applied filters stay visible.
+  const activeFilterCount = [level, semester, difficulty].filter((v) => v !== 'all').length
   const isFiltered =
     trimmed !== '' || level !== 'all' || semester !== 'all' || difficulty !== 'all'
 
@@ -123,11 +130,40 @@ export function CourseDirectory({ items, totalCount }: Props) {
 
             {/* filters + count */}
             <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[14px] min-[900px]:flex-[2_1_100%]">
-              <Seg label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
-              <Seg label="Semester" value={semester} options={SEMESTER_OPTIONS} onChange={setSemester} />
-              <Seg label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} />
+              {/* mobile-only toggle; hidden on desktop where filters are inline */}
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((o) => !o)}
+                aria-expanded={filtersOpen}
+                aria-controls="course-filters-panel"
+                className={cx(btnBase, btnSm, btnGhost, 'order-1 gap-2 min-[900px]:hidden')}
+              >
+                <SlidersIcon />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ci-navy px-[6px] text-[12px] font-bold leading-none text-white [font-variant-numeric:tabular-nums]">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
 
-              <div className="ml-auto flex items-center gap-4">
+              {/* Three segmented controls. On mobile this is a full-width,
+                  wrapping panel toggled by `filtersOpen`; on desktop it
+                  dissolves (display:contents) so the Segs flow into the parent
+                  flex exactly as before — desktop layout is unchanged. */}
+              <div
+                id="course-filters-panel"
+                className={cx(
+                  'order-3 w-full flex-wrap items-center gap-x-[22px] gap-y-[14px] min-[900px]:contents',
+                  filtersOpen ? 'flex' : 'hidden',
+                )}
+              >
+                <Seg label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
+                <Seg label="Semester" value={semester} options={SEMESTER_OPTIONS} onChange={setSemester} />
+                <Seg label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} />
+              </div>
+
+              <div className="order-2 ml-auto flex items-center gap-4 min-[900px]:order-none">
                 <span className="text-[13.5px] font-medium text-ci-gray-600">
                   Showing <b className="font-bold text-ci-navy-900">{filtered.length}</b> of {totalCount}
                 </span>
@@ -204,6 +240,16 @@ function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>)
         ))}
       </div>
     </div>
+  )
+}
+
+function SlidersIcon() {
+  return (
+    <svg className="h-[15px] w-[15px] flex-none" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 4.5h8M13.5 4.5H14M2 11.5h.5M6 11.5h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="11.5" cy="4.5" r="1.7" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="4" cy="11.5" r="1.7" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
   )
 }
 
