@@ -63,6 +63,7 @@ export default function AdminLoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              maxLength={200}
               placeholder="Enter admin password"
               className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-blue-900 focus:ring-2 focus:ring-blue-100 outline-none"
               autoFocus
