@@ -114,6 +114,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
                 placeholder="Search a course code or title"
                 aria-label="Search courses by code or title"
                 autoComplete="off"
+                maxLength={100}
                 className="min-w-0 flex-1 border-0 bg-transparent text-[15.5px] text-ci-ink outline-none placeholder:text-ci-gray-400"
               />
               {query !== '' ? (
