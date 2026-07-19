@@ -66,6 +66,21 @@ export function QuizClient(props: QuizCoreProps) {
     }
   }, [timeLeft, screen])
 
+  // Guard against accidentally losing an in-progress attempt. Only while the
+  // quiz is active do we arm the native "leave site?" prompt on refresh, tab
+  // close, or navigation away. On intro/results the listener is removed, so
+  // leaving those screens never warns. The message text isn't customizable —
+  // browsers show their own; preventDefault + returnValue just triggers it.
+  useEffect(() => {
+    if (screen !== 'active') return
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [screen])
+
   const resetAttempt = useCallback(() => {
     setAnswers({})
     setMarked({})
