@@ -111,7 +111,7 @@ export default function CoursesPage() {
 
           <p className="mt-[26px] inline-flex items-center gap-[9px] text-[13.5px] font-medium tracking-[0.02em] text-ci-blue-200">
             <span className="h-[6px] w-[6px] flex-none rounded-full bg-ci-accent" />
-            Now serving Business Administration · 200 Level · First Semester
+            Now serving Business Administration · 200 Level · First and Second Semester
           </p>
         </div>
       </header>
