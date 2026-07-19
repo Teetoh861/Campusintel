@@ -15,6 +15,7 @@ import type {
 import { IntroScreen } from './IntroScreen'
 import { QuestionScreen } from './QuestionScreen'
 import { ResultsScreen } from './ResultsScreen'
+import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
 // Timer flips to the red urgency treatment at this threshold (in seconds).
 // The pulse keyframe is already wired in quiz.css and respects
@@ -37,6 +38,7 @@ export function QuizClient(props: QuizCoreProps) {
   const [timeLeft, setTimeLeft] = useState(timerSeconds)
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('missed')
   const [navOpen, setNavOpen] = useState(false)
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false)
 
   // The active screen is distraction-free: campusintel.css/quiz.css hides the
   // global footer when <body data-screen="active">. Sync that to the local
@@ -71,6 +73,7 @@ export function QuizClient(props: QuizCoreProps) {
     setTimeLeft(timerSeconds)
     setReviewFilter('missed')
     setNavOpen(false)
+    setConfirmingSubmit(false)
   }, [timerSeconds])
 
   const start = useCallback(() => {
@@ -79,9 +82,17 @@ export function QuizClient(props: QuizCoreProps) {
   }, [resetAttempt])
 
   const submit = useCallback(() => {
+    setConfirmingSubmit(false)
     setNavOpen(false)
     setScreen('results')
   }, [])
+
+  // Manual submit is gated behind a confirmation modal to prevent an
+  // accidental early submission (V2 spec). The buttons open the modal; the
+  // modal's confirm calls the real submit() above. The timer auto-submit does
+  // NOT go through here — it transitions straight to results.
+  const requestSubmit = useCallback(() => setConfirmingSubmit(true), [])
+  const cancelSubmit = useCallback(() => setConfirmingSubmit(false), [])
 
   const retake = useCallback(() => {
     resetAttempt()
@@ -192,31 +203,79 @@ export function QuizClient(props: QuizCoreProps) {
 
   if (screen === 'active') {
     const q = questions[current]!
+    const answeredCount = Object.keys(answers).length
+    const unanswered = questions.length - answeredCount
     return (
-      <QuestionScreen
-        question={q}
-        current={current}
-        total={questions.length}
-        sectionLetter={letterFor(q.section)}
-        sectionName={q.section}
-        selected={answers[current]}
-        isMarked={Boolean(marked[current])}
-        timeLeft={timeLeft}
-        isLowTime={timeLeft <= WARN_THRESHOLD_SECONDS}
-        navOpen={navOpen}
-        answeredCount={Object.keys(answers).length}
-        markedCount={Object.keys(marked).length}
-        answersMap={answers}
-        markedMap={marked}
-        onSelectOption={selectOption}
-        onToggleMark={toggleMark}
-        onPrev={goPrev}
-        onNext={goNext}
-        onJump={jumpTo}
-        onSubmit={submit}
-        onOpenNav={() => setNavOpen(true)}
-        onCloseNav={() => setNavOpen(false)}
-      />
+      <>
+        <QuestionScreen
+          question={q}
+          current={current}
+          total={questions.length}
+          sectionLetter={letterFor(q.section)}
+          sectionName={q.section}
+          selected={answers[current]}
+          isMarked={Boolean(marked[current])}
+          timeLeft={timeLeft}
+          isLowTime={timeLeft <= WARN_THRESHOLD_SECONDS}
+          navOpen={navOpen}
+          answeredCount={answeredCount}
+          markedCount={Object.keys(marked).length}
+          answersMap={answers}
+          markedMap={marked}
+          onSelectOption={selectOption}
+          onToggleMark={toggleMark}
+          onPrev={goPrev}
+          onNext={goNext}
+          onJump={jumpTo}
+          onSubmit={requestSubmit}
+          onOpenNav={() => setNavOpen(true)}
+          onCloseNav={() => setNavOpen(false)}
+        />
+
+        {confirmingSubmit ? (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ci-submit-confirm-title"
+          >
+            <div
+              className="absolute inset-0 bg-ci-navy-900/40"
+              onClick={cancelSubmit}
+              aria-hidden="true"
+            />
+            <div className="relative z-[1] w-full max-w-[440px] rounded-[16px] border border-ci-border bg-ci-white p-6 shadow-ci-card">
+              <h2
+                id="ci-submit-confirm-title"
+                className="text-[19px] font-semibold leading-[1.3] tracking-[-0.01em] text-ci-navy-900"
+              >
+                Submit assessment?
+              </h2>
+              <p className="mt-3 text-[15px] leading-[1.5] text-ci-gray-600">
+                {unanswered > 0
+                  ? `You have ${unanswered} unanswered question${unanswered === 1 ? '' : 's'}. Are you sure you want to submit?`
+                  : 'Are you sure you want to submit?'}
+              </p>
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  className={cx(btnBase, btnSm, btnGhost)}
+                  onClick={cancelSubmit}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={cx(btnBase, btnSm, btnAccent)}
+                  onClick={submit}
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </>
     )
   }
 
