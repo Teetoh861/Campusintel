@@ -184,9 +184,22 @@ export function QuestionScreen(props: Props) {
                       Submit <Arrow />
                     </button>
                   ) : (
-                    <button type="button" className={cx(btnBase, btnSm, btnAccent)} onClick={onNext}>
-                      Next <Arrow />
-                    </button>
+                    <>
+                      {/* mobile-only early-submit affordance: on non-last
+                          questions the navigator rail is off-screen, so surface
+                          Submit here too. Hidden on desktop (min-[900px]) where
+                          the rail already carries "Submit assessment". */}
+                      <button
+                        type="button"
+                        className={cx(btnBase, btnSm, btnGhost, 'min-[900px]:hidden')}
+                        onClick={onSubmit}
+                      >
+                        Submit
+                      </button>
+                      <button type="button" className={cx(btnBase, btnSm, btnAccent)} onClick={onNext}>
+                        Next <Arrow />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
