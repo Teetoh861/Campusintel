@@ -24,6 +24,7 @@ import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
 import { Arrow, btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseToc, type TocItem } from './CourseToc'
+import { MobileCourseNav } from './MobileCourseNav'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -106,6 +107,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
   }))
 
   const quizHref = `/courses/${course.slug}/quiz`
+  const materialsHref = `/courses/${course.slug}/materials`
   const questionsValue = quiz ? String(quiz.totalQuestions) : 'N/A'
   const quizTimeValue = quiz ? `${quiz.quizDurationMinutes} min` : 'N/A'
 
@@ -166,6 +168,11 @@ export default async function CourseDetailPage({ params }: PageProps) {
 
       {/* ===================== BODY: rail + main ===================== */}
       <div className="pt-14 min-[900px]:pt-[72px]">
+        <MobileCourseNav
+          items={tocItems}
+          materialsHref={materialsHref}
+          quizHref={quiz ? quizHref : undefined}
+        />
         <div className={WRAP}>
           <div className="grid grid-cols-1 gap-10 min-[900px]:grid-cols-[230px_1fr] min-[900px]:items-start min-[900px]:gap-[60px]">
             <CourseToc items={tocItems} quizHref={quizHref} />
