@@ -9,10 +9,7 @@ import { quizzes } from '@/lib/data/quizzes'
 import { Card, type CardProps } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
-import { buildWhatsAppUrl } from '@/lib/whatsapp'
-import { btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnLight, btnSm, cx } from '@/components/chrome/ui'
-
-const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
+import { btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnSm, cx } from '@/components/chrome/ui'
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
@@ -22,9 +19,9 @@ const toLevel = (d: Course['difficulty']): DifficultyLevel =>
   d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
 
 // Hard cap on the curated set the homepage surfaces. Even if more courses are
-// flagged featured later, only the first three reach this section; the rest
+// flagged featured later, only the first two reach this section; the rest
 // belong to /courses.
-const HOMEPAGE_FEATURED_COUNT = 3
+const HOMEPAGE_FEATURED_COUNT = 2
 
 function cardPropsFor(course: Course, index: number): CardProps {
   const quiz = quizzes[course.slug]
@@ -121,14 +118,9 @@ export default function HomePage() {
                 <Link className={cx(btnBase, btnAccent)} href="/courses">
                   Browse courses
                 </Link>
-                <a
-                  className={cx(btnBase, btnGhostOnBlue)}
-                  href={WHATSAPP_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Message on WhatsApp
-                </a>
+                <Link className={cx(btnBase, btnGhostOnBlue)} href="/materials">
+                  Request materials
+                </Link>
               </div>
               <div className="mt-[30px] flex items-center gap-3 text-sm text-ci-blue-200">
                 <span className="flex">
@@ -148,7 +140,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="relative flex justify-center">
+            <div className="relative hidden justify-center min-[900px]:flex">
               <HeroMotif tone="on-blue" />
               {previewCourse ? (
                 <HeroPreview
@@ -170,9 +162,34 @@ export default function HomePage() {
         </div>
       </header>
 
+      {/* ================= FEATURED COURSES ================= */}
+      <section className="py-16 min-[900px]:py-[104px]" id="courses" data-screen-label="Featured courses">
+        <div className={WRAP}>
+          <div className="mb-[42px] flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
+                Featured files
+              </span>
+              <h2 className="mt-[14px] max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
+                Start with the courses that move your grade.
+              </h2>
+            </div>
+            <Link className={cx(btnBase, btnSm, btnGhost)} href="/courses">
+              View all {courseCount} courses
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2">
+            {featured.map((course, i) => (
+              <Card key={course.id} {...cardPropsFor(course, i)} />
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ================= STATS ================= */}
-      <section className="border-b border-ci-border bg-ci-paper-2" aria-label="At a glance">
-        <div className={cx(WRAP, 'py-[34px]')}>
+      <section className="border-y border-ci-border bg-ci-paper-2" aria-label="At a glance">
+        <div className={cx(WRAP, 'py-10 min-[900px]:py-12')}>
           {/* Mobile: 2-col grid. >=680px: a flex row with space-between so the
               first stat is flush-left, the last flush-right, and the middle two
               fall on the 1/3 and 2/3 marks with equal gaps between all four. */}
@@ -189,143 +206,37 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ================= FEATURED COURSES ================= */}
-      <section className="py-[72px] min-[900px]:py-[104px]" id="courses" data-screen-label="Featured courses">
-        <div className={WRAP}>
-          <div className="mb-[42px] flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
-                Featured files
-              </span>
-              <h2 className="mt-[14px] max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
-                Start with the courses that move your grade.
-              </h2>
-            </div>
-            <Link className={cx(btnBase, btnSm, btnGhost)} href="/courses">
-              View all {courseCount} courses
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-3">
-            {featured.map((course, i) => (
-              <Card key={course.id} {...cardPropsFor(course, i)} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= WHAT YOU GET ================= */}
-      <section
-        className="border-y border-ci-border bg-ci-paper-2 py-[72px] min-[900px]:py-[104px]"
-        id="features"
-        data-screen-label="What you get"
-      >
-        <div className={WRAP}>
-          <div className="mb-[42px] flex flex-col gap-4">
-            <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
-              What you get
-            </span>
-            <h2 className="max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
-              Everything you need to walk in prepared.
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 gap-[14px] min-[680px]:grid-cols-3">
-            <Feature
-              title="Study notes and calculator tips"
-              body="Decoded summaries topic by topic, with the calculator shortcuts that save you minutes in the hall."
-              icon={<NotesIcon />}
-            />
-            <Feature
-              title="Timed practice quizzes"
-              body="50+ questions per course under real exam pressure, so the clock never catches you off guard."
-              icon={<TimerIcon />}
-            />
-            <Feature
-              title="Exam focus areas"
-              body="The topics that actually recur, ranked from years of past papers, so you study what the exam rewards."
-              icon={<TargetIcon />}
-            />
-          </div>
-        </div>
-      </section>
-
       {/* ================= PEER TUTORING ================= */}
-      <section className="py-[72px] min-[900px]:py-[104px]" id="tutoring" data-screen-label="Peer tutoring">
+      <section className="py-12 min-[900px]:py-16" data-screen-label="Peer tutoring">
         <div className={WRAP}>
-          <div className="overflow-hidden rounded-[24px] border border-ci-border bg-ci-paper-2">
-            <div className="p-[40px_28px] min-[900px]:p-[56px_52px]">
-              <div className="min-[900px]:grid min-[900px]:grid-cols-2 min-[900px]:items-center min-[900px]:gap-12">
-                <div>
-                  <div className="mb-[14px] flex flex-wrap items-center gap-[14px]">
-                    <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
-                      Peer tutoring
-                    </span>
-                    <span className="inline-flex items-center gap-2 rounded-full border border-ci-blue-200 bg-ci-blue-50 px-[15px] py-[7px] text-[12.5px] font-bold uppercase tracking-[0.12em] text-ci-navy">
-                      <span className="h-[6px] w-[6px] rounded-full bg-ci-navy" />
-                      Coming soon
-                    </span>
-                  </div>
-                  <h2 className="max-w-[20ch] text-[clamp(27px,4vw,38px)] font-extrabold leading-[1.05] tracking-[-0.03em] text-ci-navy-900">
-                    A real person for the parts that don&apos;t click.
-                  </h2>
-                  <p className="mt-[14px] max-w-[54ch] text-[17px] leading-[1.55] text-ci-gray-600">
-                    Pair with a senior who has already aced the paper, or share what you know with juniors.
-                    Rolling out next semester.
-                  </p>
-                </div>
-
-                <div className="mt-[30px] grid grid-cols-1 gap-[14px] min-[680px]:grid-cols-2 min-[900px]:mt-0">
-                  <PathCard
-                    title="Find a tutor"
-                    body="Book focused sessions on the exam-critical topics."
-                    linkLabel="Join the waitlist"
-                    href="/tutors"
-                    icon={<PersonIcon />}
-                  />
-                  <PathCard
-                    title="Become a tutor"
-                    body="300L and above can help juniors and earn for sessions."
-                    linkLabel="Apply to tutor"
-                    href="/become-a-tutor"
-                    icon={<StarIcon />}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ================= CLOSING CTA ================= */}
-      <section className="relative overflow-hidden bg-ci-navy text-ci-paper" id="contact" data-screen-label="Closing CTA">
-        <svg
-          className="absolute right-[-40px] top-[-30px] z-[1] h-[280px] w-[280px] text-ci-blue-600 opacity-50"
-          viewBox="0 0 200 200"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="100" cy="100" r="90" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 12" strokeLinecap="round" />
-        </svg>
-        <div className={cx(WRAP, 'relative z-[2] py-[72px] min-[900px]:py-[104px]')}>
-          <div className="flex flex-col items-start min-[900px]:items-center min-[900px]:text-center">
-            <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-accent">
-              University of Lagos
-            </span>
-            <h2 className="mt-[18px] max-w-[16ch] text-balance text-[clamp(34px,6vw,60px)] font-extrabold leading-none tracking-[-0.035em] text-white">
-              Walk in already knowing.
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            <h2 className="text-[clamp(26px,4vw,34px)] font-extrabold tracking-[-0.025em] text-ci-navy-900">
+              Peer tutoring
             </h2>
-            <p className="mt-5 max-w-[44ch] text-[18px] leading-[1.55] text-ci-blue-200">
-              Every course, every past question, every exam focus area in one place.
-            </p>
-            <div className="mt-[34px] flex flex-wrap gap-[13px]">
-              <Link className={cx(btnBase, btnAccent)} href="/courses">
-                Start studying
-              </Link>
-              <a className={cx(btnBase, btnLight)} href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
-                Message on WhatsApp
-              </a>
-            </div>
+            <span className="inline-flex min-h-7 items-center rounded-full border border-ci-blue-200 bg-ci-blue-50 px-3 py-1 text-[11.5px] font-bold uppercase tracking-[0.1em] text-ci-navy">
+              Coming soon
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 min-[680px]:grid-cols-2">
+            <Link
+              href="/tutors"
+              className="flex min-h-11 flex-col justify-center rounded-[14px] border border-ci-border bg-ci-white p-5 transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-ci-border-2 hover:shadow-ci-card"
+            >
+              <h3 className="text-[17px] font-bold text-ci-navy-900">Find a tutor</h3>
+              <p className="mt-1 text-[14.5px] leading-[1.5] text-ci-gray-600">
+                Join the waitlist for focused course support.
+              </p>
+            </Link>
+            <Link
+              href="/become-a-tutor"
+              className="flex min-h-11 flex-col justify-center rounded-[14px] border border-ci-border bg-ci-white p-5 transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-ci-border-2 hover:shadow-ci-card"
+            >
+              <h3 className="text-[17px] font-bold text-ci-navy-900">Become a tutor</h3>
+              <p className="mt-1 text-[14.5px] leading-[1.5] text-ci-gray-600">
+                Help junior students with courses you know well.
+              </p>
+            </Link>
           </div>
         </div>
       </section>
@@ -447,108 +358,5 @@ function Stat({ value, label, plus, soon }: StatProps) {
         {label}
       </div>
     </div>
-  )
-}
-
-function Feature({ title, body, icon }: { title: string; body: string; icon: React.ReactNode }) {
-  return (
-    <div className="rounded-[16px] border border-transparent p-[30px_26px] transition-[background-color,border-color] duration-200 hover:border-ci-border hover:bg-ci-white">
-      <span className="block h-[46px] w-[46px] text-ci-navy">{icon}</span>
-      <h3 className="mt-[22px] text-[20px] font-bold tracking-[-0.018em] text-ci-navy-900">{title}</h3>
-      <p className="mt-[10px] text-[15.5px] leading-[1.55] text-ci-gray-600">{body}</p>
-    </div>
-  )
-}
-
-function PathCard({
-  title,
-  body,
-  linkLabel,
-  href,
-  icon,
-}: {
-  title: string
-  body: string
-  linkLabel: string
-  href: string
-  icon: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col rounded-[14px] border border-ci-border bg-ci-white p-6">
-      {/* flex-1 keeps the two links on a shared baseline regardless of copy */}
-      <div className="flex flex-[1_0_auto] flex-col gap-2">
-        <span className="mb-2 block h-[34px] w-[34px] text-ci-navy">{icon}</span>
-        <h4 className="text-[18px] font-bold tracking-[-0.015em] text-ci-navy-900">{title}</h4>
-        <p className="text-[14.5px] leading-[1.5] text-ci-gray-600">{body}</p>
-      </div>
-      <Link
-        href={href}
-        className="group mt-0 inline-flex items-center gap-[7px] whitespace-nowrap pt-[14px] text-[14.5px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-[11px]"
-      >
-        {linkLabel}
-      </Link>
-    </div>
-  )
-}
-
-// ---- feature / path icons (line-art, currentColor + amber accents) ----
-function NotesIcon() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" className="h-full w-full">
-      <rect x="9" y="7" width="22" height="30" rx="3.5" stroke="currentColor" strokeWidth="2.2" />
-      <line x1="14.5" y1="14" x2="25.5" y2="14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <line x1="14.5" y1="19.5" x2="25.5" y2="19.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <line x1="14.5" y1="25" x2="21" y2="25" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <rect x="28" y="24" width="13" height="17" rx="3" fill="#F4F1EA" stroke="currentColor" strokeWidth="2.2" />
-      <line x1="31" y1="29.5" x2="38" y2="29.5" stroke="#E0A33E" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="32" cy="34.5" r="1.2" fill="currentColor" />
-      <circle cx="37" cy="34.5" r="1.2" fill="currentColor" />
-    </svg>
-  )
-}
-
-function TimerIcon() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" className="h-full w-full">
-      <circle cx="24" cy="26" r="15" stroke="currentColor" strokeWidth="2.2" />
-      <path d="M24 17.5V26l5.5 3.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      <line x1="19" y1="6.5" x2="29" y2="6.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <line x1="24" y1="6.5" x2="24" y2="11" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <path d="M37 14l2.5-2.5" stroke="#E0A33E" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function TargetIcon() {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" className="h-full w-full">
-      <circle cx="24" cy="24" r="15" stroke="currentColor" strokeWidth="2.2" />
-      <circle cx="24" cy="24" r="8.5" stroke="currentColor" strokeWidth="2.2" />
-      <circle cx="24" cy="24" r="2.4" fill="#E0A33E" />
-      <line x1="24" y1="2.5" x2="24" y2="9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <line x1="24" y1="39" x2="24" y2="45.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function PersonIcon() {
-  return (
-    <svg viewBox="0 0 34 34" fill="none" className="h-full w-full">
-      <circle cx="17" cy="11" r="6" stroke="currentColor" strokeWidth="2.1" />
-      <path d="M6 29c0-6 5-9.5 11-9.5S28 23 28 29" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function StarIcon() {
-  return (
-    <svg viewBox="0 0 34 34" fill="none" className="h-full w-full">
-      <path
-        d="M17 4l3.7 7.5 8.3 1.2-6 5.8 1.4 8.2L17 24l-7.4 3.9 1.4-8.2-6-5.8 8.3-1.2L17 4z"
-        stroke="currentColor"
-        strokeWidth="2.1"
-        strokeLinejoin="round"
-      />
-    </svg>
   )
 }
