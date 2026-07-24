@@ -7,11 +7,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { buildWhatsAppUrl } from '@/lib/whatsapp'
 import { BookLogo, Wordmark } from './Logo'
 import { btnBase, btnGhost, btnNavy, btnSm, btnWhite, cx } from './ui'
-
-const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
 
 const NAV_LINKS: ReadonlyArray<{ href: string; label: string }> = [
   { href: '/courses', label: 'Courses' },
@@ -95,30 +92,28 @@ export function Nav({ variant = 'blue' }: Props) {
 
       <div className={cx('border-t border-ci-border bg-ci-paper min-[900px]:hidden', open ? 'block' : 'hidden')}>
         <div className={WRAP}>
-          <div className="pb-6 pt-[10px]">
+          <div className="pb-4 pt-1">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="block border-b border-ci-border py-[15px] text-[19px] font-semibold text-ci-ink"
+                className="block min-h-11 border-b border-ci-border py-2.5 text-[16px] font-semibold leading-6 text-ci-ink"
                 onClick={close}
               >
                 {link.label}
               </Link>
             ))}
-            <div className="mt-5 flex flex-col gap-[10px]">
-              <Link className={cx(btnBase, btnNavy, 'w-full')} href="/courses" onClick={close}>
+            <div className="mt-3 flex flex-col gap-2">
+              <Link className={cx(btnBase, btnSm, btnNavy, 'w-full')} href="/courses" onClick={close}>
                 Browse courses
               </Link>
-              <a
-                className={cx(btnBase, btnGhost, 'w-full')}
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                className={cx(btnBase, btnSm, btnGhost, 'w-full')}
+                href="/materials"
                 onClick={close}
               >
-                Message on WhatsApp
-              </a>
+                Request materials
+              </Link>
             </div>
           </div>
         </div>
