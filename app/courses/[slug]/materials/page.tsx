@@ -5,13 +5,13 @@
 // buildWhatsAppUrl helper (env-driven), never hardcoded.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import '../../../../styles/pages.css'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
-import { HeroMotif } from '@/components/chrome/HeroMotif'
-import { btnNavy, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 type PageProps = { params: Promise<{ slug: string }> }
+
+const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 export function generateStaticParams() {
   return courses.map((c) => ({ slug: c.slug }))
@@ -33,78 +33,66 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
 
   return (
     <>
-      <header className="course-cover" data-screen-label="Cover">
-        <HeroMotif />
-        <div className="wrap">
-          <nav className="crumb" aria-label="Breadcrumb">
-            <Link href="/">Home</Link>
-            <span className="sep">/</span>
-            <Link href="/courses">Courses</Link>
-            <span className="sep">/</span>
-            <Link href={`/courses/${course.slug}`}>{course.code}</Link>
-            <span className="sep">/</span>
-            <span className="cur">Materials</span>
+      <header className="bg-ci-navy text-white" data-screen-label="Materials">
+        <div className={cx(WRAP, 'py-14 min-[900px]:py-[72px]')}>
+          <nav
+            className="mb-9 flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200"
+            aria-label="Breadcrumb"
+          >
+            <Link href="/" className="transition-colors hover:text-white">Home</Link>
+            <span className="text-white/35">/</span>
+            <Link href="/courses" className="transition-colors hover:text-white">Courses</Link>
+            <span className="text-white/35">/</span>
+            <Link
+              href={`/courses/${course.slug}`}
+              className="transition-colors hover:text-white"
+            >
+              {course.code}
+            </Link>
+            <span className="text-white/35">/</span>
+            <span className="text-white">Materials</span>
           </nav>
 
-          <div className="cover-code">{course.code}</div>
-          <h1 className="cover-title">{course.title}</h1>
-          <p className="cover-desc">
-            Study materials for this course are shared over WhatsApp. Request
-            what you need, or contribute notes and past questions of your own —
-            pick an option below.
+          <div className="text-[13px] font-bold uppercase tracking-[0.14em] text-ci-accent">
+            {course.code}
+          </div>
+          <h1 className="mt-3 max-w-[20ch] text-balance text-[clamp(36px,7vw,56px)] font-extrabold leading-none tracking-[-0.035em]">
+            {course.title}
+          </h1>
+          <p className="mt-5 max-w-[54ch] text-[17px] leading-[1.6] text-ci-blue-200 min-[900px]:text-[19px]">
+            Request study materials for this course, or contribute notes and past questions of your own.
           </p>
         </div>
       </header>
 
-      <section className="pg-body" data-screen-label="Material options">
-        <div className="wrap">
-          <div className="contact-list flex max-w-full flex-col gap-4">
-            {/* Primary request action. */}
-            <a
-              className={cx(
-                btnNavy,
-                'flex w-full min-w-0 items-start rounded-[14px] p-5 text-left transition-[transform,background-color,box-shadow] duration-150 hover:shadow-ci-card',
-              )}
-              href={requestUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Request study materials for ${course.code} on WhatsApp (opens in a new tab)`}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-ci-blue-200">
-                  Request materials · WhatsApp
-                </div>
-                <div className="mt-2 text-[17px] font-semibold leading-snug text-white">
-                  Ask for notes, past questions and slides for {course.code}
-                </div>
-              </div>
-            </a>
+      <section className="py-14 min-[900px]:py-[72px]" data-screen-label="Material options">
+        <div className={WRAP}>
+          <div className="mx-auto max-w-[720px] rounded-[18px] border border-ci-border bg-ci-white p-6 shadow-ci-card min-[680px]:p-8">
+            <div className="grid grid-cols-1 gap-3 min-[600px]:grid-cols-2">
+              <a
+                className={cx(btnBase, btnAccent, 'w-full')}
+                href={requestUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Request study materials for ${course.code} on WhatsApp (opens in a new tab)`}
+              >
+                Request materials
+              </a>
+              <a
+                className={cx(btnBase, btnNavy, 'w-full')}
+                href={shareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Share study materials for ${course.code} on WhatsApp (opens in a new tab)`}
+              >
+                Send materials
+              </a>
+            </div>
 
-            <a
-              className={cx(
-                btnNavy,
-                'flex w-full min-w-0 items-start rounded-[14px] p-5 text-left transition-[transform,background-color,box-shadow] duration-150 hover:shadow-ci-card',
-              )}
-              href={shareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Share study materials for ${course.code} on WhatsApp (opens in a new tab)`}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-ci-blue-200">
-                  Share materials · WhatsApp
-                </div>
-                <div className="mt-2 text-[17px] font-semibold leading-snug text-white">
-                  Have notes or past questions? Send them in to help your set
-                </div>
-              </div>
-            </a>
+            <p className="mt-4 text-[13.5px] leading-[1.5] text-ci-gray-500">
+              Opens WhatsApp with your request pre-filled for {course.code}.
+            </p>
           </div>
-
-          <p className="contact-meta">
-            Both options open WhatsApp with a message pre-filled for {course.code}.
-            Typical response · within a day · Mon–Sat, 9:00–18:00 WAT
-          </p>
         </div>
       </section>
     </>

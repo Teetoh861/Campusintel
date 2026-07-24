@@ -1,9 +1,8 @@
 // Course detail (/courses/[slug]) — Variant B "continuous blue" reskin.
 // Server-rendered. Section order and conditional rendering are unchanged from
-// the dossier version; section index numbers (01, 02, ...) are computed from
-// the visible subset so an omitted section leaves no gap. Visual reskin only:
-// continuous-blue cover, warm off-white body with a sticky ToC rail, white-on-
-// warm cards, and a navy closing quiz CTA. Real course/quiz data throughout.
+// the dossier version. The cover leads into a compact accordion of the visible
+// study sections, followed by the navy closing quiz CTA. Real course/quiz data
+// throughout.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
@@ -21,10 +20,12 @@ import type {
   FormulaEntry,
 } from '@/lib/types'
 import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
-import { btnAccent, btnBase, btnNavy, btnSm, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhostOnBlue, btnNavy, btnSm, cx } from '@/components/chrome/ui'
 import { BookmarkButton } from './BookmarkButton'
-import { CourseToc, type TocItem } from './CourseToc'
-import { MobileCourseNav } from './MobileCourseNav'
+import {
+  CourseAccordion,
+  type CourseAccordionSection,
+} from './CourseAccordion'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -55,18 +56,17 @@ type SectionId =
 type SectionDescriptor = {
   id: SectionId
   tocLabel: string
-  headLabel: string
 }
 
 const SECTION_ORDER: ReadonlyArray<SectionDescriptor> = [
-  { id: 'overview', tocLabel: 'Overview', headLabel: 'Overview' },
-  { id: 'takeaways', tocLabel: 'Key takeaways', headLabel: 'Key takeaways' },
-  { id: 'topics', tocLabel: 'Topics', headLabel: 'Topics' },
-  { id: 'exam', tocLabel: 'Exam focus', headLabel: 'Exam focus' },
-  { id: 'formulas', tocLabel: 'Formula sheet', headLabel: 'Formula sheet' },
-  { id: 'textbooks', tocLabel: 'Textbooks', headLabel: 'Recommended textbooks' },
-  { id: 'theory', tocLabel: 'Theory questions', headLabel: 'Theory questions' },
-  { id: 'resources', tocLabel: 'Resources', headLabel: 'Resources' },
+  { id: 'overview', tocLabel: 'Overview' },
+  { id: 'takeaways', tocLabel: 'Key takeaways' },
+  { id: 'topics', tocLabel: 'Topics' },
+  { id: 'exam', tocLabel: 'Exam focus' },
+  { id: 'formulas', tocLabel: 'Formula sheet' },
+  { id: 'textbooks', tocLabel: 'Textbooks' },
+  { id: 'theory', tocLabel: 'Theory questions' },
+  { id: 'resources', tocLabel: 'Resources' },
 ]
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -94,22 +94,99 @@ export default async function CourseDetailPage({ params }: PageProps) {
     return false
   })
 
-  const sectionNumber = (id: SectionId) => {
-    const i = visible.findIndex((s) => s.id === id)
-    return i >= 0 ? pad2(i + 1) : ''
-  }
-  const isVisible = (id: SectionId) => visible.some((s) => s.id === id)
-
-  const tocItems: ReadonlyArray<TocItem> = visible.map((s, i) => ({
-    id: s.id,
-    label: s.tocLabel,
-    num: pad2(i + 1),
-  }))
-
   const quizHref = `/courses/${course.slug}/quiz`
   const materialsHref = `/courses/${course.slug}/materials`
   const questionsValue = quiz ? String(quiz.totalQuestions) : 'N/A'
   const quizTimeValue = quiz ? `${quiz.quizDurationMinutes} min` : 'N/A'
+
+  const accordionSections: ReadonlyArray<CourseAccordionSection> = visible.flatMap<CourseAccordionSection>((section) => {
+    if (section.id === 'overview') return []
+    if (section.id === 'takeaways') {
+      return [{
+        id: section.id,
+        label: section.tocLabel,
+        content: (
+          <AccordionSectionContent h2="Core principles">
+            <Takeaways items={takeaways} />
+          </AccordionSectionContent>
+        ),
+      }]
+    }
+    if (section.id === 'topics') {
+      return [{
+        id: section.id,
+        label: section.tocLabel,
+        content: (
+          <AccordionSectionContent h2="Syllabus contents">
+            <Topics items={course.topics} />
+          </AccordionSectionContent>
+        ),
+      }]
+    }
+    if (section.id === 'exam') {
+      return [{
+        id: section.id,
+        label: section.tocLabel,
+        content: (
+          <div className="rounded-[20px] border border-ci-accent-100 bg-[linear-gradient(180deg,var(--ci-accent-50),var(--ci-white)_42%)] p-[30px_26px] shadow-ci-card">
+            <span className="inline-flex items-center gap-[9px] rounded-full border border-ci-accent-100 bg-ci-white px-[13px] py-[6px] text-[12px] font-bold uppercase tracking-[0.12em] text-ci-accent-600">
+              <span className="h-[6px] w-[6px] rounded-full bg-ci-accent" />
+              Exam intelligence
+            </span>
+            <h2 className="mt-[18px] text-[clamp(22px,3.4vw,28px)] font-extrabold tracking-[-0.025em] text-ci-navy-900">
+              Areas worth reviewing
+            </h2>
+            <p className="mt-3 max-w-[60ch] text-[16px] leading-[1.55] text-ci-gray-600">
+              High-yield areas pulled from past papers. If your time is short, study these first.
+            </p>
+            <ExamFocus items={course.examFocus} />
+          </div>
+        ),
+      }]
+    }
+    if (section.id === 'formulas') {
+      return [{
+        id: section.id,
+        label: section.tocLabel,
+        content: (
+          <AccordionSectionContent h2="Formulas & worked examples">
+            <FormulaSheet items={formulaSheet} />
+          </AccordionSectionContent>
+        ),
+      }]
+    }
+    if (section.id === 'textbooks') {
+      return [{
+        id: section.id,
+        label: section.tocLabel,
+        content: (
+          <AccordionSectionContent h2="The reading">
+            <Textbooks items={course.textbooks} />
+          </AccordionSectionContent>
+        ),
+      }]
+    }
+    if (section.id === 'theory') {
+      return [{
+        id: section.id,
+        label: section.tocLabel,
+        content: (
+          <AccordionSectionContent h2="Likely written questions">
+            <TheoryList items={theoryQuestions} />
+          </AccordionSectionContent>
+        ),
+      }]
+    }
+    return [{
+      id: section.id,
+      label: section.tocLabel,
+      content: (
+        <AccordionSectionContent h2="Files to download">
+          <Resources items={course.resources} slug={course.slug} />
+        </AccordionSectionContent>
+      ),
+    }]
+  })
 
   // Closing-band kicker, built from real values: "ACC201 · 150 questions · 30 minutes".
   const closingKicker = [
@@ -145,11 +222,16 @@ export default async function CourseDetailPage({ params }: PageProps) {
             {course.overview}
           </p>
 
-          <div className="mt-[30px] flex flex-wrap gap-[13px]">
-            <Link className={cx(btnBase, btnAccent)} href={quizHref}>
+          <div className="mt-[30px] flex w-full max-w-[560px] flex-col gap-3">
+            <Link className={cx(btnBase, btnAccent, 'w-full')} href={quizHref}>
               Start quiz
             </Link>
-            <BookmarkButton slug={course.slug} variant="cover" />
+            <div className="flex w-full items-center gap-3">
+              <Link className={cx(btnBase, btnGhostOnBlue, 'min-w-0 flex-1')} href={materialsHref}>
+                Request materials
+              </Link>
+              <BookmarkButton slug={course.slug} variant="cover" />
+            </div>
           </div>
 
           <div className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-[14px] border border-white/[0.14] bg-white/[0.14] min-[680px]:grid-cols-3 min-[900px]:grid-cols-6">
@@ -166,84 +248,10 @@ export default async function CourseDetailPage({ params }: PageProps) {
         </div>
       </header>
 
-      {/* ===================== BODY: rail + main ===================== */}
+      {/* ===================== BODY: course accordion ===================== */}
       <div className="pt-14 min-[900px]:pt-[72px]">
-        <MobileCourseNav
-          items={tocItems}
-          materialsHref={materialsHref}
-          quizHref={quiz ? quizHref : undefined}
-        />
         <div className={WRAP}>
-          <div className="grid grid-cols-1 gap-10 min-[900px]:grid-cols-[230px_1fr] min-[900px]:items-start min-[900px]:gap-[60px]">
-            <CourseToc items={tocItems} quizHref={quizHref} />
-
-            <div className="flex min-w-0 flex-col gap-16 min-[900px]:gap-[88px]">
-              {isVisible('overview') ? (
-                <Section id="overview" num={sectionNumber('overview')} kicker="Overview" h2="The paper, decoded">
-                  <Prose>
-                    <p>{course.overview}</p>
-                  </Prose>
-                </Section>
-              ) : null}
-
-              {isVisible('takeaways') ? (
-                <Section id="takeaways" num={sectionNumber('takeaways')} kicker="Key takeaways" h2="Core principles">
-                  <Takeaways items={takeaways} />
-                </Section>
-              ) : null}
-
-              {isVisible('topics') ? (
-                <Section id="topics" num={sectionNumber('topics')} kicker="Topics" h2="Syllabus contents">
-                  <Topics items={course.topics} />
-                </Section>
-              ) : null}
-
-              {isVisible('exam') ? (
-                // The one amber moment of the body lives inside the exam-focus
-                // panel; the section header stays monochrome.
-                <section id="exam" className="scroll-mt-[96px]" data-screen-label="Exam focus">
-                  <SectionHead num={sectionNumber('exam')} kicker="Exam focus" />
-                  <div className="rounded-[20px] border border-ci-accent-100 bg-[linear-gradient(180deg,var(--ci-accent-50),var(--ci-white)_42%)] p-[30px_26px] shadow-ci-card">
-                    <span className="inline-flex items-center gap-[9px] rounded-full border border-ci-accent-100 bg-ci-white px-[13px] py-[6px] text-[12px] font-bold uppercase tracking-[0.12em] text-ci-accent-600">
-                      <span className="h-[6px] w-[6px] rounded-full bg-ci-accent" />
-                      Exam intelligence
-                    </span>
-                    <h2 className="mt-[18px] text-[clamp(22px,3.4vw,28px)] font-extrabold tracking-[-0.025em] text-ci-navy-900">
-                      What the exam actually tests
-                    </h2>
-                    <p className="mt-3 max-w-[60ch] text-[16px] leading-[1.55] text-ci-gray-600">
-                      High-yield areas pulled from past papers. If your time is short, study these first.
-                    </p>
-                    <ExamFocus items={course.examFocus} />
-                  </div>
-                </section>
-              ) : null}
-
-              {isVisible('formulas') ? (
-                <Section id="formulas" num={sectionNumber('formulas')} kicker="Formula sheet" h2="Formulas & worked examples">
-                  <FormulaSheet items={formulaSheet} />
-                </Section>
-              ) : null}
-
-              {isVisible('textbooks') ? (
-                <Section id="textbooks" num={sectionNumber('textbooks')} kicker="Recommended textbooks" h2="The reading">
-                  <Textbooks items={course.textbooks} />
-                </Section>
-              ) : null}
-
-              {isVisible('theory') ? (
-                <Section id="theory" num={sectionNumber('theory')} kicker="Theory questions" h2="Likely written questions">
-                  <TheoryList items={theoryQuestions} />
-                </Section>
-              ) : null}
-
-              {isVisible('resources') ? (
-                <Section id="resources" num={sectionNumber('resources')} kicker="Resources" h2="Files to download">
-                  <Resources items={course.resources} slug={course.slug} />
-                </Section>
-              ) : null}
-            </div>
-          </div>
+          <CourseAccordion sections={accordionSections} />
         </div>
       </div>
 
@@ -274,32 +282,21 @@ export default async function CourseDetailPage({ params }: PageProps) {
   )
 }
 
-// ---- section scaffolding ----
-function SectionHead({ num, kicker }: { num: string; kicker: string }) {
-  return (
-    <div className="mb-[18px] flex items-center gap-[9px] text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
-      <span className="text-ci-accent-600">{num} /</span> {kicker}
-    </div>
-  )
-}
-
-type SectionProps = {
-  id: SectionId
-  num: string
-  kicker: string
+// ---- accordion content scaffolding ----
+function AccordionSectionContent({
+  h2,
+  children,
+}: {
   h2: string
   children: React.ReactNode
-}
-
-function Section({ id, num, kicker, h2, children }: SectionProps) {
+}) {
   return (
-    <section id={id} className="scroll-mt-[96px]" data-screen-label={kicker}>
-      <SectionHead num={num} kicker={kicker} />
+    <>
       <h2 className="text-[clamp(26px,4vw,34px)] font-extrabold leading-[1.05] tracking-[-0.03em] text-ci-navy-900">
         {h2}
       </h2>
       <div className="mt-5">{children}</div>
-    </section>
+    </>
   )
 }
 
