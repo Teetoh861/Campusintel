@@ -7,7 +7,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { btnBase, btnGhostOnBlue, btnLight, cx } from '@/components/chrome/ui'
 
 const STORAGE_KEY = 'ci_bookmarks_v1'
@@ -57,6 +57,8 @@ export function BookmarkButton({
   // client hydration matches; the real saved state lands after the effect.
   const [mounted, setMounted] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [toast, setToast] = useState<'added' | 'removed' | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sync = useCallback(() => {
     setSaved(readKeys().includes(slug))
@@ -73,6 +75,22 @@ export function BookmarkButton({
     }
   }, [sync])
 
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current)
+    },
+    [],
+  )
+
+  const showToast = useCallback((message: 'added' | 'removed') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast(message)
+    toastTimer.current = setTimeout(() => {
+      setToast(null)
+      toastTimer.current = null
+    }, 3000)
+  }, [])
+
   const toggle = useCallback(() => {
     // Re-read fresh so we never clobber a change made elsewhere; toggle this
     // slug; write back; tell sibling instances to re-sync.
@@ -81,8 +99,9 @@ export function BookmarkButton({
     const next = has ? keys.filter((k) => k !== slug) : [...keys, slug]
     writeKeys(next)
     setSaved(!has)
+    showToast(has ? 'removed' : 'added')
     window.dispatchEvent(new Event(CHANGE_EVENT))
-  }, [slug])
+  }, [showToast, slug])
 
   const isSaved = mounted && saved
 
@@ -93,30 +112,77 @@ export function BookmarkButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={toggle}
-        aria-pressed={isSaved}
-        className={cx(btnBase, variantClass, isSaved && savedClass)}
-      >
-        {isSaved ? (
-          <>
-            Bookmarked{' '}
-            <span aria-hidden="true">✓</span>
-          </>
-        ) : (
-          'Bookmark course'
-        )}
-      </button>
+      {variant === 'cover' ? (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={isSaved ? 'Remove bookmark' : 'Add bookmark'}
+          aria-pressed={isSaved}
+          className={cx(
+            'inline-flex h-[52px] w-[52px] flex-none items-center justify-center rounded-[11px] border-[1.5px] border-white/45 text-white transition-[background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-white/70 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ci-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ci-navy',
+            isSaved && savedClass,
+          )}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-6 w-6"
+            fill={isSaved ? 'currentColor' : 'none'}
+          >
+            <path
+              d="M7 4.75A1.75 1.75 0 0 1 8.75 3h6.5A1.75 1.75 0 0 1 17 4.75v15l-5-3.2-5 3.2v-15Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-pressed={isSaved}
+          className={cx(btnBase, variantClass, isSaved && savedClass)}
+        >
+          {isSaved ? (
+            <>
+              Bookmarked{' '}
+              <span aria-hidden="true">✓</span>
+            </>
+          ) : (
+            'Bookmark course'
+          )}
+        </button>
+      )}
       {/* Path to the saved list — surfaced only once this course is saved, so
           it's relevant exactly when shown. Quiet white-on-navy link. */}
-      {isSaved ? (
+      {variant === 'closing' && isSaved ? (
         <Link
           className="inline-flex items-center gap-2 text-[15px] font-semibold text-ci-blue-200 transition-colors hover:text-white"
           href="/bookmarks"
         >
           View bookmarks
         </Link>
+      ) : null}
+
+      {toast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-5 left-1/2 z-[100] flex w-[calc(100%-32px)] max-w-[360px] -translate-x-1/2 animate-in items-center justify-between gap-4 rounded-[12px] bg-ci-navy px-4 py-3 text-[14px] font-semibold text-ci-paper shadow-ci-soft fade-in slide-in-from-bottom-2 duration-200"
+        >
+          <span>{toast === 'added' ? 'Added to bookmarks' : 'Removed from bookmarks'}</span>
+          {toast === 'added' ? (
+            <Link
+              href="/bookmarks"
+              onClick={() => setToast(null)}
+              className="flex-none rounded-[7px] bg-ci-accent px-3 py-2 text-[13px] font-bold text-ci-navy-900"
+            >
+              View list
+            </Link>
+          ) : null}
+        </div>
       ) : null}
     </>
   )
