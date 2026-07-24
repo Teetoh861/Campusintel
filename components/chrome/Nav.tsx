@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { BookLogo, Wordmark } from './Logo'
-import { btnBase, btnGhost, btnNavy, btnSm, btnWhite, cx } from './ui'
+import { btnAccent, btnBase, btnNavy, btnSm, btnWhite, cx } from './ui'
 
 const NAV_LINKS: ReadonlyArray<{ href: string; label: string }> = [
   { href: '/courses', label: 'Courses' },
@@ -108,7 +108,7 @@ export function Nav({ variant = 'blue' }: Props) {
                 Browse courses
               </Link>
               <Link
-                className={cx(btnBase, btnSm, btnGhost, 'w-full')}
+                className={cx(btnBase, btnSm, btnAccent, 'w-full')}
                 href="/materials"
                 onClick={close}
               >
