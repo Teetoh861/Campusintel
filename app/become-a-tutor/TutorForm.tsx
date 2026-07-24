@@ -7,7 +7,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
-import { Arrow, btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
 
 // Sensible per-field limits. Bumped from the comp's mock 60 / 280 because
 // the spec wants ~100 / ~1000 in real use. The counter turns red once the
@@ -151,7 +151,7 @@ export function TutorForm() {
           onClick={handleSubmit}
           disabled={!canSubmit}
         >
-          Send via WhatsApp <Arrow />
+          Send via WhatsApp
         </button>
         <Link className={cx(btnBase, btnGhost)} href="/tutors">
           Back to tutors

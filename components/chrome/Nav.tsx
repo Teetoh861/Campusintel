@@ -9,7 +9,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
 import { BookLogo, Wordmark } from './Logo'
-import { Arrow, btnBase, btnGhost, btnNavy, btnSm, btnWhite, cx } from './ui'
+import { btnBase, btnGhost, btnNavy, btnSm, btnWhite, cx } from './ui'
 
 const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
 
@@ -108,7 +108,7 @@ export function Nav({ variant = 'blue' }: Props) {
             ))}
             <div className="mt-5 flex flex-col gap-[10px]">
               <Link className={cx(btnBase, btnNavy, 'w-full')} href="/courses" onClick={close}>
-                Browse courses <Arrow />
+                Browse courses
               </Link>
               <a
                 className={cx(btnBase, btnGhost, 'w-full')}

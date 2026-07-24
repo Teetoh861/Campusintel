@@ -5,7 +5,7 @@
 // difficulty indicator lives in <SignalBar>. (component-spec.md → Card)
 import Link from 'next/link'
 import { SignalBar, type DifficultyLevel } from './SignalBar'
-import { Arrow, cx } from './ui'
+import { cx } from './ui'
 
 export type CardFlag = {
   // 'critical' is the lone amber accent for an exam-critical course;
@@ -86,7 +86,12 @@ export function Card({
           : 'border-ci-border bg-ci-white',
       )}
     >
-      {cornerAction ? <div className="absolute right-3 top-3 z-[1]">{cornerAction}</div> : null}
+      <Link
+        href={cta.href}
+        aria-label={`View ${code}: ${title}`}
+        className="absolute inset-0 z-[1] rounded-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ci-accent focus-visible:ring-offset-2"
+      />
+      {cornerAction ? <div className="absolute right-3 top-3 z-10">{cornerAction}</div> : null}
       <div className={cx('mb-4 flex items-start justify-between gap-[14px]', Boolean(cornerAction) && 'pr-8')}>
         <span className="text-[13px] font-bold tracking-[0.08em] text-ci-navy">{code}</span>
         {critical && flag ? (
@@ -137,7 +142,7 @@ export function Card({
             </span>
           </span>
           {footerAction ? (
-            <span className="inline-flex items-center gap-3 whitespace-nowrap">
+            <span className="relative z-10 inline-flex items-center gap-3 whitespace-nowrap">
               {updated ? <span className="text-[12.5px] text-ci-gray-500">{updated}</span> : null}
               {footerAction}
             </span>
@@ -146,23 +151,18 @@ export function Card({
 
         <div className="mt-[15px] flex min-h-[38px] flex-nowrap items-center gap-[10px]">
           {/* Primary action — always present on every card, never replaced.
-              Navy text link. */}
-          <Link
-            href={cta.href}
-            className="group inline-flex items-center gap-2 whitespace-nowrap text-[15px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-3"
-          >
+              Navy text cue for the card-wide link. */}
+          <span className="inline-flex items-center whitespace-nowrap text-[15px] font-semibold text-ci-navy">
             {cta.label}
-            {cta.withArrow ? <Arrow /> : null}
-          </Link>
+          </span>
           {/* Exam-critical only — the lone amber "Start quiz", added alongside
               (not instead of) View course. Filled amber pill button. */}
           {secondaryCta ? (
             <Link
               href={secondaryCta.href}
-              className="group inline-flex min-h-[36px] items-center gap-[6px] whitespace-nowrap rounded-[8px] bg-ci-accent px-3 py-2 text-[13px] font-bold text-ci-navy-900 transition-[background-color,transform] duration-150 hover:-translate-y-px hover:bg-ci-accent-600"
+              className="relative z-10 inline-flex min-h-[36px] items-center gap-[6px] whitespace-nowrap rounded-[8px] bg-ci-accent px-3 py-2 text-[13px] font-bold text-ci-navy-900 transition-[background-color,transform] duration-150 hover:-translate-y-px hover:bg-ci-accent-600"
             >
               {secondaryCta.label}
-              {secondaryCta.withArrow ? <Arrow /> : null}
             </Link>
           ) : null}
         </div>

@@ -50,7 +50,6 @@ export default function ContactPage() {
                 </div>
                 <div className="mt-1 text-[18px] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{phoneDisplay}</div>
               </div>
-              <span className="text-[18px] text-ci-accent-600 transition-transform duration-150 group-hover:translate-x-[3px]">&rarr;</span>
             </a>
 
             <a
@@ -61,7 +60,6 @@ export default function ContactPage() {
                 <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Call</div>
                 <div className="mt-1 text-[18px] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{phoneDisplay}</div>
               </div>
-              <span className="text-[18px] text-ci-navy transition-transform duration-150 group-hover:translate-x-[3px]">&rarr;</span>
             </a>
 
             <a
@@ -72,7 +70,6 @@ export default function ContactPage() {
                 <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Email</div>
                 <div className="mt-1 break-words text-[18px] font-bold text-ci-navy-900">{CONTACT_EMAIL}</div>
               </div>
-              <span className="text-[18px] text-ci-navy transition-transform duration-150 group-hover:translate-x-[3px]">&rarr;</span>
             </a>
           </div>
 

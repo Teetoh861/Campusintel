@@ -8,7 +8,7 @@
 import Link from 'next/link'
 import type { QuizQuestion } from '@/lib/types'
 import type { AnswersMap, ReviewFilter, SectionStat } from './types'
-import { Arrow, btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const
 
@@ -153,7 +153,7 @@ export function ResultsScreen({
           {/* actions */}
           <div className="mt-12 flex flex-wrap gap-[13px]">
             <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetake}>
-              Retake assessment <Arrow />
+              Retake assessment
             </button>
             <Link className={cx(btnBase, btnGhost)} href={`/courses/${courseSlug}`}>
               Back to course

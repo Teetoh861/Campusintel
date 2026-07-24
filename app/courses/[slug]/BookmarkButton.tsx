@@ -115,8 +115,7 @@ export function BookmarkButton({
           className="inline-flex items-center gap-2 text-[15px] font-semibold text-ci-blue-200 transition-colors hover:text-white"
           href="/bookmarks"
         >
-          View bookmarks{' '}
-          <span aria-hidden="true">&rarr;</span>
+          View bookmarks
         </Link>
       ) : null}
     </>

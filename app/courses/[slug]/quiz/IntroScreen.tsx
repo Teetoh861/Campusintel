@@ -4,7 +4,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Arrow, btnAccent, btnBase, btnGhostOnBlue, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhostOnBlue, cx } from '@/components/chrome/ui'
 
 type Props = {
   courseCode: string
@@ -72,7 +72,7 @@ export function IntroScreen({
 
         <div className="mt-8 flex flex-wrap gap-[13px]">
           <button type="button" className={cx(btnBase, btnAccent)} onClick={onStart}>
-            Start assessment <Arrow />
+            Start assessment
           </button>
           <Link className={cx(btnBase, btnGhostOnBlue)} href={`/courses/${courseSlug}`}>
             Back to course

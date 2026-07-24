@@ -8,7 +8,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { Card, type CardProps } from '@/components/chrome/Card'
-import { Arrow, btnAccent, btnBase, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, cx } from '@/components/chrome/ui'
 
 // Storage shape mirrors the comp's bookmarks.js: a JSON array of course
 // codes (e.g. ["ACC201", "BUA203"]). We also accept slugs so a future
@@ -114,7 +114,7 @@ export function BookmarksClient({ catalog }: Props) {
             </p>
             <div className="mt-6 inline-flex">
               <Link className={cx(btnBase, btnAccent)} href="/courses">
-                Browse courses <Arrow />
+                Browse courses
               </Link>
             </div>
           </div>

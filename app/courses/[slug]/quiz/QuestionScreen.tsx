@@ -7,7 +7,7 @@
 
 import type { QuizQuestion } from '@/lib/types'
 import type { AnswersMap, MarkedMap } from './types'
-import { Arrow, btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
@@ -181,7 +181,7 @@ export function QuestionScreen(props: Props) {
                   </button>
                   {isLast ? (
                     <button type="button" className={cx(btnBase, btnSm, btnAccent)} onClick={onSubmit}>
-                      Submit <Arrow />
+                      Submit
                     </button>
                   ) : (
                     <>
@@ -197,7 +197,7 @@ export function QuestionScreen(props: Props) {
                         Submit
                       </button>
                       <button type="button" className={cx(btnBase, btnSm, btnAccent)} onClick={onNext}>
-                        Next <Arrow />
+                        Next
                       </button>
                     </>
                   )}
