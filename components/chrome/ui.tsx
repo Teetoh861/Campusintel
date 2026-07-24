@@ -1,10 +1,10 @@
 // Variant B shared UI atoms — button class strings (Tailwind utilities driven
-// by the ci-* tokens) and the trailing arrow. Kept as plain strings/helpers so
+// by the ci-* tokens). Kept as plain strings/helpers so
 // both Server and Client components can compose them. See component-spec.md →
 // "Buttons (shared)".
 
 // Base: inline-flex, gap 9px, weight 600, 16px, padding 14/24, radius 11px,
-// min-height 52px, 1.5px transparent border. `group` enables the arrow nudge.
+// min-height 52px, 1.5px transparent border.
 export const btnBase =
   'group inline-flex items-center justify-center gap-[9px] rounded-[11px] border-[1.5px] border-transparent px-6 py-[14px] min-h-[52px] text-base font-semibold leading-none tracking-[-0.01em] whitespace-nowrap transition-[transform,background-color,border-color,box-shadow] duration-150'
 
@@ -32,13 +32,4 @@ export const btnLight = 'bg-ci-paper text-ci-navy hover:bg-ci-white hover:-trans
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ')
-}
-
-// Trailing arrow that nudges +3px on hover of the enclosing `group`.
-export function Arrow() {
-  return (
-    <span aria-hidden className="transition-transform duration-150 group-hover:translate-x-[3px]">
-      &rarr;
-    </span>
-  )
 }

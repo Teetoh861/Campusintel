@@ -10,7 +10,7 @@ import { Card, type CardProps } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
-import { Arrow, btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnLight, btnSm, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnLight, btnSm, cx } from '@/components/chrome/ui'
 
 const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
 
@@ -119,7 +119,7 @@ export default function HomePage() {
               </p>
               <div className="mt-9 flex flex-wrap gap-[13px]">
                 <Link className={cx(btnBase, btnAccent)} href="/courses">
-                  Browse courses <Arrow />
+                  Browse courses
                 </Link>
                 <a
                   className={cx(btnBase, btnGhostOnBlue)}
@@ -202,7 +202,7 @@ export default function HomePage() {
               </h2>
             </div>
             <Link className={cx(btnBase, btnSm, btnGhost)} href="/courses">
-              View all {courseCount} courses <Arrow />
+              View all {courseCount} courses
             </Link>
           </div>
 
@@ -320,7 +320,7 @@ export default function HomePage() {
             </p>
             <div className="mt-[34px] flex flex-wrap gap-[13px]">
               <Link className={cx(btnBase, btnAccent)} href="/courses">
-                Start studying <Arrow />
+                Start studying
               </Link>
               <a className={cx(btnBase, btnLight)} href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
                 Message on WhatsApp
@@ -485,7 +485,7 @@ function PathCard({
         href={href}
         className="group mt-0 inline-flex items-center gap-[7px] whitespace-nowrap pt-[14px] text-[14.5px] font-semibold text-ci-navy transition-[gap] duration-150 hover:gap-[11px]"
       >
-        {linkLabel} <Arrow />
+        {linkLabel}
       </Link>
     </div>
   )

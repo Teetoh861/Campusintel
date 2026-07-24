@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Arrow, btnAccent, btnBase, btnSm, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnSm, cx } from '@/components/chrome/ui'
 
 export type TocItem = { id: string; label: string; num: string }
 
@@ -70,7 +70,7 @@ export function CourseToc({ items, quizHref }: { items: ReadonlyArray<TocItem>; 
       </nav>
       <div className="mt-6">
         <Link className={cx(btnBase, btnSm, btnAccent, 'w-full')} href={quizHref}>
-          Start quiz <Arrow />
+          Start quiz
         </Link>
       </div>
     </aside>

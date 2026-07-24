@@ -21,7 +21,7 @@ import type {
   FormulaEntry,
 } from '@/lib/types'
 import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
-import { Arrow, btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnNavy, btnSm, cx } from '@/components/chrome/ui'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseToc, type TocItem } from './CourseToc'
 import { MobileCourseNav } from './MobileCourseNav'
@@ -147,7 +147,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
 
           <div className="mt-[30px] flex flex-wrap gap-[13px]">
             <Link className={cx(btnBase, btnAccent)} href={quizHref}>
-              Start quiz <Arrow />
+              Start quiz
             </Link>
             <BookmarkButton slug={course.slug} variant="cover" />
           </div>
@@ -262,7 +262,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
               </p>
               <div className="mt-[30px] flex flex-wrap justify-center gap-[13px]">
                 <Link className={cx(btnBase, btnAccent)} href={quizHref}>
-                  Start quiz <Arrow />
+                  Start quiz
                 </Link>
                 <BookmarkButton slug={course.slug} variant="closing" />
               </div>
@@ -475,7 +475,7 @@ function Resources({ items, slug }: { items: ReadonlyArray<Resource>; slug: stri
               </div>
               <div className="flex items-center justify-between gap-4 min-[640px]:contents">
                 <span className="text-[13px] font-medium text-ci-gray-500">{r.fileSize ?? ''}</span>
-                <span className="whitespace-nowrap text-[14px] font-semibold text-ci-navy">Request &rarr;</span>
+                <span className="whitespace-nowrap text-[14px] font-semibold text-ci-navy">Request</span>
               </div>
             </Link>
           ))}
@@ -484,8 +484,8 @@ function Resources({ items, slug }: { items: ReadonlyArray<Resource>; slug: stri
 
       <div className="mt-[18px] flex flex-wrap items-center justify-between gap-4 border-t border-ci-border pt-[18px]">
         <span className="text-[14px] text-ci-gray-600">Have notes or past questions for this course?</span>
-        <Link className={cx(btnBase, btnSm, btnGhost)} href={materialsHref}>
-          Request or share materials <Arrow />
+        <Link className={cx(btnBase, btnSm, btnNavy)} href={materialsHref}>
+          Request or share materials
         </Link>
       </div>
     </>

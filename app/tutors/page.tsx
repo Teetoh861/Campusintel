@@ -4,7 +4,7 @@
 // WhatsApp URL is built once at request-time from the env helper.
 import Link from 'next/link'
 import { BlueCover } from '@/components/chrome/BlueCover'
-import { Arrow, btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
@@ -51,7 +51,7 @@ export default function TutorsPage() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Join the waitlist <Arrow />
+                Join the waitlist
               </a>
               <Link className={cx(btnBase, btnGhost)} href="/become-a-tutor">
                 Apply to tutor

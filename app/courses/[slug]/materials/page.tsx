@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation'
 import '../../../../styles/pages.css'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
+import { btnNavy, cx } from '@/components/chrome/ui'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 type PageProps = { params: Promise<{ slug: string }> }
@@ -57,44 +58,46 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
 
       <section className="pg-body" data-screen-label="Material options">
         <div className="wrap">
-          <div className="contact-list">
-            {/* The lone teal accent on this page: the primary "request" action. */}
+          <div className="contact-list flex max-w-full flex-col gap-4">
+            {/* Primary request action. */}
             <a
-              className="contact-row primary"
+              className={cx(
+                btnNavy,
+                'flex w-full min-w-0 items-start rounded-[14px] p-5 text-left transition-[transform,background-color,box-shadow] duration-150 hover:shadow-ci-card',
+              )}
               href={requestUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Request study materials for ${course.code} on WhatsApp (opens in a new tab)`}
             >
-              <div className="cr-main">
-                <div className="cr-k">
-                  <span className="sig" />Request materials · WhatsApp
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-ci-blue-200">
+                  Request materials · WhatsApp
                 </div>
-                <div className="cr-v">
+                <div className="mt-2 text-[17px] font-semibold leading-snug text-white">
                   Ask for notes, past questions and slides for {course.code}
                 </div>
               </div>
-              <span className="cr-go" aria-hidden="true">
-                &rarr;
-              </span>
             </a>
 
             <a
-              className="contact-row"
+              className={cx(
+                btnNavy,
+                'flex w-full min-w-0 items-start rounded-[14px] p-5 text-left transition-[transform,background-color,box-shadow] duration-150 hover:shadow-ci-card',
+              )}
               href={shareUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Share study materials for ${course.code} on WhatsApp (opens in a new tab)`}
             >
-              <div className="cr-main">
-                <div className="cr-k">Share materials · WhatsApp</div>
-                <div className="cr-v">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-ci-blue-200">
+                  Share materials · WhatsApp
+                </div>
+                <div className="mt-2 text-[17px] font-semibold leading-snug text-white">
                   Have notes or past questions? Send them in to help your set
                 </div>
               </div>
-              <span className="cr-go" aria-hidden="true">
-                &rarr;
-              </span>
             </a>
           </div>
 
