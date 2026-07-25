@@ -5,7 +5,7 @@
 // version. Card markup is precomputed on the server (cardProps).
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, type CardProps } from '@/components/chrome/Card'
 import { btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 import type { Course } from '@/lib/types'
@@ -57,14 +57,11 @@ export function CourseDirectory({ items, totalCount }: Props) {
   const [level, setLevel] = useState<LevelFilter>('all')
   const [semester, setSemester] = useState<SemesterFilter>('all')
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('all')
-  // Mobile-only: the three segmented filters collapse behind a toggle so the
-  // sticky bar stays compact. On desktop (min-[900px]) they're always inline
-  // and this flag is irrelevant.
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(6)
+  const directoryTopRef = useRef<HTMLDivElement>(null)
 
   const trimmed = query.trim()
-  // Count of the three segment filters that are narrowed (search excluded) —
-  // surfaced on the collapsed mobile toggle so applied filters stay visible.
   const activeFilterCount = [level, semester, difficulty].filter((v) => v !== 'all').length
   const isFiltered =
     trimmed !== '' || level !== 'all' || semester !== 'all' || difficulty !== 'all'
@@ -88,6 +85,33 @@ export function CourseDirectory({ items, totalCount }: Props) {
     })
   }, [items, trimmed, level, semester, difficulty])
 
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 900px)')
+    const updatePerPage = () => setPerPage(desktop.matches ? 9 : 6)
+    updatePerPage()
+    desktop.addEventListener('change', updatePerPage)
+    return () => desktop.removeEventListener('change', updatePerPage)
+  }, [])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, level, semester, difficulty])
+
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const visibleItems = filtered.slice((page - 1) * perPage, page * perPage)
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, Math.max(totalPages, 1)))
+  }, [totalPages])
+
+  const changePage = (nextPage: number) => {
+    if (nextPage < 1 || nextPage > totalPages || nextPage === page) return
+    setPage(nextPage)
+    requestAnimationFrame(() => {
+      directoryTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   const reset = () => {
     setQuery('')
     setLevel('all')
@@ -99,7 +123,8 @@ export function CourseDirectory({ items, totalCount }: Props) {
     <>
       {/* ===================== STICKY SEARCH + FILTERS ===================== */}
       <div
-        className="sticky top-[74px] z-40 border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px]"
+        ref={directoryTopRef}
+        className="scroll-mt-[74px] border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px] min-[900px]:sticky min-[900px]:top-[74px] min-[900px]:z-40"
         data-screen-label="Search and filter"
       >
         <div className={WRAP}>
@@ -130,41 +155,48 @@ export function CourseDirectory({ items, totalCount }: Props) {
             </label>
 
             {/* filters + count */}
-            <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[14px] min-[900px]:flex-[2_1_100%]">
-              {/* mobile-only toggle; hidden on desktop where filters are inline */}
-              <button
-                type="button"
-                onClick={() => setFiltersOpen((o) => !o)}
-                aria-expanded={filtersOpen}
-                aria-controls="course-filters-panel"
-                className={cx(btnBase, btnSm, btnGhost, 'order-1 gap-2 min-[900px]:hidden')}
-              >
-                <SlidersIcon />
-                Filters
-                {activeFilterCount > 0 ? (
-                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ci-navy px-[6px] text-[12px] font-bold leading-none text-white [font-variant-numeric:tabular-nums]">
-                    {activeFilterCount}
-                  </span>
-                ) : null}
-              </button>
+            <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[18px] min-[900px]:flex-[2_1_100%] min-[900px]:gap-y-[14px]">
+              {/* Mobile: native themed dropdowns. */}
+              <div className="order-1 flex w-full flex-col gap-4 min-[900px]:hidden">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-bold text-ci-navy-900">Filter courses</span>
+                  {activeFilterCount > 0 ? (
+                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ci-navy px-[6px] text-[12px] font-bold leading-none text-white [font-variant-numeric:tabular-nums]">
+                      {activeFilterCount}
+                    </span>
+                  ) : null}
+                </div>
+                <FilterSelect
+                  id="mobile-level-filter"
+                  label="Level"
+                  value={level}
+                  options={LEVEL_OPTIONS}
+                  onChange={setLevel}
+                />
+                <FilterSelect
+                  id="mobile-semester-filter"
+                  label="Semester"
+                  value={semester}
+                  options={SEMESTER_OPTIONS}
+                  onChange={setSemester}
+                />
+                <FilterSelect
+                  id="mobile-difficulty-filter"
+                  label="Difficulty"
+                  value={difficulty}
+                  options={DIFFICULTY_OPTIONS}
+                  onChange={setDifficulty}
+                />
+              </div>
 
-              {/* Three segmented controls. On mobile this is a full-width,
-                  wrapping panel toggled by `filtersOpen`; on desktop it
-                  dissolves (display:contents) so the Segs flow into the parent
-                  flex exactly as before — desktop layout is unchanged. */}
-              <div
-                id="course-filters-panel"
-                className={cx(
-                  'order-3 w-full flex-wrap items-center gap-x-[22px] gap-y-[14px] min-[900px]:contents',
-                  filtersOpen ? 'flex' : 'hidden',
-                )}
-              >
+              {/* Desktop: retain the existing inline segmented controls. */}
+              <div id="course-filters-panel" className="hidden min-[900px]:contents">
                 <Seg label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
                 <Seg label="Semester" value={semester} options={SEMESTER_OPTIONS} onChange={setSemester} />
                 <Seg label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} />
               </div>
 
-              <div className="order-2 ml-auto flex items-center gap-4 min-[900px]:order-none">
+              <div className="order-2 ml-auto flex items-center gap-4">
                 <span className="text-[13.5px] font-medium text-ci-gray-600">
                   Showing <b className="font-bold text-ci-navy-900">{filtered.length}</b> of {totalCount}
                 </span>
@@ -187,11 +219,57 @@ export function CourseDirectory({ items, totalCount }: Props) {
       <section className="pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Course grid">
         <div className={WRAP}>
           {filtered.length > 0 ? (
-            <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2 min-[900px]:grid-cols-3 min-[900px]:gap-6">
-              {filtered.map((item) => (
-                <Card key={item.id} {...item.cardProps} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-3 min-[900px]:gap-6">
+                {visibleItems.map((item) => (
+                  <Card key={item.id} {...item.cardProps} />
+                ))}
+              </div>
+
+              {totalPages > 1 ? (
+                <nav
+                  className="mt-8 flex flex-wrap items-center justify-center gap-2"
+                  aria-label="Course directory pages"
+                >
+                  <button
+                    type="button"
+                    disabled={page === 1}
+                    onClick={() => changePage(page - 1)}
+                    className="inline-flex min-h-10 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  {Array.from({ length: totalPages }, (_, index) => {
+                    const pageNumber = index + 1
+                    const isCurrent = pageNumber === page
+                    return (
+                      <button
+                        key={pageNumber}
+                        type="button"
+                        aria-current={isCurrent ? 'page' : undefined}
+                        onClick={() => changePage(pageNumber)}
+                        className={cx(
+                          'inline-flex h-10 min-w-10 items-center justify-center rounded-[9px] border px-3 text-[13.5px] font-bold transition-colors',
+                          isCurrent
+                            ? 'border-ci-navy bg-ci-navy text-white'
+                            : 'border-ci-border-2 bg-ci-white text-ci-navy hover:border-ci-blue-200 hover:bg-ci-paper-2',
+                        )}
+                      >
+                        {pageNumber}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    disabled={page === totalPages}
+                    onClick={() => changePage(page + 1)}
+                    className="inline-flex min-h-10 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </nav>
+              ) : null}
+            </>
           ) : (
             <div className="rounded-[20px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[56px_28px] text-center">
               <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">No matches</div>
@@ -223,6 +301,57 @@ type SegProps<T extends string> = {
   onChange: (val: T) => void
 }
 
+type FilterSelectProps<T extends string> = SegProps<T> & {
+  id: string
+}
+
+function FilterSelect<T extends string>({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: FilterSelectProps<T>) {
+  return (
+    <label htmlFor={id} className="flex flex-col gap-2">
+      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">
+        {label}
+      </span>
+      <span className="relative">
+        <select
+          id={id}
+          value={value}
+          onChange={(event) => {
+            const selected = options.find((option) => option.val === event.target.value)
+            if (selected) onChange(selected.val)
+          }}
+          className="min-h-[52px] w-full appearance-none rounded-[11px] border border-ci-border-2 bg-ci-white px-4 pr-11 text-[15px] font-semibold text-ci-navy outline-none transition-[border-color,box-shadow] focus:border-ci-navy focus:shadow-[0_0_0_3px_var(--ci-blue-50)]"
+        >
+          {options.map((option) => (
+            <option key={option.val} value={option.val}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <svg
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+          className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ci-navy"
+        >
+          <path
+            d="m5 7.5 5 5 5-5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    </label>
+  )
+}
+
 function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>) {
   return (
     <div className="flex items-center gap-[10px]">
@@ -241,16 +370,6 @@ function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>)
         ))}
       </div>
     </div>
-  )
-}
-
-function SlidersIcon() {
-  return (
-    <svg className="h-[15px] w-[15px] flex-none" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M2 4.5h8M13.5 4.5H14M2 11.5h.5M6 11.5h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <circle cx="11.5" cy="4.5" r="1.7" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="4" cy="11.5" r="1.7" stroke="currentColor" strokeWidth="1.6" />
-    </svg>
   )
 }
 

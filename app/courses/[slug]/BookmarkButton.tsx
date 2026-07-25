@@ -126,7 +126,7 @@ export function BookmarkButton({
           <svg
             viewBox="0 0 24 24"
             aria-hidden="true"
-            className="h-6 w-6"
+            className={cx('h-6 w-6', isSaved ? 'text-ci-accent' : 'text-white')}
             fill={isSaved ? 'currentColor' : 'none'}
           >
             <path

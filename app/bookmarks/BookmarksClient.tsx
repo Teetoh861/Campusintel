@@ -174,7 +174,7 @@ export function BookmarksClient({ catalog }: Props) {
                 cornerAction={
                   <button
                     type="button"
-                    className="flex h-7 w-7 items-center justify-center rounded-full text-[16px] leading-none text-ci-gray-500 transition-colors hover:bg-r-50 hover:text-r-600"
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-ci-border-2 bg-ci-white text-[24px] font-medium leading-none text-ci-gray-600 shadow-sm transition-[background-color,border-color,color,transform] hover:-translate-y-px hover:border-r-600 hover:bg-r-50 hover:text-r-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-r-600 focus-visible:ring-offset-2"
                     onClick={() => removeCourse(c)}
                     aria-label={`Remove ${c.code} from bookmarks`}
                   >

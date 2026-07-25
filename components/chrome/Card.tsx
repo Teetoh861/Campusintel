@@ -92,7 +92,7 @@ export function Card({
         className="absolute inset-0 z-[1] rounded-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ci-accent focus-visible:ring-offset-2"
       />
       {cornerAction ? <div className="absolute right-3 top-3 z-10">{cornerAction}</div> : null}
-      <div className={cx('mb-4 flex items-start justify-between gap-[14px]', Boolean(cornerAction) && 'pr-8')}>
+      <div className={cx('mb-4 flex items-start justify-between gap-[14px]', Boolean(cornerAction) && 'pr-12')}>
         <span className="text-[13px] font-bold tracking-[0.08em] text-ci-navy">{code}</span>
         {critical && flag ? (
           <span className="inline-flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.09em] text-ci-accent-600">
