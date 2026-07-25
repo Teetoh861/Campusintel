@@ -157,7 +157,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
             {/* filters + count */}
             <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[18px] min-[900px]:flex-[2_1_100%] min-[900px]:gap-y-[14px]">
               {/* Mobile: native themed dropdowns. */}
-              <div className="order-1 flex w-full flex-col gap-4 min-[900px]:hidden">
+              <div className="order-1 w-full min-[900px]:hidden">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-bold text-ci-navy-900">Filter courses</span>
                   {activeFilterCount > 0 ? (
@@ -166,27 +166,29 @@ export function CourseDirectory({ items, totalCount }: Props) {
                     </span>
                   ) : null}
                 </div>
-                <FilterSelect
-                  id="mobile-level-filter"
-                  label="Level"
-                  value={level}
-                  options={LEVEL_OPTIONS}
-                  onChange={setLevel}
-                />
-                <FilterSelect
-                  id="mobile-semester-filter"
-                  label="Semester"
-                  value={semester}
-                  options={SEMESTER_OPTIONS}
-                  onChange={setSemester}
-                />
-                <FilterSelect
-                  id="mobile-difficulty-filter"
-                  label="Difficulty"
-                  value={difficulty}
-                  options={DIFFICULTY_OPTIONS}
-                  onChange={setDifficulty}
-                />
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <FilterSelect
+                    id="mobile-level-filter"
+                    label="Level"
+                    value={level}
+                    options={LEVEL_OPTIONS}
+                    onChange={setLevel}
+                  />
+                  <FilterSelect
+                    id="mobile-semester-filter"
+                    label="Semester"
+                    value={semester}
+                    options={SEMESTER_OPTIONS}
+                    onChange={setSemester}
+                  />
+                  <FilterSelect
+                    id="mobile-difficulty-filter"
+                    label="Difficulty"
+                    value={difficulty}
+                    options={DIFFICULTY_OPTIONS}
+                    onChange={setDifficulty}
+                  />
+                </div>
               </div>
 
               {/* Desktop: retain the existing inline segmented controls. */}
@@ -313,23 +315,21 @@ function FilterSelect<T extends string>({
   onChange,
 }: FilterSelectProps<T>) {
   return (
-    <label htmlFor={id} className="flex flex-col gap-2">
-      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">
-        {label}
-      </span>
-      <span className="relative">
+    <label htmlFor={id} className="min-w-0">
+      <span className="relative block">
         <select
           id={id}
+          aria-label={`Filter by ${label.toLowerCase()}`}
           value={value}
           onChange={(event) => {
             const selected = options.find((option) => option.val === event.target.value)
             if (selected) onChange(selected.val)
           }}
-          className="min-h-[52px] w-full appearance-none rounded-[11px] border border-ci-border-2 bg-ci-white px-4 pr-11 text-[15px] font-semibold text-ci-navy outline-none transition-[border-color,box-shadow] focus:border-ci-navy focus:shadow-[0_0_0_3px_var(--ci-blue-50)]"
+          className="min-h-[52px] w-full min-w-0 appearance-none rounded-[11px] border border-ci-border-2 bg-ci-white py-3 pl-3 pr-7 text-[13px] font-semibold text-ci-navy outline-none transition-[border-color,box-shadow] focus:border-ci-navy focus:shadow-[0_0_0_3px_var(--ci-blue-50)]"
         >
           {options.map((option) => (
             <option key={option.val} value={option.val}>
-              {option.label}
+              {option.val === 'all' ? label : option.label}
             </option>
           ))}
         </select>
@@ -337,7 +337,7 @@ function FilterSelect<T extends string>({
           viewBox="0 0 20 20"
           fill="none"
           aria-hidden="true"
-          className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ci-navy"
+          className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ci-navy"
         >
           <path
             d="m5 7.5 5 5 5-5"
