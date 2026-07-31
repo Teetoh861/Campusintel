@@ -89,6 +89,9 @@ export function ResultsScreen({
             Your weakest section is {weakest.name}. Start your revision there.
           </p>
         ) : null}
+        <button type="button" className={cx(btnBase, btnAccent, 'mt-6')} onClick={onRetake}>
+          Retake assessment
+        </button>
       </div>
 
       <div className={cx(WRAP, 'mt-12')}>
