@@ -6,11 +6,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import type { QuizQuestion } from '@/lib/types'
 import type { AnswersMap, ReviewFilter, SectionStat } from './types'
 import { btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const
+import { ReviewCard } from './ReviewCard'
 
 // Verdict thresholds (percent). Match the comp.
 const STRONG_PCT = 70
@@ -20,6 +20,8 @@ const MASTERED_PCT = 80
 const REVISIT_PCT = 70
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+
+type ResultsFilter = 'all' | 'incorrect' | 'correct'
 
 type Props = {
   courseCode: string
@@ -46,6 +48,7 @@ export function ResultsScreen({
   onReviewFilterChange,
   onRetake,
 }: Props) {
+  const [resultsFilter, setResultsFilter] = useState<ResultsFilter>('all')
   const total = questions.length
   const pct = total === 0 ? 0 : Math.round((correctCount / total) * 100)
   const missedCount = total - correctCount
@@ -63,7 +66,16 @@ export function ResultsScreen({
 
   const reviewItems = questions
     .map((q, i) => ({ q, i, ok: answers[i] === q.correctAnswer }))
-    .filter((r) => (reviewFilter === 'all' ? true : !r.ok))
+    .filter(({ ok }) =>
+      resultsFilter === 'all' ? true : resultsFilter === 'correct' ? ok : !ok,
+    )
+
+  const emptyMessage =
+    resultsFilter === 'correct'
+      ? 'No correct answers in this attempt.'
+      : resultsFilter === 'incorrect'
+      ? 'No incorrect answers in this attempt.'
+      : 'No questions to review.'
 
   return (
     <section className="bg-ci-paper pb-20 pt-12 min-[900px]:pt-16">
@@ -89,6 +101,9 @@ export function ResultsScreen({
             Your weakest section is {weakest.name}. Start your revision there.
           </p>
         ) : null}
+        <button type="button" className={cx(btnBase, btnAccent, 'mt-6')} onClick={onRetake}>
+          Retake assessment
+        </button>
       </div>
 
       <div className={cx(WRAP, 'mt-12')}>
@@ -111,38 +126,34 @@ export function ResultsScreen({
               <span className="text-ci-accent-600">02 /</span> Review
             </div>
             <div className="mb-5 inline-flex overflow-hidden rounded-[9px] border border-ci-border-2 bg-ci-white">
-              <button
-                type="button"
-                className={cx(
-                  'border-r border-ci-border px-[14px] py-[9px] text-[13.5px] font-semibold transition-colors',
-                  reviewFilter === 'missed' ? 'bg-ci-navy text-white' : 'text-ci-gray-600 hover:text-ci-navy',
-                )}
-                onClick={() => onReviewFilterChange('missed')}
-              >
-                Missed ({missedCount})
-              </button>
-              <button
-                type="button"
-                className={cx(
-                  'px-[14px] py-[9px] text-[13.5px] font-semibold transition-colors',
-                  reviewFilter === 'all' ? 'bg-ci-navy text-white' : 'text-ci-gray-600 hover:text-ci-navy',
-                )}
-                onClick={() => onReviewFilterChange('all')}
-              >
-                All {total}
-              </button>
+              {([
+                ['all', 'All', total],
+                ['incorrect', 'Incorrect', missedCount],
+                ['correct', 'Correct', correctCount],
+              ] as const).map(([value, label, count], index) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={cx(
+                    'min-h-11 px-[14px] py-[9px] text-[13.5px] font-semibold transition-colors',
+                    index > 0 && 'border-l border-ci-border',
+                    resultsFilter === value
+                      ? 'bg-ci-navy text-white'
+                      : 'text-ci-gray-600 hover:text-ci-navy',
+                  )}
+                  onClick={() => setResultsFilter(value)}
+                >
+                  {label} ({count})
+                </button>
+              ))}
             </div>
 
             {reviewItems.length === 0 ? (
               <div className="rounded-[16px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[40px_24px] text-center">
-                <div className="text-[15px] font-bold text-ci-navy-900">Nothing missed</div>
-                <p className="mx-auto mt-2 max-w-[42ch] text-[14.5px] text-ci-gray-600">
-                  You answered every question correctly in this attempt. Switch to “All” to review the full
-                  paper.
-                </p>
+                <p className="text-[14.5px] text-ci-gray-600">{emptyMessage}</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
                 {reviewItems.map(({ q, i, ok }) => (
                   <ReviewCard key={i} q={q} n={i + 1} your={answers[i]} ok={ok} />
                 ))}
@@ -218,85 +229,6 @@ function BreakdownRow({
           <span className="block h-full bg-r-300" style={{ width: `${100 - pct}%` }} />
         </div>
       )}
-    </div>
-  )
-}
-
-function ReviewCard({
-  q,
-  n,
-  your,
-  ok,
-}: {
-  q: QuizQuestion
-  n: number
-  your: number | undefined
-  ok: boolean
-}) {
-  const statusIc = ok ? '✓' : '✗'
-  const statusLabel = ok ? 'Correct' : 'Missed'
-
-  return (
-    <div className="rounded-[16px] border border-ci-border bg-ci-white p-5 shadow-ci-card">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-[13px] font-bold text-ci-navy [font-variant-numeric:tabular-nums]">Q{n}</span>
-        <span className="text-[13px] text-ci-gray-500">Section {q.section}</span>
-        <span
-          className={cx(
-            'ml-auto inline-flex items-center gap-[6px] rounded-full px-[10px] py-[4px] text-[12px] font-bold',
-            ok ? 'bg-g-50 text-g-700' : 'bg-r-50 text-r-700',
-          )}
-        >
-          <span aria-hidden="true">{statusIc}</span>
-          {statusLabel}
-        </span>
-      </div>
-      <div className="mt-3 text-[15.5px] font-semibold leading-[1.4] text-ci-navy-900">{q.question}</div>
-      <div className="mt-4 flex flex-col gap-2">
-        {q.options.map((text, oi) => {
-          const isCorrect = oi === q.correctAnswer
-          const isYour = oi === your && !isCorrect
-          const tag = isCorrect ? (
-            <span className="ml-auto inline-flex flex-none items-center gap-[5px] text-[12.5px] font-bold text-g-700">
-              <span aria-hidden="true">✓</span> Correct
-            </span>
-          ) : isYour ? (
-            <span className="ml-auto inline-flex flex-none items-center gap-[5px] text-[12.5px] font-bold text-r-700">
-              <span aria-hidden="true">✗</span> Your answer
-            </span>
-          ) : null
-          return (
-            <div
-              key={oi}
-              className={cx(
-                'flex items-center gap-3 rounded-[10px] border p-3',
-                isCorrect
-                  ? 'border-g-600 bg-g-50'
-                  : isYour
-                  ? 'border-r-600 bg-r-50'
-                  : 'border-ci-border bg-ci-white',
-              )}
-            >
-              <span
-                className={cx(
-                  'flex h-7 w-7 flex-none items-center justify-center rounded-[7px] border text-[13px] font-bold',
-                  isCorrect ? 'border-g-600 text-g-700' : isYour ? 'border-r-600 text-r-700' : 'border-ci-border-2 text-ci-navy',
-                )}
-              >
-                {OPTION_LETTERS[oi]}
-              </span>
-              <span className="text-[14.5px] leading-[1.4] text-ci-ink">{text}</span>
-              {tag}
-            </div>
-          )
-        })}
-      </div>
-      {q.explanation ? (
-        <div className="mt-4 rounded-[10px] border border-ci-border-2 bg-ci-paper-2 p-4">
-          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Explanation</div>
-          <p className="mt-2 text-[14px] leading-[1.55] text-ci-gray-600">{q.explanation}</p>
-        </div>
-      ) : null}
     </div>
   )
 }
