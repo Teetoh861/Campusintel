@@ -3,7 +3,7 @@
 // presentational; this file is the single source of behaviour.
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AnswersMap,
   MarkedMap,
@@ -23,6 +23,7 @@ import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 // prefers-reduced-motion.
 const WARN_THRESHOLD_SECONDS = 5 * 60
 const TICK_INTERVAL_MS = 1000
+const HISTORY_GUARD_KEY = '__campusintelQuizGuard'
 
 // Sections with at most this many questions get discrete per-question ticks
 // in the breakdown; larger sections fall back to a proportional bar. Mirrors
@@ -47,6 +48,7 @@ export function QuizClient(props: QuizCoreProps) {
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('missed')
   const [navOpen, setNavOpen] = useState(false)
   const [confirmingSubmit, setConfirmingSubmit] = useState(false)
+  const disarmHistoryGuard = useRef<() => void>(() => {})
 
   // The active screen is distraction-free: campusintel.css/quiz.css hides the
   // global footer when <body data-screen="active">. Sync that to the local
@@ -70,23 +72,62 @@ export function QuizClient(props: QuizCoreProps) {
 
   useEffect(() => {
     if (screen === 'active' && timeLeft <= 0) {
+      disarmHistoryGuard.current()
       setScreen('results')
     }
   }, [timeLeft, screen])
 
   // Guard against accidentally losing an in-progress attempt. Only while the
-  // quiz is active do we arm the native "leave site?" prompt on refresh, tab
-  // close, or navigation away. On intro/results the listener is removed, so
-  // leaving those screens never warns. The message text isn't customizable —
-  // browsers show their own; preventDefault + returnValue just triggers it.
+  // quiz is active do we arm refresh/close and client-side Back protection.
   useEffect(() => {
     if (screen !== 'active') return
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       e.returnValue = ''
     }
+
+    const sentinelState = {
+      ...(window.history.state ?? {}),
+      [HISTORY_GUARD_KEY]: true,
+    }
+    if (!window.history.state?.[HISTORY_GUARD_KEY]) {
+      window.history.pushState(sentinelState, '', window.location.href)
+    }
+
+    const removeListeners = () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('popstate', handlePopState)
+    }
+
+    const handlePopState = () => {
+      const shouldLeave = window.confirm(
+        'Leave the quiz? This attempt will be lost.',
+      )
+      if (shouldLeave) {
+        removeListeners()
+        disarmHistoryGuard.current = () => {}
+        window.history.back()
+        return
+      }
+      window.history.pushState(sentinelState, '', window.location.href)
+    }
+
     window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('popstate', handlePopState)
+
+    disarmHistoryGuard.current = () => {
+      removeListeners()
+      disarmHistoryGuard.current = () => {}
+      if (window.history.state?.[HISTORY_GUARD_KEY]) {
+        window.history.back()
+      }
+    }
+
+    return () => {
+      removeListeners()
+      disarmHistoryGuard.current = () => {}
+    }
   }, [screen])
 
   const resetAttempt = useCallback(() => {
@@ -111,6 +152,7 @@ export function QuizClient(props: QuizCoreProps) {
   }, [questionBank, sections, maxQuestions, resetAttempt])
 
   const submit = useCallback(() => {
+    disarmHistoryGuard.current()
     setConfirmingSubmit(false)
     setNavOpen(false)
     setScreen('results')
