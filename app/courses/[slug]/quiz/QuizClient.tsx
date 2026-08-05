@@ -15,6 +15,7 @@ import type {
 import { IntroScreen } from './IntroScreen'
 import { QuestionScreen } from './QuestionScreen'
 import { ResultsScreen } from './ResultsScreen'
+import { sampleQuestionsBySection } from './sampleQuestions'
 import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
 // Timer flips to the red urgency treatment at this threshold (in seconds).
@@ -29,9 +30,16 @@ const TICK_INTERVAL_MS = 1000
 const BREAKDOWN_TICK_LIMIT = 25
 
 export function QuizClient(props: QuizCoreProps) {
-  const { questions, sections, timerSeconds, courseSlug } = props
+  const {
+    questions: questionBank,
+    sections,
+    timerSeconds,
+    courseSlug,
+    maxQuestions,
+  } = props
 
   const [screen, setScreen] = useState<Screen>('intro')
+  const [questions, setQuestions] = useState<QuizCoreProps['questions']>([])
   const [current, setCurrent] = useState(0)
   const [answers, setAnswers] = useState<AnswersMap>({})
   const [marked, setMarked] = useState<MarkedMap>({})
@@ -91,10 +99,16 @@ export function QuizClient(props: QuizCoreProps) {
     setConfirmingSubmit(false)
   }, [timerSeconds])
 
-  const start = useCallback(() => {
+  const startNewAttempt = useCallback(() => {
+    const nextQuestions = sampleQuestionsBySection(
+      questionBank,
+      sections,
+      maxQuestions,
+    )
     resetAttempt()
+    setQuestions(nextQuestions)
     setScreen('active')
-  }, [resetAttempt])
+  }, [questionBank, sections, maxQuestions, resetAttempt])
 
   const submit = useCallback(() => {
     setConfirmingSubmit(false)
@@ -109,7 +123,7 @@ export function QuizClient(props: QuizCoreProps) {
   const requestSubmit = useCallback(() => setConfirmingSubmit(true), [])
   const cancelSubmit = useCallback(() => setConfirmingSubmit(false), [])
 
-  const retake = useCallback(() => {
+  const redoAttempt = useCallback(() => {
     resetAttempt()
     setScreen('active')
   }, [resetAttempt])
@@ -208,10 +222,10 @@ export function QuizClient(props: QuizCoreProps) {
         courseCode={props.courseCode}
         courseTitle={props.courseTitle}
         courseSlug={courseSlug}
-        questionCount={questions.length}
+        questionCount={Math.min(maxQuestions, questionBank.length)}
         timerSeconds={timerSeconds}
         sectionCount={sectionStats.length || sections.length}
-        onStart={start}
+        onStart={startNewAttempt}
       />
     )
   }
@@ -305,7 +319,8 @@ export function QuizClient(props: QuizCoreProps) {
       tickLimit={BREAKDOWN_TICK_LIMIT}
       reviewFilter={reviewFilter}
       onReviewFilterChange={setReviewFilter}
-      onRetake={retake}
+      onRetakeWithNewQuestions={startNewAttempt}
+      onRedoQuestions={redoAttempt}
     />
   )
 }

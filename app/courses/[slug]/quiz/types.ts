@@ -14,7 +14,7 @@ export type QuizCoreProps = {
   courseTitle: string
   courseSlug: string
   sections: ReadonlyArray<string>
-  // The frozen attempt set: a stable slice of the bank, length <= maxQuestions.
+  // Full bank; QuizClient samples and freezes an attempt before answer entry.
   questions: ReadonlyArray<QuizQuestion>
   timerSeconds: number
   maxQuestions: number
