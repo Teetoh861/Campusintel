@@ -74,7 +74,7 @@ export function QuestionScreen(props: Props) {
           <div className="flex items-center gap-3 py-3">
             <button
               type="button"
-              className="inline-flex items-center gap-[10px] text-[12.5px] font-bold uppercase tracking-[0.1em] text-ci-navy [font-variant-numeric:tabular-nums]"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center gap-[10px] text-[12.5px] font-bold uppercase tracking-[0.1em] text-ci-navy [font-variant-numeric:tabular-nums]"
               aria-label="Open question navigator"
               onClick={onOpenNav}
             >
@@ -92,7 +92,7 @@ export function QuestionScreen(props: Props) {
             <button
               type="button"
               className={cx(
-                'inline-flex items-center gap-2 rounded-[8px] border px-3 py-2 text-[13px] font-semibold transition-colors',
+                'inline-flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-[8px] border px-3 py-2 text-[13px] font-semibold transition-colors',
                 isMarked
                   ? 'border-ci-accent bg-ci-accent-50 text-ci-accent-600'
                   : 'border-ci-border-2 text-ci-gray-600 hover:border-ci-blue-200 hover:text-ci-navy',
@@ -274,7 +274,7 @@ function Navigator({
         <span className="text-[12.5px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">Navigator</span>
         <button
           type="button"
-          className="text-[13px] font-semibold text-ci-navy min-[1024px]:hidden"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-[13px] font-semibold text-ci-navy min-[1024px]:hidden"
           onClick={onCloseNav}
         >
           Close
@@ -291,7 +291,7 @@ function Navigator({
               key={i}
               type="button"
               className={cx(
-                'relative flex h-9 items-center justify-center overflow-hidden rounded-[7px] border text-[13px] font-semibold [font-variant-numeric:tabular-nums] transition-colors',
+                'relative flex h-[44px] min-w-[44px] items-center justify-center overflow-hidden rounded-[7px] border text-[13px] font-semibold [font-variant-numeric:tabular-nums] transition-colors',
                 answered
                   ? 'border-ci-navy bg-ci-navy text-white'
                   : 'border-ci-border-2 bg-ci-white text-ci-gray-600 hover:border-ci-navy hover:text-ci-navy',

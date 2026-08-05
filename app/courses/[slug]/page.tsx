@@ -96,7 +96,9 @@ export default async function CourseDetailPage({ params }: PageProps) {
 
   const quizHref = `/courses/${course.slug}/quiz`
   const materialsHref = `/courses/${course.slug}/materials`
-  const questionsValue = quiz ? String(quiz.totalQuestions) : 'N/A'
+  const questionsValue = quiz
+    ? `${Math.min(quiz.maxQuizQuestions, quiz.totalQuestions)} questions per attempt · ${quiz.totalQuestions}-question bank`
+    : 'N/A'
   const quizTimeValue = quiz ? `${quiz.quizDurationMinutes} min` : 'N/A'
 
   const accordionSections: ReadonlyArray<CourseAccordionSection> = visible.flatMap<CourseAccordionSection>((section) => {
@@ -188,10 +190,10 @@ export default async function CourseDetailPage({ params }: PageProps) {
     }]
   })
 
-  // Closing-band kicker, built from real values: "ACC201 · 150 questions · 30 minutes".
+  // Closing-band kicker, built from the real attempt cap and bank size.
   const closingKicker = [
     course.code,
-    quiz ? `${quiz.totalQuestions} questions` : null,
+    quiz ? questionsValue : null,
     quiz ? `${quiz.quizDurationMinutes} minutes` : null,
   ]
     .filter(Boolean)
@@ -242,7 +244,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
               <SignalBar level={toLevel(course.difficulty)} tone="on-blue" />
               {course.difficulty}
             </Meta>
-            <Meta k="Questions" v={questionsValue} />
+            <Meta k="Practice quiz" v={questionsValue} />
             <Meta k="Quiz time" v={quizTimeValue} />
           </div>
         </div>
@@ -266,11 +268,11 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 Sit the mock.
               </h2>
               <p className="mt-4 max-w-[46ch] text-[17px] leading-[1.55] text-ci-blue-200">
-                Run the full question bank under exam conditions. You will know exactly where you stand before the hall does.
+                Practice a fresh selection under exam conditions. You will know exactly where you stand before the hall does.
               </p>
               <div className="mt-[30px] flex flex-wrap justify-center gap-[13px]">
                 <Link className={cx(btnBase, btnAccent)} href={quizHref}>
-                  Start quiz
+                  Start practice quiz
                 </Link>
                 <BookmarkButton slug={course.slug} variant="closing" />
               </div>
