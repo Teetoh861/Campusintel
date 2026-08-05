@@ -1,6 +1,6 @@
 // Quiz route (/courses/[slug]/quiz). Server entry: loads the course +
-// matching quiz, slices the attempt set to maxQuizQuestions, then hands the
-// stable arrays to the client orchestrator. quiz.css is scoped to this
+// matching quiz, then hands the full bank to the client orchestrator. The
+// attempt is sampled only when the student starts. quiz.css is scoped to this
 // route segment so other pages don't pay for it.
 import { notFound } from 'next/navigation'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
@@ -20,18 +20,13 @@ export default async function QuizPage({ params }: PageProps) {
   const quiz = getQuizByCourseSlug(slug)
   if (!quiz) notFound()
 
-  // Stable attempt slice: if the bank exceeds the per-attempt cap, take the
-  // first N; otherwise the whole bank. Deterministic so retake hits the same
-  // set and per-question state stays valid.
-  const attempt = quiz.questions.slice(0, quiz.maxQuizQuestions)
-
   return (
     <QuizClient
       courseCode={course.code}
       courseTitle={course.title}
       courseSlug={course.slug}
       sections={quiz.sections}
-      questions={attempt}
+      questions={quiz.questions}
       timerSeconds={quiz.quizDurationMinutes * 60}
       maxQuestions={quiz.maxQuizQuestions}
       totalInBank={quiz.totalQuestions}

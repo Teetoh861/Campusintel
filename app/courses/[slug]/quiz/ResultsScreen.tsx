@@ -33,7 +33,8 @@ type Props = {
   tickLimit: number
   reviewFilter: ReviewFilter
   onReviewFilterChange: (f: ReviewFilter) => void
-  onRetake: () => void
+  onRetakeWithNewQuestions: () => void
+  onRedoQuestions: () => void
 }
 
 export function ResultsScreen({
@@ -46,7 +47,8 @@ export function ResultsScreen({
   tickLimit,
   reviewFilter,
   onReviewFilterChange,
-  onRetake,
+  onRetakeWithNewQuestions,
+  onRedoQuestions,
 }: Props) {
   const [resultsFilter, setResultsFilter] = useState<ResultsFilter>('all')
   const total = questions.length
@@ -101,9 +103,14 @@ export function ResultsScreen({
             Your weakest section is {weakest.name}. Start your revision there.
           </p>
         ) : null}
-        <button type="button" className={cx(btnBase, btnAccent, 'mt-6')} onClick={onRetake}>
-          Retake assessment
-        </button>
+        <div className="mt-6 flex flex-wrap gap-[13px]">
+          <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetakeWithNewQuestions}>
+            Retake with new questions
+          </button>
+          <button type="button" className={cx(btnBase, btnGhost)} onClick={onRedoQuestions}>
+            Redo these questions
+          </button>
+        </div>
       </div>
 
       <div className={cx(WRAP, 'mt-12')}>
@@ -163,8 +170,11 @@ export function ResultsScreen({
 
           {/* actions */}
           <div className="mt-12 flex flex-wrap gap-[13px]">
-            <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetake}>
-              Retake assessment
+            <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetakeWithNewQuestions}>
+              Retake with new questions
+            </button>
+            <button type="button" className={cx(btnBase, btnGhost)} onClick={onRedoQuestions}>
+              Redo these questions
             </button>
             <Link className={cx(btnBase, btnGhost)} href={`/courses/${courseSlug}`}>
               Back to course
