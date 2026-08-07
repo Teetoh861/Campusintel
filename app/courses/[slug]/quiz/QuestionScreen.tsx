@@ -9,7 +9,6 @@ import type { QuizQuestion } from '@/lib/types'
 import type { AnswersMap, MarkedMap } from './types'
 import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 type Props = {
@@ -160,7 +159,7 @@ export function QuestionScreen(props: Props) {
                           isSel ? 'border-ci-navy bg-ci-navy text-white' : 'border-ci-border-2 text-ci-navy',
                         )}
                       >
-                        {OPTION_LETTERS[oi]}
+                        {String.fromCharCode(65 + oi)}
                       </span>
                       <span className="text-[15.5px] leading-[1.45] text-ci-ink">{text}</span>
                     </button>
