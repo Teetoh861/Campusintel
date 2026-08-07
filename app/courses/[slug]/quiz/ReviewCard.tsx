@@ -9,8 +9,6 @@ import {
 } from '@/components/ui/collapsible'
 import { cx } from '@/components/chrome/ui'
 
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const
-
 type Props = {
   q: QuizQuestion
   n: number
@@ -119,7 +117,7 @@ export function ReviewCard({ q, n, your, ok }: Props) {
                       : 'border-ci-border-2 text-ci-navy',
                   )}
                 >
-                  {OPTION_LETTERS[oi]}
+                  {String.fromCharCode(65 + oi)}
                 </span>
                 <span className="text-[14.5px] leading-[1.4] text-ci-ink">{text}</span>
                 {tag}
