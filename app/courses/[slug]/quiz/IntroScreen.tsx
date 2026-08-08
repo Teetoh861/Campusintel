@@ -5,6 +5,7 @@
 
 import Link from 'next/link'
 import { btnAccent, btnBase, btnGhostOnBlue, cx } from '@/components/chrome/ui'
+import { StudyGuideCallout } from './StudyGuideCallout'
 
 type Props = {
   courseCode: string
@@ -17,6 +18,8 @@ type Props = {
 }
 
 const PASS_MARK_PCT = 50
+// The study-guide request is a BUA202-only offer for now.
+const STUDY_GUIDE_COURSE_CODE = 'BUA202'
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 export function IntroScreen({
@@ -78,6 +81,10 @@ export function IntroScreen({
             Back to course
           </Link>
         </div>
+
+        {courseCode.toUpperCase() === STUDY_GUIDE_COURSE_CODE ? (
+          <StudyGuideCallout />
+        ) : null}
 
         <p className="mt-6 max-w-[60ch] text-[14px] leading-[1.55] text-ci-blue-200">
           Once started, the timer runs continuously. You can move between
