@@ -17613,7 +17613,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The primary distinction between Human Resource Management (HRM) and traditional personnel administration is that HRM:",
         options: ["Treats employees as strategic resources linked to organisational objectives", "Focuses exclusively on employee welfare", "Transfers all employee-related decisions to line managers", "Is concerned only with recruitment and selection"],
         correctAnswer: 0,
-        explanation: "HRM takes a strategic view of people as resources whose capabilities should support organisational objectives.*",
+        explanation: "HRM takes a strategic view of people as resources whose capabilities should support organisational objectives.",
       },
       {
         id: 289,
@@ -17621,7 +17621,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following best describes human resource planning?",
         options: ["Selecting candidates after interviews", "Forecasting an organisation's future human-resource requirements and availability", "Determining only the annual salary budget", "Evaluating employee performance after training"],
         correctAnswer: 1,
-        explanation: "HR planning forecasts future labour demand and supply so the organisation can have the right people at the right time.*",
+        explanation: "HR planning forecasts future labour demand and supply so the organisation can have the right people at the right time.",
       },
       {
         id: 290,
@@ -17629,7 +17629,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The main purpose of a job description is to:",
         options: ["Identify the best applicant for a job", "Measure organisational profitability", "State the duties, responsibilities and reporting relationships associated with a job", "Determine an employee's annual bonus"],
         correctAnswer: 2,
-        explanation: "A job description states what the job involves, including duties, responsibilities and reporting relationships.*",
+        explanation: "A job description states what the job involves, including duties, responsibilities and reporting relationships.",
       },
       {
         id: 291,
@@ -17637,7 +17637,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is not normally an objective of HRM?",
         options: ["Acquiring competent employees", "Maintaining effective employee relations", "Maximising employee turnover", "Developing employee capabilities"],
         correctAnswer: 2,
-        explanation: "HRM generally seeks to retain effective employees, not maximise unnecessary turnover.*",
+        explanation: "HRM generally seeks to retain effective employees, not maximise unnecessary turnover.",
       },
       {
         id: 292,
@@ -17645,7 +17645,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A company first determines the number and type of employees required, then assesses whether existing staff can meet those requirements. This illustrates:",
         options: ["Performance appraisal", "HR planning", "Employee socialisation", "Job enrichment"],
         correctAnswer: 1,
-        explanation: "HR planning compares forecast workforce requirements with workforce availability.*",
+        explanation: "HR planning compares forecast workforce requirements with workforce availability.",
       },
       {
         id: 293,
@@ -17653,7 +17653,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A job specification differs from a job description because it primarily identifies:",
         options: ["The company's financial objectives", "The tasks and responsibilities of the position", "The organisational mission", "The qualifications, skills and characteristics required of the job holder"],
         correctAnswer: 3,
-        explanation: "A job specification describes the human requirements of the job holder, such as skills, qualifications and attributes.*",
+        explanation: "A job specification describes the human requirements of the job holder, such as skills, qualifications and attributes.",
       },
       {
         id: 294,
@@ -17661,7 +17661,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following best demonstrates employee empowerment?",
         options: ["Employees are given authority, information and resources to make appropriate decisions", "Employees receive responsibilities without authority", "Employees are prohibited from making operational decisions", "Managers retain every decision"],
         correctAnswer: 0,
-        explanation: "Empowerment requires appropriate authority, information and resources, not responsibility without decision rights.*",
+        explanation: "Empowerment requires appropriate authority, information and resources, not responsibility without decision rights.",
       },
       {
         id: 295,
@@ -17669,7 +17669,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The process of systematically determining the tasks, responsibilities, skills and conditions associated with a job is:",
         options: ["Promotion", "Job analysis", "Induction", "Recruitment"],
         correctAnswer: 1,
-        explanation: "Job analysis systematically examines job duties, responsibilities, requirements and working conditions.*",
+        explanation: "Job analysis systematically examines job duties, responsibilities, requirements and working conditions.",
       },
       {
         id: 296,
@@ -17677,7 +17677,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "If an organisation has many employees approaching retirement age, HR planning should particularly focus on:",
         options: ["Increasing job ambiguity", "Succession planning and future talent requirements", "Reducing all training", "Eliminating recruitment permanently"],
         correctAnswer: 1,
-        explanation: "Retirement risk makes succession planning and forecasting future talent needs especially important.*",
+        explanation: "Retirement risk makes succession planning and forecasting future talent needs especially important.",
       },
       {
         id: 297,
@@ -17685,7 +17685,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A company advertises a vacant position on its website and receives applications from both current employees and external candidates. The activity is primarily part of:",
         options: ["Recruitment", "Performance appraisal", "Orientation", "Job evaluation"],
         correctAnswer: 0,
-        explanation: "Recruitment involves attracting a pool of potential applicants for vacancies.*",
+        explanation: "Recruitment involves attracting a pool of potential applicants for vacancies.",
       },
       {
         id: 298,
@@ -17693,7 +17693,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which recruitment method is most likely to improve the organisation's access to a wider external talent pool?",
         options: ["External advertising", "Job rotation", "Promotion from within", "Succession planning"],
         correctAnswer: 0,
-        explanation: "External advertising exposes vacancies to candidates beyond the existing workforce.*",
+        explanation: "External advertising exposes vacancies to candidates beyond the existing workforce.",
       },
       {
         id: 299,
@@ -17701,7 +17701,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The fundamental purpose of employee selection is to:",
         options: ["Replace performance appraisal", "Generate as many applications as possible", "Identify candidates whose qualifications and characteristics best fit the job and organisation", "Increase employee turnover"],
         correctAnswer: 2,
-        explanation: "Selection evaluates applicants and identifies those most suitable for the position and organisation.*",
+        explanation: "Selection evaluates applicants and identifies those most suitable for the position and organisation.",
       },
       {
         id: 300,
@@ -17709,7 +17709,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is most likely to improve the validity of a selection interview?",
         options: ["Allowing interviewer stereotypes to determine decisions", "Using structured questions linked to job requirements", "Selecting candidates based on appearance", "Asking every applicant unrelated questions"],
         correctAnswer: 1,
-        explanation: "Structured, job-related questions improve consistency and relevance and reduce subjective bias.*",
+        explanation: "Structured, job-related questions improve consistency and relevance and reduce subjective bias.",
       },
       {
         id: 301,
@@ -17717,7 +17717,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which statement best distinguishes training from development?",
         options: ["Training focuses mainly on current job requirements, while development has a broader future-oriented emphasis", "Development is exclusively technical", "Training is only for senior managers", "Training never involves learning new skills"],
         correctAnswer: 0,
-        explanation: "Training is commonly directed toward present job performance, while development prepares employees for broader future responsibilities.*",
+        explanation: "Training is commonly directed toward present job performance, while development prepares employees for broader future responsibilities.",
       },
       {
         id: 302,
@@ -17725,7 +17725,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The main purpose of an employee orientation programme is to:",
         options: ["Introduce new employees to the organisation, job, policies and work environment", "Determine employee salaries", "Determine whether employees deserve promotion", "Replace recruitment"],
         correctAnswer: 0,
-        explanation: "Orientation helps new employees understand the organisation, their roles, policies and work environment.*",
+        explanation: "Orientation helps new employees understand the organisation, their roles, policies and work environment.",
       },
       {
         id: 303,
@@ -17733,7 +17733,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A company promotes an employee because of strong technical performance even though the employee has never demonstrated managerial competence. This illustrates a potential problem with:",
         options: ["Employee orientation", "Job rotation", "Recruitment advertising", "Promotion decisions based solely on technical performance"],
         correctAnswer: 3,
-        explanation: "Strong technical performance does not automatically establish leadership, interpersonal or managerial competence.*",
+        explanation: "Strong technical performance does not automatically establish leadership, interpersonal or managerial competence.",
       },
       {
         id: 304,
@@ -17741,7 +17741,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager notices that employees are dissatisfied despite receiving competitive salaries. According to Herzberg's Two-Factor Theory, the most likely explanation is that:",
         options: ["Salary is always a motivator", "Expectancy has become negative", "Hygiene factors prevent dissatisfaction but do not necessarily create satisfaction", "Employees have reached self-actualisation"],
         correctAnswer: 2,
-        explanation: "Salary is primarily a hygiene factor; improving hygiene factors can remove dissatisfaction but does not necessarily create intrinsic satisfaction.*",
+        explanation: "Salary is primarily a hygiene factor; improving hygiene factors can remove dissatisfaction but does not necessarily create intrinsic satisfaction.",
       },
       {
         id: 305,
@@ -17749,7 +17749,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Under McGregor's Theory X, managers generally assume that employees:",
         options: ["Always prefer participative leadership", "Are intrinsically motivated by challenging work", "Naturally seek responsibility", "Tend to avoid work and may require direction and control"],
         correctAnswer: 3,
-        explanation: "Theory X assumes employees may dislike work, avoid responsibility and require direction or control.*",
+        explanation: "Theory X assumes employees may dislike work, avoid responsibility and require direction or control.",
       },
       {
         id: 306,
@@ -17757,7 +17757,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is the best example of intrinsic motivation?",
         options: ["Receiving a ₦50,000 bonus", "Enjoying the satisfaction of mastering a difficult task", "Receiving an additional transport allowance", "Earning a promotion"],
         correctAnswer: 1,
-        explanation: "Intrinsic motivation comes from the inherent satisfaction of the activity itself, such as mastery or achievement.*",
+        explanation: "Intrinsic motivation comes from the inherent satisfaction of the activity itself, such as mastery or achievement.",
       },
       {
         id: 307,
@@ -17765,7 +17765,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "According to Maslow's hierarchy, an employee seeking recognition, status and respect is primarily seeking:",
         options: ["Self-actualisation needs", "Safety needs", "Esteem needs", "Physiological needs"],
         correctAnswer: 2,
-        explanation: "Esteem needs include recognition, status, respect and a sense of achievement.*",
+        explanation: "Esteem needs include recognition, status, respect and a sense of achievement.",
       },
       {
         id: 308,
@@ -17773,7 +17773,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "In Expectancy Theory, instrumentality refers to an employee's belief that:",
         options: ["Rewards have no value", "Performance will lead to a particular outcome or reward", "Employees are naturally lazy", "Effort will lead to performance"],
         correctAnswer: 1,
-        explanation: "Instrumentality is the perceived link between performance and outcomes or rewards.*",
+        explanation: "Instrumentality is the perceived link between performance and outcomes or rewards.",
       },
       {
         id: 309,
@@ -17781,7 +17781,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An employee believes that putting greater effort into work will improve performance, but doubts that improved performance will result in promotion. In Expectancy Theory, the major weakness is:",
         options: ["Valence", "Instrumentality", "Expectancy", "Equity"],
         correctAnswer: 1,
-        explanation: "The employee believes effort leads to performance but doubts performance will produce the desired reward; that is low instrumentality.*",
+        explanation: "The employee believes effort leads to performance but doubts performance will produce the desired reward; that is low instrumentality.",
       },
       {
         id: 310,
@@ -17789,7 +17789,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "When employees receive bonuses based on measurable performance targets, the reward is primarily:",
         options: ["Extrinsic and performance-contingent", "Unrelated to motivation", "Non-financial and intrinsic", "Informal and non-monetary"],
         correctAnswer: 0,
-        explanation: "A bonus is an external reward tied to performance, making it extrinsic and performance-contingent.*",
+        explanation: "A bonus is an external reward tied to performance, making it extrinsic and performance-contingent.",
       },
       {
         id: 311,
@@ -17797,7 +17797,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "In Maslow's hierarchy, self-actualisation refers primarily to:",
         options: ["Protection from physical harm", "Social acceptance", "Realising one's potential and personal growth", "Physical survival"],
         correctAnswer: 2,
-        explanation: "Self-actualisation concerns fulfilling one's potential, creativity and personal growth.*",
+        explanation: "Self-actualisation concerns fulfilling one's potential, creativity and personal growth.",
       },
       {
         id: 312,
@@ -17805,7 +17805,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager increases an employee's autonomy, responsibility and meaningfulness of work. According to Herzberg, this is most likely to increase:",
         options: ["Job insecurity", "Motivators", "Absenteeism", "Hygiene"],
         correctAnswer: 1,
-        explanation: "Autonomy, responsibility and meaningful work are associated with Herzberg's motivating factors and job enrichment.*",
+        explanation: "Autonomy, responsibility and meaningful work are associated with Herzberg's motivating factors and job enrichment.",
       },
       {
         id: 313,
@@ -17813,7 +17813,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "McGregor's Theory Y assumes that:",
         options: ["Employees can exercise self-direction when committed to objectives", "Employees avoid responsibility under every circumstance", "Employees inherently dislike work", "Employees must always be coerced"],
         correctAnswer: 0,
-        explanation: "Theory Y views employees as capable of self-direction, responsibility and commitment under appropriate conditions.*",
+        explanation: "Theory Y views employees as capable of self-direction, responsibility and commitment under appropriate conditions.",
       },
       {
         id: 314,
@@ -17821,7 +17821,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An employee's perception that another employee receives greater rewards for similar contributions may create:",
         options: ["Perceived inequity", "Job enrichment", "Self-actualisation", "Organisational commitment automatically"],
         correctAnswer: 0,
-        explanation: "Perceived imbalance between contributions and rewards can create a sense of inequity.*",
+        explanation: "Perceived imbalance between contributions and rewards can create a sense of inequity.",
       },
       {
         id: 315,
@@ -17829,7 +17829,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Equity Theory suggests that employees compare:",
         options: ["Their job description with the company logo", "Their salary only with the CEO's salary", "Their personality with management", "Their input-output ratio with relevant comparison others"],
         correctAnswer: 3,
-        explanation: "Equity Theory focuses on comparisons between one's perceived input-output ratio and that of relevant others.*",
+        explanation: "Equity Theory focuses on comparisons between one's perceived input-output ratio and that of relevant others.",
       },
       {
         id: 316,
@@ -17837,7 +17837,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A reward has high valence in Expectancy Theory when:",
         options: ["Performance is unrelated to the reward", "The reward is impossible to obtain", "The employee does not care about the reward", "The employee strongly values the reward"],
         correctAnswer: 3,
-        explanation: "Valence is the value or attractiveness an employee places on a particular outcome.*",
+        explanation: "Valence is the value or attractiveness an employee places on a particular outcome.",
       },
       {
         id: 317,
@@ -17845,7 +17845,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which statement best describes organisational citizenship behaviour (OCB)?",
         options: ["Formal disciplinary action", "Behaviour that deliberately violates organisational rules", "Mandatory attendance at work", "Discretionary employee behaviour that supports organisational functioning beyond formal job requirements"],
         correctAnswer: 3,
-        explanation: "OCB consists of discretionary helpful behaviours that support the organisation beyond formal role requirements.*",
+        explanation: "OCB consists of discretionary helpful behaviours that support the organisation beyond formal role requirements.",
       },
       {
         id: 318,
@@ -17853,7 +17853,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager compares actual sales performance with predetermined targets and investigates significant deviations. This activity is most closely related to:",
         options: ["Performance management", "Job analysis", "Recruitment", "Socialisation"],
         correctAnswer: 0,
-        explanation: "Performance management involves monitoring performance against expectations and using feedback to improve results.*",
+        explanation: "Performance management involves monitoring performance against expectations and using feedback to improve results.",
       },
       {
         id: 319,
@@ -17861,7 +17861,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A performance appraisal system is most useful when it:",
         options: ["Is conducted only to punish poor performers", "Provides feedback that can support development and performance improvement", "Measures personality rather than job performance", "Ignores predetermined standards"],
         correctAnswer: 1,
-        explanation: "Effective appraisal provides evidence-based feedback that supports development and improved performance.*",
+        explanation: "Effective appraisal provides evidence-based feedback that supports development and improved performance.",
       },
       {
         id: 320,
@@ -17869,7 +17869,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An effective performance management system should primarily:",
         options: ["Operate as a once-a-year punishment mechanism", "Focus exclusively on employee weaknesses", "Eliminate employee participation", "Align individual performance with organisational objectives through ongoing feedback and development"],
         correctAnswer: 3,
-        explanation: "Performance management is continuous and links individual objectives, feedback, development and organisational strategy.*",
+        explanation: "Performance management is continuous and links individual objectives, feedback, development and organisational strategy.",
       },
       {
         id: 321,
@@ -17877,7 +17877,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A 360-degree appraisal obtains performance information from:",
         options: ["Only external recruiters", "Only the employee's family members", "Multiple sources such as supervisors, peers, subordinates and sometimes customers", "Only the employee's immediate supervisor"],
         correctAnswer: 2,
-        explanation: "360-degree feedback uses multiple perspectives, often including supervisors, peers, subordinates and customers.*",
+        explanation: "360-degree feedback uses multiple perspectives, often including supervisors, peers, subordinates and customers.",
       },
       {
         id: 322,
@@ -17885,7 +17885,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which appraisal error occurs when one positive characteristic causes an evaluator to rate an employee highly across unrelated dimensions?",
         options: ["Contrast effect", "Recency effect", "Central tendency", "Halo effect"],
         correctAnswer: 3,
-        explanation: "The halo effect occurs when one favourable characteristic influences ratings on other dimensions.*",
+        explanation: "The halo effect occurs when one favourable characteristic influences ratings on other dimensions.",
       },
       {
         id: 323,
@@ -17893,7 +17893,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager rates nearly all employees as average despite significant differences in performance. This is an example of:",
         options: ["Central tendency bias", "Self-serving bias", "Halo effect", "Recency bias"],
         correctAnswer: 0,
-        explanation: "Central tendency bias causes evaluators to cluster ratings around the middle rather than distinguish performance levels.*",
+        explanation: "Central tendency bias causes evaluators to cluster ratings around the middle rather than distinguish performance levels.",
       },
       {
         id: 324,
@@ -17901,7 +17901,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager who involves employees in decision-making and encourages participation is demonstrating:",
         options: ["Laissez-faire avoidance", "Democratic/participative leadership", "Autocratic leadership", "Coercive leadership"],
         correctAnswer: 1,
-        explanation: "Participative leadership involves employees in decisions and encourages their contribution.*",
+        explanation: "Participative leadership involves employees in decisions and encourages their contribution.",
       },
       {
         id: 325,
@@ -17909,7 +17909,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which leadership style is characterised by substantial employee freedom and limited direct supervision?",
         options: ["Bureaucratic", "Democratic", "Laissez-faire", "Autocratic"],
         correctAnswer: 2,
-        explanation: "Laissez-faire leadership gives employees substantial autonomy with relatively limited direct supervision.*",
+        explanation: "Laissez-faire leadership gives employees substantial autonomy with relatively limited direct supervision.",
       },
       {
         id: 326,
@@ -17917,7 +17917,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which stage of Lewin's change model involves challenging existing assumptions and preparing employees psychologically for change?",
         options: ["Refreezing", "Unfreezing", "Institutionalising", "Reinforcing"],
         correctAnswer: 1,
-        explanation: "Unfreezing prepares people to abandon established patterns and recognise the need for change.*",
+        explanation: "Unfreezing prepares people to abandon established patterns and recognise the need for change.",
       },
       {
         id: 327,
@@ -17925,7 +17925,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "In Kotter's change model, creating a sense of urgency is important because it:",
         options: ["Guarantees that change will succeed", "Replaces the need for communication", "Eliminates all employee resistance immediately", "Creates recognition that maintaining the status quo may be undesirable"],
         correctAnswer: 3,
-        explanation: "Urgency establishes why change is necessary and why maintaining the status quo is risky or undesirable.*",
+        explanation: "Urgency establishes why change is necessary and why maintaining the status quo is risky or undesirable.",
       },
       {
         id: 328,
@@ -17933,7 +17933,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An organisation introduces a new accounting system. Employees resist because they fear they may not possess the skills needed to use it. The resistance is primarily caused by:",
         options: ["Social loafing", "Excessive organisational culture", "Goal displacement", "Fear of the unknown/inadequacy"],
         correctAnswer: 3,
-        explanation: "Resistance can arise when employees fear unfamiliar technology or doubt their ability to cope with the new requirements.*",
+        explanation: "Resistance can arise when employees fear unfamiliar technology or doubt their ability to cope with the new requirements.",
       },
       {
         id: 329,
@@ -17941,7 +17941,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is most likely to reduce resistance to organisational change?",
         options: ["Withholding information", "Avoiding feedback", "Threatening employees immediately", "Involving employees and communicating the reasons for change"],
         correctAnswer: 3,
-        explanation: "Participation and clear communication can build understanding, trust and commitment to change.*",
+        explanation: "Participation and clear communication can build understanding, trust and commitment to change.",
       },
       {
         id: 330,
@@ -17949,7 +17949,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Kotter's model emphasises the creation of a guiding coalition because:",
         options: ["One manager should make every change decision", "It eliminates the need for urgency", "Change often requires influential individuals working together to lead and support transformation", "Employees should be excluded from change"],
         correctAnswer: 2,
-        explanation: "A guiding coalition provides the influence, credibility and leadership needed to drive transformation.*",
+        explanation: "A guiding coalition provides the influence, credibility and leadership needed to drive transformation.",
       },
       {
         id: 331,
@@ -17957,7 +17957,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "During organisational change, the refreezing stage in Lewin's model seeks to:",
         options: ["Identify the initial problem", "Create awareness of the need for change", "Generate resistance", "Stabilise and reinforce new behaviours and practices"],
         correctAnswer: 3,
-        explanation: "Refreezing embeds new behaviours and practices so the changed state becomes stable.*",
+        explanation: "Refreezing embeds new behaviours and practices so the changed state becomes stable.",
       },
       {
         id: 332,
@@ -17965,7 +17965,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which sequence correctly represents Lewin's three-stage change model?",
         options: ["Refreeze → Change → Unfreeze", "Change → Unfreeze → Refreeze", "Unfreeze → Change/Move → Refreeze", "Plan → Recruit → Refreeze"],
         correctAnswer: 2,
-        explanation: "Lewin's model progresses from unfreezing the current state, through movement/change, to refreezing the new state.*",
+        explanation: "Lewin's model progresses from unfreezing the current state, through movement/change, to refreezing the new state.",
       },
       {
         id: 333,
@@ -17973,7 +17973,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "In Kotter's model, short-term wins are important because they:",
         options: ["Replace the guiding coalition", "Make long-term change unnecessary", "Eliminate the need for a vision", "Demonstrate progress and help sustain support for the transformation"],
         correctAnswer: 3,
-        explanation: "Visible early successes build credibility, demonstrate progress and help maintain momentum.*",
+        explanation: "Visible early successes build credibility, demonstrate progress and help maintain momentum.",
       },
       {
         id: 334,
@@ -17981,7 +17981,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A company communicates a new strategic vision but fails to alter reward systems that reinforce old behaviour. This is likely to undermine change because:",
         options: ["Employees do not need incentives", "Organisational systems can reinforce the old state", "Communication always causes resistance", "Vision is irrelevant to change"],
         correctAnswer: 1,
-        explanation: "Systems, structures and reward mechanisms can reinforce old behaviours unless they are aligned with the desired change.*",
+        explanation: "Systems, structures and reward mechanisms can reinforce old behaviours unless they are aligned with the desired change.",
       },
       {
         id: 335,
@@ -17989,7 +17989,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager identifies several possible solutions to a problem before selecting one. The activity represents which stage of decision-making?",
         options: ["Evaluation of results", "Implementation", "Problem recognition", "Generation of alternatives"],
         correctAnswer: 3,
-        explanation: "Generating alternatives expands the set of possible solutions before evaluation and selection.*",
+        explanation: "Generating alternatives expands the set of possible solutions before evaluation and selection.",
       },
       {
         id: 336,
@@ -17997,7 +17997,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager faces a situation where several alternatives are available, but none provides a perfect outcome. The manager is operating under:",
         options: ["Certainty", "Risk", "Complete information", "Uncertainty"],
         correctAnswer: 3,
-        explanation: "Where outcomes cannot be predicted with certainty, decision-making may involve uncertainty; risk specifically implies estimable probabilities.*",
+        explanation: "Where outcomes cannot be predicted with certainty, decision-making may involve uncertainty; risk specifically implies estimable probabilities.",
       },
       {
         id: 337,
@@ -18005,7 +18005,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A decision-maker uses a rule of thumb developed from experience to solve a recurring problem. This is an example of:",
         options: ["Benchmarking", "Job enrichment", "Heuristic", "Formalisation"],
         correctAnswer: 2,
-        explanation: "A heuristic is a practical rule of thumb that simplifies decision-making.*",
+        explanation: "A heuristic is a practical rule of thumb that simplifies decision-making.",
       },
       {
         id: 338,
@@ -18013,7 +18013,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A problem-solving approach that first asks 'What is the root cause?' rather than treating symptoms is based on:",
         options: ["Cause-and-effect analysis", "Job enlargement", "Social loafing", "External recruitment"],
         correctAnswer: 0,
-        explanation: "Cause-and-effect analysis seeks underlying causes rather than merely addressing visible symptoms.*",
+        explanation: "Cause-and-effect analysis seeks underlying causes rather than merely addressing visible symptoms.",
       },
       {
         id: 339,
@@ -18021,7 +18021,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The 5 Whys technique is primarily used to:",
         options: ["Identify underlying causes of a problem by repeatedly questioning why it occurred", "Measure market share", "Determine employee salaries", "Calculate employee turnover"],
         correctAnswer: 0,
-        explanation: "The 5 Whys method repeatedly asks why a problem occurred to move from symptoms toward root causes.*",
+        explanation: "The 5 Whys method repeatedly asks why a problem occurred to move from symptoms toward root causes.",
       },
       {
         id: 340,
@@ -18029,7 +18029,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager generates ideas without initially judging them, then evaluates the ideas later. This method is:",
         options: ["Benchmarking", "Auditing", "Brainstorming", "Forecasting"],
         correctAnswer: 2,
-        explanation: "Brainstorming separates idea generation from evaluation to encourage a wider range of alternatives.*",
+        explanation: "Brainstorming separates idea generation from evaluation to encourage a wider range of alternatives.",
       },
       {
         id: 341,
@@ -18037,7 +18037,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A decision made in a situation where the probabilities of alternative outcomes can reasonably be estimated is a decision under:",
         options: ["Ignorance", "Certainty", "Risk", "Complete ambiguity"],
         correctAnswer: 2,
-        explanation: "Risk exists when possible outcomes are uncertain but their probabilities can reasonably be estimated.*",
+        explanation: "Risk exists when possible outcomes are uncertain but their probabilities can reasonably be estimated.",
       },
       {
         id: 342,
@@ -18045,7 +18045,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager must choose between alternatives without knowing the probabilities of future outcomes. This represents decision-making under:",
         options: ["Risk", "Certainty", "Uncertainty", "Perfect information"],
         correctAnswer: 2,
-        explanation: "Uncertainty exists when the probabilities of future outcomes cannot reasonably be assigned.*",
+        explanation: "Uncertainty exists when the probabilities of future outcomes cannot reasonably be assigned.",
       },
       {
         id: 343,
@@ -18053,7 +18053,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A team agrees to accept a poor-quality proposal because members are more concerned with maintaining harmony than critically evaluating alternatives. This is most closely associated with:",
         options: ["Delegation", "Social facilitation", "Groupthink", "Organisational citizenship"],
         correctAnswer: 2,
-        explanation: "Groupthink occurs when the desire for consensus suppresses critical evaluation of alternatives.*",
+        explanation: "Groupthink occurs when the desire for consensus suppresses critical evaluation of alternatives.",
       },
       {
         id: 344,
@@ -18061,7 +18061,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "In organisational behaviour, role conflict occurs when:",
         options: ["An employee has no assigned responsibilities", "Employees agree completely about their responsibilities", "A manager delegates effectively", "An individual faces incompatible expectations associated with different roles"],
         correctAnswer: 3,
-        explanation: "Role conflict occurs when expectations from different roles or sources are incompatible.*",
+        explanation: "Role conflict occurs when expectations from different roles or sources are incompatible.",
       },
       {
         id: 345,
@@ -18069,7 +18069,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is a team process loss?",
         options: ["Collective learning", "Social loafing", "Knowledge sharing", "Synergy"],
         correctAnswer: 1,
-        explanation: "Social loafing reduces group effort when individuals exert less effort collectively than they would individually.*",
+        explanation: "Social loafing reduces group effort when individuals exert less effort collectively than they would individually.",
       },
       {
         id: 346,
@@ -18077,7 +18077,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The tendency for individuals to exert less effort when working collectively than when working alone is:",
         options: ["Social loafing", "Group cohesion", "Socialisation", "Group polarisation"],
         correctAnswer: 0,
-        explanation: "Social loafing is reduced individual effort in group settings.*",
+        explanation: "Social loafing is reduced individual effort in group settings.",
       },
       {
         id: 347,
@@ -18085,7 +18085,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Team cohesion is generally strengthened when:",
         options: ["Members share goals, trust one another and experience positive interaction", "Communication is discouraged", "Roles are completely undefined", "Members have incompatible objectives"],
         correctAnswer: 0,
-        explanation: "Shared goals, trust and positive interaction strengthen attachment and cooperation within teams.*",
+        explanation: "Shared goals, trust and positive interaction strengthen attachment and cooperation within teams.",
       },
       {
         id: 348,
@@ -18093,7 +18093,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A team whose members possess complementary skills and work toward a shared purpose is more likely to demonstrate:",
         options: ["Role ambiguity", "Bureaucracy", "Synergy", "Dysfunction"],
         correctAnswer: 2,
-        explanation: "Synergy occurs when coordinated team effort produces benefits greater than the simple sum of individual contributions.*",
+        explanation: "Synergy occurs when coordinated team effort produces benefits greater than the simple sum of individual contributions.",
       },
       {
         id: 349,
@@ -18101,7 +18101,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is most characteristic of an organic organisational structure?",
         options: ["Flexible roles and decentralised decision-making", "Extensive bureaucratic controls", "Strict formalisation and narrow communication channels", "Rigid hierarchy and centralisation"],
         correctAnswer: 0,
-        explanation: "Organic structures favour flexibility, decentralisation, collaboration and adaptable roles.*",
+        explanation: "Organic structures favour flexibility, decentralisation, collaboration and adaptable roles.",
       },
       {
         id: 350,
@@ -18109,7 +18109,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The term span of control refers to:",
         options: ["The number of departments in a company", "The number of organisational objectives", "The number of subordinates directly supervised by a manager", "The geographical area covered by an organisation"],
         correctAnswer: 2,
-        explanation: "Span of control is the number of employees who report directly to a manager.*",
+        explanation: "Span of control is the number of employees who report directly to a manager.",
       },
       {
         id: 351,
@@ -18117,7 +18117,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An organisation's deeply held beliefs about 'how things are done around here' primarily represent its:",
         options: ["Job specification", "Formal structure", "Performance standard", "Organisational culture"],
         correctAnswer: 3,
-        explanation: "Organisational culture consists of shared values, assumptions, beliefs and norms shaping behaviour.*",
+        explanation: "Organisational culture consists of shared values, assumptions, beliefs and norms shaping behaviour.",
       },
       {
         id: 352,
@@ -18125,7 +18125,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A strong organisational culture can become problematic when it:",
         options: ["Clarifies expected behaviours", "Supports employee identity", "Provides shared values", "Prevents adaptation to environmental changes"],
         correctAnswer: 3,
-        explanation: "A strong culture can create rigidity if established assumptions prevent adaptation to changing conditions.*",
+        explanation: "A strong culture can create rigidity if established assumptions prevent adaptation to changing conditions.",
       },
       {
         id: 353,
@@ -18133,7 +18133,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which organisational culture is most likely to emphasise innovation, flexibility and adaptability?",
         options: ["Rigid bureaucratic culture", "Adhocracy culture", "Clan culture", "Hierarchy culture"],
         correctAnswer: 1,
-        explanation: "Adhocracy culture emphasises innovation, entrepreneurship, flexibility and adaptation.*",
+        explanation: "Adhocracy culture emphasises innovation, entrepreneurship, flexibility and adaptation.",
       },
       {
         id: 354,
@@ -18141,7 +18141,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An organisation that emphasises formal procedures, stability, control and clearly defined authority is most consistent with:",
         options: ["Adhocracy culture", "Entrepreneurial culture", "Hierarchy culture", "Informal culture"],
         correctAnswer: 2,
-        explanation: "Hierarchy culture values formal procedures, stability, control and clearly defined authority.*",
+        explanation: "Hierarchy culture values formal procedures, stability, control and clearly defined authority.",
       },
       {
         id: 355,
@@ -18149,7 +18149,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following represents the best example of CSR?",
         options: ["Investing in community education while maintaining responsible business practices", "Increasing prices solely to maximise short-term profit", "Ignoring environmental regulations to reduce costs", "Manipulating financial statements"],
         correctAnswer: 0,
-        explanation: "CSR involves responsible conduct toward stakeholders and society, including meaningful community and environmental initiatives.*",
+        explanation: "CSR involves responsible conduct toward stakeholders and society, including meaningful community and environmental initiatives.",
       },
       {
         id: 356,
@@ -18157,7 +18157,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is an example of ethical decision-making?",
         options: ["Following competitors' unethical practices", "Hiding material information from customers", "Choosing the option that maximises profit regardless of harm", "Considering stakeholders, consequences, fairness and applicable ethical principles"],
         correctAnswer: 3,
-        explanation: "Ethical decision-making considers moral principles, stakeholder interests, consequences, fairness and applicable rules.*",
+        explanation: "Ethical decision-making considers moral principles, stakeholder interests, consequences, fairness and applicable rules.",
       },
       {
         id: 357,
@@ -18165,7 +18165,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which statement best describes organisational politics?",
         options: ["It involves attempts to influence decisions or outcomes, sometimes using informal power", "All political behaviour is necessarily illegal", "It occurs only in government organisations", "It is always beneficial to employees"],
         correctAnswer: 0,
-        explanation: "Organisational politics involves influence tactics and the use of formal or informal power to affect outcomes.*",
+        explanation: "Organisational politics involves influence tactics and the use of formal or informal power to affect outcomes.",
       },
       {
         id: 358,
@@ -18173,7 +18173,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "When an employee uses personal relationships to influence a promotion decision rather than relying solely on formal procedures, this may be considered:",
         options: ["Job analysis", "Organisational politics", "Formalisation", "Performance management"],
         correctAnswer: 1,
-        explanation: "Using informal influence and relationships to shape organisational outcomes is a form of organisational politics.*",
+        explanation: "Using informal influence and relationships to shape organisational outcomes is a form of organisational politics.",
       },
       {
         id: 359,
@@ -18181,7 +18181,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Business ethics is primarily concerned with:",
         options: ["Avoiding all competition", "Maximising revenue regardless of consequences", "Ensuring that managers always agree", "Principles and standards that guide morally appropriate business conduct"],
         correctAnswer: 3,
-        explanation: "Business ethics applies moral principles and standards to decisions and conduct in business.*",
+        explanation: "Business ethics applies moral principles and standards to decisions and conduct in business.",
       },
       {
         id: 360,
@@ -18189,7 +18189,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Corporate Social Responsibility (CSR) extends the organisation's responsibility beyond shareholders to include:",
         options: ["Only competitors", "Only senior managers", "Only government agencies", "Relevant stakeholders and broader social/environmental impacts"],
         correctAnswer: 3,
-        explanation: "CSR recognises responsibilities to wider stakeholders and social and environmental impacts.*",
+        explanation: "CSR recognises responsibilities to wider stakeholders and social and environmental impacts.",
       },
       {
         id: 361,
@@ -18197,7 +18197,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A company reduces pollution because it recognises a responsibility to the community and environment, even beyond minimum legal requirements. This illustrates:",
         options: ["Job enrichment", "Recruitment", "CSR", "Centralisation"],
         correctAnswer: 2,
-        explanation: "Going beyond minimum legal compliance to address social and environmental responsibilities is consistent with CSR.*",
+        explanation: "Going beyond minimum legal compliance to address social and environmental responsibilities is consistent with CSR.",
       },
       {
         id: 362,
@@ -18205,7 +18205,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager discovers that a supplier has offered a personal financial benefit in exchange for awarding a contract. Accepting it would most clearly create a:",
         options: ["Performance appraisal", "Market opportunity", "Job enlargement", "Conflict of interest"],
         correctAnswer: 3,
-        explanation: "A personal benefit that could improperly influence a business decision creates a conflict of interest and may also constitute bribery.*",
+        explanation: "A personal benefit that could improperly influence a business decision creates a conflict of interest and may also constitute bribery.",
       },
       {
         id: 363,
@@ -18213,7 +18213,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The informal network through which employees exchange unofficial information is commonly known as:",
         options: ["Grapevine communication", "Vertical reporting", "Downward communication", "Formal communication"],
         correctAnswer: 0,
-        explanation: "The grapevine is an informal communication network through which unofficial information spreads.*",
+        explanation: "The grapevine is an informal communication network through which unofficial information spreads.",
       },
       {
         id: 364,
@@ -18221,7 +18221,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which communication channel is generally most appropriate for conveying complex, sensitive interpersonal information?",
         options: ["Face-to-face communication", "A generic billboard", "A mass advertisement", "An automated public notice"],
         correctAnswer: 0,
-        explanation: "Face-to-face communication provides rich cues, immediate feedback and greater opportunity to manage sensitive issues.*",
+        explanation: "Face-to-face communication provides rich cues, immediate feedback and greater opportunity to manage sensitive issues.",
       },
       {
         id: 365,
@@ -18229,7 +18229,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Business communication is most effective when:",
         options: ["The sender uses complex language regardless of the receiver", "Feedback from the receiver", "The communication objective", "Anything that interferes with accurate transmission or interpretation of a message"],
         correctAnswer: 1,
-        explanation: "Feedback allows the sender to determine whether the message was received and understood as intended.*",
+        explanation: "Feedback allows the sender to determine whether the message was received and understood as intended.",
       },
       {
         id: 366,
@@ -18237,7 +18237,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is most likely to constitute a communication barrier in an organisation?",
         options: ["Appropriate choice of communication channel", "Clear feedback from the receiver", "Noise, ambiguous language or information overload", "A well-defined communication objective"],
         correctAnswer: 2,
-        explanation: "Communication barriers are factors such as noise, ambiguity and information overload that interfere with accurate transmission or interpretation of a message.*",
+        explanation: "Communication barriers are factors such as noise, ambiguity and information overload that interfere with accurate transmission or interpretation of a message.",
       },
       {
         id: 367,
@@ -18245,7 +18245,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "When a manager communicates instructions to subordinates, the direction of communication is:",
         options: ["Upward", "Downward", "Diagonal only", "Horizontal"],
         correctAnswer: 1,
-        explanation: "Communication from managers to subordinates is downward communication.*",
+        explanation: "Communication from managers to subordinates is downward communication.",
       },
       {
         id: 368,
@@ -18253,7 +18253,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "When employees provide performance feedback and concerns to management, this represents:",
         options: ["External communication", "Lateral communication only", "Downward communication", "Upward communication"],
         correctAnswer: 3,
-        explanation: "Upward communication flows from employees/subordinates to managers and senior decision-makers.*",
+        explanation: "Upward communication flows from employees/subordinates to managers and senior decision-makers.",
       },
       {
         id: 369,
@@ -18261,7 +18261,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An information system that records routine transactions such as sales, receipts and payments is primarily a:",
         options: ["Decision Support System", "Executive Support System", "Expert system", "Transaction Processing System"],
         correctAnswer: 3,
-        explanation: "A TPS captures and processes routine, repetitive transactions.*",
+        explanation: "A TPS captures and processes routine, repetitive transactions.",
       },
       {
         id: 370,
@@ -18269,7 +18269,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A manager uses historical data and analytical models to evaluate alternative business decisions. This is characteristic of:",
         options: ["Manual filing system", "Decision Support System", "Payroll register", "Transaction Processing System"],
         correctAnswer: 1,
-        explanation: "A DSS supports analysis and evaluation of alternatives using data and analytical models.*",
+        explanation: "A DSS supports analysis and evaluation of alternatives using data and analytical models.",
       },
       {
         id: 371,
@@ -18277,7 +18277,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Digital management is primarily concerned with:",
         options: ["Replacing strategy with technology", "Restricting information access", "Using digital technologies, data and platforms to improve organisational processes and decision-making", "Eliminating all human employees"],
         correctAnswer: 2,
-        explanation: "Digital management applies digital technologies, data and platforms to improve processes, coordination and decisions.*",
+        explanation: "Digital management applies digital technologies, data and platforms to improve processes, coordination and decisions.",
       },
       {
         id: 372,
@@ -18285,7 +18285,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A major advantage of an effective HR information system (HRIS) is that it:",
         options: ["Guarantees employee loyalty", "Facilitates the collection, storage and analysis of employee information", "Eliminates the need for HR professionals", "Prevents all labour disputes"],
         correctAnswer: 1,
-        explanation: "HRIS improves the management and analysis of employee data; it does not replace HR judgement or guarantee outcomes.*",
+        explanation: "HRIS improves the management and analysis of employee data; it does not replace HR judgement or guarantee outcomes.",
       },
       {
         id: 373,
@@ -18293,7 +18293,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An enterprise resource planning (ERP) system primarily seeks to:",
         options: ["Prevent managers from accessing information", "Eliminate accounting records", "Integrate major organisational processes and information across functions", "Isolate departmental data"],
         correctAnswer: 2,
-        explanation: "ERP integrates data and processes across functions such as finance, procurement, operations and HR.*",
+        explanation: "ERP integrates data and processes across functions such as finance, procurement, operations and HR.",
       },
       {
         id: 374,
@@ -18301,7 +18301,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "One major strategic benefit of data analytics is that it can:",
         options: ["Make business ethics unnecessary", "Convert organisational data into insights that support evidence-based decisions", "Eliminate uncertainty completely", "Replace all managerial judgement"],
         correctAnswer: 1,
-        explanation: "Analytics transforms data into insights that improve evidence-based decision-making, although managerial judgement remains important.*",
+        explanation: "Analytics transforms data into insights that improve evidence-based decision-making, although managerial judgement remains important.",
       },
       {
         id: 375,
@@ -18309,7 +18309,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "A company that collects customer data should be particularly concerned with:",
         options: ["Maximising data collection regardless of purpose", "Removing cybersecurity controls", "Data privacy and responsible data governance", "Publishing confidential information"],
         correctAnswer: 2,
-        explanation: "Responsible data governance includes privacy, appropriate use, security, access controls and compliance.*",
+        explanation: "Responsible data governance includes privacy, appropriate use, security, access controls and compliance.",
       },
       {
         id: 376,
@@ -18317,7 +18317,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The Nigerian financial system can broadly be understood as a system that:",
         options: ["Facilitates the mobilisation, allocation and transfer of financial resources", "Exists only to provide bank loans", "Deals exclusively with government taxation", "Operates independently of financial institutions"],
         correctAnswer: 0,
-        explanation: "A financial system channels funds from surplus units to deficit units and supports payments, investment and resource allocation.*",
+        explanation: "A financial system channels funds from surplus units to deficit units and supports payments, investment and resource allocation.",
       },
       {
         id: 377,
@@ -18325,7 +18325,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which institution is the apex monetary authority in Nigeria?",
         options: ["Corporate Affairs Commission", "Central Bank of Nigeria", "Securities and Exchange Commission", "Nigerian Exchange Group"],
         correctAnswer: 1,
-        explanation: "The Central Bank of Nigeria is the country's central monetary authority and banking-system regulator.*",
+        explanation: "The Central Bank of Nigeria is the country's central monetary authority and banking-system regulator.",
       },
       {
         id: 378,
@@ -18333,7 +18333,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The Central Bank of Nigeria (CBN) primarily performs which function?",
         options: ["Formulating and implementing monetary policy and regulating the banking system", "Managing the Nigerian Exchange directly", "Operating every private company in Nigeria", "Conducting corporate recruitment"],
         correctAnswer: 0,
-        explanation: "The CBN conducts monetary policy and performs major regulatory and supervisory functions in the financial system.*",
+        explanation: "The CBN conducts monetary policy and performs major regulatory and supervisory functions in the financial system.",
       },
       {
         id: 379,
@@ -18341,7 +18341,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Commercial banks primarily perform financial intermediation by:",
         options: ["Setting stock-market prices directly", "Mobilising deposits and providing credit to borrowers", "Converting all deposits directly into government taxes", "Issuing corporate shares on behalf of every company"],
         correctAnswer: 1,
-        explanation: "Banks mobilise deposits from surplus units and channel funds to borrowers through credit facilities.*",
+        explanation: "Banks mobilise deposits from surplus units and channel funds to borrowers through credit facilities.",
       },
       {
         id: 380,
@@ -18349,7 +18349,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The Nigerian capital market differs from the money market mainly because the capital market deals predominantly with:",
         options: ["Medium- and long-term funds and securities", "Short-term funds only", "Daily cash transactions only", "Foreign currency exclusively"],
         correctAnswer: 0,
-        explanation: "Capital markets facilitate medium- and long-term financing through securities such as shares and longer-term bonds.*",
+        explanation: "Capital markets facilitate medium- and long-term financing through securities such as shares and longer-term bonds.",
       },
       {
         id: 381,
@@ -18357,7 +18357,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "Which of the following is most closely associated with the money market?",
         options: ["Treasury bills", "Long-term corporate bonds exclusively", "Ordinary shares", "Preference shares"],
         correctAnswer: 0,
-        explanation: "Treasury bills are short-term government securities and are classic money-market instruments.*",
+        explanation: "Treasury bills are short-term government securities and are classic money-market instruments.",
       },
       {
         id: 382,
@@ -18365,7 +18365,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The Nigerian Exchange (NGX) primarily provides a platform for:",
         options: ["Trading listed securities", "Setting monetary policy", "Issuing Nigerian currency", "Regulating commercial banks"],
         correctAnswer: 0,
-        explanation: "The NGX provides an organised market for trading listed securities.*",
+        explanation: "The NGX provides an organised market for trading listed securities.",
       },
       {
         id: 383,
@@ -18373,7 +18373,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "The Securities and Exchange Commission (SEC) in Nigeria is primarily concerned with:",
         options: ["Managing individual bank accounts", "Regulation and development of the Nigerian capital market", "Setting commercial bank reserve requirements", "Printing currency"],
         correctAnswer: 1,
-        explanation: "The SEC is the apex regulatory institution for Nigeria's capital market.*",
+        explanation: "The SEC is the apex regulatory institution for Nigeria's capital market.",
       },
       {
         id: 384,
@@ -18381,7 +18381,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "When a company raises long-term capital by issuing ordinary shares to investors, it is participating primarily in the:",
         options: ["Money market", "Labour market", "Capital market", "Foreign exchange bureau market only"],
         correctAnswer: 2,
-        explanation: "Ordinary shares are long-term capital-market securities.*",
+        explanation: "Ordinary shares are long-term capital-market securities.",
       },
       {
         id: 385,
@@ -18389,7 +18389,7 @@ export const quizzes: Record<string, CourseQuiz> = {
         question: "An investor purchases shares of a listed Nigerian company through the securities market. The investor's return may arise primarily through:",
         options: ["Bank overdraft interest paid by the investor", "Dividends and capital appreciation", "Salary and pension contributions", "Employee bonuses"],
         correctAnswer: 1,
-        explanation: "Shareholders may earn dividends and gains from increases in the market value of their shares.* Compiled by CampusIntell | Page",
+        explanation: "Shareholders may earn dividends and gains from increases in the market value of their shares.",
       },
     ],
   },
