@@ -540,7 +540,7 @@ export const courses: Course[] = [
     overview:
       'A foundational course examining how culture, defined as the collective programming of the mind, shapes organisational behaviour across borders. The course moves from core cultural frameworks (Hofstede, GLOBE, Trompenaars) through perception, motivation, personality, communication, team management, leadership, negotiation, HR practice, organisational structure, ethics, and future trends including global mobility and AI. Assumes introductory Organisational Behaviour and Management.',
     level: 200,
-    semester: 1,
+    semester: 2,
     credits: 2,
     difficulty: 'Medium',
     featured: true,
