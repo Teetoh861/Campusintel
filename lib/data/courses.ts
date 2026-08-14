@@ -1,4 +1,5 @@
 import { Course } from '@/lib/types'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 export const courses: Course[] = [
   {
@@ -961,6 +962,71 @@ export const courses: Course[] = [
       "Systematic (unavoidable, market-wide) versus unsystematic (avoidable, firm-specific) risk, and Beta as the proxy for systematic risk in CAPM",
     ],
     resources: [],
+  },
+  {
+    id: "15",
+    slug: "bua218",
+    code: "BUA218",
+    title: "Green Management",
+    overview: "A course on running organizations sustainably — how environmental principles, regulation, strategy, innovation, and marketing come together so that businesses can protect the planet while staying profitable and competitive.",
+    level: 200,
+    semester: 2,
+    credits: 2,
+    difficulty: "Medium",
+    textbooks: [],
+    topics: [
+      { chapter: "1", description: "Introduction to Green Management — definition, importance, key drivers, benefits to organizations and society" },
+      { chapter: "2", description: "Environmental Principles and Concepts — ecological and carbon footprint, the circular economy and waste management, environmental regulations and standards" },
+      { chapter: "3", description: "Strategic Green Management — integrating sustainability into business strategy, green innovation and eco-design" },
+      { chapter: "4", description: "Green Operations and Supply Chain Management — not yet covered" },
+      { chapter: "5", description: "Green Marketing and Corporate Social Responsibility — green marketing covered; Corporate Social Responsibility not yet covered" },
+      { chapter: "6", description: "Implementing Green Initiatives — not yet covered" },
+      { chapter: "7", description: "Future Trends, Challenges, and Successful Green Management — green digital transformation, emerging technologies, challenges and opportunities, characteristics and strategies of successful green management, Nigerian case examples" },
+    ],
+    examFocus: [
+      "The definition of green management and its framing as Profit + People + Planet (the Triple Bottom Line)",
+      "Why green management is treated as a strategic necessity rather than optional, and the reasoning behind that claim",
+      "The relationship between ecological footprint and carbon footprint — carbon as one component of ecological footprint",
+      "The waste management hierarchy, in strict order: Prevention, Re-use, Recycling, Recovery, Disposal",
+      "The difference between the circular economy and the traditional linear (take-make-dispose) model",
+      "How the circular economy and waste management relate to and reinforce each other",
+      "The distinction between environmental regulations (legally enforceable) and environmental standards (voluntary/mandatory guidelines), including the consequence of non-compliance for each",
+      "The steps for integrating sustainability into business strategy, in sequence",
+      "The relationship between green innovation and eco-design as complementary practices",
+      "The principles of eco-design and the stages of the eco-design life cycle, in order",
+      "Key digital technologies supporting green management (AI, IoT, big data, cloud, smart manufacturing) and what each contributes",
+      "The ‘5 Rs’ of the circular economy (reduce, reuse, repair, recycle, recover) replacing the take-make-dispose model",
+      "Definition and real-world meaning of carbon neutrality, including example offsetting activities",
+      "The ten challenges facing green management and how they map to opportunities",
+      "Characteristics and strategies of successful green management, including the Triple Bottom Line as a balancing framework",
+      "Internal vs external factors influencing green management success",
+      "Definition of greenwashing and how it differs from genuine green management",
+      "Nigerian company examples (Nigerian Breweries, Lafarge Africa, Dangote Cement, MTN, Access Bank) and the specific angle each is assessed from",
+    ],
+    resources: [
+      {
+        id: "bua218-notes",
+        title: "BUA 218 Green Management — Compiled Course Notes (Topics 1–3 complete, Topic 5 partial, Topic 7 complete)",
+        type: "notes",
+        fileSize: "TBC",
+        uploadDate: "",
+      },
+      {
+        id: "bua218-mcq",
+        title: "BUA 218 Green Management — 150 Multiple Choice Questions with Answer Key (Topics 1–3)",
+        type: "pdf",
+        fileSize: "TBC",
+        uploadDate: "",
+      },
+      {
+        id: "bua218-theory",
+        title: "BUA 218 Green Management — 20 Theory Questions with Model Answers (Topics 1–3)",
+        type: "past-question",
+        url: buildWhatsAppUrl("I need practice theory questions for BUA 218 Green Management"),
+        fileSize: "TBC",
+        uploadDate: "",
+      },
+    ],
   },]
 
 export function getCourseBySlug(slug: string): Course | undefined {
