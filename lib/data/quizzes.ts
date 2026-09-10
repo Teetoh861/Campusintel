@@ -1108,7 +1108,7 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'entrepreneurship-innovation',
     courseCode: 'ENT211',
     title: 'Entrepreneurship and Innovation - CBT Assessment',
-    totalQuestions: 60,
+    totalQuestions: 50,
     maxQuizQuestions: 50,
     quizDurationMinutes: 30,
     sections: [
@@ -5744,7 +5744,7 @@ export const quizzes: Record<string, CourseQuiz> = {
     courseSlug: 'consumer-behaviour',
     courseCode: 'BUA221',
     title: 'Consumer Behaviour - CBT Assessment',
-    totalQuestions: 60,
+    totalQuestions: 50,
     maxQuizQuestions: 50,
     quizDurationMinutes: 30,
     sections: [
