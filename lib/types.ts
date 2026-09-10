@@ -74,6 +74,7 @@ export interface Bookmark {
 
 export interface QuizQuestion {
   id: number
+  questionId: string
   question: string
   options: string[]
   correctAnswer: number // index of correct option (0-based)
