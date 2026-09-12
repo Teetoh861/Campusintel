@@ -1,0 +1,10 @@
+<!-- supabase/templates/recovery.html — Email OTP; navigation contains no credential. -->
+<!doctype html>
+<html lang="en"><body>
+<h1>Reset your password</h1>
+<p>Your CampusIntell verification code:</p>
+<p><strong>{{ .Token }}</strong></p>
+<p>Enter this code with your email address. Do not share it with anyone.</p>
+<p><a href="{{ .SiteURL }}/reset-password">Reset your password</a></p>
+<p>If you did not request this email, you can ignore it.</p>
+</body></html>
