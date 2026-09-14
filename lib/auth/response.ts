@@ -1,5 +1,6 @@
 // lib/auth/response.ts — Stable, private auth responses without provider error details.
 import 'server-only'
+import { safeAuthMessage } from './errors'
 import { NextResponse } from 'next/server'
 import { AUTH_MESSAGES } from './constants'
 import { AuthRequestError } from './request'
@@ -15,6 +16,6 @@ export function authJson(body: Record<string, unknown>, status = 200): NextRespo
 /** Map failures without serializing or logging provider errors or submitted secrets. */
 export function authError(error: unknown): NextResponse {
   return error instanceof AuthRequestError
-    ? authJson({ error: error.message }, error.status)
+    ? authJson({ error: safeAuthMessage(error.message) }, error.status)
     : authJson({ error: AUTH_MESSAGES.unavailable }, 503)
 }

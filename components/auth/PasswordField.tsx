@@ -15,7 +15,7 @@ export const PasswordField = forwardRef<HTMLInputElement, ComponentProps<typeof 
     trailing={<button type="button" disabled={props.disabled} aria-controls={props.id}
       aria-label={visible ? 'Hide ' + props.label.toLowerCase() : 'Show ' + props.label.toLowerCase()}
       aria-pressed={visible} onClick={() => setVisible(value => !value)}
-      className={'absolute right-1 top-1 flex min-h-11 min-w-11 items-center justify-center rounded-ci-btn text-ci-navy ' + AUTH_FOCUS}>
-      <Icon aria-hidden="true" className="h-5 w-5" />
+      className={'absolute right-0.5 top-0.5 flex min-h-11 min-w-11 items-center justify-center rounded-ci-btn text-ci-gray-700 ' + AUTH_FOCUS}>
+      <Icon aria-hidden="true" className="h-4 w-4" />
     </button>} />
 })

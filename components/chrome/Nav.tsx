@@ -5,6 +5,7 @@
 // (component-spec.md → Nav)
 'use client'
 
+import { onStudentChange } from '@/lib/auth/client-events'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AUTH_API, AUTH_PATHS, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
@@ -49,12 +50,14 @@ export function Nav({ variant = 'blue' }: Props) {
       }
     }
     const visible = () => { if (document.visibilityState === 'visible') void refresh() }
+    const unsubscribe = onStudentChange(refresh)
     void refresh()
     window.addEventListener('focus', visible)
     window.addEventListener(AUTH_STATUS_EVENT, visible)
     document.addEventListener('visibilitychange', visible)
     return () => {
       active = false
+      unsubscribe()
       controller?.abort()
       window.removeEventListener('focus', visible)
       window.removeEventListener(AUTH_STATUS_EVENT, visible)

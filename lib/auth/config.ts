@@ -14,10 +14,25 @@ export function getSupabaseConfig(): { url: string; key: string } {
   return { url, key }
 }
 
-/** Read the narrowly scoped gateway/RPC key. Production requires a modern secret key. */
+/** Read the gateway/RPC key; legacy JWTs are permitted in production only for loopback Supabase. */
 export function getAuthSecretKey(): string {
   const key = process.env.SUPABASE_SECRET_KEY
-  if (!key || (process.env.NODE_ENV === 'production' && !key.startsWith('sb_secret_'))) {
+  if (!key || !key.trim()) throw new Error('Auth configuration unavailable')
+  if (process.env.NODE_ENV === 'production') {
+    let local = false
+    try {
+      const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '')
+      local = ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password &&
+        ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    } catch { throw new Error('Auth configuration unavailable') }
+    const modern = /^sb_secret_[A-Za-z0-9_-]+$/.test(key)
+    // Structural validation only: the local Supabase server validates the JWT signature/role.
+    const localJwt = local && key.length >= 64 &&
+      /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(key) &&
+      key.split('.').every(segment => segment.length % 4 !== 1)
+    if (!modern && !localJwt) throw new Error('Auth configuration unavailable')
+  }
+  if (key !== key.trim()) {
     throw new Error('Auth configuration unavailable')
   }
   return key

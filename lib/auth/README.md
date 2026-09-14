@@ -91,3 +91,12 @@ future application logging, error reporting or analytics integration.
 Before rollout, resolve the production dependency audit findings and finish the
 remaining Phase A account lifecycle, attempt-recording and analytics launch gates.
 No production dashboard or deployment configuration is changed by A2.
+
+## Local email delivery
+
+Local Supabase captures authentication emails in its local email-testing inbox
+(Mailpit/Inbucket); it does not deliver them to real external inboxes. Open the
+local inbox URL reported by `supabase status` to read confirmation and recovery
+codes. Return to the registration/login confirmation screen to enter the code.
+If that in-memory flow was lost, start again from sign up or sign in.
+This local setup does not change hosted Supabase or production SMTP delivery.

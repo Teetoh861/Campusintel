@@ -3,7 +3,7 @@
 import { btnBase, btnSm, btnWhite, cx } from '@/components/chrome/ui'
 import { AUTH_API, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
 import { useAuthSubmit } from './useAuthSubmit'
-import { AuthNotice } from './AuthNotice'
+import { Feedback } from '@/components/chrome/Feedback'
 
 /** End only this session and refresh the view without persisting auth data. */
 export function LogoutButton() {
@@ -14,6 +14,6 @@ export function LogoutButton() {
         window.dispatchEvent(new Event(AUTH_STATUS_EVENT))
         window.location.reload()
       } }}>{pending ? 'Logging out…' : 'Log out'}</button>
-    {error && <AuthNotice message={error} error />}
+    {error && <Feedback message={error} tone="error" />}
   </div>
 }

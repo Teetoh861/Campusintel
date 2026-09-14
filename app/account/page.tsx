@@ -1,4 +1,5 @@
 // app/account/page.tsx — Minimal server-authorized student account, without Phase B profile editing.
+import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { redirect } from 'next/navigation'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
 import { LogoutButton } from '@/components/auth/LogoutButton'
@@ -19,5 +20,5 @@ export default async function AccountPage() {
     if (!error) email = data.user?.email
   } catch { /* Fail closed without surfacing provider configuration. */ }
   if (!email) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
-  return <AuthShell title="Account"><p className="break-words">Signed in as {email}</p><LogoutButton /></AuthShell>
+  return <AuthShell title="Account"><AuthFlowSync signedIn /><p className="break-words">Signed in as {email}</p><LogoutButton /></AuthShell>
 }

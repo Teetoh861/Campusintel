@@ -11,7 +11,7 @@ export class AuthRequestError extends Error {
 
 /** Reject disabled, cross-origin and malformed POSTs before any Supabase operation. */
 export async function readAuthRequest<T>(request: Request, schema: ZodType<T>): Promise<T> {
-  if (!isStudentAuthEnabled()) throw new AuthRequestError(503, AUTH_MESSAGES.unavailable)
+  if (!isStudentAuthEnabled()) throw new AuthRequestError(503, AUTH_MESSAGES.comingSoon)
   if (request.headers.get('origin') !== getAuthOrigin() ||
       ['cross-site', 'same-site'].includes(request.headers.get('sec-fetch-site') || '')) {
     throw new AuthRequestError(403, 'This request could not be accepted.')
@@ -48,7 +48,8 @@ export async function readAuthRequest<T>(request: Request, schema: ZodType<T>): 
 }
 
 /** Trust only Vercel's platform header, never an arbitrary forwarding chain.
- * Assumes direct Vercel ingress (no external trusted-proxy feature). Other production hosts fail closed.
+ * Assumes direct Vercel ingress (no external trusted-proxy feature). Non-Vercel production
+ * permits the local bucket only for an explicitly configured loopback canonical origin.
  * https://vercel.com/docs/headers/request-headers#x-vercel-forwarded-for
  */
 export function getRequesterAddress(request: Request): string {
@@ -58,5 +59,9 @@ export function getRequesterAddress(request: Request): string {
     return isIP(address) === 6 ? new URL(`http://[${address}]/`).hostname.slice(1, -1) : address
   }
   if (process.env.NODE_ENV !== 'production') return 'local'
+  try {
+    const hostname = new URL(getAuthOrigin()).hostname
+    if (['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return 'local'
+  } catch { /* Invalid canonical configuration must fail closed. */ }
   throw new AuthRequestError(503, AUTH_MESSAGES.unavailable)
 }
