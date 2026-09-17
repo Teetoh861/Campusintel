@@ -1,5 +1,6 @@
 // app/confirm-email/page.tsx — Recover confirmation context without accepting an email from the URL.
 import Link from 'next/link'
+import { AuthSecondaryActions } from '@/components/auth/AuthFormLayout'
 import { SignedOutGate } from '@/components/auth/SignedOutGate'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
 import { AUTH_LINK } from '@/components/chrome/FormField'
@@ -14,10 +15,10 @@ function Content() {
   return <AuthShell title="Check your email">
     {isStudentAuthEnabled() ? <>
       <p>Start from sign up or sign in to request a confirmation code.</p>
-      <div className="flex flex-wrap gap-4">
+      <AuthSecondaryActions>
         <Link href={AUTH_PATHS.register} className={AUTH_LINK}>Create account</Link>
         <Link href={AUTH_PATHS.login} className={AUTH_LINK}>Sign in</Link>
-      </div>
+      </AuthSecondaryActions>
     </> : <AuthUnavailable />}
   </AuthShell>
 }

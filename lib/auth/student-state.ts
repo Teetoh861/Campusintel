@@ -9,7 +9,9 @@ export async function hasStudentSession(): Promise<boolean> {
   const client = await createClient()
   const { data, error } = await client.auth.getUser()
   if (error && error.name !== 'AuthSessionMissingError') throw new Error('Session validation failed')
-  return !!data.user
+  if (data.user === null) return false
+  if (error || typeof data.user?.id !== 'string' || !data.user.id) throw new Error('Session result invalid')
+  return true
 }
 
 /** Reject identity-changing requests before any gateway or rate-limit operation. */

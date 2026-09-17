@@ -3,13 +3,14 @@ import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 /** Present semantic feedback; callers own domain copy and error translation. */
-export function Feedback({ message, tone = 'info' }: {
-  message: ReactNode; tone?: 'error' | 'success' | 'warning' | 'info'
+export function Feedback({ message, tone = 'info', reserveSpace = false, compact = false }: {
+  message: ReactNode; tone?: 'error' | 'success' | 'warning' | 'info'; reserveSpace?: boolean; compact?: boolean
 }) {
   const Icon = { error: CircleAlert, success: CircleCheck, warning: TriangleAlert, info: Info }[tone]
-  return <div role={tone === 'error' ? 'alert' : 'status'} aria-atomic="true"
-    className="flex gap-2 rounded-ci-btn bg-ci-blue-50 p-3 text-sm leading-relaxed text-ci-ink">
+  const feedback = message ? <div role={tone === 'error' ? 'alert' : 'status'} aria-atomic="true"
+    className={'flex gap-2 rounded-ci-btn bg-ci-blue-50 text-sm text-ci-ink ' + (reserveSpace || compact ? 'px-2 py-1 leading-5' : 'p-3 leading-relaxed')}>
     <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-    <div className="min-w-0 break-words"><span className="sr-only">{tone}: </span>{message}</div>
-  </div>
+    <div className="min-w-0 break-words">{message}</div>
+  </div> : null
+  return reserveSpace ? <div className="min-h-12">{feedback}</div> : feedback
 }

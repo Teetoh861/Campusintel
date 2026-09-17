@@ -3,11 +3,12 @@
 import { notifyStudentChange } from '@/lib/auth/client-events'
 import { useRef, useState } from 'react'
 import { safeAuthMessage } from '@/lib/auth/errors'
-import { AUTH_API, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, AUTH_PATHS, type ConfirmationDelivery } from '@/lib/auth/constants'
+import { parseAuthOutcome } from '@/lib/auth/outcomes'
+import { AUTH_API, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, AUTH_PATHS } from '@/lib/auth/constants'
 
 export type AuthSubmitFailure = { message: string; code?: (typeof RECOVERY_FAILURE)[keyof typeof RECOVERY_FAILURE] }
 
-type Result = { delivery?: ConfirmationDelivery; code?: typeof EMAIL_CONFIRMATION_REQUIRED; next?: string; message?: string }
+type Result = { success?: true; verified?: true; code?: typeof EMAIL_CONFIRMATION_REQUIRED; next?: string; message?: string }
 
 /** Prevent concurrent submits and accept only the minimal application response. */
 export function useAuthSubmit() {
@@ -27,7 +28,7 @@ export function useAuthSubmit() {
       const value: unknown = await response.json()
       if (!value || typeof value !== 'object') throw new Error('Invalid response')
       if (!response.ok) {
-        if ('code' in value && value.code === EXISTING_STUDENT_SESSION) {
+        if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === AUTH_PATHS.account) {
           window.location.replace(AUTH_PATHS.account)
           return null
         }
@@ -37,17 +38,13 @@ export function useAuthSubmit() {
         onFailure?.({ message, code })
         return null
       }
+      const result = parseAuthOutcome(endpoint, value)
       // Notify other tabs only after an actual session-changing success.
       if ([AUTH_API.login, AUTH_API.confirm, AUTH_API.reset, AUTH_API.logout].some(path => path === endpoint) &&
           !('code' in value && value.code === EMAIL_CONFIRMATION_REQUIRED)) {
         notifyStudentChange()
       }
-      return {
-        delivery: 'delivery' in value && (value.delivery === 'fresh' || value.delivery === 'limited' || value.delivery === 'failed') ? value.delivery : undefined,
-        code: 'code' in value && value.code === EMAIL_CONFIRMATION_REQUIRED ? EMAIL_CONFIRMATION_REQUIRED : undefined,
-        next: 'next' in value && typeof value.next === 'string' ? value.next : undefined,
-        message: 'message' in value && typeof value.message === 'string' ? value.message : undefined,
-      }
+      return result
     } catch { setError(AUTH_MESSAGES.unavailable); return null }
     finally { lock.current = false; setPending(false) }
   }

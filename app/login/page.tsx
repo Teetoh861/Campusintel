@@ -16,8 +16,7 @@ async function Content({ searchParams }: { searchParams: Promise<{ next?: string
   const next = getSafeReturnPath(params.next)
   return <AuthShell title="Sign in">
     {isStudentAuthEnabled() ? <>
-      {params.state === PASSWORD_RESET_STATE && <Feedback message={AUTH_MESSAGES.resetSuccess} tone="success" />}
-      <LoginForm next={next} />
+      <LoginForm next={next} feedbackContent={params.state === PASSWORD_RESET_STATE && <Feedback compact message={AUTH_MESSAGES.resetSuccess} tone="success" />} />
     </> : <AuthUnavailable />}
   </AuthShell>
 }

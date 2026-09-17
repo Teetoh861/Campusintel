@@ -3,6 +3,7 @@ import { SignedOutGate } from '@/components/auth/SignedOutGate'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import Link from 'next/link'
+import { AuthSecondaryActions } from '@/components/auth/AuthFormLayout'
 import { AUTH_LINK } from '@/components/chrome/FormField'
 import { AUTH_PATHS } from '@/lib/auth/constants'
 
@@ -15,7 +16,7 @@ function Content() {
     {isStudentAuthEnabled() ? <>
 
       <p>Start from Forgot password to request a reset code.</p>
-      <Link href={AUTH_PATHS.forgot} className={AUTH_LINK}>Forgot password</Link>
+      <AuthSecondaryActions><Link href={AUTH_PATHS.forgot} className={AUTH_LINK}>Forgot password</Link></AuthSecondaryActions>
     </> : <AuthUnavailable />}
   </AuthShell>
 }
