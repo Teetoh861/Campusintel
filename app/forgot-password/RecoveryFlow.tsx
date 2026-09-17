@@ -10,7 +10,6 @@ import { recoveryVerificationSchema } from '@/lib/auth/schemas'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { EmailForm } from '@/components/auth/EmailForm'
 import { AuthFormLayout } from '@/components/auth/AuthFormLayout'
-import { Feedback } from '@/components/chrome/Feedback'
 import { AUTH_API, AUTH_MESSAGES, OTP_MAX_LENGTH, RECOVERY_FAILURE } from '@/lib/auth/constants'
 import { ResetPasswordForm } from '@/app/reset-password/ResetPasswordForm'
 
@@ -19,23 +18,19 @@ export function RecoveryFlow() {
   const [email, setEmail] = useState<string | null>(null)
   const [verified, setVerified] = useState(false)
   const [notice, setNotice] = useState('')
-  const [restartRequired, setRestartRequired] = useState(false)
   const content = useRef<HTMLDivElement>(null)
   const stage = email === null ? 'request' : verified ? 'password' : 'code'
   useEffect(() => { content.current?.querySelector<HTMLInputElement>('input')?.focus() }, [stage])
-  const startOver = () => { setEmail(null); setVerified(false); setNotice(''); setRestartRequired(false) }
+  const startOver = () => { setEmail(null); setVerified(false); setNotice('') }
   const failed = (failure: AuthSubmitFailure) => {
     if (failure.code === RECOVERY_FAILURE.restart) {
-      setEmail(null); setVerified(false); setNotice(failure.message); setRestartRequired(true)
+      setEmail(null); setVerified(false); setNotice(failure.message)
     }
   }
   return <AuthShell title={stage === 'request' ? 'Forgot password' : stage === 'code' ? 'Check your email' : 'Change password'}>
     <div ref={content}>
-      {email === null ? <EmailForm recovery feedbackContent={<>
-        {notice && <Feedback compact message={notice} tone="error" />}
-        {restartRequired && <p className="text-sm text-ci-gray-700">{AUTH_MESSAGES.recoveryRestart}</p>}
-      </>} onRecoveryRequested={value => {
-        setEmail(value); setNotice(''); setRestartRequired(false)
+      {email === null ? <EmailForm recovery initialFeedback={notice ? { message: notice, tone: 'error' } : undefined} onRecoveryRequested={value => {
+        setEmail(value); setNotice('')
       }} /> : !verified ? <RecoveryCodeForm email={email} onVerified={() => setVerified(true)} onStartOver={startOver} onFailure={failed} /> :
         <ResetPasswordForm email={email} onFailure={failed} />}
     </div>
@@ -62,7 +57,7 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
     <FormField id="code" label="Verification code" inputMode="numeric" autoComplete="one-time-code" maxLength={OTP_MAX_LENGTH}
       {...register('code')} error={errors.code?.message} disabled={pending} />
       </>}
-      feedback={<Feedback compact message={error || (resent ? AUTH_MESSAGES.recovery : '')} tone={error ? 'error' : 'info'} />}
+      feedback={{ message: error || (resent ? AUTH_MESSAGES.recovery : ''), tone: error ? 'error' : 'info' }}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Checking…' : 'Continue'}</button>}
       secondaryActions={<>
         <button type="button" disabled={pending} className={AUTH_LINK + ' text-sm disabled:opacity-60'} onClick={async () => {
@@ -70,6 +65,7 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
       if (await submit(AUTH_API.forgot, { email })) setResent(true)
     }}>Didn't receive it? Resend code</button>
     <button type="button" disabled={pending} className={AUTH_LINK + ' text-sm disabled:opacity-60'} onClick={async () => {
+      setResent(false)
       if (await submit(AUTH_API.cancelRecovery, {})) { resetField('code'); onStartOver() }
     }}>Change email</button>
       </>}

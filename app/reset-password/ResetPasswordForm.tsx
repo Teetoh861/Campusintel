@@ -7,7 +7,6 @@ import { AUTH_SUBMIT } from '@/components/chrome/FormField'
 import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { AuthFormLayout } from '@/components/auth/AuthFormLayout'
-import { Feedback } from '@/components/chrome/Feedback'
 import type { AuthSubmitFailure } from '@/components/auth/useAuthSubmit'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
 import { AUTH_API, PASSWORD_RESET_DESTINATION } from '@/lib/auth/constants'
@@ -31,7 +30,7 @@ export function ResetPasswordForm({ email, onFailure }: { email: string; onFailu
         <PasswordField id="password" label="New password" autoComplete="new-password" {...register('password')} error={errors.password?.message} disabled={pending} />
     <PasswordField id="confirmation" label="Confirm password" autoComplete="new-password" {...register('confirmation')} error={errors.confirmation?.message} disabled={pending} />
       </>}
-      feedback={<Feedback compact message={error} tone="error" />}
+      feedback={{ message: error, tone: 'error' }}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Changing password…' : 'Change password'}</button>}
     />
   </form>

@@ -1,7 +1,6 @@
 // app/login/page.tsx — Rollout-gated sign in page.
 import { SignedOutGate } from '@/components/auth/SignedOutGate'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
-import { Feedback } from '@/components/chrome/Feedback'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { PASSWORD_RESET_STATE, AUTH_MESSAGES } from '@/lib/auth/constants'
@@ -16,7 +15,7 @@ async function Content({ searchParams }: { searchParams: Promise<{ next?: string
   const next = getSafeReturnPath(params.next)
   return <AuthShell title="Sign in">
     {isStudentAuthEnabled() ? <>
-      <LoginForm next={next} feedbackContent={params.state === PASSWORD_RESET_STATE && <Feedback compact message={AUTH_MESSAGES.resetSuccess} tone="success" />} />
+      <LoginForm next={next} initialFeedback={params.state === PASSWORD_RESET_STATE ? AUTH_MESSAGES.resetSuccess : undefined} />
     </> : <AuthUnavailable />}
   </AuthShell>
 }

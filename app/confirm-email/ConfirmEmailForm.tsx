@@ -6,7 +6,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { FormField, AUTH_LINK, AUTH_SUBMIT } from '@/components/chrome/FormField'
 import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
 import { AuthFormLayout } from '@/components/auth/AuthFormLayout'
-import { Feedback } from '@/components/chrome/Feedback'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
 import { AUTH_API, AUTH_MESSAGES, OTP_MAX_LENGTH } from '@/lib/auth/constants'
 import { confirmSchema } from '@/lib/auth/schemas'
@@ -33,7 +32,7 @@ export function ConfirmEmailForm({ email, next, onStartOver }: { email: string; 
     <FormField id="code" label="Verification code" inputMode="numeric" autoComplete="one-time-code" maxLength={OTP_MAX_LENGTH}
       {...register('code')} error={errors.code?.message} disabled={pending} />
       </>}
-      feedback={<Feedback compact message={error || message} tone={error ? 'error' : 'success'} />}
+      feedback={{ message: error || message, tone: error ? 'error' : 'success' }}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Confirming…' : 'Confirm email'}</button>}
       secondaryActions={<>
         <button type="button" disabled={pending} className={AUTH_LINK + ' text-sm disabled:opacity-60'} onClick={async () => {

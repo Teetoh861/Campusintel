@@ -2,9 +2,11 @@
 import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+export type FeedbackTone = 'error' | 'success' | 'warning' | 'info'
+
 /** Present semantic feedback; callers own domain copy and error translation. */
 export function Feedback({ message, tone = 'info', reserveSpace = false, compact = false }: {
-  message: ReactNode; tone?: 'error' | 'success' | 'warning' | 'info'; reserveSpace?: boolean; compact?: boolean
+  message: ReactNode; tone?: FeedbackTone; reserveSpace?: boolean; compact?: boolean
 }) {
   const Icon = { error: CircleAlert, success: CircleCheck, warning: TriangleAlert, info: Info }[tone]
   const feedback = message ? <div role={tone === 'error' ? 'alert' : 'status'} aria-atomic="true"
