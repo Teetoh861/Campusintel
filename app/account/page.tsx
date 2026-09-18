@@ -6,7 +6,7 @@ import { LogoutButton } from '@/components/auth/LogoutButton'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_PATHS, AUTH_MESSAGES } from '@/lib/auth/constants'
 import { Feedback } from '@/components/chrome/Feedback'
-import { createClient } from '@/lib/supabase/server'
+import { getStudentSessionUser } from '@/lib/auth/student-state'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Account | CampusIntell', robots: { index: false, follow: false } }
@@ -16,11 +16,9 @@ export default async function AccountPage() {
   if (!isStudentAuthEnabled()) return <AuthShell title="Account"><AuthUnavailable /></AuthShell>
   let email: string | undefined
   try {
-    const client = await createClient()
-    const { data, error } = await client.auth.getUser()
-    if (error && error.name !== 'AuthSessionMissingError') throw new Error('Session lookup failed')
-    email = data.user?.email
-    if (data.user !== null && (error || typeof email !== 'string' || !email)) throw new Error('Student identity missing')
+    const user = await getStudentSessionUser()
+    email = user?.email
+    if (user !== null && (typeof email !== 'string' || !email)) throw new Error('Student identity missing')
   } catch { return <AuthShell title="Account"><Feedback message={AUTH_MESSAGES.unavailable} tone="error" /></AuthShell> }
   if (!email) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
   return <AuthShell title="Account"><AuthFlowSync signedIn /><p className="break-words">Signed in as {email}</p><LogoutButton /></AuthShell>

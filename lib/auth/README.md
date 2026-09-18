@@ -9,8 +9,9 @@ The browser submits email/password/OTP in same-origin POST bodies. It never call
 Supabase Auth. For login and confirmation, access and refresh tokens move directly from the Auth-only gateway
 into the request-scoped publishable-key SSR client. Supabase owns cookie names,
 chunking, rotation and expiry; the adapter enforces HttpOnly, SameSite=Lax, Path=/
-and Secure in production. Public browsing remains static. The nav reads booleans
-from `/api/auth/session` and rechecks on focus/visibility changes.
+and Secure in production. Public pages remain static and bypass student-session proxy
+work. The nav reads booleans from `/api/auth/session` and rechecks on focus/visibility
+changes without blocking public content when Auth is unavailable.
 
 Confirmation and recovery emails display `{{ .Token }}` without action links.
 A GET never verifies a code. No email, code, hash or session credential is included
@@ -19,8 +20,9 @@ in a destination. Recovery now uses email → server-verified code → password 
 `POST /api/auth/reset-password` consumes that grant before password replacement and
 global sign-out. Reset success is never reported if revocation fails. Normal logout uses
 local scope. Supabase global logout revokes refresh sessions; already-issued access
-JWTs can remain valid until expiry. A3 is responsible for immediate account
-restriction and deletion lifecycle controls.
+JWTs can remain cryptographically valid until expiry. CampusIntell therefore uses a
+remote `getUser()` check as the single owner of student signed-in state; a JWT whose
+server-side session was revoked is signed out and its SSR cookies are cleared.
 
 `AUTH_INTERNAL_SECRET` derives purpose-separated keys for HMAC rate-limit indexes,
 recovery-grant indexes and verified-email bindings. Rate-limit records store
@@ -71,7 +73,8 @@ checks expiry and email binding, then calls server-only admin updateUserById.
 Supabase Auth's password-update transaction globally revokes that user's refresh
 sessions. This behavior is verified against local GoTrue v2.192.0; repeat the real
 revocation check against hosted Auth before rollout. No normal student session is
-created during recovery. Existing access JWTs remain valid until their expiry.
+created during recovery. Existing access JWTs may remain cryptographically valid,
+but CampusIntell no longer treats that alone as an active student session.
 
 OTP verification retains the existing PASSWORD_RESET_SUBMIT account/origin limits.
 Each grant permits one password-update attempt; provider failure never restores it.

@@ -1,17 +1,31 @@
-// lib/auth/student-state.ts — Prevent a current student identity from entering another identity flow.
+// lib/auth/student-state.ts — Authoritative server validation for student session state.
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { authJson } from './response'
 import { AUTH_PATHS, EXISTING_STUDENT_SESSION } from './constants'
+import type { User } from '@supabase/supabase-js'
+import type { NextResponse } from 'next/server'
+
+const TERMINAL_SESSION_ERRORS = new Set([
+  'refresh_token_not_found',
+  'refresh_token_already_used',
+  'session_expired',
+])
+
+/** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session. */
+export async function getStudentSessionUser(response?: NextResponse): Promise<User | null> {
+  const client = await createClient(response)
+  const { data, error } = await client.auth.getUser()
+  const user = data?.user
+  if (user === null && (!error || error.name === 'AuthSessionMissingError' ||
+      (typeof error.code === 'string' && TERMINAL_SESSION_ERRORS.has(error.code)))) return null
+  if (error || !user || typeof user.id !== 'string' || !user.id) throw new Error('Session validation failed')
+  return user
+}
 
 /** Validate the cookie-bound identity; unexpected validation failures fail closed. */
 export async function hasStudentSession(): Promise<boolean> {
-  const client = await createClient()
-  const { data, error } = await client.auth.getUser()
-  if (error && error.name !== 'AuthSessionMissingError') throw new Error('Session validation failed')
-  if (data.user === null) return false
-  if (error || typeof data.user?.id !== 'string' || !data.user.id) throw new Error('Session result invalid')
-  return true
+  return (await getStudentSessionUser()) !== null
 }
 
 /** Reject identity-changing requests before any gateway or rate-limit operation. */
