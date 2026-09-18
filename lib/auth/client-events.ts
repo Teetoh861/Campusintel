@@ -2,21 +2,32 @@
 'use client'
 import { AUTH_STATUS_EVENT } from './constants'
 
-/** Optional browser coordination must never turn a completed auth operation into a failure. */
+let channel: BroadcastChannel | undefined
+const listeners = new Set<() => void>()
+
+/** Notify other documents through the same channel that this document listens on. */
 export function notifyStudentChange(): void {
-  let channel: BroadcastChannel | undefined
+  let temporary: BroadcastChannel | undefined
   try {
-    channel = new BroadcastChannel(AUTH_STATUS_EVENT)
-    channel.postMessage('changed')
+    // BroadcastChannel excludes its sending instance. Reuse it to avoid reloading
+    // this document before its successful login/reset navigation completes.
+    const sender = channel ?? (temporary = new BroadcastChannel(AUTH_STATUS_EVENT))
+    sender.postMessage('changed')
   } catch { /* Focus checks and server guards remain available without this browser feature. */ }
-  finally { channel?.close() }
+  finally { temporary?.close() }
 }
 
-/** Subscribe only to invalidation; do not store or transmit student information. */
+/** Subscribe only to other-tab invalidation; never store or transmit student information. */
 export function onStudentChange(refresh: () => void): () => void {
   try {
-    const channel = new BroadcastChannel(AUTH_STATUS_EVENT)
-    channel.onmessage = refresh
-    return () => channel.close()
+    if (!channel) {
+      channel = new BroadcastChannel(AUTH_STATUS_EVENT)
+      channel.onmessage = () => { for (const listener of listeners) listener() }
+    }
+    listeners.add(refresh)
+    return () => {
+      listeners.delete(refresh)
+      if (!listeners.size) { channel?.close(); channel = undefined }
+    }
   } catch { return () => {} }
 }

@@ -4,11 +4,13 @@ import { readAuthRequest, getRequesterAddress } from '@/lib/auth/request'
 import { authJson, authError } from '@/lib/auth/response'
 import { consumeAuthLimit } from '@/lib/auth/rate-limit'
 import { getAuthGateway } from '@/lib/supabase/auth-gateway'
-import { EMAIL_CONFIRMATION_REQUIRED, type ConfirmationDelivery } from '@/lib/auth/constants'
-import { mapAuthFailure } from '@/lib/auth/errors'
+import { AUTH_OTP_TYPES, EMAIL_CONFIRMATION_REQUIRED } from '@/lib/auth/constants'
+import { mapAuthFailure, classifyEmailInitiation } from '@/lib/auth/errors'
 import { loginSchema } from '@/lib/auth/schemas'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { createClient } from '@/lib/supabase/server'
+import { requireVerifiedSession } from '@/lib/auth/verified-session'
+import { checkResendAcknowledgment } from '@/lib/auth/signup-result'
 
 /** Verify credentials server-side; serialize only a validated destination. */
 export async function POST(request: Request) {
@@ -22,26 +24,23 @@ export async function POST(request: Request) {
     if (error) {
       const failure = mapAuthFailure(error, 'login')
       if (failure.code === EMAIL_CONFIRMATION_REQUIRED) {
-        let delivery: ConfirmationDelivery = 'failed'
-        try {
-          await consumeAuthLimit('RESEND_CONFIRMATION', body.email, address)
-          const { error: resendError } = await getAuthGateway(address).resend({ type: 'signup', email: body.email })
-          delivery = !resendError ? 'fresh' : mapAuthFailure(resendError, 'login').status === 429 ? 'limited' : 'failed'
-        } catch (resendError) {
-          // Only a controlled limiter status is meaningful; never serialize its details.
-          delivery = resendError instanceof Error && 'status' in resendError && resendError.status === 429 ? 'limited' : 'failed'
-        }
-        return authJson({ code: failure.code, delivery })
+        await consumeAuthLimit('RESEND_CONFIRMATION', body.email, address)
+        const { data: resendData, error: resendError } = await getAuthGateway(address).resend({ type: AUTH_OTP_TYPES.confirmation, email: body.email })
+        const resendFailure = classifyEmailInitiation(resendError, 'resend')
+        if (resendFailure) return authJson({ error: resendFailure.error }, resendFailure.status)
+        if (resendError === null) checkResendAcknowledgment(resendData)
+        return authJson({ code: failure.code })
       }
       return authJson({ error: failure.error }, failure.status)
     }
-    if (!data.session) throw new Error('Session missing')
+    const session = requireVerifiedSession(data, body.email)
     const response = authJson({ next: getSafeReturnPath(body.next) })
     const client = await createClient(response)
-    const { error: sessionError } = await client.auth.setSession({
-      access_token: data.session.access_token, refresh_token: data.session.refresh_token,
+    const { data: transferred, error: sessionError } = await client.auth.setSession({
+      access_token: session.access_token, refresh_token: session.refresh_token,
     })
     if (sessionError) throw new Error('Session transfer failed')
+    if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw new Error('Session transfer identity mismatch')
     return response
   } catch (error) { return authError(error) }
 }

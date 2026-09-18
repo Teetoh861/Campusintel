@@ -5,7 +5,8 @@ import { getSafeReturnPath } from './redirect'
 import { getStudentCookieOptions } from './cookies'
 import { isStudentAuthEnabled } from './config'
 import { readAuthRequest } from './request'
-import { registerSchema, resetSchema, codeSchema } from './schemas'
+import { codeSchema, confirmSchema, emailRequestSchema, loginSchema, recoveryVerificationSchema,
+  registerSchema, resetSchema } from './schemas'
 import { DEFAULT_AUTH_REDIRECT } from './constants'
 
 // Executed in Node with the test-only server-only shim; no provider calls or real secrets.
@@ -27,6 +28,25 @@ test('schemas normalize email but preserve passwords and reject extra identifier
   assert.equal(codeSchema.safeParse('12345678').success, true)
   assert.equal(codeSchema.safeParse('12a').success, false)
   assert.equal(codeSchema.safeParse('1'.repeat(100)).success, false)
+})
+
+test('every student auth email surface uses the same format rule and normalization', () => {
+  const schemas = [
+    { schema: emailRequestSchema, rest: {} },
+    { schema: registerSchema, rest: { password: 'password' } },
+    { schema: loginSchema, rest: { password: 'x' } },
+    { schema: confirmSchema, rest: { code: '123456' } },
+    { schema: recoveryVerificationSchema, rest: { code: '123456' } },
+    { schema: resetSchema, rest: { password: 'password' } },
+  ]
+  for (const { schema, rest } of schemas) {
+    assert.equal(schema.parse({ email: ' Student@Example.test ', ...rest }).email, 'student@example.test')
+    for (const email of ['plain-address', '@example.test', 'student@', 'student example@test.com']) {
+      const result = schema.safeParse({ email, ...rest })
+      assert.equal(result.success, false)
+      if (!result.success) assert.equal(result.error.issues[0].message, 'Enter a valid email.')
+    }
+  }
 })
 
 test('rollout is exact; disabled, cross-origin, malformed and oversized requests fail closed', async () => {
@@ -71,5 +91,22 @@ test('cookie hardening preserves rotation metadata and enforces production Secur
   } finally {
     if (previous === undefined) Reflect.deleteProperty(process.env, 'NODE_ENV')
     else Object.assign(process.env, { NODE_ENV: previous })
+  }
+})
+
+test('login accepts short non-empty credentials while password creation retains its minimum', async () => {
+  const { loginSchema, registerSchema, resetSchema } = await import('./schemas')
+  const input = { email: 'student@example.test', password: 'x' }
+  assert.equal(loginSchema.safeParse(input).success, true)
+  assert.equal(registerSchema.safeParse(input).success, false)
+  assert.equal(resetSchema.safeParse(input).success, false)
+  for (const [field, value, message] of [
+    ['email', '', 'Enter your email.'],
+    ['email', 'invalid', 'Enter a valid email.'],
+    ['password', '', 'Enter your password.'],
+  ]) {
+    const result = loginSchema.safeParse({ ...input, [field]: value })
+    assert.equal(result.success, false)
+    if (!result.success) assert.equal(result.error.issues[0].message, message)
   }
 })

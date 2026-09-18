@@ -8,8 +8,9 @@
 import { onStudentChange } from '@/lib/auth/client-events'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AUTH_API, AUTH_PATHS, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
-import { LogoutButton } from '@/components/auth/LogoutButton'
+import { AUTH_API, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
+import { useLogoutAction } from '@/components/auth/LogoutButton'
+import { AuthNavActions } from '@/components/auth/AuthNavActions'
 import { BookLogo, Wordmark } from './Logo'
 import { btnAccent, btnBase, btnNavy, btnSm, btnWhite, cx } from './ui'
 
@@ -29,7 +30,8 @@ type Props = {
 export function Nav({ variant = 'blue' }: Props) {
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
-  const [auth, setAuth] = useState({ enabled: false, signedIn: false })
+  const [auth, setAuth] = useState<{ enabled: boolean; signedIn: boolean } | null>(null)
+  const logout = useLogoutAction()
   useEffect(() => {
     let controller: AbortController | undefined
     let active = true
@@ -46,7 +48,8 @@ export function Nav({ variant = 'blue' }: Props) {
         }
         if (active && !signal.aborted) setAuth({ enabled: state.enabled, signedIn: state.signedIn })
       } catch {
-        if (active && !signal.aborted) setAuth({ enabled: false, signedIn: false })
+        // Unknown remains unknown; a failed lookup cannot confirm sign-out or disabled rollout.
+        // Keep the last confirmed presentation until a successful response replaces it.
       }
     }
     const visible = () => { if (document.visibilityState === 'visible') void refresh() }
@@ -64,12 +67,8 @@ export function Nav({ variant = 'blue' }: Props) {
       document.removeEventListener('visibilitychange', visible)
     }
   }, [])
-  const accountControls = auth.enabled && <>
-    <Link href={auth.signedIn ? AUTH_PATHS.account : AUTH_PATHS.login}
-      onClick={close} className={cx(btnBase, btnSm, btnWhite)}>{auth.signedIn ? 'Account' : 'Sign in'}</Link>
-    {auth.signedIn ? <LogoutButton /> : <Link href={AUTH_PATHS.register}
-      onClick={close} className={cx(btnBase, btnSm, btnAccent)}>Create account</Link>}
-  </>
+  const accountControls = auth?.enabled !== false
+  const identity = auth === null ? null : auth.signedIn
 
   return (
     <nav className="sticky top-0 z-[60] bg-ci-navy" data-screen-label="Nav" data-variant={variant}>
@@ -85,7 +84,7 @@ export function Nav({ variant = 'blue' }: Props) {
             <Wordmark className="text-[20px]" />
           </Link>
 
-          <div className={cx('hidden items-center min-[900px]:flex', auth.enabled ? 'ml-2 gap-4' : 'ml-5 gap-[34px]')}>
+          <div className={cx('hidden items-center min-[900px]:flex', accountControls ? 'ml-2 gap-4' : 'ml-5 gap-[34px]')}>
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
@@ -98,7 +97,7 @@ export function Nav({ variant = 'blue' }: Props) {
           </div>
 
           <div className="ml-auto flex items-center gap-[14px]">
-            {auth.enabled ? <div className="hidden items-center gap-2 min-[900px]:flex">{accountControls}</div> : <Link
+            {accountControls ? <div className="hidden min-[900px]:block"><AuthNavActions signedIn={identity} surface="blue" onNavigate={close} logout={logout} /></div> : <Link
               className={cx(btnBase, btnSm, btnWhite, 'hidden min-[900px]:inline-flex')}
               href="/courses"
             >
@@ -148,7 +147,7 @@ export function Nav({ variant = 'blue' }: Props) {
               </Link>
             ))}
             <div className="mt-3 flex flex-col gap-2">
-              {accountControls}
+              {accountControls && <AuthNavActions signedIn={identity} surface="paper" onNavigate={close} logout={logout} />}
               <Link className={cx(btnBase, btnSm, btnNavy, 'w-full')} href="/courses" onClick={close}>
                 Browse courses
               </Link>

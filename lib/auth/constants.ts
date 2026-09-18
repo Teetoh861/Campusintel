@@ -15,6 +15,7 @@ export const AUTH_PATHS = {
 export const AUTH_API = {
   login: '/api/auth/login', register: '/api/auth/register', confirm: '/api/auth/confirm-email',
   resend: '/api/auth/resend-confirmation', forgot: '/api/auth/forgot-password',
+  verifyRecovery: '/api/auth/verify-recovery', cancelRecovery: '/api/auth/cancel-recovery',
   reset: '/api/auth/reset-password', logout: '/api/auth/logout', session: '/api/auth/session',
 } as const satisfies Record<string, `/api/auth/${string}`>
 export const DEFAULT_AUTH_REDIRECT = '/courses'
@@ -23,16 +24,18 @@ export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart:
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'
 export const AUTH_MESSAGES = {
   unavailable: 'Something went wrong. Please try again.',
+  recoveryCode: 'Invalid or expired code.',
   recoveryRestart: 'Request a new reset code to continue.',
-  codeResent: 'A new code has been sent.',
   comingSoon: 'Student accounts are coming soon.',
-  confirmationRequired: 'Check your email. Enter the code we sent to your email.',
-  samePassword: 'Your existing password cannot be reused. Your recovery code has already been used; request a new recovery code and choose a different password.',
-  weakPassword: 'Your recovery code has already been used. Request a new recovery code and choose a stronger password.',
-  resetSuccess: 'Password changed. Sign in with your new password.',
+  confirmationRequired: 'Email confirmation is required before signing in.',
+  confirmationSignIn: 'Your email is confirmed. Sign in to continue.',
+  signupPassword: 'Choose a stronger password and try again.',
+  samePassword: 'Choose a different password and request a new recovery code.',
+  weakPassword: 'Choose a stronger password and request a new recovery code.',
+  resetSuccess: 'Password updated. Sign in with your new password.',
   invalid: 'Check the information entered and try again.',
-  credentials: 'Invalid email or password.',
-  code: 'This verification code is invalid, expired, or has already been used.',
+  credentials: 'Incorrect email or password.',
+  code: 'Invalid or expired code.',
   limited: 'Too many attempts. Please try again later.',
   email: 'If this address can receive a confirmation email, instructions will arrive shortly.',
   recovery: 'If an account can receive a password reset email, instructions will arrive shortly.',
@@ -49,4 +52,6 @@ export const RATE_LIMIT_POLICIES = {
 export type AuthAction = keyof typeof RATE_LIMIT_POLICIES
 
 export const EXISTING_STUDENT_SESSION = 'EXISTING_STUDENT_SESSION'
-export type ConfirmationDelivery = 'fresh' | 'limited' | 'failed'
+
+// Keep confirmation verification narrower than Supabase's recovery-capable email type.
+export const AUTH_OTP_TYPES = { confirmation: 'signup', recovery: 'recovery' } as const

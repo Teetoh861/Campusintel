@@ -1,11 +1,13 @@
-// lib/supabase/proxy.ts — Validate/refresh student cookies without changing admin authorization.
+// lib/supabase/proxy.ts — Refresh student cookies without changing authorization decisions.
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
 import type { NextRequest } from 'next/server'
 
-/** Return the same response carrying cookie writes and all SSR cache-safety headers. */
+/** Return the same response carrying cookie writes and all SSR cache-safety headers.
+ * Claims are refresh plumbing only; callers authenticate through getStudentSessionUser.
+ */
 export async function refreshStudentSession(request: NextRequest): Promise<NextResponse> {
   if (!isStudentAuthEnabled() || /^\/(admin|api\/admin)(\/|$)/.test(request.nextUrl.pathname)) {
     return NextResponse.next()
@@ -29,7 +31,7 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
     } })
     await client.auth.getClaims()
   } catch {
-    // Public browsing remains available; protected endpoints authenticate independently.
+    // Matched pages remain renderable; protected endpoints authenticate independently.
     if (!response.headers.has('Cache-Control')) response.headers.set('Cache-Control', 'private, no-store')
   }
   return response

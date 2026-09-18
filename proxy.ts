@@ -1,12 +1,21 @@
-// proxy.ts — Student refresh only; /admin retains its independent Server Component boundary.
+// proxy.ts — Student Auth-boundary refresh only; public browsing and /admin stay independent.
 import { refreshStudentSession } from '@/lib/supabase/proxy'
 import type { NextRequest } from 'next/server'
 
-/** Refresh ordinary application requests without invoking custom admin authentication. */
+/** Refresh requests that cross a student Auth boundary without invoking admin authentication. */
 export async function proxy(request: NextRequest) {
   return refreshStudentSession(request)
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|admin(?:/|$)|api/admin(?:/|$)|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: [
+    '/account/:path*',
+    '/api/auth/:path*',
+    '/login',
+    '/register',
+    '/confirm-email',
+    '/forgot-password',
+    '/reset-password',
+    '/resend-confirmation',
+  ],
 }
