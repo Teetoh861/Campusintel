@@ -6,15 +6,20 @@ import { AUTH_PATHS, EXISTING_STUDENT_SESSION } from './constants'
 import type { User } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
 
+type StudentClient = Awaited<ReturnType<typeof createClient>>
+
 const TERMINAL_SESSION_ERRORS = new Set([
   'refresh_token_not_found',
   'refresh_token_already_used',
   'session_expired',
 ])
 
-/** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session. */
-export async function getStudentSessionUser(response?: NextResponse): Promise<User | null> {
-  const client = await createClient(response)
+/** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session.
+ * A caller doing protected data work may pass its request-scoped client so a refreshed
+ * session is used for both the live check and the subsequent RLS queries.
+ */
+export async function getStudentSessionUser(response?: NextResponse, sessionClient?: StudentClient): Promise<User | null> {
+  const client = sessionClient ?? await createClient(response)
   const { data, error } = await client.auth.getUser()
   const user = data?.user
   if (user === null && (!error || error.name === 'AuthSessionMissingError' ||
