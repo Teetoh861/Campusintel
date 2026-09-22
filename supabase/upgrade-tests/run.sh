@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# pgTAP's regular suite sees only the final schema. This harness uses the
+# Supabase CLI's migration boundary to test the real SQL file against Phase A.
+# It resets only the local database and restores the latest migrations on exit.
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd -- "$script_dir/../.."
+
+phase_a_version=20260915100000
+
+restore_current_local_database() {
+  local prior_status=$?
+  trap - EXIT
+  if ! DO_NOT_TRACK=1 supabase db reset --local --no-seed; then
+    printf 'Could not restore the local database to current migrations.\n' >&2
+    exit 1
+  fi
+  exit "$prior_status"
+}
+trap restore_current_local_database EXIT
+
+printf 'Testing migration over existing all-null Phase A profiles...\n'
+DO_NOT_TRACK=1 supabase db reset --local --version "$phase_a_version" \
+  --sql-paths ./upgrade-tests/phase_a_profiles.sql
+DO_NOT_TRACK=1 supabase migration up --local
+DO_NOT_TRACK=1 supabase test db --local \
+  supabase/upgrade-tests/upgrade_success.test.sql
+
+for legacy_field in department level semester; do
+  printf 'Testing rejection with a non-null legacy %s...\n' "$legacy_field"
+  DO_NOT_TRACK=1 supabase db reset --local --version "$phase_a_version" \
+    --sql-paths ./upgrade-tests/phase_a_profiles.sql \
+    --sql-paths "./upgrade-tests/legacy_${legacy_field}.sql"
+
+  if DO_NOT_TRACK=1 supabase migration up --local >/dev/null 2>&1; then
+    printf 'Migration unexpectedly accepted a non-null legacy %s.\n' \
+      "$legacy_field" >&2
+    exit 1
+  fi
+  # The assertions distinguish the intended first-statement guard failure
+  # from a later error: no new object or history row may survive, and the
+  # field-specific legacy value must still be present.
+  DO_NOT_TRACK=1 supabase test db --local \
+    supabase/upgrade-tests/upgrade_abort.test.sql
+done
+printf 'All four local upgrade scenarios passed.\n'

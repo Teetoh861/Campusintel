@@ -6,21 +6,42 @@ import { AUTH_PATHS, EXISTING_STUDENT_SESSION } from './constants'
 import type { User } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
 
+type StudentClient = Awaited<ReturnType<typeof createClient>>
+
 const TERMINAL_SESSION_ERRORS = new Set([
   'refresh_token_not_found',
   'refresh_token_already_used',
   'session_expired',
+  'user_not_found',
 ])
 
-/** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session. */
-export async function getStudentSessionUser(response?: NextResponse): Promise<User | null> {
-  const client = await createClient(response)
+/** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session.
+ * A caller doing protected data work may pass its request-scoped client so a refreshed
+ * session is used for both the live check and the subsequent RLS queries.
+ */
+export async function getStudentSessionUser(response?: NextResponse, sessionClient?: StudentClient): Promise<User | null> {
+  const client = sessionClient ?? await createClient(response)
   const { data, error } = await client.auth.getUser()
   const user = data?.user
   if (user === null && (!error || error.name === 'AuthSessionMissingError' ||
       (typeof error.code === 'string' && TERMINAL_SESSION_ERRORS.has(error.code)))) return null
   if (error || !user || typeof user.id !== 'string' || !user.id) throw new Error('Session validation failed')
   return user
+}
+
+/** Read session identity only after the authoritative remote user check succeeds. */
+export async function getStudentSessionContext(
+  response?: NextResponse, sessionClient?: StudentClient,
+): Promise<{ user: User; sessionId: string } | null> {
+  const client = sessionClient ?? await createClient(response)
+  const user = await getStudentSessionUser(response, client)
+  if (user === null) return null
+  const { data, error } = await client.auth.getClaims()
+  const claims = data?.claims
+  if (error || claims?.sub !== user.id || typeof claims.session_id !== 'string' || !claims.session_id) {
+    throw new Error('Session validation failed')
+  }
+  return { user, sessionId: claims.session_id }
 }
 
 /** Validate the cookie-bound identity; unexpected validation failures fail closed. */

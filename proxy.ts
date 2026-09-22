@@ -10,6 +10,7 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/account/:path*',
+    '/profile-selection',
     '/api/auth/:path*',
     '/login',
     '/register',

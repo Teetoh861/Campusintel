@@ -1,17 +1,28 @@
-// app/api/auth/session/route.ts — Minimal private auth status for the global navigation.
-import { AUTH_MESSAGES } from '@/lib/auth/constants'
+// app/api/auth/session/route.ts — Live private Auth status and optional page continuity.
+import { AUTH_CONTINUITY_HEADER, AUTH_MESSAGES } from '@/lib/auth/constants'
+import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { authJson } from '@/lib/auth/response'
-import { getStudentSessionUser } from '@/lib/auth/student-state'
+import { getStudentSessionContext, getStudentSessionUser } from '@/lib/auth/student-state'
 
-/** Return booleans only; cookie refresh stays on the exact response returned. */
-export async function GET() {
-  if (!isStudentAuthEnabled()) return authJson({ enabled: false, signedIn: false })
+/** Return live Auth status; an optional comparison never authorizes profile access. */
+export async function GET(request: Request) {
+  const token = request.headers.get(AUTH_CONTINUITY_HEADER)
+  if (!isStudentAuthEnabled()) return authJson(token === null
+    ? { enabled: false, signedIn: false }
+    : { enabled: false, signedIn: false, sameAccount: false })
   const response = authJson({ enabled: true, signedIn: false })
   try {
-    const user = await getStudentSessionUser(response)
+    let status: { enabled: true; signedIn: boolean; sameAccount?: boolean }
+    if (token === null) {
+      status = { enabled: true, signedIn: (await getStudentSessionUser(response)) !== null }
+    } else {
+      const context = await getStudentSessionContext(response)
+      status = { enabled: true, signedIn: context !== null,
+        sameAccount: context !== null && matchesAccountContinuityToken(token, context.user.id, context.sessionId) }
+    }
     // Preserve refresh headers/cookies while replacing only the minimal JSON body.
-    return new Response(JSON.stringify({ enabled: true, signedIn: user !== null }), {
+    return new Response(JSON.stringify(status), {
       status: response.status, headers: response.headers,
     })
   } catch {
