@@ -36,6 +36,7 @@ async function fixture(run, complete = false) {
   const initial = complete ? { status: 'complete', options, selection } : { status: 'incomplete', options }
   const state = [], refs = [], effectDeps = [], effects = [], requests = [], navigations = []
   let stateIndex = 0, refIndex = 0, effectIndex = 0
+  let pageToken = 'page:fixture-student'
   let responder = async () => response(503, { status: 'unavailable' })
   const hooks = {
     ...React,
@@ -73,7 +74,7 @@ async function fixture(run, complete = false) {
     global.fetch = async (...args) => { requests.push(args); return responder(...args) }
     delete require.cache[file]
     const { ProfileSelectionForm } = require(file)
-    const render = () => { stateIndex = 0; refIndex = 0; effectIndex = 0; return ProfileSelectionForm({ initial }) }
+    const render = () => { stateIndex = 0; refIndex = 0; effectIndex = 0; return ProfileSelectionForm({ initial, continuityToken: pageToken }) }
     const flushEffects = () => { while (effects.length) effects.shift()() }
     const select = id => nodes(render()).find(node => node.type === 'select' && node.props.id === id)
     const submit = () => render().props.onSubmit({ preventDefault() {} })
@@ -88,6 +89,7 @@ async function fixture(run, complete = false) {
     render()
     flushEffects()
     await run({ ids, options, initial, render, select, submit, choose, flushEffects, requests, navigations, saved,
+      changeIncomingToken: value => { pageToken = value },
       remount: () => { state.length = 0; refs.length = 0; effectDeps.length = 0; effects.length = 0; render(); flushEffects() },
       respond: fn => { responder = fn }, notice: () => nodes(render()).find(node => node.type?.name === 'Feedback')?.props.message })
   } finally {
@@ -121,6 +123,7 @@ test('server-returned choices keep database order and enable Department → Leve
   assert.equal(f.requests.length, 1)
   assert.equal(f.requests[0][0], '/api/profile-selection')
   assert.equal(f.requests[0][1].method, 'PUT')
+  assert.equal(f.requests[0][1].headers['x-campus-account-continuity'], 'page:fixture-student')
   assert.deepEqual(JSON.parse(f.requests[0][1].body), {
     departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period,
   })
@@ -239,6 +242,16 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
   f.respond(async () => response(401, { status: 'signed-out' }))
   await f.submit()
   assert.deepEqual(f.navigations, [['replace', '/login?next=%2Fprofile-selection']])
+}, true))
+
+test('a changed live account discards the old draft instead of retrying its save', async () => fixture(async f => {
+  f.changeIncomingToken('page:other-student')
+  f.respond(async () => response(409, { status: 'session-changed' }))
+  await f.submit()
+  assert.equal(f.requests[0][1].headers['x-campus-account-continuity'], 'page:fixture-student')
+  assert.deepEqual(f.navigations, [['reload']])
+  await f.submit()
+  assert.equal(f.requests.length, 1)
 }, true))
 
 test('a double submit makes one request and keeps the form locked through navigation', async () => fixture(async f => {

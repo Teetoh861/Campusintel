@@ -1,7 +1,8 @@
 // Current-student profile domain. No client-supplied profile identity enters this module.
 import 'server-only'
 import { z } from 'zod'
-import { getStudentSessionUser } from '@/lib/auth/student-state'
+import { getStudentSessionContext, getStudentSessionUser } from '@/lib/auth/student-state'
+import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { createClient } from '@/lib/supabase/server'
 import { classifyStoredSelection, parseSubmittedSelection } from './selection'
@@ -39,12 +40,16 @@ type Selection = {
 }
 
 export type StudentProfileState =
-  | { status: 'signed-out' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' }
+  | { status: 'signed-out' | 'session-changed' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' }
   | { status: 'incomplete'; options: Options }
   | { status: 'complete'; options: Options; selection: Selection }
 
-async function currentStudent(response?: NextResponse): Promise<{ client: StudentClient; id: string } | null> {
+async function currentStudent(response?: NextResponse, includeSession = false): Promise<{ client: StudentClient; id: string; sessionId?: string } | null> {
   const client = await createClient(response)
+  if (includeSession) {
+    const context = await getStudentSessionContext(response, client)
+    return context === null ? null : { client, id: context.user.id, sessionId: context.sessionId }
+  }
   const user = await getStudentSessionUser(response, client)
   return user === null ? null : { client, id: user.id }
 }
@@ -121,11 +126,16 @@ export async function getCurrentStudentProfile(response?: NextResponse): Promise
 }
 
 /** Update all three IDs in one owner-scoped statement after live Auth and catalogue checks. */
-export async function saveCurrentStudentProfileSelection(input: unknown, response?: NextResponse): Promise<StudentProfileState> {
+export async function saveCurrentStudentProfileSelection(
+  input: unknown, response: NextResponse | undefined, pageToken: string | null,
+): Promise<StudentProfileState> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
-    const student = await currentStudent(response)
+    const student = await currentStudent(response, pageToken != null)
     if (student === null) return { status: 'signed-out' }
+    // The page token only narrows the live owner; it can never identify the acting student.
+    if (pageToken == null || !student.sessionId ||
+        !matchesAccountContinuityToken(pageToken, student.id, student.sessionId)) return { status: 'session-changed' }
     const selection = parseSubmittedSelection(input)
     if (selection === null) return { status: 'invalid-selection' }
     const stored = await readStoredSelection(student.client, student.id)

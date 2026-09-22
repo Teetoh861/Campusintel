@@ -36,8 +36,12 @@ async function fixture(run) {
     Module._load = function(name, ...args) {
       if (name === 'next/navigation') return { redirect }
       if (name === '@/lib/auth/config') return { isStudentAuthEnabled: () => state.enabled }
+      if (name === '@/lib/auth/account-continuity') return {
+        issueAccountContinuityToken: (userId, sessionId) => `page:${userId}:${sessionId}`,
+      }
       if (name === '@/lib/auth/student-state') return {
         getStudentSessionUser: async () => state.user,
+        getStudentSessionContext: async () => state.user === null ? null : { user: state.user, sessionId: 'fixture-session' },
         hasStudentSession: async () => state.user !== null,
       }
       if (name === '@/lib/profile/student-profile') return { getCurrentStudentProfile: async () => {
@@ -62,7 +66,7 @@ test('signed-out entry points retain Auth redirects without reading the account 
   assert.equal(f.state.reads, 0)
   f.state.profile = { status: 'signed-out' }
   await assert.rejects(f.selectionPage, /redirect:\/login\?next=%2Fprofile-selection/)
-  assert.equal(f.state.reads, 1)
+  assert.equal(f.state.reads, 0)
   assert.equal((await f.signedOutGate({ children: 'login form' })).props.children.length, 2)
 }))
 
@@ -71,6 +75,7 @@ test('incomplete account reaches selection; completed account stays and offers i
   let page = await f.selectionPage()
   assert.equal(page.props.title, 'Profile selection')
   assert.equal(page.props.children[1].type.name, 'ProfileSelectionForm')
+  assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
   f.state.profile = { status: 'complete', options, selection }
   const account = await f.account()
   assert.equal(account.props.title, 'Account')

@@ -12,6 +12,7 @@ const TERMINAL_SESSION_ERRORS = new Set([
   'refresh_token_not_found',
   'refresh_token_already_used',
   'session_expired',
+  'user_not_found',
 ])
 
 /** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session.
@@ -26,6 +27,21 @@ export async function getStudentSessionUser(response?: NextResponse, sessionClie
       (typeof error.code === 'string' && TERMINAL_SESSION_ERRORS.has(error.code)))) return null
   if (error || !user || typeof user.id !== 'string' || !user.id) throw new Error('Session validation failed')
   return user
+}
+
+/** Read session identity only after the authoritative remote user check succeeds. */
+export async function getStudentSessionContext(
+  response?: NextResponse, sessionClient?: StudentClient,
+): Promise<{ user: User; sessionId: string } | null> {
+  const client = sessionClient ?? await createClient(response)
+  const user = await getStudentSessionUser(response, client)
+  if (user === null) return null
+  const { data, error } = await client.auth.getClaims()
+  const claims = data?.claims
+  if (error || claims?.sub !== user.id || typeof claims.session_id !== 'string' || !claims.session_id) {
+    throw new Error('Session validation failed')
+  }
+  return { user, sessionId: claims.session_id }
 }
 
 /** Validate the cookie-bound identity; unexpected validation failures fail closed. */

@@ -41,6 +41,7 @@ export const AUTH_MESSAGES = {
   recovery: 'If an account can receive a password reset email, instructions will arrive shortly.',
 } as const
 export const AUTH_STATUS_EVENT = 'campusintell-auth-changed'
+export const AUTH_CONTINUITY_HEADER = 'x-campus-account-continuity'
 export const RATE_LIMIT_POLICIES = {
   LOGIN: { account: [20, 900], origin: [30, 300] },
   REGISTER: { account: [3, 3600], origin: [20, 3600] },

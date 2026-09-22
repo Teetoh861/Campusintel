@@ -18,7 +18,7 @@ test('server-rendered selection form cannot submit before hydration', () => {
     delete require.cache[file]
     const { ProfileSelectionForm } = require(file)
     const html = renderToStaticMarkup(React.createElement(ProfileSelectionForm, {
-      initial: { status: 'incomplete', options: {
+      continuityToken: 'page:fixture-student', initial: { status: 'incomplete', options: {
         departments: [{ id: randomUUID(), label: 'Unit A' }],
         academicLevels: [{ id: randomUUID(), label: 'Stage B' }],
         academicPeriods: [{ id: randomUUID(), label: 'Term C' }],

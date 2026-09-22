@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { readAuthRequest, AuthRequestError } from '@/lib/auth/request'
+import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
 import { getCurrentStudentProfile, saveCurrentStudentProfileSelection } from '@/lib/profile/student-profile'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
@@ -17,7 +18,7 @@ function privateJson(body: Record<string, unknown>, status = 200): NextResponse 
 function finish(response: NextResponse, state: StudentProfileState): Response {
   const status = state.status === 'signed-out' ? 401
     : state.status === 'invalid-selection' ? 400
-    : state.status === 'missing-profile' || state.status === 'invariant-failure' ? 409
+    : state.status === 'missing-profile' || state.status === 'invariant-failure' || state.status === 'session-changed' ? 409
     : state.status === 'unavailable' ? 503 : 200
   // Keep the exact response headers, including any session rotation/clearing cookies.
   return new Response(JSON.stringify(state), { status, headers: response.headers })
@@ -42,5 +43,5 @@ export async function PUT(request: Request): Promise<Response> {
     return privateJson({ status: 'unavailable' }, 503)
   }
   const response = privateJson({ status: 'unavailable' })
-  return finish(response, await saveCurrentStudentProfileSelection(input, response))
+  return finish(response, await saveCurrentStudentProfileSelection(input, response, request.headers.get(AUTH_CONTINUITY_HEADER)))
 }

@@ -8,7 +8,7 @@ import { AUTH_FOCUS, AUTH_LINK } from '@/components/chrome/FormField'
 import { Feedback } from '@/components/chrome/Feedback'
 import { btnBase, btnNavy, btnSm, cx } from '@/components/chrome/ui'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
-import { AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_CONTINUITY_HEADER, AUTH_PATHS } from '@/lib/auth/constants'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
@@ -55,12 +55,14 @@ function isSelectable(options: Choice[], id: string): boolean {
 }
 
 /** Keep only a draft in browser memory; successful navigation requires a confirmed server save. */
-export function ProfileSelectionForm({ initial }: { initial: ProfileView }) {
+export function ProfileSelectionForm({ initial, continuityToken }: { initial: ProfileView; continuityToken: string }) {
   const [draft, setDraft] = useState<Draft>(() => initialDraft(initial))
   const [notice, setNotice] = useState<Notice | null>(null)
   const [pending, setPending] = useState(false)
   const [ready, setReady] = useState(false)
   const lock = useRef(false)
+  // A later RSC payload must not re-label this mounted draft as another account's.
+  const pageToken = useRef(continuityToken).current
   const departmentRef = useRef<HTMLSelectElement>(null)
   const academicLevelRef = useRef<HTMLSelectElement>(null)
   const academicPeriodRef = useRef<HTMLSelectElement>(null)
@@ -96,12 +98,17 @@ export function ProfileSelectionForm({ initial }: { initial: ProfileView }) {
     try {
       const response = await fetch(PROFILE_API, {
         method: 'PUT', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft),
+        headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken }, body: JSON.stringify(draft),
       })
       const body: unknown = await response.json()
       if (response.status === 401 && body && typeof body === 'object' && 'status' in body && body.status === 'signed-out') {
         navigating = true
         window.location.replace(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
+        return
+      }
+      if (response.status === 409 && body && typeof body === 'object' && 'status' in body && body.status === 'session-changed') {
+        navigating = true
+        window.location.reload()
         return
       }
       if (response.ok) {
