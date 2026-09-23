@@ -12,7 +12,7 @@ components. There is no backend or database yet; personalization
     /                          Homepage
     /courses                   Course directory (search + filters)
     /courses/[slug]            Course detail
-    /courses/[slug]/materials  Request/share materials (WhatsApp)
+    /courses/[slug]/materials  Request/share materials (private email)
     /courses/[slug]/quiz       Timed quiz (intro / active / results)
     /bookmarks                 Saved courses (localStorage)
     /tutors                    Coming-soon waitlist
@@ -45,6 +45,7 @@ become-a-tutor form. Everything else renders on the server.
 
 ## Shared configuration
 
+- lib/material-email.ts: private, course-aware material email links
 - lib/whatsapp.ts: buildWhatsAppUrl(message) and the contact number,
   centralized so no page hardcodes it
 - lib/contact.ts: the support email, single source of truth

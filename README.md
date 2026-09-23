@@ -14,8 +14,8 @@ Live: https://campusintell.com
 - Take timed, sectioned multiple-choice quizzes with scoring and a
   per-question review
 - Bookmark courses (saved on-device)
-- Request or share study materials, join the tutor waitlist, and
-  contact the team via WhatsApp
+- Request or share study materials by email, join the tutor waitlist,
+  and contact the team via WhatsApp
 
 ## Tech stack
 
@@ -50,6 +50,7 @@ only). .env.local is gitignored.
     components/chrome/       Shared design system (Nav, Footer, Card...)
     components/ui/           shadcn primitives
     lib/data/                Content (courses, quizzes, notes)
+    lib/material-email.ts    Private material-request email helper
     lib/whatsapp.ts          WhatsApp link helper + number
     lib/contact.ts           Contact details
 

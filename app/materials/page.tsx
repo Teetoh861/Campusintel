@@ -2,29 +2,26 @@
 
 import { useState } from 'react'
 import { courses } from '@/lib/data/courses'
-import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import {
+  buildMaterialRequestEmailUrl,
+  buildMaterialShareEmailUrl,
+} from '@/lib/material-email'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
-
-type MaterialAction = 'request' | 'send'
+const MAX_COURSE_LENGTH = 120
 
 export default function MaterialsPage() {
   const [selectedCourse, setSelectedCourse] = useState('')
   const [typedCourse, setTypedCourse] = useState('')
   const resolvedCourse = typedCourse.trim() || selectedCourse
   const hasCourse = resolvedCourse.length > 0
-
-  const openWhatsApp = (action: MaterialAction) => {
-    if (!hasCourse) return
-
-    const message =
-      action === 'request'
-        ? `Hi, I'd like to request study materials for ${resolvedCourse}.`
-        : `Hi, I'd like to share study materials for ${resolvedCourse}.`
-
-    window.open(buildWhatsAppUrl(message), '_blank', 'noopener,noreferrer')
-  }
+  const requestHref = hasCourse
+    ? buildMaterialRequestEmailUrl(resolvedCourse)
+    : undefined
+  const shareHref = hasCourse
+    ? buildMaterialShareEmailUrl(resolvedCourse)
+    : undefined
 
   return (
     <>
@@ -34,7 +31,7 @@ export default function MaterialsPage() {
             Request or send materials
           </h1>
           <p className="mt-5 max-w-[54ch] text-[17px] leading-[1.6] text-ci-blue-200 min-[900px]:text-[19px]">
-            Request study materials for any course, or contribute notes and past questions of your own.
+            Request study material privately for any course, or email notes and past questions of your own.
           </p>
         </div>
       </header>
@@ -71,6 +68,7 @@ export default function MaterialsPage() {
               <input
                 id="typed-course"
                 type="text"
+                maxLength={MAX_COURSE_LENGTH}
                 value={typedCourse}
                 onChange={(event) => setTypedCourse(event.target.value)}
                 placeholder="e.g. BUA204 or your course name"
@@ -79,26 +77,24 @@ export default function MaterialsPage() {
             </div>
 
             <div className="mt-8 grid grid-cols-1 gap-3 min-[600px]:grid-cols-2">
-              <button
-                type="button"
-                disabled={!hasCourse}
-                onClick={() => openWhatsApp('request')}
-                className={cx(btnBase, btnAccent, 'w-full disabled:pointer-events-none disabled:opacity-45')}
+              <a
+                href={requestHref}
+                aria-disabled={!hasCourse}
+                className={cx(btnBase, btnAccent, 'w-full', !hasCourse && 'pointer-events-none opacity-45')}
               >
-                Request materials
-              </button>
-              <button
-                type="button"
-                disabled={!hasCourse}
-                onClick={() => openWhatsApp('send')}
-                className={cx(btnBase, btnNavy, 'w-full disabled:pointer-events-none disabled:opacity-45')}
+                Request material privately
+              </a>
+              <a
+                href={shareHref}
+                aria-disabled={!hasCourse}
+                className={cx(btnBase, btnNavy, 'w-full', !hasCourse && 'pointer-events-none opacity-45')}
               >
                 Send materials
-              </button>
+              </a>
             </div>
 
             <p className="mt-4 text-[13.5px] leading-[1.5] text-ci-gray-500">
-              Opens WhatsApp with your request pre-filled.
+              Opens your email app with the course details pre-filled.
             </p>
           </div>
         </div>

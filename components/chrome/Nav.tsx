@@ -112,7 +112,7 @@ export function Nav({ variant = 'blue' }: Props) {
                 href="/materials"
                 onClick={close}
               >
-                Request materials
+                Request material privately
               </Link>
             </div>
           </div>
