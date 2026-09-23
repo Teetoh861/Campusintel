@@ -37,6 +37,9 @@ export interface FormulaEntry {
 
 export interface Course {
   id: string
+  // Immutable repository identity used by the platform course registry.
+  // Unlike `slug`, this does not change when a presentation URL changes.
+  readonly contentKey: string
   slug: string
   code: string
   title: string

@@ -2,7 +2,7 @@
 -- migration. Ordinary supabase test db files run after every migration.
 begin;
 
-select plan(11);
+select plan(15);
 
 select is(
   (select count(*)::int from auth.users
@@ -37,6 +37,27 @@ select is(
   ),
   3,
   'all three reference tables exist after the upgrade'
+);
+
+select is(
+  num_nonnulls(
+    to_regclass('public.courses'),
+    to_regclass('public.course_applicability')
+  ),
+  2,
+  'both Phase C course foundation tables exist after the upgrade'
+);
+
+select is(
+  (select count(*)::int from public.courses),
+  15,
+  'the upgrade installs all fifteen course registry identities'
+);
+
+select is(
+  (select count(*)::int from public.course_applicability),
+  38,
+  'the upgrade installs only the approved course applicability tuples'
 );
 
 select is(
@@ -100,6 +121,13 @@ select is(
     where version = '20260918190000'),
   1,
   'the successful upgrade is recorded exactly once'
+);
+
+select is(
+  (select count(*)::int from supabase_migrations.schema_migrations
+    where version = '20260923100000'),
+  1,
+  'the course foundation migration is recorded exactly once'
 );
 
 select * from finish();

@@ -8,6 +8,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd -- "$script_dir/../.."
 
 phase_a_version=20260915100000
+phase_b_version=20260918190000
 
 restore_current_local_database() {
   local prior_status=$?
@@ -44,4 +45,25 @@ for legacy_field in department level semester; do
   DO_NOT_TRACK=1 supabase test db --local \
     supabase/upgrade-tests/upgrade_abort.test.sql
 done
-printf 'All four local upgrade scenarios passed.\n'
+
+printf 'Testing atomic rollback of a late Phase C migration failure...\n'
+DO_NOT_TRACK=1 supabase db reset --local --version "$phase_b_version" \
+  --sql-paths ./upgrade-tests/course_registry_failure.sql
+
+if phase_c_failure=$(DO_NOT_TRACK=1 supabase migration up --local 2>&1); then
+  printf 'Course registry migration unexpectedly accepted incomplete mappings.\n' \
+    >&2
+  exit 1
+fi
+
+if [[ "$phase_c_failure" != *"Expected exactly 38 approved course applicability rows"* ]]; then
+  printf '%s\n' "$phase_c_failure" >&2
+  printf 'Course registry migration failed before its final integrity guard.\n' \
+    >&2
+  exit 1
+fi
+
+DO_NOT_TRACK=1 supabase test db --local \
+  supabase/upgrade-tests/course_registry_abort.test.sql
+
+printf 'All five local upgrade scenarios passed.\n'

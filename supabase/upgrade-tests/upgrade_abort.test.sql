@@ -2,7 +2,7 @@
 -- database containing non-null legacy selections.
 begin;
 
-select plan(10);
+select plan(12);
 
 select is(
   (select count(*)::int from public.profiles
@@ -50,6 +50,15 @@ select is(
 );
 
 select is(
+  num_nonnulls(
+    to_regclass('public.courses'),
+    to_regclass('public.course_applicability')
+  ),
+  0,
+  'the later course foundation migration did not run after rejection'
+);
+
+select is(
   (select count(*)::int from public.profiles
     where id between '80000000-0000-4000-8000-000000000001'
                  and '80000000-0000-4000-8000-000000000004'
@@ -93,6 +102,13 @@ select is(
     where version = '20260918190000'),
   0,
   'a rejected migration is not recorded as applied'
+);
+
+select is(
+  (select count(*)::int from supabase_migrations.schema_migrations
+    where version = '20260923100000'),
+  0,
+  'the later course foundation migration is not recorded after rejection'
 );
 
 select * from finish();
