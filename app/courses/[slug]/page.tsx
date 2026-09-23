@@ -230,7 +230,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
             </Link>
             <div className="flex w-full items-center gap-3">
               <Link className={cx(btnBase, btnGhostOnBlue, 'min-w-0 flex-1')} href={materialsHref}>
-                Request materials
+                Request material privately
               </Link>
               <BookmarkButton slug={course.slug} variant="cover" />
             </div>
