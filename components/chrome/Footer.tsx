@@ -3,11 +3,8 @@
 // column, then a bottom bar. Server Component; the copyright year is computed
 // at render time. Contact email is sourced from lib/contact.ts. (spec → Footer)
 import Link from 'next/link'
-import { buildWhatsAppUrl } from '@/lib/whatsapp'
 import { CONTACT_EMAIL } from '@/lib/contact'
 import { BookLogo, Wordmark } from './Logo'
-
-const WHATSAPP_URL = buildWhatsAppUrl('Hello, I need help with CampusIntel')
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
@@ -53,9 +50,7 @@ export function Footer() {
             </h5>
             <ul className="flex flex-col gap-0 min-[680px]:gap-3">
               <li>
-                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className={linkClass}>
-                  WhatsApp
-                </a>
+                <Link href="/contact" className={linkClass}>Contact</Link>
               </li>
               <li>
                 <a

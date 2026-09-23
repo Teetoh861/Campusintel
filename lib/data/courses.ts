@@ -1,5 +1,5 @@
 import { Course } from '@/lib/types'
-import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import { buildMaterialRequestEmailUrl } from '@/lib/material-email'
 
 export const courses: Course[] = [
   {
@@ -1037,7 +1037,10 @@ export const courses: Course[] = [
         id: "bua218-theory",
         title: "BUA 218 Green Management — 20 Theory Questions with Model Answers (Topics 1–3)",
         type: "past-question",
-        url: buildWhatsAppUrl("I need practice theory questions for BUA 218 Green Management"),
+        url: buildMaterialRequestEmailUrl(
+          'BUA 218 — Green Management',
+          'the practice theory questions',
+        ),
         fileSize: "TBC",
         uploadDate: "",
       },
