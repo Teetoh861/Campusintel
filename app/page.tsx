@@ -119,7 +119,7 @@ export default function HomePage() {
                   Browse courses
                 </Link>
                 <Link className={cx(btnBase, btnGhostOnBlue)} href="/materials">
-                  Request materials
+                  Request material privately
                 </Link>
               </div>
               <div className="mt-[30px] flex items-center gap-3 text-sm text-ci-blue-200">

@@ -28,7 +28,7 @@ export function MobileCourseNav({ items, materialsHref, quizHref }: MobileCourse
               </Link>
             ) : null}
             <Link className={actionChip} href={materialsHref}>
-              Request materials
+              Request material privately
             </Link>
             {items.map((item) => (
               <Link key={item.id} className={sectionChip} href={`#${item.id}`}>

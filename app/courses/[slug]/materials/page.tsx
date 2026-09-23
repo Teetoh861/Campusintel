@@ -1,13 +1,13 @@
 // Course materials (/courses/[slug]/materials) — server-rendered, course-aware.
-// Materials aren't hosted in-app for most courses; instead this page routes the
-// student to WhatsApp with a pre-filled, course-specific message — either to
-// request materials or to contribute their own. Number comes from the shared
-// buildWhatsAppUrl helper (env-driven), never hardcoded.
+// Requests and contributions are private, course-specific email handoffs.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
-import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import {
+  buildMaterialRequestEmailUrl,
+  buildMaterialShareEmailUrl,
+} from '@/lib/material-email'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -22,14 +22,9 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
 
-  // Exact messages substitute the real code + title. Encoding is handled by
-  // buildWhatsAppUrl (encodeURIComponent), so we pass plain text here.
-  const requestUrl = buildWhatsAppUrl(
-    `Hi, I'd like to request study materials for ${course.code} — ${course.title}.`,
-  )
-  const shareUrl = buildWhatsAppUrl(
-    `Hi, I'd like to share study materials for ${course.code} — ${course.title}.`,
-  )
+  const courseContext = `${course.code} — ${course.title}`
+  const requestUrl = buildMaterialRequestEmailUrl(courseContext)
+  const shareUrl = buildMaterialShareEmailUrl(courseContext)
 
   return (
     <>
@@ -60,7 +55,7 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
             {course.title}
           </h1>
           <p className="mt-5 max-w-[54ch] text-[17px] leading-[1.6] text-ci-blue-200 min-[900px]:text-[19px]">
-            Request study materials for this course, or contribute notes and past questions of your own.
+            Request study material privately for this course, or email notes and past questions of your own.
           </p>
         </div>
       </header>
@@ -72,25 +67,21 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
               <a
                 className={cx(btnBase, btnAccent, 'w-full')}
                 href={requestUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Request study materials for ${course.code} on WhatsApp (opens in a new tab)`}
+                aria-label={`Request study material privately for ${course.code} by email`}
               >
-                Request materials
+                Request material privately
               </a>
               <a
                 className={cx(btnBase, btnNavy, 'w-full')}
                 href={shareUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Share study materials for ${course.code} on WhatsApp (opens in a new tab)`}
+                aria-label={`Share study material for ${course.code} by email`}
               >
                 Send materials
               </a>
             </div>
 
             <p className="mt-4 text-[13.5px] leading-[1.5] text-ci-gray-500">
-              Opens WhatsApp with your request pre-filled for {course.code}.
+              Opens your email app with {course.code} pre-filled.
             </p>
           </div>
         </div>
