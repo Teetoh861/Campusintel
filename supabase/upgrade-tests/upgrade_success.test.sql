@@ -2,7 +2,7 @@
 -- migration. Ordinary supabase test db files run after every migration.
 begin;
 
-select plan(15);
+select plan(20);
 
 select is(
   (select count(*)::int from auth.users
@@ -42,10 +42,11 @@ select is(
 select is(
   num_nonnulls(
     to_regclass('public.courses'),
+    to_regclass('public.institutional_courses'),
     to_regclass('public.course_applicability')
   ),
-  2,
-  'both Phase C course foundation tables exist after the upgrade'
+  3,
+  'all three separated Phase C course foundation tables exist after the upgrade'
 );
 
 select is(
@@ -55,9 +56,38 @@ select is(
 );
 
 select is(
+  (select count(*)::int from public.institutional_courses),
+  101,
+  'the upgrade installs all source-backed institutional identities'
+);
+
+select is(
+  (select count(*)::int from public.institutional_courses
+    where repository_course_id is not null),
+  11,
+  'the upgrade installs only confirmed repository content links'
+);
+
+select is(
   (select count(*)::int from public.course_applicability),
-  38,
-  'the upgrade installs only the approved course applicability tuples'
+  196,
+  'the upgrade installs all source-backed institutional applicability tuples'
+);
+
+select is(
+  (select count(*)::int from information_schema.columns
+    where table_schema = 'public' and table_name = 'courses'
+      and column_name = 'is_free'),
+  0,
+  'free-tier ownership leaves the repository content registry'
+);
+
+select is(
+  (select count(*)::int from information_schema.columns
+    where table_schema = 'public' and table_name = 'course_applicability'
+      and column_name = 'institutional_course_id'),
+  1,
+  'upgraded applicability points at institutional course identity'
 );
 
 select is(
@@ -128,6 +158,13 @@ select is(
     where version = '20260923100000'),
   1,
   'the course foundation migration is recorded exactly once'
+);
+
+select is(
+  (select count(*)::int from supabase_migrations.schema_migrations
+    where version = '20260923160000'),
+  1,
+  'the institutional catalogue correction is recorded exactly once'
 );
 
 select * from finish();

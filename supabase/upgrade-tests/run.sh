@@ -9,6 +9,7 @@ cd -- "$script_dir/../.."
 
 phase_a_version=20260915100000
 phase_b_version=20260918190000
+phase_c_slice_one_version=20260923100000
 
 restore_current_local_database() {
   local prior_status=$?
@@ -66,4 +67,32 @@ fi
 DO_NOT_TRACK=1 supabase test db --local \
   supabase/upgrade-tests/course_registry_abort.test.sql
 
-printf 'All five local upgrade scenarios passed.\n'
+printf 'Testing direct upgrade from committed Phase C Slice 1...\n'
+DO_NOT_TRACK=1 supabase db reset --local \
+  --version "$phase_c_slice_one_version"
+DO_NOT_TRACK=1 supabase migration up --local
+DO_NOT_TRACK=1 supabase test db --local \
+  supabase/upgrade-tests/institutional_catalogue_upgrade.test.sql
+
+printf 'Testing atomic rollback of a late catalogue correction failure...\n'
+DO_NOT_TRACK=1 supabase db reset --local \
+  --version "$phase_c_slice_one_version" \
+  --sql-paths ./upgrade-tests/institutional_catalogue_failure.sql
+
+if catalogue_failure=$(DO_NOT_TRACK=1 supabase migration up --local 2>&1); then
+  printf 'Catalogue correction unexpectedly accepted incomplete mappings.\n' \
+    >&2
+  exit 1
+fi
+
+if [[ "$catalogue_failure" != *"Expected exactly 196 institutional applicability rows"* ]]; then
+  printf '%s\n' "$catalogue_failure" >&2
+  printf 'Catalogue correction failed before its final integrity guard.\n' \
+    >&2
+  exit 1
+fi
+
+DO_NOT_TRACK=1 supabase test db --local \
+  supabase/upgrade-tests/institutional_catalogue_abort.test.sql
+
+printf 'All seven local upgrade scenarios passed.\n'

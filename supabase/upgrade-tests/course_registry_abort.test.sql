@@ -7,10 +7,11 @@ select plan(12);
 select is(
   num_nonnulls(
     to_regclass('public.courses'),
+    to_regclass('public.institutional_courses'),
     to_regclass('public.course_applicability')
   ),
   0,
-  'failed Phase C leaves no registry tables or partial seed data'
+  'failed Phase C leaves no content, catalogue or applicability tables'
 );
 
 select is(
@@ -18,7 +19,9 @@ select is(
     select count(*)::int
     from pg_policies
     where schemaname = 'public'
-      and tablename in ('courses', 'course_applicability')
+      and tablename in (
+        'courses', 'institutional_courses', 'course_applicability'
+      )
   ),
   0,
   'failed Phase C leaves no course policies'
@@ -29,7 +32,9 @@ select is(
     select count(*)::int
     from information_schema.role_table_grants
     where table_schema = 'public'
-      and table_name in ('courses', 'course_applicability')
+      and table_name in (
+        'courses', 'institutional_courses', 'course_applicability'
+      )
   ),
   0,
   'failed Phase C leaves no course grants'
@@ -122,10 +127,10 @@ select is(
   (
     select count(*)::int
     from supabase_migrations.schema_migrations
-    where version = '20260923100000'
+    where version in ('20260923100000', '20260923160000')
   ),
   0,
-  'the failed Phase C migration is not recorded'
+  'neither failed Phase C migration is recorded'
 );
 
 select * from finish();
