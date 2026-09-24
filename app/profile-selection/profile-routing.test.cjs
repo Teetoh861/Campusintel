@@ -87,7 +87,7 @@ test('incomplete account reaches selection; completed account stays and offers i
 }))
 
 test('auth and selection redirects terminate, including a completed student opening the change path', async () => fixture(async f => {
-  await assert.rejects(f.signedOutGate({ children: 'login form' }), /redirect:\/account/)
+  await assert.rejects(f.signedOutGate({ children: 'login form' }), /redirect:\/dashboard/)
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', options, selection }

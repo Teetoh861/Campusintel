@@ -2,7 +2,7 @@
 'use client'
 import { onStudentChange } from '@/lib/auth/client-events'
 import { useEffect, useRef } from 'react'
-import { AUTH_API, AUTH_CONTINUITY_HEADER, AUTH_PATHS, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
+import { AUTH_API, AUTH_CONTINUITY_HEADER, AUTH_STATUS_EVENT, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 
 type Props = { signedIn: true; continuityToken: string } | { signedIn?: false; continuityToken?: never }
 
@@ -43,7 +43,7 @@ export function AuthFlowSync(props: Props) {
           if (state.signedIn !== true || !('sameAccount' in state) || state.sameAccount !== true) reset()
         } else if (state.enabled === true && state.signedIn === true) {
           navigating = true
-          window.location.replace(AUTH_PATHS.account)
+          window.location.replace(STUDENT_HOME_PATH)
         }
       } catch { /* Server guards remain authoritative when status cannot be refreshed. */ }
     }

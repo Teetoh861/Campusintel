@@ -2,7 +2,7 @@
 import { redirect } from 'next/navigation'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { hasStudentSession } from '@/lib/auth/student-state'
-import { AUTH_MESSAGES, AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { Feedback } from '@/components/chrome/Feedback'
 import { AuthFlowSync } from './AuthFlowSync'
 import type { ReactNode } from 'react'
@@ -13,6 +13,6 @@ export async function SignedOutGate({ children }: { children: ReactNode }) {
   let signedIn: boolean
   try { signedIn = await hasStudentSession() }
   catch { return <Feedback message={AUTH_MESSAGES.unavailable} tone="error" /> }
-  if (signedIn) redirect(AUTH_PATHS.account)
+  if (signedIn) redirect(STUDENT_HOME_PATH)
   return <><AuthFlowSync />{children}</>
 }

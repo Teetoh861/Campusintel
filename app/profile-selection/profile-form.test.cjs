@@ -127,7 +127,7 @@ test('server-returned choices keep database order and enable Department → Leve
   assert.deepEqual(JSON.parse(f.requests[0][1].body), {
     departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period,
   })
-  assert.deepEqual(f.navigations, [['replace', '/account']])
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }))
 
 test('validation focuses and describes the first missing choice, then clears when corrected', async () => fixture(async f => {
@@ -207,7 +207,7 @@ test('completed student can change one value and return only after the persisted
   f.respond(async () => response(200, f.saved(f.ids.department, f.ids.level, f.ids.secondPeriod)))
   await f.submit()
   assert.equal(JSON.parse(f.requests[0][1].body).academicPeriodId, f.ids.secondPeriod)
-  assert.deepEqual(f.navigations, [['replace', '/account']])
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }, true))
 
 test('mismatched or malformed success cannot claim a saved profile', async () => fixture(async f => {
@@ -265,7 +265,7 @@ test('a double submit makes one request and keeps the form locked through naviga
   await Promise.all([first, second])
   await f.submit()
   assert.equal(f.requests.length, 1)
-  assert.deepEqual(f.navigations, [['replace', '/account']])
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }, true))
 
 test('presentation code contains no production catalogue values or persistent profile cache', () => {

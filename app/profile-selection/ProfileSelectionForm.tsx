@@ -8,7 +8,7 @@ import { AUTH_FOCUS, AUTH_LINK } from '@/components/chrome/FormField'
 import { Feedback } from '@/components/chrome/Feedback'
 import { btnBase, btnNavy, btnSm, cx } from '@/components/chrome/ui'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
-import { AUTH_CONTINUITY_HEADER, AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_CONTINUITY_HEADER, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
@@ -117,7 +117,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
             parsed.data.selection.academicLevel.id === draft.academicLevelId &&
             parsed.data.selection.academicPeriod.id === draft.academicPeriodId) {
           navigating = true
-          window.location.replace(AUTH_PATHS.account)
+          window.location.replace(STUDENT_HOME_PATH)
           return
         }
         setNotice({ message: 'Save could not be confirmed. Reload the page.', reload: true })

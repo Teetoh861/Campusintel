@@ -4,7 +4,7 @@ import { notifyStudentChange } from '@/lib/auth/client-events'
 import { useRef, useState } from 'react'
 import { safeAuthMessage } from '@/lib/auth/errors'
 import { parseAuthOutcome } from '@/lib/auth/outcomes'
-import { AUTH_API, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_API, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 
 export type AuthSubmitFailure = { message: string; code?: (typeof RECOVERY_FAILURE)[keyof typeof RECOVERY_FAILURE] }
 
@@ -28,8 +28,8 @@ export function useAuthSubmit() {
       const value: unknown = await response.json()
       if (!value || typeof value !== 'object') throw new Error('Invalid response')
       if (!response.ok) {
-        if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === AUTH_PATHS.account) {
-          window.location.replace(AUTH_PATHS.account)
+        if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === STUDENT_HOME_PATH) {
+          window.location.replace(STUDENT_HOME_PATH)
           return null
         }
         const message = safeAuthMessage('error' in value ? value.error : undefined)
