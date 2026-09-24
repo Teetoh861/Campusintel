@@ -130,6 +130,23 @@ test('unbuilt and broken institutional rows remain visible without click targets
   }
 }))
 
+test('all course states share one content structure; only ready uses a linked wrapper', async () => fixture(async f => {
+  const wrappers = [ready, unbuilt, broken].map(item => f.CourseRow({ course: item }).props.children)
+  const contents = wrappers.map(wrapper => {
+    assert.equal(React.Children.count(wrapper.props.children), 1)
+    const detail = wrapper.props.children
+    assert.equal(detail.type, 'div')
+    return nodes(detail).map(node => [node.type, node.props.className])
+  })
+  assert.deepEqual(contents[1], contents[0])
+  assert.deepEqual(contents[2], contents[0])
+  assert.ok(wrappers[0].props.className.startsWith(wrappers[1].props.className + ' '))
+  assert.equal(wrappers[1].props.className, wrappers[2].props.className)
+  assert.equal(wrappers[0].props.href, '/courses/resolved-slug')
+  assert.equal(wrappers[1].type, 'div')
+  assert.equal(wrappers[2].type, 'div')
+}))
+
 test('zero-course complete selection is an honest empty semester', async () => fixture(async f => {
   f.state.result = { status: 'complete', selection, courses: [] }
   const html = await f.render()
