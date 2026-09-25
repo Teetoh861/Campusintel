@@ -31,6 +31,13 @@ function nodes(element) {
   return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
 }
 
+function visibleText(element) {
+  if (typeof element === 'string' || typeof element === 'number') return [String(element)]
+  if (Array.isArray(element)) return element.flatMap(visibleText)
+  if (!element || typeof element !== 'object') return []
+  return visibleText(element.props?.children)
+}
+
 function assertUsesStyle(node, primitive) {
   const actual = new Set(node.props.className.split(/\s+/))
   for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
@@ -140,41 +147,41 @@ test('product surfaces own navy focus through shared chrome UI, not auth form st
   }
 })
 
-test('ready row has one large resolved-route target and only usable Quiz/Theory signals', async () => fixture(async f => {
+test('ready row has one large resolved-route target and displays only institutional identity', async () => fixture(async f => {
   const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
   assert.match(html, /<li[^>]*><a[^>]*href="\/courses\/resolved-slug"/)
   assert.match(html, /min-h-\[76px\]/)
   assert.match(html, /focus-visible:outline/)
-  assert.match(html, /Quiz · Theory/)
-  assert.doesNotMatch(html, /Notes|<button\b/)
+  assert.deepEqual(visibleText(f.CourseRow({ course: ready })), [ready.code, ready.title])
+  assert.doesNotMatch(html, /Quiz|Theory|Notes|<button\b/)
   assert.doesNotMatch(html, /<svg\b/, 'course rows have no navigation icon')
   assert.equal((html.match(/<a\b/g) || []).length, 1, 'the row contains no nested links')
 
-  const noQuiz = { ...ready, content: { ...ready.content, availability: {
-    ...ready.content.availability, cbt: { hasData: true, href: null },
-  } } }
-  const noQuizHtml = renderToStaticMarkup(React.createElement(f.CourseRow, { course: noQuiz }))
-  assert.doesNotMatch(noQuizHtml, /Quiz|Notes/)
-  assert.match(noQuizHtml, /Theory/)
+  const noAvailability = { ...ready, content: { ...ready.content, availability: availability(false, false) } }
+  assert.equal(renderToStaticMarkup(React.createElement(f.CourseRow, { course: noAvailability })), html,
+    'availability data does not change dashboard row presentation')
 }))
 
 test('unbuilt and broken institutional rows remain visible without click targets', async () => fixture(async f => {
   for (const [item, message] of [[unbuilt, 'Content not yet available'], [broken, 'Content temporarily unavailable']]) {
     const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: item }))
-    assert.match(html, new RegExp(item.code))
-    assert.match(html, new RegExp(message))
+    assert.deepEqual(visibleText(f.CourseRow({ course: item })), [item.code, item.title, message])
     assert.doesNotMatch(html, /<a\b|<button\b|href=/)
   }
 }))
 
 test('all course states share one content structure; only ready uses a linked wrapper', async () => fixture(async f => {
   const tokens = value => new Set((value || '').split(/\s+/).filter(Boolean))
-  const wrappers = [ready, unbuilt, broken].map(item => f.CourseRow({ course: item }).props.children)
-  const contents = wrappers.map(wrapper => {
+  const courses = [ready, unbuilt, broken]
+  const wrappers = courses.map(item => f.CourseRow({ course: item }).props.children)
+  const contents = wrappers.map((wrapper, index) => {
     assert.equal(React.Children.count(wrapper.props.children), 1)
     const detail = wrapper.props.children
     assert.equal(detail.type, 'div')
-    return nodes(detail).map(node => [node.type, tokens(node.props.className)])
+    const code = nodes(detail).find(node => node.props?.children === courses[index].code)
+    const title = nodes(detail).find(node => node.props?.children === courses[index].title)
+    assert.ok(code && title)
+    return [tokens(detail.props.className), tokens(code.props.className), tokens(title.props.className)]
   })
   assert.deepEqual(contents[1], contents[0])
   assert.deepEqual(contents[2], contents[0])

@@ -8,10 +8,6 @@ const ROW = 'flex min-h-[76px] items-center px-1 py-3'
 export function CourseRow({ course }: { course: DashboardCourse }) {
   const { content } = course
   const ready = content.state === 'ready'
-  const signals = ready ? [
-    content.availability.cbt.href ? 'Quiz' : null,
-    content.availability.theory.href ? 'Theory' : null,
-  ].filter(Boolean).join(' · ') : ''
   const details =
     <div className="min-w-0 flex-1 min-[680px]:flex min-[680px]:items-start min-[680px]:gap-5">
       <span className="block text-[13px] font-bold leading-5 tracking-[0.02em] text-ci-navy min-[680px]:w-20 min-[680px]:shrink-0">
@@ -19,10 +15,9 @@ export function CourseRow({ course }: { course: DashboardCourse }) {
       </span>
       <span className="block min-w-0">
         <span className="block text-[16px] font-semibold leading-[1.3] text-ci-navy-900 transition-colors min-[900px]:group-hover:text-ci-navy">{course.title}</span>
-        {ready ? signals && <span className="mt-0.5 block text-[13px] leading-5 text-ci-gray-700">{signals}</span>
-          : <span className="mt-0.5 block text-[13px] leading-5 text-ci-gray-700">
-            {content.state === 'not-built' ? 'Content not yet available' : 'Content temporarily unavailable'}
-          </span>}
+        {!ready && <span className="mt-0.5 block text-[13px] leading-5 text-ci-gray-700">
+          {content.state === 'not-built' ? 'Content not yet available' : 'Content temporarily unavailable'}
+        </span>}
       </span>
     </div>
 
