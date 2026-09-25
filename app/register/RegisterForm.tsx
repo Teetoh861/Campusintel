@@ -5,10 +5,10 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { FormField, AUTH_LINK, AUTH_SUBMIT } from '@/components/chrome/FormField'
+import { FormField, AUTH_SUBMIT } from '@/components/chrome/FormField'
 import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
 import { PasswordField } from '@/components/auth/PasswordField'
-import { AuthFormLayout } from '@/components/auth/AuthFormLayout'
+import { AuthFormLayout, authSecondaryNav } from '@/components/auth/AuthFormLayout'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
 import { ConfirmEmailForm } from '@/app/confirm-email/ConfirmEmailForm'
 import { AUTH_API, AUTH_PATHS, EMAIL_MAX_LENGTH } from '@/lib/auth/constants'
@@ -38,7 +38,7 @@ export function RegisterForm({ next }: { next: string }) {
       feedback={{ message: error, tone: 'error' }}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Creating account…' : 'Create account'}</button>}
       secondaryActions={<>
-        <Link href={AUTH_PATHS.login} className={AUTH_LINK}>Already have an account? Sign in</Link>
+        <Link href={AUTH_PATHS.login} className={authSecondaryNav}>Already have an account? Sign in</Link>
       </>}
     />
   </form>

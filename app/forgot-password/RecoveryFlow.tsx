@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useAuthSubmit, type AuthSubmitFailure } from '@/components/auth/useAuthSubmit'
-import { FormField, AUTH_LINK, AUTH_SUBMIT } from '@/components/chrome/FormField'
-import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
+import { FormField, AUTH_SUBMIT } from '@/components/chrome/FormField'
+import { btnBase, btnGhost, btnSm, btnNavy, cx, focusRingNavy } from '@/components/chrome/ui'
 import { recoveryVerificationSchema } from '@/lib/auth/schemas'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { EmailForm } from '@/components/auth/EmailForm'
@@ -60,11 +60,13 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
       feedback={{ message: error || (resent ? AUTH_MESSAGES.recovery : ''), tone: error ? 'error' : 'info' }}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Checking…' : 'Continue'}</button>}
       secondaryActions={<>
-        <button type="button" disabled={pending} className={AUTH_LINK + ' text-sm disabled:opacity-60'} onClick={async () => {
+        <button type="button" disabled={pending} className={cx(btnBase, btnSm, btnGhost, focusRingNavy,
+          'max-w-full !whitespace-normal text-center disabled:pointer-events-none disabled:opacity-60')} onClick={async () => {
       setResent(false); resetField('code')
       if (await submit(AUTH_API.forgot, { email })) setResent(true)
     }}>Didn't receive it? Resend code</button>
-    <button type="button" disabled={pending} className={AUTH_LINK + ' text-sm disabled:opacity-60'} onClick={async () => {
+    <button type="button" disabled={pending} className={cx(btnBase, btnSm, btnGhost, focusRingNavy,
+      'disabled:pointer-events-none disabled:opacity-60')} onClick={async () => {
       setResent(false)
       if (await submit(AUTH_API.cancelRecovery, {})) { resetField('code'); onStartOver() }
     }}>Change email</button>

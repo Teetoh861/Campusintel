@@ -31,6 +31,11 @@ function nodes(element) {
   return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
 }
 
+function assertUsesStyle(node, primitive) {
+  const actual = new Set(node.props.className.split(/\s+/))
+  for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
+}
+
 async function fixture(run) {
   const originalLoad = Module._load
   const originalTsx = Module._extensions['.tsx']
@@ -70,7 +75,6 @@ async function fixture(run) {
         Skeleton: ({ className }) => React.createElement('div', { className }),
       }
       if (name === '@/lib/auth/constants') return originalLoad.call(this, local('lib/auth/constants.ts'), ...args)
-      if (name === '@/components/chrome/FormField') return originalLoad.call(this, local('components/chrome/FormField.tsx'), ...args)
       if (name === '@/components/chrome/Feedback') return originalLoad.call(this, local('components/chrome/Feedback.tsx'), ...args)
       if (name === '@/components/chrome/ui') return originalLoad.call(this, local('components/chrome/ui.tsx'), ...args)
       return originalLoad.call(this, name, ...args)
@@ -103,6 +107,38 @@ test('complete student sees saved context and every institutional course in doma
   assert.match(html, /Content not yet available/)
   assert.match(html, /Content temporarily unavailable/)
 }))
+
+test('dashboard context, support and retry actions use shared secondary buttons and focus', async () => fixture(async f => {
+  const { btnBase, btnSm, btnGhost, focusRingNavy } = require('../../components/chrome/ui.tsx')
+  const assertSecondaryAction = action => {
+    for (const primitive of [btnBase, btnSm, btnGhost, focusRingNavy]) assertUsesStyle(action, primitive)
+    assert.equal(new Set(action.props.className.split(/\s+/)).has('underline'), false)
+  }
+  const context = nodes(await f.page()).find(node => node.type?.name === 'SemesterContext')
+  const change = nodes(context.type(context.props)).find(node => node.props?.href === '/profile-selection')
+  assertSecondaryAction(change)
+  for (const [status, href] of [['missing-profile', '/contact'], ['unavailable', '/dashboard']]) {
+    f.state.result = { status }
+    const error = nodes(await f.page()).find(node => node.type?.name === 'DashboardError')
+    const action = nodes(error.type(error.props)).find(node => node.props?.href === href)
+    assert.ok(action)
+    assertSecondaryAction(action)
+  }
+}))
+
+test('product surfaces own navy focus through shared chrome UI, not auth form styling', () => {
+  const root = path.join(__dirname, '../..')
+  const source = file => fs.readFileSync(path.join(root, file), 'utf8')
+  assert.match(source('components/chrome/ui.tsx'), /export const focusRingNavy\b/)
+  assert.doesNotMatch(source('components/chrome/FormField.tsx'), /\bAUTH_FOCUS\b/)
+  for (const file of ['app/dashboard/page.tsx', 'app/dashboard/CourseRow.tsx', 'app/account/page.tsx',
+    'app/profile-selection/page.tsx', 'app/profile-selection/ProfileSelectionForm.tsx']) {
+    const text = source(file)
+    assert.match(text, /import\s*\{[^}]*\bfocusRingNavy\b[^}]*\}\s*from\s*['"]@\/components\/chrome\/ui['"]/, file)
+    assert.doesNotMatch(text, /\bAUTH_(?:FOCUS|LINK)\b/, file)
+    assert.doesNotMatch(text, /import\s*\{[^}]*\bAUTH_[A-Z_]+\b[^}]*\}\s*from\s*['"]@\/components\/chrome\/FormField['"]/, file)
+  }
+})
 
 test('ready row has one large resolved-route target and only usable Quiz/Theory signals', async () => fixture(async f => {
   const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))

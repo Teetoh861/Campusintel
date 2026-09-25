@@ -1,6 +1,5 @@
 import Link from 'next/link'
-import { AUTH_FOCUS } from '@/components/chrome/FormField'
-import { cx } from '@/components/chrome/ui'
+import { cx, focusRingNavy } from '@/components/chrome/ui'
 import type { DashboardCourse } from '@/lib/dashboard/current-student-courses'
 
 const ROW = 'flex min-h-[76px] items-center px-1 py-3'
@@ -29,7 +28,7 @@ export function CourseRow({ course }: { course: DashboardCourse }) {
 
   return <li className="border-b border-ci-border first:border-t">
     {ready ? <Link href={content.courseHref} prefetch={false}
-      className={cx(ROW, 'rounded-ci-btn hover:bg-ci-blue-50', AUTH_FOCUS)}>
+      className={cx(ROW, 'rounded-ci-btn hover:bg-ci-blue-50', focusRingNavy)}>
       {details}
     </Link> : <div className={ROW}>{details}</div>}
   </li>

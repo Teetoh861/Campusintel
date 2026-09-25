@@ -4,7 +4,7 @@ import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import Link from 'next/link'
 import { AuthSecondaryActions } from '@/components/auth/AuthFormLayout'
-import { AUTH_LINK } from '@/components/chrome/FormField'
+import { btnBase, btnNavy, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { AUTH_PATHS } from '@/lib/auth/constants'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +16,7 @@ function Content() {
     {isStudentAuthEnabled() ? <>
 
       <p>Start from Forgot password to request a reset code.</p>
-      <AuthSecondaryActions><Link href={AUTH_PATHS.forgot} className={AUTH_LINK}>Forgot password</Link></AuthSecondaryActions>
+      <AuthSecondaryActions><Link href={AUTH_PATHS.forgot} className={cx(btnBase, btnSm, btnNavy, focusRingNavy)}>Forgot password</Link></AuthSecondaryActions>
     </> : <AuthUnavailable />}
   </AuthShell>
 }

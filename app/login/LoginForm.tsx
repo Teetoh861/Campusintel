@@ -5,10 +5,10 @@ import { ConfirmEmailForm } from '@/app/confirm-email/ConfirmEmailForm'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FormField, AUTH_LINK, AUTH_SUBMIT } from '@/components/chrome/FormField'
+import { FormField, AUTH_SUBMIT } from '@/components/chrome/FormField'
 import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
 import { PasswordField } from '@/components/auth/PasswordField'
-import { AuthFormLayout } from '@/components/auth/AuthFormLayout'
+import { AuthFormLayout, authSecondaryNav } from '@/components/auth/AuthFormLayout'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
 import { AUTH_API, AUTH_PATHS, EMAIL_CONFIRMATION_REQUIRED, EMAIL_MAX_LENGTH } from '@/lib/auth/constants'
 import { loginSchema } from '@/lib/auth/schemas'
@@ -38,8 +38,8 @@ export function LoginForm({ next, initialFeedback = '' }: { next: string; initia
       feedback={{ message: error || notice, tone: error ? 'error' : 'success' }}
       primaryAction={<button disabled={busy} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{busy ? 'Signing in…' : 'Sign in'}</button>}
       secondaryActions={<>
-        <Link href={AUTH_PATHS.forgot} className={AUTH_LINK}>Forgot password?</Link>
-      <Link href={AUTH_PATHS.register + '?next=' + encodeURIComponent(next)} className={AUTH_LINK}>Create account</Link>
+        <Link href={AUTH_PATHS.forgot} className={authSecondaryNav}>Forgot password?</Link>
+      <Link href={AUTH_PATHS.register + '?next=' + encodeURIComponent(next)} className={authSecondaryNav}>Create account</Link>
       </>}
     />
   </form>

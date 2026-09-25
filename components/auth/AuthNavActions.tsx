@@ -2,8 +2,7 @@
 'use client'
 import Link from 'next/link'
 import { AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
-import { AUTH_FOCUS } from '@/components/chrome/FormField'
-import { btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnSm, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { LogoutControl, type useLogoutAction } from './LogoutButton'
 
 const SLOT = 'flex h-11 w-full !min-h-11 items-center justify-center'
@@ -16,7 +15,7 @@ export function AuthNavActions({ signedIn, surface, onNavigate, logout }: {
   const secondary = surface === 'blue' ? btnGhostOnBlue : btnGhost
   const focus = surface === 'blue'
     ? 'focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-white'
-    : AUTH_FOCUS
+    : focusRingNavy
   return <div className="grid w-64 shrink-0 grid-cols-5 gap-2" aria-busy={signedIn === null}>
     <div className="col-span-2 h-11">
       {signedIn !== null && <Link onClick={onNavigate} prefetch={false}

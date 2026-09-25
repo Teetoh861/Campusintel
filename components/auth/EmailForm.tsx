@@ -5,11 +5,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FormField, AUTH_LINK, AUTH_SUBMIT } from '@/components/chrome/FormField'
+import { FormField, AUTH_SUBMIT } from '@/components/chrome/FormField'
 import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
 import { AUTH_API, AUTH_PATHS, EMAIL_MAX_LENGTH } from '@/lib/auth/constants'
 import { emailRequestSchema } from '@/lib/auth/schemas'
-import { AuthFormLayout, type AuthFormFeedback } from '@/components/auth/AuthFormLayout'
+import { AuthFormLayout, authSecondaryNav, type AuthFormFeedback } from '@/components/auth/AuthFormLayout'
 import { useAuthSubmit } from './useAuthSubmit'
 
 /** Request email using the same enumeration-safe surface for either purpose. */
@@ -37,7 +37,7 @@ export function EmailForm({ recovery = false, onRecoveryRequested, initialFeedba
       </>}
       feedback={error ? { message: error, tone: 'error' } : (notice ?? { message: '' })}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Sending…' : recovery ? 'Send recovery code' : 'Send verification code'}</button>}
-      secondaryActions={recovery && !onRecoveryRequested && <Link href={AUTH_PATHS.reset} className={AUTH_LINK}>I have a recovery code</Link>}
+      secondaryActions={recovery && !onRecoveryRequested && <Link href={AUTH_PATHS.reset} className={authSecondaryNav}>I have a recovery code</Link>}
     />
   </form>
 }

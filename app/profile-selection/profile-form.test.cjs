@@ -221,6 +221,22 @@ test('mismatched or malformed success cannot claim a saved profile', async () =>
   assert.equal(f.requests.length, 2)
 }, true))
 
+test('profile edit and reload actions keep shared button hierarchy and focus', async () => fixture(async f => {
+  const { btnBase, btnSm, btnGhost, btnNavy, focusRingNavy } = require('../../components/chrome/ui.tsx')
+  const check = (node, variant) => {
+    const actual = new Set(node.props.className.split(/\s+/))
+    for (const primitive of [btnBase, btnSm, variant, focusRingNavy]) {
+      for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
+    }
+    assert.equal(actual.has('underline'), false)
+  }
+  check(nodes(f.render()).find(node => node.props?.children === 'Back to account'), btnGhost)
+  check(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit'), btnNavy)
+  f.respond(async () => response(400, { status: 'invalid-selection' }))
+  await f.submit()
+  check(nodes(f.render()).find(node => node.props?.children === 'Reload choices'), btnGhost)
+}, true))
+
 test('failed, unavailable, invalid and revoked saves have controlled outcomes', async () => fixture(async f => {
   const cases = [
     [503, { status: 'unavailable', details: 'private SQL error' }, 'Save failed. Please try again.'],

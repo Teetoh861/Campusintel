@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
-import { AUTH_LINK } from '@/components/chrome/FormField'
 import { Feedback } from '@/components/chrome/Feedback'
+import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { AUTH_MESSAGES, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -38,8 +38,8 @@ function DashboardError({ state }: { state: ErrorState }) {
     <h1 className="mb-3 text-xl font-bold text-ci-navy-900">Your semester</h1>
     <Feedback message={message} tone="error" />
     {state === 'missing-profile' || state === 'invariant-failure'
-      ? <Link href="/contact" className={AUTH_LINK}>Contact support</Link>
-      : <a href={STUDENT_HOME_PATH} className={AUTH_LINK}>Try again</a>}
+      ? <Link href="/contact" className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Contact support</Link>
+      : <a href={STUDENT_HOME_PATH} className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Try again</a>}
   </DashboardFrame>
 }
 
@@ -53,7 +53,8 @@ function SemesterContext({ selection }: { selection: CompleteProfile['selection'
       <p className="mt-0.5 text-[14px] leading-5 text-ci-gray-700">{labels.join(' · ')}</p>
       {inactive && <p className="mt-1 text-[12px] leading-4 text-ci-gray-700">A saved choice is no longer selectable.</p>}
     </div>
-    <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={AUTH_LINK + ' shrink-0 text-[14px]'}>
+    <Link href={PROFILE_SELECTION_PATH} prefetch={false}
+      className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
       Change<span className="sr-only"> semester selection</span>
     </Link>
   </header>
