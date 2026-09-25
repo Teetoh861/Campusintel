@@ -4,11 +4,10 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { z } from 'zod'
-import { AUTH_FOCUS, AUTH_LINK } from '@/components/chrome/FormField'
 import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, btnNavy, btnSm, cx } from '@/components/chrome/ui'
+import { btnBase, btnGhost, btnNavy, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
-import { AUTH_CONTINUITY_HEADER, AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_CONTINUITY_HEADER, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
@@ -35,7 +34,7 @@ const savedResponseSchema = z.object({
 })
 
 const selectClass = cx('h-12 w-full rounded-ci-btn border border-ci-gray-600 bg-ci-white px-3 py-2 text-base text-ci-ink',
-  'disabled:cursor-not-allowed disabled:opacity-60', AUTH_FOCUS)
+  'disabled:cursor-not-allowed disabled:opacity-60', focusRingNavy)
 
 function selectedId(choice: { id: string }, options: Choice[]): string {
   return options.some(option => option.id === choice.id) ? choice.id : ''
@@ -117,7 +116,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
             parsed.data.selection.academicLevel.id === draft.academicLevelId &&
             parsed.data.selection.academicPeriod.id === draft.academicPeriodId) {
           navigating = true
-          window.location.replace(AUTH_PATHS.account)
+          window.location.replace(STUDENT_HOME_PATH)
           return
         }
         setNotice({ message: 'Save could not be confirmed. Reload the page.', reload: true })
@@ -140,7 +139,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
   if (!choicesAvailable) return <div className="space-y-3">
     {initial.status === 'complete' && <SelectionSummary selection={initial.selection} />}
     <Feedback tone="error" message="Selection is unavailable. Please try again later." />
-    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={AUTH_LINK}>Back to account</Link>}
+    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
   </div>
 
   return <form noValidate onSubmit={save} className="space-y-3">
@@ -195,12 +194,12 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
     </div>
     {notice && <div id={notice.field ? FIELD_ERRORS[notice.field].id : undefined} className="space-y-1">
       <Feedback compact tone="error" message={notice.message} />
-      {notice.reload && <button type="button" className={AUTH_LINK} onClick={() => window.location.reload()}>Reload choices</button>}
+      {notice.reload && <button type="button" className={cx(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
     </div>}
     <button type="submit" disabled={!ready || pending} aria-busy={pending}
-      className={cx(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60', AUTH_FOCUS)}>
+      className={cx(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60', focusRingNavy)}>
       {pending ? 'Saving…' : 'Save selection'}
     </button>
-    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={AUTH_LINK}>Back to account</Link>}
+    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
   </form>
 }

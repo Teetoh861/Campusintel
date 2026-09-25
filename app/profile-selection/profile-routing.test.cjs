@@ -86,8 +86,23 @@ test('incomplete account reaches selection; completed account stays and offers i
   assert.equal(page.props.children[1].props.initial.status, 'complete')
 }))
 
+test('account and profile error links use shared secondary button focus', async () => fixture(async f => {
+  const { btnBase, btnSm, btnGhost, focusRingNavy } = require('../../components/chrome/ui.tsx')
+  const check = link => {
+    const actual = new Set(link.props.className.split(/\s+/))
+    for (const primitive of [btnBase, btnSm, btnGhost, focusRingNavy]) {
+      for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
+    }
+    assert.equal(actual.has('underline'), false)
+  }
+  f.state.profile = { status: 'complete', options, selection }
+  check(nodes(await f.account()).find(node => node.props?.children === 'Change selection'))
+  f.state.profile = { status: 'unavailable' }
+  check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to account'))
+}))
+
 test('auth and selection redirects terminate, including a completed student opening the change path', async () => fixture(async f => {
-  await assert.rejects(f.signedOutGate({ children: 'login form' }), /redirect:\/account/)
+  await assert.rejects(f.signedOutGate({ children: 'login form' }), /redirect:\/dashboard/)
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', options, selection }

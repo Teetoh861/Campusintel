@@ -18,7 +18,8 @@ export const AUTH_API = {
   verifyRecovery: '/api/auth/verify-recovery', cancelRecovery: '/api/auth/cancel-recovery',
   reset: '/api/auth/reset-password', logout: '/api/auth/logout', session: '/api/auth/session',
 } as const satisfies Record<string, `/api/auth/${string}`>
-export const DEFAULT_AUTH_REDIRECT = '/courses'
+export const STUDENT_HOME_PATH = '/dashboard'
+export const DEFAULT_AUTH_REDIRECT = STUDENT_HOME_PATH
 export const PASSWORD_RESET_DESTINATION = AUTH_PATHS.login + '?state=' + PASSWORD_RESET_STATE
 export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart: 'RECOVERY_RESTART_REQUIRED' } as const
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'

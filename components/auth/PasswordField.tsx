@@ -2,7 +2,8 @@
 'use client'
 import { forwardRef, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-import { FormField, AUTH_FOCUS } from '@/components/chrome/FormField'
+import { FormField } from '@/components/chrome/FormField'
+import { focusRingNavy } from '@/components/chrome/ui'
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@/lib/auth/constants'
 import type { ComponentProps } from 'react'
 
@@ -15,7 +16,7 @@ export const PasswordField = forwardRef<HTMLInputElement, ComponentProps<typeof 
     trailing={<button type="button" disabled={props.disabled} aria-controls={props.id}
       aria-label={visible ? 'Hide ' + props.label.toLowerCase() : 'Show ' + props.label.toLowerCase()}
       aria-pressed={visible} onClick={() => setVisible(value => !value)}
-      className={'absolute right-0.5 top-0.5 flex min-h-11 min-w-11 items-center justify-center rounded-ci-btn text-ci-gray-700 ' + AUTH_FOCUS}>
+      className={'absolute right-0.5 top-0.5 flex min-h-11 min-w-11 items-center justify-center rounded-ci-btn text-ci-gray-700 ' + focusRingNavy}>
       <Icon aria-hidden="true" className="h-4 w-4" />
     </button>} />
 })

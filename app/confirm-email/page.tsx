@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { AuthSecondaryActions } from '@/components/auth/AuthFormLayout'
 import { SignedOutGate } from '@/components/auth/SignedOutGate'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
-import { AUTH_LINK } from '@/components/chrome/FormField'
+import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { AUTH_PATHS } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 
@@ -16,8 +16,8 @@ function Content() {
     {isStudentAuthEnabled() ? <>
       <p>Start from sign up or sign in to request a confirmation code.</p>
       <AuthSecondaryActions>
-        <Link href={AUTH_PATHS.register} className={AUTH_LINK}>Create account</Link>
-        <Link href={AUTH_PATHS.login} className={AUTH_LINK}>Sign in</Link>
+        <Link href={AUTH_PATHS.register} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Create account</Link>
+        <Link href={AUTH_PATHS.login} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Sign in</Link>
       </AuthSecondaryActions>
     </> : <AuthUnavailable />}
   </AuthShell>

@@ -2,7 +2,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { authJson } from './response'
-import { AUTH_PATHS, EXISTING_STUDENT_SESSION } from './constants'
+import { EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from './constants'
 import type { User } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
 
@@ -52,6 +52,6 @@ export async function hasStudentSession(): Promise<boolean> {
 /** Reject identity-changing requests before any gateway or rate-limit operation. */
 export async function rejectExistingStudent() {
   return await hasStudentSession()
-    ? authJson({ code: EXISTING_STUDENT_SESSION, next: AUTH_PATHS.account }, 409)
+    ? authJson({ code: EXISTING_STUDENT_SESSION, next: STUDENT_HOME_PATH }, 409)
     : null
 }

@@ -11,12 +11,14 @@ import { DEFAULT_AUTH_REDIRECT } from './constants'
 
 // Executed in Node with the test-only server-only shim; no provider calls or real secrets.
 test('redirects reject external, encoded, control, privileged and looping destinations', () => {
+  assert.equal(DEFAULT_AUTH_REDIRECT, '/dashboard')
   for (const path of ['https://evil.test', '//evil.test', '/\\evil.test', '/%2f%2fevil.test',
     '/api/auth/login', '/admin', '/ADMIN/users', '/auth/confirm', '/login', '/confirm-email',
     '/courses?code=123', '/courses#code', '/courses\n', '/a/../admin', '/a/%2e%2e/admin']) {
     assert.equal(getSafeReturnPath(path), DEFAULT_AUTH_REDIRECT)
   }
   assert.equal(getSafeReturnPath('/account'), '/account')
+  assert.equal(getSafeReturnPath('/dashboard'), '/dashboard')
   assert.equal(getSafeReturnPath('/courses/business-statistics'), '/courses/business-statistics')
 })
 

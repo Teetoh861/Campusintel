@@ -4,6 +4,7 @@ import { buildMaterialRequestEmailUrl } from '@/lib/material-email'
 export const courses: Course[] = [
   {
     id: '1',
+    contentKey: 'entrepreneurship-innovation',
     slug: 'entrepreneurship-innovation',
     code: 'ENT211',
     title: 'Entrepreneurship and Innovation',
@@ -72,6 +73,7 @@ export const courses: Course[] = [
   },
   {
     id: '2',
+    contentKey: 'principles-business-administration',
     slug: 'principles-business-administration',
     code: 'BUA201',
     title: 'Principles of Business Administration I',
@@ -175,6 +177,7 @@ export const courses: Course[] = [
   },
   {
     id: '3',
+    contentKey: 'business-statistics',
     slug: 'business-statistics',
     code: 'BUA203',
     title: 'Business Statistics',
@@ -215,6 +218,7 @@ export const courses: Course[] = [
   },
   {
     id: '4',
+    contentKey: 'leadership-governance',
     slug: 'leadership-governance',
     code: 'BUA205',
     title: 'Leadership and Governance',
@@ -285,6 +289,7 @@ export const courses: Course[] = [
   },
   {
     id: '5',
+    contentKey: 'business-mathematics',
     slug: 'business-mathematics',
     code: 'BUA210',
     title: 'Business Mathematics',
@@ -325,6 +330,7 @@ export const courses: Course[] = [
   },
   {
     id: '6',
+    contentKey: 'consumer-behaviour',
     slug: 'consumer-behaviour',
     code: 'BUA221',
     title: 'Consumer Behaviour',
@@ -390,6 +396,7 @@ export const courses: Course[] = [
   },
   {
     id: '7',
+    contentKey: 'financial-accounting-1',
     slug: 'financial-accounting-1',
     code: 'ACC201',
     title: 'Financial Accounting I',
@@ -464,6 +471,7 @@ export const courses: Course[] = [
   },
   {
     id: '9',
+    contentKey: 'use-of-english',
     slug: 'use-of-english',
     code: 'GST111',
     title: 'Communication in English',
@@ -498,6 +506,7 @@ export const courses: Course[] = [
   },
   {
     id: '8',
+    contentKey: 'nigerian-peoples-and-culture',
     slug: 'nigerian-peoples-and-culture',
     code: 'GST112',
     title: 'Nigerian Peoples and Culture',
@@ -532,6 +541,7 @@ export const courses: Course[] = [
   },
   {
     id: '10',
+    contentKey: 'international-organisational-behaviour',
     slug: 'international-organisational-behaviour',
     code: 'BUA222',
     title: 'International Organisational Behaviour',
@@ -623,6 +633,7 @@ export const courses: Course[] = [
   },
   {
     id: '11',
+    contentKey: 'principles-business-administration-2',
     slug: 'principles-business-administration-2',
     code: 'BUA202',
     title: 'Principles of Business Administration II',
@@ -702,6 +713,7 @@ export const courses: Course[] = [
   },
   {
     id: "12",
+    contentKey: "quantitative-analysis-management",
     slug: "quantitative-analysis-management",
     code: "BUA204",
     title: "Quantitative Analysis in Management",
@@ -862,6 +874,7 @@ export const courses: Course[] = [
   },
   {
     id: "13",
+    contentKey: "philosophy-logic-human-existence",
     slug: "philosophy-logic-human-existence",
     code: "GST212",
     title: "Philosophy, Logic and Human Existence",
@@ -915,6 +928,7 @@ export const courses: Course[] = [
   },
   {
     id: "14",
+    contentKey: "introduction-financial-management",
     slug: "introduction-financial-management",
     code: "BUA216",
     title: "Introduction to Financial Management",
@@ -965,6 +979,7 @@ export const courses: Course[] = [
   },
   {
     id: "15",
+    contentKey: "bua218",
     slug: "bua218",
     code: "BUA218",
     title: "Green Management",
@@ -1034,6 +1049,11 @@ export const courses: Course[] = [
 
 export function getCourseBySlug(slug: string): Course | undefined {
   return courses.find((course) => course.slug === slug)
+}
+
+/** Resolves a platform registry key to its repository-owned course content. */
+export function getCourseByContentKey(contentKey: string): Course | undefined {
+  return courses.find((course) => course.contentKey === contentKey)
 }
 
 export function getCoursesByLevel(level: number): Course[] {

@@ -127,7 +127,7 @@ test('server-returned choices keep database order and enable Department → Leve
   assert.deepEqual(JSON.parse(f.requests[0][1].body), {
     departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period,
   })
-  assert.deepEqual(f.navigations, [['replace', '/account']])
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }))
 
 test('validation focuses and describes the first missing choice, then clears when corrected', async () => fixture(async f => {
@@ -207,7 +207,7 @@ test('completed student can change one value and return only after the persisted
   f.respond(async () => response(200, f.saved(f.ids.department, f.ids.level, f.ids.secondPeriod)))
   await f.submit()
   assert.equal(JSON.parse(f.requests[0][1].body).academicPeriodId, f.ids.secondPeriod)
-  assert.deepEqual(f.navigations, [['replace', '/account']])
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }, true))
 
 test('mismatched or malformed success cannot claim a saved profile', async () => fixture(async f => {
@@ -219,6 +219,22 @@ test('mismatched or malformed success cannot claim a saved profile', async () =>
   await f.submit()
   assert.deepEqual(f.navigations, [])
   assert.equal(f.requests.length, 2)
+}, true))
+
+test('profile edit and reload actions keep shared button hierarchy and focus', async () => fixture(async f => {
+  const { btnBase, btnSm, btnGhost, btnNavy, focusRingNavy } = require('../../components/chrome/ui.tsx')
+  const check = (node, variant) => {
+    const actual = new Set(node.props.className.split(/\s+/))
+    for (const primitive of [btnBase, btnSm, variant, focusRingNavy]) {
+      for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
+    }
+    assert.equal(actual.has('underline'), false)
+  }
+  check(nodes(f.render()).find(node => node.props?.children === 'Back to account'), btnGhost)
+  check(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit'), btnNavy)
+  f.respond(async () => response(400, { status: 'invalid-selection' }))
+  await f.submit()
+  check(nodes(f.render()).find(node => node.props?.children === 'Reload choices'), btnGhost)
 }, true))
 
 test('failed, unavailable, invalid and revoked saves have controlled outcomes', async () => fixture(async f => {
@@ -265,7 +281,7 @@ test('a double submit makes one request and keeps the form locked through naviga
   await Promise.all([first, second])
   await f.submit()
   assert.equal(f.requests.length, 1)
-  assert.deepEqual(f.navigations, [['replace', '/account']])
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }, true))
 
 test('presentation code contains no production catalogue values or persistent profile cache', () => {
