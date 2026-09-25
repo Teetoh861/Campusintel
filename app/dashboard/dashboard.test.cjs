@@ -147,6 +147,7 @@ test('ready row has one large resolved-route target and only usable Quiz/Theory 
   assert.match(html, /focus-visible:outline/)
   assert.match(html, /Quiz · Theory/)
   assert.doesNotMatch(html, /Notes|<button\b/)
+  assert.doesNotMatch(html, /<svg\b/, 'course rows have no navigation icon')
   assert.equal((html.match(/<a\b/g) || []).length, 1, 'the row contains no nested links')
 
   const noQuiz = { ...ready, content: { ...ready.content, availability: {
@@ -167,17 +168,27 @@ test('unbuilt and broken institutional rows remain visible without click targets
 }))
 
 test('all course states share one content structure; only ready uses a linked wrapper', async () => fixture(async f => {
+  const tokens = value => new Set((value || '').split(/\s+/).filter(Boolean))
   const wrappers = [ready, unbuilt, broken].map(item => f.CourseRow({ course: item }).props.children)
   const contents = wrappers.map(wrapper => {
     assert.equal(React.Children.count(wrapper.props.children), 1)
     const detail = wrapper.props.children
     assert.equal(detail.type, 'div')
-    return nodes(detail).map(node => [node.type, node.props.className])
+    return nodes(detail).map(node => [node.type, tokens(node.props.className)])
   })
   assert.deepEqual(contents[1], contents[0])
   assert.deepEqual(contents[2], contents[0])
-  assert.ok(wrappers[0].props.className.startsWith(wrappers[1].props.className + ' '))
-  assert.equal(wrappers[1].props.className, wrappers[2].props.className)
+  const [linkedClasses, unbuiltClasses, brokenClasses] = wrappers.map(wrapper => tokens(wrapper.props.className))
+  for (const token of unbuiltClasses) assert.ok(linkedClasses.has(token), `linked row lost shared geometry ${token}`)
+  assert.deepEqual(unbuiltClasses, brokenClasses)
+  assert.ok(linkedClasses.has('group') && !unbuiltClasses.has('group'))
+  assert.ok([...linkedClasses].every(token => !/(^|:)(rounded-|bg-|shadow-)/.test(token)),
+    'the continuous list must not gain card or selected-background styling')
+  const title = nodes(wrappers[0].props.children).find(node => node.props?.children === ready.title)
+  const titleClasses = tokens(title.props.className)
+  assert.ok(titleClasses.has('min-[900px]:group-hover:text-ci-navy'))
+  assert.ok([...titleClasses].filter(token => token.includes('group-hover:'))
+    .every(token => token.startsWith('min-[900px]:')), 'hover cue stays desktop-only')
   assert.equal(wrappers[0].props.href, '/courses/resolved-slug')
   assert.equal(wrappers[1].type, 'div')
   assert.equal(wrappers[2].type, 'div')

@@ -18,7 +18,7 @@ export function CourseRow({ course }: { course: DashboardCourse }) {
         {course.code}
       </span>
       <span className="block min-w-0">
-        <span className="block text-[16px] font-semibold leading-[1.3] text-ci-navy-900">{course.title}</span>
+        <span className="block text-[16px] font-semibold leading-[1.3] text-ci-navy-900 transition-colors min-[900px]:group-hover:text-ci-navy">{course.title}</span>
         {ready ? signals && <span className="mt-0.5 block text-[13px] leading-5 text-ci-gray-700">{signals}</span>
           : <span className="mt-0.5 block text-[13px] leading-5 text-ci-gray-700">
             {content.state === 'not-built' ? 'Content not yet available' : 'Content temporarily unavailable'}
@@ -28,7 +28,7 @@ export function CourseRow({ course }: { course: DashboardCourse }) {
 
   return <li className="border-b border-ci-border first:border-t">
     {ready ? <Link href={content.courseHref} prefetch={false}
-      className={cx(ROW, 'rounded-ci-btn hover:bg-ci-blue-50', focusRingNavy)}>
+      className={cx(ROW, 'group', focusRingNavy)}>
       {details}
     </Link> : <div className={ROW}>{details}</div>}
   </li>
