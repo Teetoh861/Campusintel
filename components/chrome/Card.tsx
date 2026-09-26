@@ -1,8 +1,8 @@
 // Card — Variant B course card (.ccard). White-on-warm surface, 1px border,
 // soft hover lift; the exam-critical flag adds an amber tag + warm gradient
-// wash. The homepage grid, course directory and bookmarks list share this
-// component. The 3-bar difficulty indicator lives in <SignalBar>.
-// (component-spec.md → Card)
+// wash. Reskin only: CardProps is unchanged so the homepage grid, the course
+// directory and the bookmarks list keep passing the same data. The 3-bar
+// difficulty indicator lives in <SignalBar>. (component-spec.md → Card)
 import Link from 'next/link'
 import { SignalBar, type DifficultyLevel } from './SignalBar'
 import { cx } from './ui'
@@ -32,7 +32,7 @@ export type CardProps = {
   flag?: CardFlag
   level: string
   credits: string
-  questions?: string
+  questions: string
   questionsRange?: string
   timeLimit: string
   difficulty: DifficultyLevel
@@ -119,15 +119,11 @@ export function Card({
         <span>{level} level</span>
         <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
         <span>{credits}</span>
-        {questions ? (
-          <>
-            <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
-            <span>
-              {questions} questions
-              {questionsRange ? <span className="ml-1 text-ci-gray-400">{questionsRange}</span> : null}
-            </span>
-          </>
-        ) : null}
+        <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
+        <span>
+          {questions} questions
+          {questionsRange ? <span className="ml-1 text-ci-gray-400">{questionsRange}</span> : null}
+        </span>
       </div>
 
       {/* Footer is two stacked rows: the difficulty indicator sits ABOVE a

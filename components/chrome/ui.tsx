@@ -10,9 +10,6 @@ export const btnBase =
 
 export const btnSm = 'min-h-[44px] rounded-[9px] px-[18px] py-[11px] text-[15px]'
 
-// Shared keyboard focus on paper and other light surfaces.
-export const focusRingNavy = 'focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-ci-navy'
-
 // accent — primary on blue (amber, navy text, soft amber glow).
 export const btnAccent =
   'bg-ci-accent text-ci-navy-900 shadow-[0_1px_1px_rgba(38,35,32,.04),0_10px_22px_-10px_rgba(224,163,62,.7)] hover:bg-ci-accent-600 hover:-translate-y-px'

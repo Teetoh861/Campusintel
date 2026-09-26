@@ -5,7 +5,6 @@
 import { notFound } from 'next/navigation'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import { QuizClient } from './QuizClient'
 
 type PageProps = { params: Promise<{ slug: string }> }
@@ -18,9 +17,8 @@ export default async function QuizPage({ params }: PageProps) {
   const { slug } = await params
   const course = getCourseBySlug(slug)
   if (!course) notFound()
-  const usableQuiz = getUsableCourseQuiz(course, getQuizByCourseSlug(slug))
-  if (!usableQuiz) notFound()
-  const { quiz } = usableQuiz
+  const quiz = getQuizByCourseSlug(slug)
+  if (!quiz) notFound()
 
   return (
     <QuizClient
@@ -29,9 +27,9 @@ export default async function QuizPage({ params }: PageProps) {
       courseSlug={course.slug}
       sections={quiz.sections}
       questions={quiz.questions}
-      timerSeconds={usableQuiz.timerSeconds}
+      timerSeconds={quiz.quizDurationMinutes * 60}
       maxQuestions={quiz.maxQuizQuestions}
-      totalInBank={usableQuiz.bankSize}
+      totalInBank={quiz.totalQuestions}
     />
   )
 }

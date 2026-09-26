@@ -1,11 +1,12 @@
 // Course detail (/courses/[slug]) — Variant B "continuous blue" reskin.
-// Server-rendered. The cover leads into a compact accordion of visible study
-// sections, followed by the navy closing CTA when a quiz is usable.
+// Server-rendered. Section order and conditional rendering are unchanged from
+// the dossier version. The cover leads into a compact accordion of the visible
+// study sections, followed by the navy closing quiz CTA. Real course/quiz data
+// throughout.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import {
   getTheoryContentBySlug,
   type TheoryQuestion,
@@ -74,8 +75,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
   const { slug } = await params
   const course = getCourseBySlug(slug)
   if (!course) notFound()
-  const usableQuiz = getUsableCourseQuiz(course, getQuizByCourseSlug(slug))
-  const quiz = usableQuiz?.quiz
+  const quiz = getQuizByCourseSlug(slug)
   const theory = getTheoryContentBySlug(slug)
 
   const takeaways = course.keyTakeaways ?? []
@@ -94,10 +94,10 @@ export default async function CourseDetailPage({ params }: PageProps) {
     return false
   })
 
-  const quizHref = usableQuiz?.href
+  const quizHref = `/courses/${course.slug}/quiz`
   const materialsHref = `/courses/${course.slug}/materials`
-  const questionsValue = usableQuiz
-    ? `${usableQuiz.attemptSize} questions per attempt · ${usableQuiz.bankSize}-question bank`
+  const questionsValue = quiz
+    ? `${Math.min(quiz.maxQuizQuestions, quiz.totalQuestions)} questions per attempt · ${quiz.totalQuestions}-question bank`
     : 'N/A'
   const quizTimeValue = quiz ? `${quiz.quizDurationMinutes} min` : 'N/A'
 
@@ -225,9 +225,9 @@ export default async function CourseDetailPage({ params }: PageProps) {
           </p>
 
           <div className="mt-[30px] flex w-full max-w-[560px] flex-col gap-3">
-            {quizHref && <Link className={cx(btnBase, btnAccent, 'w-full')} href={quizHref}>
+            <Link className={cx(btnBase, btnAccent, 'w-full')} href={quizHref}>
               Start quiz
-            </Link>}
+            </Link>
             <div className="flex w-full items-center gap-3">
               <Link className={cx(btnBase, btnGhostOnBlue, 'min-w-0 flex-1')} href={materialsHref}>
                 Request material privately
@@ -251,14 +251,14 @@ export default async function CourseDetailPage({ params }: PageProps) {
       </header>
 
       {/* ===================== BODY: course accordion ===================== */}
-      <div className={cx('pt-14 min-[900px]:pt-[72px]', !quizHref && 'pb-20')}>
+      <div className="pt-14 min-[900px]:pt-[72px]">
         <div className={WRAP}>
           <CourseAccordion sections={accordionSections} />
         </div>
       </div>
 
       {/* ===================== CLOSING QUIZ CTA ===================== */}
-      {quizHref && <section className="pb-20 pt-16" id="quiz" data-screen-label="Quiz entry">
+      <section className="pb-20 pt-16" id="quiz" data-screen-label="Quiz entry">
         <div className={WRAP}>
           <div className="relative overflow-hidden rounded-[24px] bg-ci-navy p-[48px_26px] text-center text-white min-[900px]:p-[72px_40px]">
             <DashedRing className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 text-ci-blue-600 opacity-45" />
@@ -279,7 +279,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
             </div>
           </div>
         </div>
-      </section>}
+      </section>
     </>
   )
 }
