@@ -1,5 +1,5 @@
 -- supabase/tests/profiles_rls.test.sql
--- Phase A/B — database tests for the public.profiles security boundary.
+-- Phase A1 — database tests for the public.profiles security boundary.
 --
 -- Run with:  supabase test db      (local Docker stack only)
 --
@@ -7,8 +7,7 @@
 --   * profile creation is bound to email confirmation, not signup;
 --   * creation is idempotent and never overwrites;
 --   * an authenticated student can read only their own row;
---   * an authenticated student can update only their complete selection;
---   * profile INSERT/DELETE and privileged-column updates remain unavailable;
+--   * an authenticated student has no INSERT/UPDATE/DELETE capability at all;
 --   * anon has nothing;
 --   * the private trigger helpers are not callable by browser-facing roles.
 --
@@ -24,7 +23,7 @@
 
 begin;
 
-select plan(36);
+select plan(34);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures
@@ -112,24 +111,24 @@ select is(
 );
 
 select is(
-  (select department_id from public.profiles
+  (select department from public.profiles
     where id = '11111111-1111-4111-8111-111111111111'),
-  null::uuid,
-  'department reference begins NULL'
+  null::text,
+  'department begins NULL'
 );
 
 select is(
-  (select academic_level_id from public.profiles
+  (select level from public.profiles
     where id = '11111111-1111-4111-8111-111111111111'),
-  null::uuid,
-  'academic-level reference begins NULL'
+  null::smallint,
+  'level begins NULL'
 );
 
 select is(
-  (select academic_period_id from public.profiles
+  (select semester from public.profiles
     where id = '11111111-1111-4111-8111-111111111111'),
-  null::uuid,
-  'academic-period reference begins NULL'
+  null::smallint,
+  'semester begins NULL'
 );
 
 select isnt(
@@ -149,21 +148,13 @@ select isnt(
 -- ---------------------------------------------------------------------------
 -- Idempotency: a replayed confirmation must not duplicate or overwrite
 -- ---------------------------------------------------------------------------
--- Populate a complete selection first, then force the trigger to fire a
--- second time by clearing and re-setting email_confirmed_at. Clearing does not
--- fire the trigger (its WHEN clause requires NULL -> NOT NULL); re-setting
--- does. ON CONFLICT DO NOTHING must leave the row completely untouched.
+-- Populate a field first, then force the trigger to fire a second time by
+-- clearing and re-setting email_confirmed_at. Clearing does not fire the
+-- trigger (its WHEN clause requires NULL -> NOT NULL); re-setting does.
+-- ON CONFLICT DO NOTHING must leave the existing row completely untouched.
 
 update public.profiles
-   set department_id = (
-         select id from public.departments order by sort_order limit 1
-       ),
-       academic_level_id = (
-         select id from public.academic_levels order by sort_order limit 1
-       ),
-       academic_period_id = (
-         select id from public.academic_periods order by sort_order limit 1
-       )
+   set department = 'REPLAY-SENTINEL'
  where id = '11111111-1111-4111-8111-111111111111';
 
 update auth.users set email_confirmed_at = null
@@ -179,24 +170,10 @@ select is(
 );
 
 select is(
-  (select department_id from public.profiles
+  (select department from public.profiles
     where id = '11111111-1111-4111-8111-111111111111'),
-  (select id from public.departments order by sort_order limit 1),
-  'replayed confirmation preserves the department reference'
-);
-
-select is(
-  (select academic_level_id from public.profiles
-    where id = '11111111-1111-4111-8111-111111111111'),
-  (select id from public.academic_levels order by sort_order limit 1),
-  'replayed confirmation preserves the academic-level reference'
-);
-
-select is(
-  (select academic_period_id from public.profiles
-    where id = '11111111-1111-4111-8111-111111111111'),
-  (select id from public.academic_periods order by sort_order limit 1),
-  'replayed confirmation preserves the academic-period reference'
+  'REPLAY-SENTINEL',
+  'replayed confirmation does not overwrite existing profile data'
 );
 
 -- ---------------------------------------------------------------------------
@@ -226,13 +203,10 @@ update public.profiles set role = 'student'
  where id = '11111111-1111-4111-8111-111111111111';
 
 select throws_ok(
-  $$ update public.profiles
-        set department_id = (
-          select id from public.departments order by sort_order limit 1
-        )
-      where id = '22222222-2222-4222-8222-222222222222' $$,
+  $$ update public.profiles set semester = 3
+      where id = '11111111-1111-4111-8111-111111111111' $$,
   '23514', null,
-  'profile CHECK rejects a partial selection'
+  'semester CHECK rejects a value outside (NULL, 1, 2)'
 );
 
 -- The trigger must win over a client-supplied updated_at. Asserting that the
@@ -302,19 +276,11 @@ select throws_ok(
   'A cannot directly INSERT a profile'
 );
 
-select lives_ok(
-  $$ update public.profiles
-        set department_id = (
-              select id from public.departments order by sort_order desc limit 1
-            ),
-            academic_level_id = (
-              select id from public.academic_levels order by sort_order desc limit 1
-            ),
-            academic_period_id = (
-              select id from public.academic_periods order by sort_order desc limit 1
-            )
+select throws_ok(
+  $$ update public.profiles set department = 'Business Administration'
       where id = '11111111-1111-4111-8111-111111111111' $$,
-  'A can UPDATE their own complete active selection'
+  '42501', null,
+  'A cannot UPDATE their own department in A1'
 );
 
 select throws_ok(
@@ -324,19 +290,11 @@ select throws_ok(
   'A cannot UPDATE their own role (no self-promotion)'
 );
 
-select lives_ok(
-  $$ update public.profiles
-        set department_id = (
-              select id from public.departments order by sort_order limit 1
-            ),
-            academic_level_id = (
-              select id from public.academic_levels order by sort_order limit 1
-            ),
-            academic_period_id = (
-              select id from public.academic_periods order by sort_order limit 1
-            )
+select throws_ok(
+  $$ update public.profiles set department = 'Hijacked'
       where id = '22222222-2222-4222-8222-222222222222' $$,
-  'A cross-account UPDATE matches no row'
+  '42501', null,
+  'A cannot UPDATE B''s profile'
 );
 
 select throws_ok(
@@ -376,14 +334,10 @@ set local request.jwt.claims =
   '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';
 
 select is(
-  (select num_nonnulls(
-      department_id,
-      academic_level_id,
-      academic_period_id
-    ) from public.profiles
+  (select count(*)::int from public.profiles
     where id = '22222222-2222-4222-8222-222222222222'),
-  0,
-  'B can select their own unchanged all-null profile'
+  1,
+  'B can select their own profile'
 );
 
 select is(

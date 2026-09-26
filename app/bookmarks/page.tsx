@@ -3,8 +3,7 @@
 // child. Precomputing CardProps for every course on the server keeps the
 // client island free of data-shaping logic.
 import { courses } from '@/lib/data/courses'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
+import { quizzes } from '@/lib/data/quizzes'
 import type { Course } from '@/lib/types'
 import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
@@ -17,7 +16,7 @@ const toLevel = (d: Course['difficulty']): DifficultyLevel =>
   d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
 
 function buildCardProps(course: Course): CardProps {
-  const quiz = getUsableCourseQuiz(course, getQuizByCourseSlug(course.slug))
+  const quiz = quizzes[course.slug]
   const critical = course.examCritical === true
   return {
     code: course.code,
@@ -28,8 +27,8 @@ function buildCardProps(course: Course): CardProps {
       : { kind: 'tracked', label: 'Tracked' },
     level: String(course.level),
     credits: `${course.credits} credits`,
-    questions: quiz ? String(quiz.bankSize) : undefined,
-    timeLimit: quiz ? `${quiz.quiz.quizDurationMinutes} min` : '',
+    questions: quiz ? String(quiz.totalQuestions) : '0',
+    timeLimit: quiz ? `${quiz.quizDurationMinutes} min` : '',
     difficulty: toLevel(course.difficulty),
     cta: {
       label: 'View course',
@@ -37,10 +36,10 @@ function buildCardProps(course: Course): CardProps {
       variant: 'primary',
       withArrow: true,
     },
-    secondaryCta: critical && quiz
+    secondaryCta: critical
       ? {
           label: 'Start quiz',
-          href: quiz.href,
+          href: `/courses/${course.slug}/quiz`,
           variant: 'secondary',
           withArrow: true,
         }
