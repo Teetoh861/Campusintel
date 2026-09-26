@@ -37,6 +37,9 @@ export interface FormulaEntry {
 
 export interface Course {
   id: string
+  // Immutable repository identity used by the platform course registry.
+  // Unlike `slug`, this does not change when a presentation URL changes.
+  readonly contentKey: string
   slug: string
   code: string
   title: string
@@ -49,7 +52,7 @@ export interface Course {
   credits: number
   difficulty: 'Easy' | 'Medium' | 'Hard'
   featured?: boolean // shown in the homepage's curated set
-  examCritical?: boolean // gets the teal "Exam-critical" treatment + "Start quiz" CTA
+  examCritical?: boolean // gets the "Exam-critical" treatment; quiz CTA still requires a usable quiz
   lecturer?: string
   assessmentStructure?: {
     assignment?: number

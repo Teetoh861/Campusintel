@@ -1,12 +1,16 @@
 // Nav — Variant B "continuous blue" global header. Solid ci-navy bar (no
 // blur, no bottom border) that reads as one field with the homepage hero.
 // White logo + links, a white "Browse courses" button on desktop, and a
-// hamburger + paper drawer on mobile. The drawer toggle owns the only state.
+// hamburger + paper drawer on mobile. Student state is fetched as booleans only.
 // (component-spec.md → Nav)
 'use client'
 
-import { useState } from 'react'
+import { onStudentChange } from '@/lib/auth/client-events'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { AUTH_API, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
+import { useLogoutAction } from '@/components/auth/LogoutButton'
+import { AuthNavActions } from '@/components/auth/AuthNavActions'
 import { BookLogo, Wordmark } from './Logo'
 import { btnAccent, btnBase, btnNavy, btnSm, btnWhite, cx } from './ui'
 
@@ -26,6 +30,45 @@ type Props = {
 export function Nav({ variant = 'blue' }: Props) {
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
+  const [auth, setAuth] = useState<{ enabled: boolean; signedIn: boolean } | null>(null)
+  const logout = useLogoutAction()
+  useEffect(() => {
+    let controller: AbortController | undefined
+    let active = true
+    const refresh = async () => {
+      controller?.abort()
+      controller = new AbortController()
+      const signal = controller.signal
+      try {
+        const response = await fetch(AUTH_API.session, { cache: 'no-store', credentials: 'same-origin', signal })
+        const state: unknown = await response.json()
+        if (!response.ok || !state || typeof state !== 'object' || !('enabled' in state) ||
+            !('signedIn' in state) || typeof state.enabled !== 'boolean' || typeof state.signedIn !== 'boolean') {
+          throw new Error('Invalid auth status')
+        }
+        if (active && !signal.aborted) setAuth({ enabled: state.enabled, signedIn: state.signedIn })
+      } catch {
+        // Unknown remains unknown; a failed lookup cannot confirm sign-out or disabled rollout.
+        // Keep the last confirmed presentation until a successful response replaces it.
+      }
+    }
+    const visible = () => { if (document.visibilityState === 'visible') void refresh() }
+    const unsubscribe = onStudentChange(refresh)
+    void refresh()
+    window.addEventListener('focus', visible)
+    window.addEventListener(AUTH_STATUS_EVENT, visible)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      active = false
+      unsubscribe()
+      controller?.abort()
+      window.removeEventListener('focus', visible)
+      window.removeEventListener(AUTH_STATUS_EVENT, visible)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [])
+  const accountControls = auth?.enabled !== false
+  const identity = auth === null ? null : auth.signedIn
 
   return (
     <nav className="sticky top-0 z-[60] bg-ci-navy" data-screen-label="Nav" data-variant={variant}>
@@ -41,7 +84,7 @@ export function Nav({ variant = 'blue' }: Props) {
             <Wordmark className="text-[20px]" />
           </Link>
 
-          <div className="ml-5 hidden items-center gap-[34px] min-[900px]:flex">
+          <div className={cx('hidden items-center min-[900px]:flex', accountControls ? 'ml-2 gap-4' : 'ml-5 gap-[34px]')}>
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
@@ -54,12 +97,12 @@ export function Nav({ variant = 'blue' }: Props) {
           </div>
 
           <div className="ml-auto flex items-center gap-[14px]">
-            <Link
+            {accountControls ? <div className="hidden min-[900px]:block"><AuthNavActions signedIn={identity} surface="blue" onNavigate={close} logout={logout} /></div> : <Link
               className={cx(btnBase, btnSm, btnWhite, 'hidden min-[900px]:inline-flex')}
               href="/courses"
             >
               Browse courses
-            </Link>
+            </Link>}
             <button
               type="button"
               className="-mr-[10px] inline-flex h-[46px] w-[46px] flex-col items-center justify-center gap-[5px] min-[900px]:hidden"
@@ -104,6 +147,7 @@ export function Nav({ variant = 'blue' }: Props) {
               </Link>
             ))}
             <div className="mt-3 flex flex-col gap-2">
+              {accountControls && <AuthNavActions signedIn={identity} surface="paper" onNavigate={close} logout={logout} />}
               <Link className={cx(btnBase, btnSm, btnNavy, 'w-full')} href="/courses" onClick={close}>
                 Browse courses
               </Link>
