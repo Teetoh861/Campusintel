@@ -4,7 +4,8 @@
 // only: same courses, same filter behaviour. Real course/quiz data throughout.
 import Link from 'next/link'
 import { courses } from '@/lib/data/courses'
-import { quizzes } from '@/lib/data/quizzes'
+import { getQuizByCourseSlug } from '@/lib/data/quizzes'
+import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import type { Course } from '@/lib/types'
 import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
@@ -17,23 +18,22 @@ const toLevel = (d: Course['difficulty']): DifficultyLevel =>
 
 function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
   return all.map((course) => {
-    const quiz = quizzes[course.slug]
+    const quiz = getUsableCourseQuiz(course, getQuizByCourseSlug(course.slug))
     const critical = course.examCritical === true
     const cardProps: CardProps = {
       code: course.code,
       title: course.title,
       // Punchy tagline where set; otherwise the real overview (clamped in Card).
       desc: course.tagline ?? course.overview,
-      // The amber flag is the lone exam-critical signal; the action pair
-      // (primary "View course" + amber "Start quiz") keeps every course
-      // reachable, including the critical one.
+      // Exam-critical courses keep their View course action even when a quiz
+      // attempt is unavailable.
       flag: critical
         ? { kind: 'critical', label: 'Exam-critical' }
         : { kind: 'tracked', label: 'Tracked' },
       level: String(course.level),
       credits: `${course.credits} credits`,
-      questions: quiz ? String(quiz.totalQuestions) : '0',
-      timeLimit: quiz ? `${quiz.quizDurationMinutes} min` : '',
+      questions: quiz ? String(quiz.bankSize) : undefined,
+      timeLimit: quiz ? `${quiz.quiz.quizDurationMinutes} min` : '',
       difficulty: toLevel(course.difficulty),
       cta: {
         label: 'View course',
@@ -41,10 +41,10 @@ function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
         variant: 'primary',
         withArrow: true,
       },
-      secondaryCta: critical
+      secondaryCta: critical && quiz
         ? {
             label: 'Start quiz',
-            href: `/courses/${course.slug}/quiz`,
+            href: quiz.href,
             variant: 'secondary',
             withArrow: true,
           }

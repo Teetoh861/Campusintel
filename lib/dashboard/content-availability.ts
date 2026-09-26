@@ -1,6 +1,7 @@
 import 'server-only'
 import { getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
+import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import { getTheoryContentBySlug } from '@/lib/data/theory-questions'
 import { getTopicNotesByCourseSlug } from '@/lib/data/topic-notes'
 import type { Course } from '@/lib/types'
@@ -21,14 +22,13 @@ export function getContentAvailability(course: Course): ContentAvailability {
   const hasQuiz = (quiz?.questions.length ?? 0) > 0
   const hasTheory = (theory?.theoryQuestions.length ?? 0) > 0
   const courseRouteOpensContent = getCourseBySlug(slug)?.contentKey === course.contentKey
-  const canStartQuiz = courseRouteOpensContent && hasQuiz &&
-    (quiz?.maxQuizQuestions ?? 0) > 0 && (quiz?.quizDurationMinutes ?? 0) > 0
+  const usableQuiz = getUsableCourseQuiz(course, quiz)
 
   return {
     // Topic notes have no student-facing route yet. Resource request cards do
     // not establish whether study content is available.
     notes: { hasData: (notes?.topics.length ?? 0) > 0, href: null },
-    cbt: { hasData: hasQuiz, href: canStartQuiz ? `${courseHref}/quiz` : null },
+    cbt: { hasData: hasQuiz, href: courseRouteOpensContent ? usableQuiz?.href ?? null : null },
     theory: { hasData: hasTheory, href: courseRouteOpensContent && hasTheory ? courseHref : null },
   }
 }
