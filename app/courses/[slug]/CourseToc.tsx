@@ -10,7 +10,7 @@ import { btnAccent, btnBase, btnSm, cx } from '@/components/chrome/ui'
 
 export type TocItem = { id: string; label: string; num: string }
 
-export function CourseToc({ items, quizHref }: { items: ReadonlyArray<TocItem>; quizHref: string }) {
+export function CourseToc({ items, quizHref }: { items: ReadonlyArray<TocItem>; quizHref?: string }) {
   const [active, setActive] = useState(items[0]?.id ?? '')
 
   useEffect(() => {
@@ -68,11 +68,11 @@ export function CourseToc({ items, quizHref }: { items: ReadonlyArray<TocItem>; 
           )
         })}
       </nav>
-      <div className="mt-6">
+      {quizHref && <div className="mt-6">
         <Link className={cx(btnBase, btnSm, btnAccent, 'w-full')} href={quizHref}>
           Start quiz
         </Link>
-      </div>
+      </div>}
     </aside>
   )
 }

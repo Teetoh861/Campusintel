@@ -281,7 +281,7 @@ test('public /courses still builds its own browse items from repository courses'
     }).outputText, filePath)
     Module._load = function(name, ...args) {
       if (name === '@/lib/data/courses') return { courses: [repositoryCourse] }
-      if (name === '@/lib/data/quizzes') return { quizzes: {} }
+      if (name === '@/lib/data/quizzes') return { getQuizByCourseSlug: () => undefined }
       if (name === './CourseDirectory') return { CourseDirectory: function CourseDirectory() { return null } }
       return originalLoad.call(this, name, ...args)
     }

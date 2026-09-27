@@ -52,7 +52,7 @@ export interface Course {
   credits: number
   difficulty: 'Easy' | 'Medium' | 'Hard'
   featured?: boolean // shown in the homepage's curated set
-  examCritical?: boolean // gets the teal "Exam-critical" treatment + "Start quiz" CTA
+  examCritical?: boolean // gets the "Exam-critical" treatment; quiz CTA still requires a usable quiz
   lecturer?: string
   assessmentStructure?: {
     assignment?: number
