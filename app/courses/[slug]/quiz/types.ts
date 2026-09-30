@@ -13,6 +13,7 @@ export type QuizCoreProps = {
   courseCode: string
   courseTitle: string
   courseSlug: string
+  courseContentKey: string
   sections: ReadonlyArray<string>
   // Full bank; QuizClient samples and freezes an attempt before answer entry.
   questions: ReadonlyArray<QuizQuestion>
