@@ -11,6 +11,7 @@ import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { createClient } from '@/lib/supabase/server'
 import { requireVerifiedSession } from '@/lib/auth/verified-session'
 import { checkResendAcknowledgment } from '@/lib/auth/signup-result'
+import { recordSuccessfulLogin } from '@/lib/analytics/server'
 
 /** Verify credentials server-side; serialize only a validated destination. */
 export async function POST(request: Request) {
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
     })
     if (sessionError) throw new Error('Session transfer failed')
     if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw new Error('Session transfer identity mismatch')
+    await recordSuccessfulLogin()
     return response
   } catch (error) { return authError(error) }
 }

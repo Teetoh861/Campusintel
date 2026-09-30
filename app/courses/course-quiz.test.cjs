@@ -70,6 +70,8 @@ async function fixture(quiz, run) {
       if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
       if (name === './BookmarkButton') return { BookmarkButton: bookmarkControl }
+      if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
+        React.createElement('span', { 'data-course-view-slug': courseSlug }) }
       if (name === './CourseAccordion') return { CourseAccordion: empty }
       if (name === './CourseDirectory') return { CourseDirectory: ({ items }) => renderCards(items) }
       if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
@@ -141,6 +143,12 @@ test('usable quiz keeps both course-detail entry points and the quiz route', asy
   assert.equal(route.props.maxQuestions, validQuiz.maxQuizQuestions)
   assert.equal(route.props.timerSeconds, validQuiz.quizDurationMinutes * 60)
   assert.equal(route.props.totalInBank, validQuiz.questions.length)
+}))
+
+test('course view instrumentation is present only for a canonical detail page', async () => fixture(validQuiz, async f => {
+  const html = renderToStaticMarkup(await f.detail(params))
+  assert.match(html, new RegExp(`data-course-view-slug="${course.slug}"`))
+  await assert.rejects(f.detail({ params: Promise.resolve({ slug: 'not-a-course' }) }), /notFound/)
 }))
 
 test('displayed bank counts come from questions students can attempt', async () => {
