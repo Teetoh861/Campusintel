@@ -254,13 +254,13 @@ select is(
 
 select is(
   (select count(*)::int from public.institutional_courses),
-  101,
+  149,
   'authenticated students can read the institutional catalogue'
 );
 
 select is(
   (select count(*)::int from public.course_applicability),
-  196,
+  264,
   'authenticated students can read institutional applicability'
 );
 

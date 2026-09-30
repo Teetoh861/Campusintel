@@ -51,14 +51,14 @@ select is(
 
 select is(
   (select count(*)::int from public.institutional_courses),
-  101,
-  'the six source sections produce 101 distinct exact code/title identities'
+  149,
+  'v1.1 adds 48 exact identities to the 101-row predecessor catalogue'
 );
 
 select ok(
   (
-    select count(distinct id) = 101
-      and count(distinct (course_code, display_title)) = 101
+    select count(distinct id) = 149
+      and count(distinct (course_code, display_title)) = 149
     from public.institutional_courses
   ),
   'institutional IDs and exact source code/title identities are unique'
@@ -102,7 +102,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is null
   ),
-  90,
+  138,
   'institutional catalogue courses may exist without repository content'
 );
 
@@ -183,8 +183,8 @@ select is(
 
 select is(
   (select count(*)::int from public.course_applicability),
-  196,
-  '164 non-GST section rows and 32 faculty-wide GST rows produce 196 confirmed tuples'
+  264,
+  'v1.1 adds 68 source rows while preserving 32 faculty-wide GST tuples'
 );
 
 select is(
@@ -273,15 +273,15 @@ select is(
   ),
   array[
     'accounting=29',
-    'actuarial-science=4',
-    'business-administration=33',
+    'actuarial-science=31',
+    'business-administration=38',
     'ehrm=32',
     'finance=31',
     'insurance=30',
-    'procurement=4',
+    'procurement=40',
     'taxation=33'
   ]::text[],
-  'department totals preserve six printed sections plus explicit GST expansion'
+  'department totals preserve the six prior sections and add the v1.1 source rows'
 );
 
 select is(
@@ -292,8 +292,8 @@ select is(
       on academic_levels.id = course_applicability.academic_level_id
     where academic_levels.key = '300-level'
   ),
-  0,
-  'no 300L applicability is inferred'
+  5,
+  'only five confirmed BUA 300L First Semester rows are added'
 );
 
 select is(
@@ -309,8 +309,8 @@ select is(
         'GST111', 'GST102', 'GST112', 'GST212'
       )
   ),
-  0,
-  'Actuarial Science and Procurement receive no inferred non-GST mappings'
+  63,
+  'Actuarial Science and Procurement receive 27 and 36 source-backed non-GST mappings'
 );
 
 select ok(
@@ -468,8 +468,8 @@ select is(
       on institutional_courses.id = course_applicability.institutional_course_id
     where institutional_courses.repository_course_id is not null
   ),
-  38,
-  'linked content retains exactly the prior thirty-eight confirmed rows'
+  40,
+  'linked content gains only the two source-backed ENT211 department mappings'
 );
 
 select is(
@@ -564,6 +564,7 @@ select is(
     from public.institutional_courses
     where course_code in (
       'EHR206', 'HER206',
+      'ACS207', 'ACS-CM207',
       'FIN101', 'FIN-CM101',
       'FIN120', 'FIN-CM210',
       'IRP121', 'LAG-EHR222',
@@ -571,7 +572,7 @@ select is(
     )
       and repository_course_id is null
   ),
-  10,
+  12,
   'all explicitly ambiguous code/title relationships remain separate and unlinked'
 );
 
