@@ -21,6 +21,7 @@ import type {
 import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
 import { btnAccent, btnBase, btnGhostOnBlue, btnNavy, btnSm, cx } from '@/components/chrome/ui'
 import { BookmarkButton } from './BookmarkButton'
+import { CourseViewTracker } from './CourseViewTracker'
 import {
   CourseAccordion,
   type CourseAccordionSection,
@@ -201,6 +202,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
 
   return (
     <>
+      <CourseViewTracker courseSlug={course.slug} />
       {/* ===================== COVER (continuous blue) ===================== */}
       <header
         className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ci-navy),var(--ci-navy-900))] text-white"
