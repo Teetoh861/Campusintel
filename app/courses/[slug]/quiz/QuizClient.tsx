@@ -16,6 +16,8 @@ import { IntroScreen } from './IntroScreen'
 import { QuestionScreen } from './QuestionScreen'
 import { ResultsScreen } from './ResultsScreen'
 import { sampleQuestionsBySection } from './sampleQuestions'
+import { createQuizAttemptRecorder } from './attemptRecording'
+import type { RecordingStatus } from './attemptRecording'
 import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
 // Timer flips to the red urgency treatment at this threshold (in seconds).
@@ -36,6 +38,7 @@ export function QuizClient(props: QuizCoreProps) {
     sections,
     timerSeconds,
     courseSlug,
+    courseContentKey,
     maxQuestions,
   } = props
 
@@ -48,7 +51,20 @@ export function QuizClient(props: QuizCoreProps) {
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('missed')
   const [navOpen, setNavOpen] = useState(false)
   const [confirmingSubmit, setConfirmingSubmit] = useState(false)
+  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | null>(null)
+  const [recorder] = useState(() => createQuizAttemptRecorder(setRecordingStatus))
+  const screenRef = useRef<Screen>('intro')
   const disarmHistoryGuard = useRef<() => void>(() => {})
+
+  const finishAttempt = useCallback((completion: 'submitted' | 'timed_out') => {
+    if (screenRef.current !== 'active') return
+    screenRef.current = 'results'
+    recorder.finish(completion)
+    disarmHistoryGuard.current()
+    setConfirmingSubmit(false)
+    setNavOpen(false)
+    setScreen('results')
+  }, [recorder])
 
   // The active screen is distraction-free: campusintel.css/quiz.css hides the
   // global footer when <body data-screen="active">. Sync that to the local
@@ -72,10 +88,9 @@ export function QuizClient(props: QuizCoreProps) {
 
   useEffect(() => {
     if (screen === 'active' && timeLeft <= 0) {
-      disarmHistoryGuard.current()
-      setScreen('results')
+      finishAttempt('timed_out')
     }
-  }, [timeLeft, screen])
+  }, [timeLeft, screen, finishAttempt])
 
   // Guard against accidentally losing an in-progress attempt. Only while the
   // quiz is active do we arm refresh/close and client-side Back protection.
@@ -141,22 +156,22 @@ export function QuizClient(props: QuizCoreProps) {
   }, [timerSeconds])
 
   const startNewAttempt = useCallback(() => {
+    if (screenRef.current === 'active') return
     const nextQuestions = sampleQuestionsBySection(
       questionBank,
       sections,
       maxQuestions,
     )
+    screenRef.current = 'active'
     resetAttempt()
     setQuestions(nextQuestions)
+    recorder.begin(courseContentKey, nextQuestions)
     setScreen('active')
-  }, [questionBank, sections, maxQuestions, resetAttempt])
+  }, [questionBank, sections, maxQuestions, resetAttempt, recorder, courseContentKey])
 
   const submit = useCallback(() => {
-    disarmHistoryGuard.current()
-    setConfirmingSubmit(false)
-    setNavOpen(false)
-    setScreen('results')
-  }, [])
+    finishAttempt(timeLeft <= 0 ? 'timed_out' : 'submitted')
+  }, [finishAttempt, timeLeft])
 
   // Manual submit is gated behind a confirmation modal to prevent an
   // accidental early submission (V2 spec). The buttons open the modal; the
@@ -166,15 +181,20 @@ export function QuizClient(props: QuizCoreProps) {
   const cancelSubmit = useCallback(() => setConfirmingSubmit(false), [])
 
   const redoAttempt = useCallback(() => {
+    if (screenRef.current !== 'results') return
+    screenRef.current = 'active'
     resetAttempt()
+    recorder.begin(courseContentKey, questions)
     setScreen('active')
-  }, [resetAttempt])
+  }, [resetAttempt, recorder, courseContentKey, questions])
 
   const selectOption = useCallback(
     (optIdx: number) => {
+      if (screenRef.current !== 'active') return
+      recorder.select(current, optIdx)
       setAnswers((a) => ({ ...a, [current]: optIdx }))
     },
-    [current],
+    [current, recorder],
   )
 
   const toggleMark = useCallback(() => {
@@ -258,6 +278,17 @@ export function QuizClient(props: QuizCoreProps) {
       .filter((s): s is SectionStat => Boolean(s))
   }, [perQuestion, sections, letterFor])
 
+  const recordingNotice = recordingStatus === 'session-changed'
+    ? 'Your account or session changed. This attempt could not be saved to history.'
+    : recordingStatus === 'unavailable'
+    ? 'Attempt history is unavailable. You can still finish and review this quiz.'
+    : null
+  const notice = recordingNotice ? (
+    <p role="status" className="border-b border-ci-border bg-ci-accent-50 px-6 py-3 text-center text-[13px] font-medium text-ci-navy">
+      {recordingNotice}
+    </p>
+  ) : null
+
   if (screen === 'intro') {
     return (
       <IntroScreen
@@ -278,6 +309,7 @@ export function QuizClient(props: QuizCoreProps) {
     const unanswered = questions.length - answeredCount
     return (
       <>
+        {notice}
         <QuestionScreen
           question={q}
           current={current}
@@ -351,18 +383,21 @@ export function QuizClient(props: QuizCoreProps) {
   }
 
   return (
-    <ResultsScreen
-      courseCode={props.courseCode}
-      courseSlug={courseSlug}
-      questions={questions}
-      answers={answers}
-      correctCount={correctCount}
-      sections={sectionStats}
-      tickLimit={BREAKDOWN_TICK_LIMIT}
-      reviewFilter={reviewFilter}
-      onReviewFilterChange={setReviewFilter}
-      onRetakeWithNewQuestions={startNewAttempt}
-      onRedoQuestions={redoAttempt}
-    />
+    <>
+      {notice}
+      <ResultsScreen
+        courseCode={props.courseCode}
+        courseSlug={courseSlug}
+        questions={questions}
+        answers={answers}
+        correctCount={correctCount}
+        sections={sectionStats}
+        tickLimit={BREAKDOWN_TICK_LIMIT}
+        reviewFilter={reviewFilter}
+        onReviewFilterChange={setReviewFilter}
+        onRetakeWithNewQuestions={startNewAttempt}
+        onRedoQuestions={redoAttempt}
+      />
+    </>
   )
 }

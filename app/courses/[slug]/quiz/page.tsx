@@ -27,6 +27,7 @@ export default async function QuizPage({ params }: PageProps) {
       courseCode={course.code}
       courseTitle={course.title}
       courseSlug={course.slug}
+      courseContentKey={course.contentKey}
       sections={quiz.sections}
       questions={quiz.questions}
       timerSeconds={usableQuiz.timerSeconds}
