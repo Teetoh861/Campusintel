@@ -70,11 +70,6 @@ export interface Course {
   resources: Resource[]
 }
 
-export interface Bookmark {
-  courseId: string
-  savedAt: string
-}
-
 export interface QuizQuestion {
   id: number
   questionId: string

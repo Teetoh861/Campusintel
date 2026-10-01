@@ -1,7 +1,5 @@
-// Bookmarks (/bookmarks) — server-rendered shell. The actual saved set lives
-// in localStorage, so the count + grid + empty state are owned by the client
-// child. Precomputing CardProps for every course on the server keeps the
-// client island free of data-shaping logic.
+// Bookmarks (/bookmarks) — server-rendered course cards with a client island
+// that chooses local or account-backed state from the live student session.
 import { courses } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
@@ -53,6 +51,7 @@ export default function BookmarksPage() {
     id: c.id,
     code: c.code,
     slug: c.slug,
+    contentKey: c.contentKey,
     cardProps: buildCardProps(c),
   }))
   return <BookmarksClient catalog={catalog} />
