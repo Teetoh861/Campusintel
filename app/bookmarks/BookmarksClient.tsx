@@ -123,9 +123,9 @@ export function BookmarksClient({ catalog }: Props) {
             Saved files
           </h1>
           <p className="mt-5 max-w-[54ch] text-[clamp(16px,2.1vw,19px)] leading-[1.5] text-ci-blue-150">
-            {snapshot.mode === 'account'
-              ? 'Your shortlist of courses. Bookmarks are saved to your account for the next study run.'
-              : 'Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.'}
+            {snapshot.mode === 'local'
+              ? 'Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.'
+              : 'Your shortlist of courses. Bookmarks are saved to your account for the next study run.'}
           </p>
         </div>
       </header>
@@ -133,7 +133,7 @@ export function BookmarksClient({ catalog }: Props) {
       <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Saved grid">
         <div className={WRAP}>
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-[13.5px] font-medium text-ci-gray-600">
-            <span>{snapshot.mode === 'account' ? 'Saved to your account' : 'Saved to this device'}</span>
+            <span>{snapshot.mode === 'local' ? 'Saved to this device' : 'Saved to your account'}</span>
             <span className="[font-variant-numeric:tabular-nums]">
               {countLabel} {count === 1 ? 'file' : 'files'}
             </span>

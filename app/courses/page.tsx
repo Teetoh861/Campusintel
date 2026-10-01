@@ -3,6 +3,7 @@
 // the search + filter UI and the reused homepage .ccard grid. Visual reskin
 // only: same courses, same filter behaviour. Real course/quiz data throughout.
 import Link from 'next/link'
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { courses } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
@@ -10,6 +11,9 @@ import type { Course } from '@/lib/types'
 import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
 import { CourseDirectory, type DirectoryItem } from './CourseDirectory'
+
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
@@ -64,7 +68,12 @@ function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
   })
 }
 
+/** Cross the student account boundary before the course directory renders. */
 export default function CoursesPage() {
+  return <StudentAccessGate returnPath="/courses"><CourseDirectoryPage /></StudentAccessGate>
+}
+
+function CourseDirectoryPage() {
   const items = buildItems(courses)
   const totalCount = courses.length
   const countLabel = String(totalCount).padStart(2, '0')

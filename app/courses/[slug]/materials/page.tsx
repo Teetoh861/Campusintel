@@ -2,7 +2,8 @@
 // Requests and contributions are private, course-specific email handoffs.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { courses, getCourseBySlug } from '@/lib/data/courses'
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { getCourseBySlug } from '@/lib/data/courses'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
 import {
   buildMaterialRequestEmailUrl,
@@ -13,12 +14,16 @@ type PageProps = { params: Promise<{ slug: string }> }
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
-export function generateStaticParams() {
-  return courses.map((c) => ({ slug: c.slug }))
-}
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
 
+/** Cross the student account boundary before the course request surface renders. */
 export default async function CourseMaterialsPage({ params }: PageProps) {
   const { slug } = await params
+  return <StudentAccessGate returnPath={`/courses/${slug}/materials`}><CourseMaterials slug={slug} /></StudentAccessGate>
+}
+
+function CourseMaterials({ slug }: { slug: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
 

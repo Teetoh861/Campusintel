@@ -3,6 +3,7 @@
 // sections, followed by the navy closing CTA when a quiz is usable.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
@@ -32,9 +33,8 @@ type PageProps = { params: Promise<{ slug: string }> }
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 const BOOKMARK_CATALOG = courses.map(({ slug, code, contentKey }) => ({ slug, code, contentKey }))
 
-export function generateStaticParams() {
-  return courses.map((c) => ({ slug: c.slug }))
-}
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
 
 const toLevel = (d: Course['difficulty']): DifficultyLevel =>
   d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
@@ -72,8 +72,13 @@ const SECTION_ORDER: ReadonlyArray<SectionDescriptor> = [
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
+/** Cross the student account boundary before any course content is read. */
 export default async function CourseDetailPage({ params }: PageProps) {
   const { slug } = await params
+  return <StudentAccessGate returnPath={`/courses/${slug}`}><CourseDetail slug={slug} /></StudentAccessGate>
+}
+
+async function CourseDetail({ slug }: { slug: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
   const usableQuiz = getUsableCourseQuiz(course, getQuizByCourseSlug(slug))

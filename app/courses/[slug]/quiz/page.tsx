@@ -3,19 +3,24 @@
 // attempt is sampled only when the student starts. quiz.css is scoped to this
 // route segment so other pages don't pay for it.
 import { notFound } from 'next/navigation'
-import { courses, getCourseBySlug } from '@/lib/data/courses'
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { getCourseBySlug } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import { QuizClient } from './QuizClient'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
-export function generateStaticParams() {
-  return courses.map((c) => ({ slug: c.slug }))
-}
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
 
+/** Cross the student account boundary before the quiz bank is read. */
 export default async function QuizPage({ params }: PageProps) {
   const { slug } = await params
+  return <StudentAccessGate returnPath={`/courses/${slug}/quiz`}><Quiz slug={slug} /></StudentAccessGate>
+}
+
+function Quiz({ slug }: { slug: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
   const usableQuiz = getUsableCourseQuiz(course, getQuizByCourseSlug(slug))
