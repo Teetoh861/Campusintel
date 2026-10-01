@@ -1,4 +1,4 @@
-// proxy.ts — Student Auth-boundary refresh only; public browsing and /admin stay independent.
+// proxy.ts — Student Auth-boundary refresh only; public marketing and /admin stay independent.
 import { refreshStudentSession } from '@/lib/supabase/proxy'
 import type { NextRequest } from 'next/server'
 
@@ -12,6 +12,9 @@ export const config = {
     '/account/:path*',
     '/dashboard/:path*',
     '/profile-selection',
+    '/courses/:path*',
+    '/materials',
+    '/bookmarks',
     '/api/auth/:path*',
     '/login',
     '/register',

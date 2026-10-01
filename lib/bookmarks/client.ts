@@ -68,10 +68,12 @@ const transport = {
 }
 
 let channel: BroadcastChannel | null = null
+// Bookmark controls render only on account-gated pages; session loss must never
+// downgrade them into anonymous device bookmarking.
 const bookmarks = new BookmarkStore(() => window.localStorage, transport, () => {
   try { channel?.postMessage('changed') }
   catch { /* Focus refresh still observes the durable state. */ }
-})
+}, 'closed')
 let listenersAttached = false
 
 function attachBrowserListeners(): void {

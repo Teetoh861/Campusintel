@@ -75,12 +75,18 @@ async function fixture(quiz, run) {
       if (name === './CourseAccordion') return { CourseAccordion: empty }
       if (name === './CourseDirectory') return { CourseDirectory: ({ items }) => renderCards(items) }
       if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
+      // Gate behaviour is covered in components/auth; these tests exercise the granted content.
+      if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
       return originalLoad.call(this, name, ...args)
     }
     for (const file of files) delete require.cache[file]
+    const granted = page => async props => {
+      const content = (await page(props)).props.children
+      return content.type(content.props)
+    }
     await run({
-      detail: require(files[0]).default,
-      quizRoute: require(files[1]).default,
+      detail: granted(require(files[0]).default),
+      quizRoute: granted(require(files[1]).default),
       CourseToc: require(files[2]).CourseToc,
       MobileCourseNav: require(files[3]).MobileCourseNav,
       directory: require(files[4]).default,
@@ -191,7 +197,7 @@ test('course navigation exposes a quiz action only when given a usable destinati
   }
 }))
 
-test('homepage, public directory and bookmarks do not offer dead quiz card links', async () => {
+test('homepage, course directory and bookmarks do not offer dead quiz card links', async () => {
   for (const [quiz, expected] of [[validQuiz, true], [undefined, false],
     [{ ...validQuiz, maxQuizQuestions: 0 }, false],
     [{ ...validQuiz, quizDurationMinutes: 1e308 }, false]]) {

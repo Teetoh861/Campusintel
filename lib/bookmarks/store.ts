@@ -18,6 +18,12 @@ export type BookmarkTransport = {
     { action: 'add' | 'remove'; contentKey: string }, token: string): Promise<BookmarkAccountResult>
 }
 
+/** How a store treats a signed-out read. `closed` serves account-gated pages:
+ * losing the session there fails closed instead of starting anonymous bookmarking.
+ * Legacy device keys stay readable and are still imported after a verified sign-in.
+ */
+export type SignedOutBookmarkMode = 'local' | 'closed'
+
 /** Shared state for all bookmark controls in one document. Account state is
  * never copied into anonymous storage, and failed writes never update it.
  */
@@ -36,6 +42,7 @@ export class BookmarkStore {
     private readonly storage: () => Storage,
     private readonly transport: BookmarkTransport,
     private readonly notifyAccountChange: () => void = () => {},
+    private readonly signedOutMode: SignedOutBookmarkMode = 'local',
   ) {}
 
   getSnapshot = (): BookmarkSnapshot => this.snapshot
@@ -85,6 +92,10 @@ export class BookmarkStore {
     try { result = await this.transport.read() }
     catch { result = { status: 'unavailable' } }
     if (generation !== this.generation) return
+    if (result.status === 'signed-out' && this.signedOutMode === 'closed') {
+      this.setSnapshot({ mode: 'unavailable', keys: [] })
+      return
+    }
     if (result.status === 'signed-out') {
       if (previous.mode !== 'local') this.localWriteFailed = false
       this.setSnapshot({ mode: 'local', keys: this.readLocal(previous.mode === 'local' ? previous.keys : []) })
@@ -221,7 +232,7 @@ export class BookmarkStore {
 
   /** Toggle with the latest settled state, so rapid clicks cannot lose intent. */
   async toggle(course: BookmarkCourseAlias): Promise<'added' | 'removed' | null> {
-    if (this.snapshot.mode === 'local') {
+    if (this.snapshot.mode === 'local' && this.signedOutMode === 'local') {
       const keys = this.readLocal()
       const had = keys.includes(course.slug) || keys.includes(course.code)
       const next = had ? keys.filter(key => key !== course.slug && key !== course.code)
@@ -236,7 +247,7 @@ export class BookmarkStore {
 
   /** /bookmarks removes the same durable identity as the course-page button. */
   async remove(course: BookmarkCourseAlias): Promise<boolean> {
-    if (this.snapshot.mode === 'local') {
+    if (this.snapshot.mode === 'local' && this.signedOutMode === 'local') {
       const next = this.readLocal().filter(key =>
         key !== course.slug && key !== course.code)
       this.writeLocal(next)

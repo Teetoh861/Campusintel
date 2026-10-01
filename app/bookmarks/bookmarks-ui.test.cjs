@@ -68,4 +68,7 @@ test('an unavailable account does not render a false saved or empty state', () =
   const listHtml = renderToStaticMarkup(list())
   assert.match(listHtml, /Could not load bookmarks/)
   assert.doesNotMatch(listHtml, /Your bookmarks are empty/)
+  // A mounted authenticated page that loses its session never claims a device fallback.
+  assert.doesNotMatch(listHtml, /this device/)
+  assert.doesNotMatch(renderToStaticMarkup(button()), /Bookmarked|this device/)
 })

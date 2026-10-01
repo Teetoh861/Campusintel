@@ -268,7 +268,7 @@ test('loading shows four inert list placeholders without course or dashboard wid
   assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b/)
 }))
 
-test('public /courses still builds its own browse items from repository courses', () => {
+test('gated /courses still builds its own browse items from repository courses', () => {
   const originalLoad = Module._load
   const originalTsx = Module._extensions['.tsx']
   const file = require.resolve('../courses/page.tsx')
@@ -283,10 +283,13 @@ test('public /courses still builds its own browse items from repository courses'
       if (name === '@/lib/data/courses') return { courses: [repositoryCourse] }
       if (name === '@/lib/data/quizzes') return { getQuizByCourseSlug: () => undefined }
       if (name === './CourseDirectory') return { CourseDirectory: function CourseDirectory() { return null } }
+      if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
       return originalLoad.call(this, name, ...args)
     }
     delete require.cache[file]
-    const tree = require(file).default()
+    const gated = require(file).default()
+    assert.equal(gated.props.returnPath, '/courses')
+    const tree = gated.props.children.type(gated.props.children.props)
     const directory = nodes(tree).find(node => node.type?.name === 'CourseDirectory')
     assert.equal(directory.props.totalCount, 1)
     assert.equal(directory.props.items[0].cardProps.cta.href, '/courses/public-built')

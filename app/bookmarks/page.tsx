@@ -1,5 +1,6 @@
-// Bookmarks (/bookmarks) — server-rendered course cards with a client island
-// that chooses local or account-backed state from the live student session.
+// Bookmarks (/bookmarks) — account-gated course cards with a client island
+// that reads account-backed state from the live student session.
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { courses } from '@/lib/data/courses'
 import { getQuizByCourseSlug } from '@/lib/data/quizzes'
 import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
@@ -10,6 +11,9 @@ import {
   BookmarksClient,
   type BookmarkableCourse,
 } from './BookmarksClient'
+
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
 
 const toLevel = (d: Course['difficulty']): DifficultyLevel =>
   d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
@@ -46,7 +50,12 @@ function buildCardProps(course: Course): CardProps {
   }
 }
 
+/** Cross the student account boundary before bookmark management renders. */
 export default function BookmarksPage() {
+  return <StudentAccessGate returnPath="/bookmarks"><Bookmarks /></StudentAccessGate>
+}
+
+function Bookmarks() {
   const catalog: BookmarkableCourse[] = courses.map((c) => ({
     id: c.id,
     code: c.code,
