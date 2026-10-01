@@ -30,6 +30,7 @@ import {
 type PageProps = { params: Promise<{ slug: string }> }
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+const BOOKMARK_CATALOG = courses.map(({ slug, code, contentKey }) => ({ slug, code, contentKey }))
 
 export function generateStaticParams() {
   return courses.map((c) => ({ slug: c.slug }))
@@ -234,7 +235,8 @@ export default async function CourseDetailPage({ params }: PageProps) {
               <Link className={cx(btnBase, btnGhostOnBlue, 'min-w-0 flex-1')} href={materialsHref}>
                 Request material privately
               </Link>
-              <BookmarkButton slug={course.slug} variant="cover" />
+              <BookmarkButton slug={course.slug} code={course.code} contentKey={course.contentKey}
+                catalog={BOOKMARK_CATALOG} variant="cover" />
             </div>
           </div>
 
@@ -276,7 +278,8 @@ export default async function CourseDetailPage({ params }: PageProps) {
                 <Link className={cx(btnBase, btnAccent)} href={quizHref}>
                   Start practice quiz
                 </Link>
-                <BookmarkButton slug={course.slug} variant="closing" />
+                <BookmarkButton slug={course.slug} code={course.code} contentKey={course.contentKey}
+                  catalog={BOOKMARK_CATALOG} variant="closing" />
               </div>
             </div>
           </div>
