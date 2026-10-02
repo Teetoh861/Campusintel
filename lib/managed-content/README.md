@@ -41,8 +41,18 @@ unpublished or publishes a different revision. `getPublishedManagedContent`
 adds an application-side live Auth check and validates the returned shape.
 Student pages do not call it yet.
 
-The next operator slice can add a thin editor over these functions and a
-history/detail read function for revision comparison. The later student cutover
-must replace code-backed reads deliberately and add entitlement checks where
-required. Content payloads are plain text/structured data; rendering should
-escape them through React rather than injecting HTML.
+The operator workspace at `/admin` discovers repository identities and
+institutional catalogue entries separately. Its guarded route uses the
+existing mutation functions, plus `provision_repository_content` for atomic
+link creation and `get_managed_content_history` for operator-only revision,
+review, and publication inspection. Provisioned `content_key` values derive
+from the new repository UUID, not catalogue code or title. Similar catalogue
+aliases are not merged automatically.
+
+A newly provisioned repository key has no code-backed student page in this
+branch. The later content cutover must define how that linked catalogue course
+is presented to students until its managed content becomes readable there.
+
+The later student cutover must replace code-backed reads deliberately and add
+entitlement checks where required. Content payloads are plain text/structured
+data; rendering should escape them through React rather than injecting HTML.
