@@ -10,6 +10,21 @@ const uuid = z.string().uuid()
 const requiredText = (limit: number) => z.string().max(limit).refine(value => value.trim().length > 0)
 const optionalText = (limit: number) => requiredText(limit).optional()
 const textContent = z.object({ title: requiredText(240), body: requiredText(200000) }).strict()
+const studyText = requiredText(10000)
+const courseOverviewContent = textContent.extend({
+  topics: z.array(z.object({ chapter: studyText, description: studyText }).strict()).max(200).optional(),
+  examFocus: z.array(studyText).max(200).optional(),
+  keyTakeaways: z.array(z.object({ title: studyText, description: studyText }).strict()).max(200).optional(),
+  formulaSheet: z.array(z.object({ name: studyText, formula: studyText,
+    explanation: studyText, example: studyText.optional() }).strict()).max(200).optional(),
+}).strict()
+const noteContent = z.union([
+  textContent,
+  textContent.extend({ noteType: z.literal('topic_note'),
+    keyPoints: z.array(studyText).min(1).max(200), examTip: studyText.optional() }).strict(),
+  textContent.extend({ noteType: z.literal('calculator_trick'),
+    example: studyText, formula: studyText.optional() }).strict(),
+])
 const cbtContent = z.object({
   prompt: requiredText(10000),
   options: z.array(requiredText(2000)).min(2).max(8),
@@ -21,8 +36,8 @@ const theoryContent = z.object({ prompt: requiredText(20000), examTip: optionalT
 const dependentContent = z.object({ body: requiredText(200000) }).strict()
 
 const payloadSchemas = {
-  course_overview: textContent,
-  note: textContent,
+  course_overview: courseOverviewContent,
+  note: noteContent,
   cbt_question: cbtContent,
   theory_question: theoryContent,
   model_answer: dependentContent,

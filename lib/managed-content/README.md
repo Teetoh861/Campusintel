@@ -10,8 +10,8 @@ Each item has a durable identity and a family: course overview, note, CBT
 question, theory question, model answer, or rubric. Model answers and rubrics
 reference a theory question in the same course. CBT items carry the existing
 `questionId` UUID as `question_id`; revising their wording never changes it.
-`source_key` can retain a course-local legacy identifier, including the current
-numeric theory IDs, during a later migration.
+`source_key` retains course-local repository identifiers, including the numeric
+theory IDs in the seeded content.
 
 Revisions are append-only. A review records its decision for one revision.
 Publishing points an item at an approved revision and records an event; editing
@@ -52,6 +52,35 @@ aliases are not merged automatically.
 A newly provisioned repository key has no code-backed student page in this
 branch. The later content cutover must define how that linked catalogue course
 is presented to students until its managed content becomes readable there.
+
+## Repository content seed
+
+`scripts/managed-content/generate.cjs` derives the seed migration and database
+parity snapshots from the committed course, quiz, theory, and topic-note data.
+Run it with `--check` to detect stale generated artifacts. The seed uses
+`public.courses.id`, keeps every CBT `questionId` as `question_id`, and stores
+numeric theory identity in `source_key`. Model answers reference their theory
+item and publish against theory revision one. Source rubrics do not exist, so
+none are seeded.
+
+Course overviews keep the source overview prose, syllabus topics, exam focus,
+key takeaways, and formula cards as structured fields. Topic notes keep their
+key points and exam tips; calculator tricks remain notes with a distinct type,
+example, and optional formula. The editor preserves these structured fields
+when revising the title or body. A later editor slice will need controls for
+changing the structured fields themselves.
+
+Each seeded item has one approved and published revision with the reserved
+`00000000-0000-4000-8000-000000000042` migration actor. That UUID is not an
+Auth account. The database-owner-only replay function skips records proven to
+be the same migration-owned item, including records edited later by operators;
+it cannot be called through browser API roles.
+
+Course route slugs, catalogue labels, credits, flags, textbooks, resource
+metadata, and assessment settings remain outside managed learning content.
+The quiz bank's section list and order, sampling limit, and timer are still
+code-backed assessment settings. The later student cutover must provide those
+settings separately before replacing the current quiz read path.
 
 The later student cutover must replace code-backed reads deliberately and add
 entitlement checks where required. Content payloads are plain text/structured

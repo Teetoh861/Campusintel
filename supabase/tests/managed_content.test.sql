@@ -27,6 +27,12 @@ select ok((select confrelid = 'public.courses'::regclass
 select ok(not has_column_privilege('authenticated', 'public.profiles', 'role', 'UPDATE'),
   'students cannot update their own role through profile capabilities');
 
+-- Keep mutable workflow fixtures separate from the published repository seed.
+insert into public.courses (id, content_key, is_shared) values
+  ('70000000-0000-4000-8000-000000000001', 'managed-test-primary', true),
+  ('70000000-0000-4000-8000-000000000002', 'managed-test-secondary', false),
+  ('70000000-0000-4000-8000-000000000007', 'managed-test-cbt', false);
+
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -44,24 +50,24 @@ insert into auth.sessions(id, user_id, created_at, updated_at) values
 
 set local role anon;
 select throws_ok($sql$ select * from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007') $sql$, '42501', null,
+  '70000000-0000-4000-8000-000000000007') $sql$, '42501', null,
   'signed-out callers cannot use the published read boundary');
 select throws_ok($sql$ select public.create_managed_content(
-  '40000000-0000-4000-8000-000000000007', 'note', '{"title":"x","body":"x"}'::jsonb) $sql$,
+  '70000000-0000-4000-8000-000000000007', 'note', '{"title":"x","body":"x"}'::jsonb) $sql$,
   '42501', null, 'anonymous callers cannot write');
 reset role;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 select set_config('test.managed_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000007', 'cbt_question',
+  '70000000-0000-4000-8000-000000000007', 'cbt_question',
   '{"prompt":"Original wording","options":["A","B"],"correctOption":1}'::jsonb,
-  'df67ccc9-5d16-4ab5-be67-4ff195cf39c8', 'legacy-cbt-1')::text, true);
+  'df67ccc9-5d16-4ab5-be67-4ff195cf39c9', 'legacy-cbt-1')::text, true);
 select is((select count(*)::int from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 1,
+  '70000000-0000-4000-8000-000000000007')), 1,
   'operator can read a draft through the operator-only boundary');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 0,
+  '70000000-0000-4000-8000-000000000007')), 0,
   'drafts do not appear in the student published read boundary');
 select throws_ok($sql$ select count(*) from public.managed_content_items $sql$,
   '42501', null, 'even operators cannot bypass validated RPCs with direct table reads');
@@ -69,7 +75,7 @@ select throws_ok($sql$ select public.create_managed_content(
   '90000000-0000-4000-8000-000000000001', 'note', '{"title":"x","body":"x"}'::jsonb) $sql$,
   '23503', null, 'unknown repository course UUID cannot own content');
 select throws_ok($sql$ select public.create_managed_content(
-  '40000000-0000-4000-8000-000000000007', 'cbt_question',
+  '70000000-0000-4000-8000-000000000007', 'cbt_question',
   '{"prompt":"Bad","options":["A","B"],"correctOption":8}'::jsonb,
   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee') $sql$,
   '22023', null, 'the server validates mutable CBT payloads');
@@ -83,13 +89,13 @@ select is(public.publish_managed_content(current_setting('test.managed_item')::u
 
 set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}';
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 1,
+  '70000000-0000-4000-8000-000000000007')), 1,
   'student can read published content through the dedicated boundary');
 select is((select payload->>'prompt' from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 'Original wording',
+  '70000000-0000-4000-8000-000000000007')), 'Original wording',
   'student sees the published revision');
 select throws_ok($sql$ select * from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000007') $sql$,
+  '70000000-0000-4000-8000-000000000007') $sql$,
   '42501', null, 'student cannot read operator drafts');
 select throws_ok($sql$ select public.revise_managed_content(
   current_setting('test.managed_item')::uuid, 3,
@@ -108,30 +114,30 @@ select throws_ok($sql$ select public.revise_managed_content(
   '{"prompt":"Stale overwrite","options":["A","B"],"correctOption":0}'::jsonb) $sql$,
   '40001', null, 'stale concurrent edit cannot overwrite newer operator work');
 select is((select payload->>'prompt' from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 'Original wording',
+  '70000000-0000-4000-8000-000000000007')), 'Original wording',
   'editing does not leak a draft over the published revision');
 select is((select question_id::text from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000007')),
-  'df67ccc9-5d16-4ab5-be67-4ff195cf39c8',
+  '70000000-0000-4000-8000-000000000007')),
+  'df67ccc9-5d16-4ab5-be67-4ff195cf39c9',
   'existing attempt-history question ID survives wording changes');
 select is(public.review_managed_content(current_setting('test.managed_item')::uuid, 4, 2, 'approved'),
   5::bigint, 'new revision can be reviewed');
 select is(public.publish_managed_content(current_setting('test.managed_item')::uuid, 5, 2),
   6::bigint, 'new approved revision can replace publication');
 select is((select payload->>'prompt' from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 'Revised wording',
+  '70000000-0000-4000-8000-000000000007')), 'Revised wording',
   'published updates become readable without a deployment');
 select is(public.review_managed_content(current_setting('test.managed_item')::uuid, 6, 1, 'approved'),
   7::bigint, 'an earlier immutable revision can be reapproved for rollback');
 select is(public.publish_managed_content(current_setting('test.managed_item')::uuid, 7, 1),
   8::bigint, 'rollback republishes the earlier revision');
 select is((select payload->>'prompt' from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 'Original wording',
+  '70000000-0000-4000-8000-000000000007')), 'Original wording',
   'rollback changes only the publication pointer');
 select is(public.unpublish_managed_content(current_setting('test.managed_item')::uuid, 8),
   9::bigint, 'operator can unpublish');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007')), 0,
+  '70000000-0000-4000-8000-000000000007')), 0,
   'unpublished content is absent from student reads');
 
 -- Shared/general content still has one repository item despite many applicability rows.
@@ -140,40 +146,40 @@ select ok((select count(*) from public.course_applicability applicability
   where catalogue.repository_course_id = '40000000-0000-4000-8000-000000000001') > 1,
   'shared course has multiple institutional applicability rows');
 select set_config('test.theory_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000001', 'theory_question',
+  '70000000-0000-4000-8000-000000000001', 'theory_question',
   '{"prompt":"Explain the idea"}'::jsonb, null, 'legacy-theory-1')::text, true);
 select set_config('test.answer_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000001', 'model_answer',
+  '70000000-0000-4000-8000-000000000001', 'model_answer',
   '{"body":"An explanatory model answer."}'::jsonb, null, null,
   current_setting('test.theory_item')::uuid)::text, true);
 select set_config('test.rubric_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000001', 'rubric',
+  '70000000-0000-4000-8000-000000000001', 'rubric',
   '{"body":"Award two marks for the definition."}'::jsonb, null, null,
   current_setting('test.theory_item')::uuid)::text, true);
 select is((select count(*)::int from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 3,
+  '70000000-0000-4000-8000-000000000001')), 3,
   'theory questions, model answers and rubrics are representable as separate linked items');
 select is(public.review_managed_content(current_setting('test.answer_item')::uuid, 1, 1, 'approved'),
   2::bigint, 'model answer can be reviewed');
 select is(public.publish_managed_content(current_setting('test.answer_item')::uuid, 2, 1),
   3::bigint, 'model answer can be published');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 0,
+  '70000000-0000-4000-8000-000000000001')), 0,
   'published answer stays hidden while its parent theory question is a draft');
 select is(public.review_managed_content(current_setting('test.theory_item')::uuid, 1, 1, 'approved'),
   2::bigint, 'theory question can be reviewed');
 select is(public.publish_managed_content(current_setting('test.theory_item')::uuid, 2, 1),
   3::bigint, 'theory question can be published');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 2,
+  '70000000-0000-4000-8000-000000000001')), 2,
   'one shared question and its published answer appear through one course identity');
 select is((select source_key from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000001') where kind = 'theory_question'),
+  '70000000-0000-4000-8000-000000000001') where kind = 'theory_question'),
   'legacy-theory-1', 'course-local legacy theory identity can be retained for migration');
 select is(public.unpublish_managed_content(current_setting('test.theory_item')::uuid, 3),
   4::bigint, 'a parent question can be unpublished');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 0,
+  '70000000-0000-4000-8000-000000000001')), 0,
   'unpublishing a parent also hides linked published answer content');
 
 -- Both dependent families are pinned to the reviewed theory revision.
@@ -184,35 +190,35 @@ select is(public.review_managed_content(current_setting('test.rubric_item')::uui
 select is(public.publish_managed_content(current_setting('test.rubric_item')::uuid, 2, 1),
   3::bigint, 'rubric can be published for theory revision one');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 3,
+  '70000000-0000-4000-8000-000000000001')), 3,
   'theory revision one exposes its reviewed answer and rubric');
 select is(public.revise_managed_content(current_setting('test.theory_item')::uuid, 5,
   '{"prompt":"Explain the revised idea"}'::jsonb),
   6::bigint, 'theory edit creates revision two without changing publication');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 3,
+  '70000000-0000-4000-8000-000000000001')), 3,
   'a draft theory revision does not hide still-valid revision-one dependencies');
 select is(public.review_managed_content(current_setting('test.theory_item')::uuid, 6, 2, 'approved'),
   7::bigint, 'theory revision two can be reviewed');
 select is(public.publish_managed_content(current_setting('test.theory_item')::uuid, 7, 2),
   8::bigint, 'theory revision two becomes the published wording');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')
+  '70000000-0000-4000-8000-000000000001')
   where kind in ('model_answer', 'rubric')), 0,
   'answer and rubric reviewed for revision one do not accompany theory revision two');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 1,
+  '70000000-0000-4000-8000-000000000001')), 1,
   'the revised theory question remains visible without stale dependencies');
 select is(public.review_managed_content(current_setting('test.answer_item')::uuid, 3, 1,
   'approved', null, 2), 4::bigint,
   'operator deliberately revalidates the existing answer for theory revision two');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001') where kind = 'model_answer'), 0,
+  '70000000-0000-4000-8000-000000000001') where kind = 'model_answer'), 0,
   'review alone does not silently change the answer publication binding');
 select is(public.publish_managed_content(current_setting('test.answer_item')::uuid, 4, 1),
   5::bigint, 'operator republishes the same answer revision with a new theory binding');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001') where kind = 'model_answer'), 1,
+  '70000000-0000-4000-8000-000000000001') where kind = 'model_answer'), 1,
   'revalidated answer is visible beside theory revision two');
 select is(public.review_managed_content(current_setting('test.rubric_item')::uuid, 3, 1,
   'approved', null, 2), 4::bigint,
@@ -220,51 +226,51 @@ select is(public.review_managed_content(current_setting('test.rubric_item')::uui
 select is(public.publish_managed_content(current_setting('test.rubric_item')::uuid, 4, 1),
   5::bigint, 'rubric is republished with its new theory binding');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000001')), 3,
+  '70000000-0000-4000-8000-000000000001')), 3,
   'theory revision two exposes only deliberately revalidated dependencies');
 select is((select published_parent_revision from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000001') where kind = 'rubric'), 2,
+  '70000000-0000-4000-8000-000000000001') where kind = 'rubric'), 2,
   'operator list records the rubric publication binding');
 
 -- Singular families are protected by unique indexes, including drafts.
 select set_config('test.overview_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000002', 'course_overview',
+  '70000000-0000-4000-8000-000000000002', 'course_overview',
   '{"title":"Overview","body":"Course summary"}'::jsonb)::text, true);
 select throws_ok($sql$ select public.create_managed_content(
-  '40000000-0000-4000-8000-000000000002', 'course_overview',
+  '70000000-0000-4000-8000-000000000002', 'course_overview',
   '{"title":"Competing overview","body":"Different summary"}'::jsonb) $sql$,
   '23505', null, 'a course cannot acquire a competing overview');
 select throws_ok($sql$ select public.create_managed_content(
-  '40000000-0000-4000-8000-000000000001', 'model_answer',
+  '70000000-0000-4000-8000-000000000001', 'model_answer',
   '{"body":"Competing answer"}'::jsonb, null, null,
   current_setting('test.theory_item')::uuid) $sql$,
   '23505', null, 'a theory question cannot acquire a competing model answer');
 select throws_ok($sql$ select public.create_managed_content(
-  '40000000-0000-4000-8000-000000000001', 'rubric',
+  '70000000-0000-4000-8000-000000000001', 'rubric',
   '{"body":"Competing rubric"}'::jsonb, null, null,
   current_setting('test.theory_item')::uuid) $sql$,
   '23505', null, 'a theory question cannot acquire a competing rubric');
 select set_config('test.second_theory_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000001', 'theory_question',
+  '70000000-0000-4000-8000-000000000001', 'theory_question',
   '{"prompt":"Another theory question"}'::jsonb)::text, true);
 select is((select count(*)::int from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000001') where kind = 'theory_question'), 2,
+  '70000000-0000-4000-8000-000000000001') where kind = 'theory_question'), 2,
   'multiple theory questions remain valid');
 select set_config('test.second_cbt_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000007', 'cbt_question',
+  '70000000-0000-4000-8000-000000000007', 'cbt_question',
   '{"prompt":"Another CBT question","options":["A","B"],"correctOption":0}'::jsonb,
   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')::text, true);
 select is((select count(*)::int from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000007') where kind = 'cbt_question'), 2,
+  '70000000-0000-4000-8000-000000000007') where kind = 'cbt_question'), 2,
   'multiple CBT questions remain valid');
 select set_config('test.note_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000002', 'note',
+  '70000000-0000-4000-8000-000000000002', 'note',
   '{"title":"Note one","body":"Original note"}'::jsonb)::text, true);
 select set_config('test.second_note_item', public.create_managed_content(
-  '40000000-0000-4000-8000-000000000002', 'note',
+  '70000000-0000-4000-8000-000000000002', 'note',
   '{"title":"Note two","body":"Another note"}'::jsonb)::text, true);
 select is((select count(*)::int from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000002') where kind = 'note'), 2,
+  '70000000-0000-4000-8000-000000000002') where kind = 'note'), 2,
   'multiple notes remain valid');
 
 -- Rejection of the currently published revision is an audited unpublish.
@@ -273,15 +279,15 @@ select is(public.review_managed_content(current_setting('test.note_item')::uuid,
 select is(public.publish_managed_content(current_setting('test.note_item')::uuid, 2, 1),
   3::bigint, 'approved note becomes published');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000002')), 1,
+  '70000000-0000-4000-8000-000000000002')), 1,
   'published note appears before rejection');
 select is(public.review_managed_content(current_setting('test.note_item')::uuid, 3, 1, 'rejected'),
   4::bigint, 'rejection atomically advances the version and withdraws publication');
 select is((select count(*)::int from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000002')), 0,
+  '70000000-0000-4000-8000-000000000002')), 0,
   'a rejected revision is absent from the student boundary');
 select ok((select published_revision from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000002')
+  '70000000-0000-4000-8000-000000000002')
   where item_id = current_setting('test.note_item')::uuid) is null,
   'rejected note no longer has a publication pointer');
 select throws_ok($sql$ select public.publish_managed_content(
@@ -323,14 +329,14 @@ delete from auth.sessions where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 select throws_ok($sql$ select * from public.list_managed_content(
-  '40000000-0000-4000-8000-000000000007') $sql$,
+  '70000000-0000-4000-8000-000000000007') $sql$,
   '42501', null, 'revoked Auth session cannot read operator drafts');
 select throws_ok($sql$ select public.revise_managed_content(
   current_setting('test.managed_item')::uuid, 9,
   '{"prompt":"Invalid session","options":["A","B"],"correctOption":0}'::jsonb) $sql$,
   '42501', null, 'revoked Auth session cannot write');
 select throws_ok($sql$ select * from public.read_published_managed_content(
-  '40000000-0000-4000-8000-000000000007') $sql$,
+  '70000000-0000-4000-8000-000000000007') $sql$,
   '42501', null, 'revoked Auth session cannot use published read');
 reset role;
 
