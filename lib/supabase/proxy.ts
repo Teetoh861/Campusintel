@@ -1,4 +1,4 @@
-// lib/supabase/proxy.ts — Refresh student cookies without changing authorization decisions.
+// lib/supabase/proxy.ts — Refresh account cookies without changing authorization decisions.
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
@@ -9,7 +9,7 @@ import type { NextRequest } from 'next/server'
  * Claims are refresh plumbing only; callers authenticate through getStudentSessionUser.
  */
 export async function refreshStudentSession(request: NextRequest): Promise<NextResponse> {
-  if (!isStudentAuthEnabled() || /^\/(admin|api\/admin)(\/|$)/.test(request.nextUrl.pathname)) {
+  if (!isStudentAuthEnabled()) {
     return NextResponse.next()
   }
   const requestHeaders = new Headers(request.headers)
