@@ -50,7 +50,7 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
     event.preventDefault()
     setValidation('')
     let payload: Record<string, unknown>
-    if (kind === 'course_overview' || kind === 'note') payload = { title, body }
+    if (kind === 'course_overview' || kind === 'note') payload = { ...(item?.payload ?? {}), title, body }
     else if (kind === 'cbt_question') {
       payload = { prompt, options: options.split('\n').map(value => value.trim()),
         correctOption: Number(correctOption) }
@@ -136,6 +136,9 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
           <textarea id="content-body" value={body} onChange={event => setBody(event.target.value)} required rows={10} maxLength={200000}
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900" />
         </div>}
+        {item && (kind === 'course_overview' || kind === 'note') &&
+          Object.keys(item.payload).some(key => key !== 'title' && key !== 'body') &&
+          <p className="text-xs text-slate-600">Structured study fields in this item are preserved when you save its title or body.</p>}
         {validation && <p role="alert" className="text-sm text-red-700">{validation}</p>}
         <button type="submit" disabled={busy || (dependent && !item && theoryOptions.length === 0)}
           className="rounded-md bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 disabled:opacity-60">
