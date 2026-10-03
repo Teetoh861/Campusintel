@@ -1,0 +1,43 @@
+# .github/workflows/pr-verification.yml — Verify application and relevant optional checks on develop PRs.
+name: PR mechanical verification
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Determine optional checks
+        id: scope
+        run: node scripts/dev-workflow/cli.cjs scope >> "$GITHUB_OUTPUT"
+      - uses: supabase/setup-cli@v3
+        if: steps.scope.outputs.db == 'true'
+        with:
+          version: 2.109.1
+      - name: Start local database for SQL tests
+        if: steps.scope.outputs.db == 'true'
+        run: |
+          if ! supabase db start > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+            echo 'Local Supabase service setup failed; database tests did not run.'
+            exit 1
+          fi
+      - name: Verify application and applicable optional checks
+        run: node scripts/dev-workflow/cli.cjs verify
