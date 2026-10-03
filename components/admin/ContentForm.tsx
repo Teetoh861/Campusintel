@@ -1,9 +1,13 @@
-// components/admin/ContentForm.tsx — Plain-text authoring form for all six managed-content families.
+// components/admin/ContentForm.tsx — Validated authoring form for all six managed-content families.
 'use client'
 import { useState } from 'react'
-import { contentKind, parseContentPayload } from '@/lib/operator/editor-contract'
+import { contentKind, contentPayloadProblem, parseContentPayload } from '@/lib/operator/editor-contract'
+import { initialNoteDraft, initialOverviewDraft, notePayload, overviewPayload } from '@/lib/operator/structured-form'
+import { NoteFields } from './NoteFields'
+import { OverviewFields } from './OverviewFields'
 import type { FormEvent, ReactElement } from 'react'
 import type { ContentKind, ContentMutation, ManagedItem } from '@/lib/operator/editor-contract'
+import type { NoteDraft, OverviewDraft } from '@/lib/operator/structured-form'
 
 const labels: Record<ContentKind, string> = {
   course_overview: 'Course overview', note: 'Note', cbt_question: 'CBT question',
@@ -30,6 +34,11 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
   const [kind, setKind] = useState<ContentKind>(item?.kind ?? 'note')
   const [title, setTitle] = useState(stringField(item?.payload, 'title'))
   const [body, setBody] = useState(stringField(item?.payload, 'body'))
+  const [overview, setOverview] = useState<OverviewDraft>(() =>
+    initialOverviewDraft(item?.kind === 'course_overview' ? item.payload : undefined) ?? {})
+  const [note, setNote] = useState<NoteDraft>(() =>
+    initialNoteDraft(item?.kind === 'note' ? item.payload : undefined) ?? { format: 'generic' })
+  const [sourceValid] = useState(() => !item || parseContentPayload(item.kind, item.payload) !== null)
   const [prompt, setPrompt] = useState(stringField(item?.payload, 'prompt'))
   const [section, setSection] = useState(stringField(item?.payload, 'section'))
   const [explanation, setExplanation] = useState(stringField(item?.payload, 'explanation'))
@@ -49,8 +58,13 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setValidation('')
+    if (!sourceValid) {
+      setValidation('This item has invalid or unsupported stored fields. Reload it before saving.')
+      return
+    }
     let payload: Record<string, unknown>
-    if (kind === 'course_overview' || kind === 'note') payload = { ...(item?.payload ?? {}), title, body }
+    if (kind === 'course_overview') payload = overviewPayload(title, body, overview)
+    else if (kind === 'note') payload = notePayload(title, body, note)
     else if (kind === 'cbt_question') {
       payload = { prompt, options: options.split('\n').map(value => value.trim()),
         correctOption: Number(correctOption) }
@@ -62,7 +76,7 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
     } else payload = { body }
     const parsed = parseContentPayload(kind, payload)
     if (!parsed || (dependent && !item && !parentItemId)) {
-      setValidation('Complete all required fields. CBT questions need 2–8 non-empty options and a valid correct option.')
+      setValidation(contentPayloadProblem(kind, payload) ?? 'Select a theory question for this content.')
       return
     }
     if (item) await onSave({ action: 'revise', itemId: item.item_id,
@@ -136,11 +150,11 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
           <textarea id="content-body" value={body} onChange={event => setBody(event.target.value)} required rows={10} maxLength={200000}
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900" />
         </div>}
-        {item && (kind === 'course_overview' || kind === 'note') &&
-          Object.keys(item.payload).some(key => key !== 'title' && key !== 'body') &&
-          <p className="text-xs text-slate-600">Structured study fields in this item are preserved when you save its title or body.</p>}
+        {kind === 'course_overview' && <OverviewFields value={overview} onChange={setOverview} />}
+        {kind === 'note' && <NoteFields value={note} editing={Boolean(item)} onChange={setNote} />}
+        {!sourceValid && <p role="alert" className="text-sm text-red-700">This item has invalid or unsupported stored fields. Editing is unavailable.</p>}
         {validation && <p role="alert" className="text-sm text-red-700">{validation}</p>}
-        <button type="submit" disabled={busy || (dependent && !item && theoryOptions.length === 0)}
+        <button type="submit" disabled={busy || !sourceValid || (dependent && !item && theoryOptions.length === 0)}
           className="rounded-md bg-blue-900 px-4 py-2 font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-700 focus:ring-offset-2 disabled:opacity-60">
           {busy ? 'Saving…' : item ? 'Save new revision' : 'Create draft'}
         </button>

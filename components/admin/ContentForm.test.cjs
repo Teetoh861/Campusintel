@@ -29,7 +29,7 @@ test('overview and note edits preserve their structured repository fields', asyn
     Module._load = function (name, ...args) {
       if (name === 'react') return { useState: initial => {
         const index = cursor++
-        if (!(index in hooks)) hooks[index] = initial
+        if (!(index in hooks)) hooks[index] = typeof initial === 'function' ? initial() : initial
         return [hooks[index], value => { hooks[index] = value }]
       } }
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: Symbol.for('react.fragment') }

@@ -59,9 +59,9 @@ review, and publication inspection. Provisioned `content_key` values derive
 from the new repository UUID, not catalogue code or title. Similar catalogue
 aliases are not merged automatically.
 
-A newly provisioned repository key has no code-backed student page in this
-branch. The later content cutover must define how that linked catalogue course
-is presented to students until its managed content becomes readable there.
+A newly provisioned repository key has no existing student course route until
+the product course shell maps to its content key. Provisioning alone does not
+make a new catalogue course visible in the current student learning routes.
 
 ## Repository content seed
 
@@ -76,9 +76,10 @@ none are seeded.
 Course overviews keep the source overview prose, syllabus topics, exam focus,
 key takeaways, and formula cards as structured fields. Topic notes keep their
 key points and exam tips; calculator tricks remain notes with a distinct type,
-example, and optional formula. The editor preserves these structured fields
-when revising the title or body. A later editor slice will need controls for
-changing the structured fields themselves.
+example, and optional formula. The operator editor exposes each supported
+field, with add, remove, and reorder controls for repeatable entries. Editing
+an existing note keeps its subtype fixed; creating a note requires an explicit
+format choice when topic-note or calculator-trick fields are needed.
 
 Each seeded item has one approved and published revision with the reserved
 `00000000-0000-4000-8000-000000000042` migration actor. That UUID is not an
@@ -88,10 +89,9 @@ it cannot be called through browser API roles.
 
 Course route slugs, catalogue labels, credits, flags, textbooks, resource
 metadata, and assessment settings remain outside managed learning content.
-The quiz bank's section list and order, sampling limit, and timer are still
-code-backed assessment settings. The later student cutover must provide those
-settings separately before replacing the current quiz read path.
-
-The later student cutover must replace code-backed reads deliberately and add
-entitlement checks where required. Content payloads are plain text/structured
-data; rendering should escape them through React rather than injecting HTML.
+Student course overview, theory, and CBT question reads now use published
+managed revisions. The quiz timer, maximum attempt size, and section-order
+policy remain repository/config-backed; the question bank does not. Managed
+notes still have no new dedicated student product surface. Entitlement checks
+remain a separate future boundary. Content payloads are plain text/structured
+data and render through React without injected HTML.

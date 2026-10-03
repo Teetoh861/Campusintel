@@ -119,7 +119,7 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   }
 
   async function provision(course: InstitutionalCourse): Promise<void> {
-    if (busy || !window.confirm(`Create one permanent repository identity for ${course.course_code} · ${course.display_title}? Only this catalogue row will be linked; unresolved aliases will remain separate. Until student content cutover, the dashboard may show this course as temporarily unavailable.`)) return
+    if (busy || !window.confirm(`Create one permanent repository identity for ${course.course_code} · ${course.display_title}? Only this catalogue row will be linked; unresolved aliases will remain separate. The student catalogue may show this course as unavailable until a student route supports its new content key.`)) return
     setBusy(true)
     setNotice(null)
     try {
@@ -179,7 +179,7 @@ export function OperatorWorkspace(initial: Props): ReactElement {
             ? `${institutionalName.course_code} · ${institutionalName.display_title}` : selectedCourse?.content_key ?? 'Course'}</h2>
           <p className="mt-1 text-sm text-slate-700">Content identity: {selectedCourse?.content_key ?? 'Loading'}
             {selectedCourse?.is_shared === true ? ' · shared/general' : ''}</p>
-          <p className="mt-2 text-xs text-slate-600">Student learning pages continue using the current course library.</p>
+          <p className="mt-2 text-xs text-slate-600">Published overview, theory, and CBT revisions reach student learning pages on their next request.</p>
         </div>
         {loading && <p role="status" className="rounded-md bg-white p-4 text-slate-700">Loading course content…</p>}
         {!loading && !courseReady && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">

@@ -2,7 +2,7 @@
 import 'server-only'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { institutionalCourse, managedHistory, managedItem, parseContentPayload, repositoryCourse } from './editor-contract'
+import { contentPayloadProblem, institutionalCourse, managedHistory, managedItem, parseContentPayload, repositoryCourse } from './editor-contract'
 import type { OperatorAccess } from './access'
 import type { EditorMutation, InstitutionalCourse, ManagedHistory, ManagedItem, RepositoryCourse } from './editor-contract'
 
@@ -85,7 +85,9 @@ export async function writeOperatorContent(client: OperatorClient, input: Editor
     }
     if (input.action === 'create') {
       const payload = parseContentPayload(input.kind, input.payload)
-      if (!payload || ((input.kind === 'model_answer' || input.kind === 'rubric') !== Boolean(input.parentItemId))) {
+      if (!payload) return { status: 'invalid', message: contentPayloadProblem(input.kind, input.payload)
+        ?? 'Complete all required fields.' }
+      if ((input.kind === 'model_answer' || input.kind === 'rubric') !== Boolean(input.parentItemId)) {
         return { status: 'invalid', message: 'Complete all required fields and select a theory question where needed.' }
       }
       const { data, error } = await client.rpc('create_managed_content', {
@@ -101,7 +103,8 @@ export async function writeOperatorContent(client: OperatorClient, input: Editor
       const history = await readOperatorHistory(client, input.itemId)
       if (history.status !== 'ok') return history
       const payload = parseContentPayload(history.data.item.kind, input.payload)
-      if (!payload) return { status: 'invalid', message: 'The content fields are incomplete or invalid.' }
+      if (!payload) return { status: 'invalid', message: contentPayloadProblem(history.data.item.kind, input.payload)
+        ?? 'The content fields are incomplete or invalid.' }
       const { data, error } = await client.rpc('revise_managed_content', {
         p_item_id: input.itemId, p_expected_lock_version: input.expectedLockVersion, p_payload: payload,
       })
