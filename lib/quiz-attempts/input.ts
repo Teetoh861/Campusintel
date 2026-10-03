@@ -12,12 +12,17 @@ const answer = z.object({
   ordinal: z.number().int().nonnegative().safe(),
   optionIndex: z.number().int().nonnegative().safe(),
 }).strict()
+const selectedQuestion = z.object({
+  questionId: uuid,
+  ordinal: z.number().int().nonnegative().safe(),
+  publishedRevision: z.number().int().positive().safe(),
+}).strict()
 const revision = z.number().int().min(0).max(MAX_EXPECTED_REVISION)
 
 // These are answer patches, not a replacement snapshot. Omitted/unanswered
 // questions never create rows, and earlier accepted answers remain durable.
 export const attemptWriteSchema = z.discriminatedUnion('operation', [
-  z.object({ ...identity, operation: z.literal('start') }).strict(),
+  z.object({ ...identity, operation: z.literal('start'), questions: selectedQuestion.array().min(1).max(100) }).strict(),
   z.object({ ...identity, operation: z.literal('record'), expectedRevision: revision,
     answers: answer.array().min(1) }).strict(),
   z.object({ ...identity, operation: z.literal('finish'), expectedRevision: revision,

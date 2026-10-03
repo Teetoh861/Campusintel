@@ -62,6 +62,24 @@ async function fixture(run) {
         state.contentReads++
         return realQuizzes.getQuizByCourseSlug(slug)
       } }
+      if (name === '@/lib/managed-content/published') return { getPublishedManagedCourse: async () => {
+        state.contentReads++
+        const question = realQuizzes.getQuizByCourseSlug(course.slug).questions[0]
+        return { status: 'ok', courseId: '40000000-0000-4000-8000-000000000007', content: [
+          { item_id: '11111111-1111-4111-8111-111111111111', kind: 'course_overview',
+            question_id: null, parent_item_id: null, revision: 1,
+            payload: { title: course.title, body: course.overview } },
+          { item_id: '22222222-2222-4222-8222-222222222222', kind: 'cbt_question',
+            question_id: question.questionId, parent_item_id: null, revision: 1,
+            payload: { prompt: question.question, options: question.options,
+              correctOption: question.correctAnswer, section: question.section } },
+        ] }
+      } }
+      if (name === '@/lib/managed-content/student-quiz') return { getStudentManagedQuiz: async () => {
+        state.contentReads++
+        return { status: 'ready', quiz: { questions: [], sections: [], maxQuestions: 50,
+          timerSeconds: 3600, bankSize: 1 } }
+      } }
       if (name === '@/components/auth/AuthShell') return named('AuthUnavailable')
       if (name === '@/components/chrome/Feedback') return named('Feedback')
       if (name === './AuthFlowSync') return named('AuthFlowSync')
@@ -149,7 +167,7 @@ test('completed students reach every existing surface with page account continui
   assert.ok(nodes(await child.type(child.props)).some(node => node.type?.name === 'BookmarkButton'))
   const quiz = await f.visit(PROTECTED[2][0], PROTECTED[2][1]())
   const quizChild = quiz.result.props.children[1]
-  assert.equal(quizChild.type(quizChild.props).type.name, 'QuizClient')
+  assert.equal((await quizChild.type(quizChild.props)).type.name, 'QuizClient')
   assert.ok(f.state.contentReads > 0)
 }))
 

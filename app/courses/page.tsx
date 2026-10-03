@@ -4,9 +4,12 @@
 // only: same courses, same filter behaviour. Real course/quiz data throughout.
 import Link from 'next/link'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { Feedback } from '@/components/chrome/Feedback'
 import { courses } from '@/lib/data/courses'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
+import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
+import { getPublishedManagedCourse } from '@/lib/managed-content/published'
+import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
+import { projectStudentLearning } from '@/lib/managed-content/student-projection'
 import type { Course } from '@/lib/types'
 import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
@@ -20,15 +23,24 @@ const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 const toLevel = (d: Course['difficulty']): DifficultyLevel =>
   d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
 
-function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
-  return all.map((course) => {
-    const quiz = getUsableCourseQuiz(course, getQuizByCourseSlug(course.slug))
+async function buildItems(all: ReadonlyArray<Course>): Promise<DirectoryItem[] | null> {
+  const resolved = await Promise.all(all.map(async course => {
+    const published = await getPublishedManagedCourse(course.contentKey)
+    if (published.status !== 'ok') return null
+    const projected = projectStudentLearning(published.content)
+    if (projected.status !== 'ok') return null
+    return { course, learning: projected.learning }
+  }))
+  if (resolved.some(entry => entry === null)) return null
+  return resolved.filter((entry): entry is NonNullable<typeof entry> => entry !== null).map(({ course, learning }) => {
+    const quiz = getUsableManagedQuiz(course.slug,
+      getQuizConfigurationByCourseSlug(course.slug), learning.quizQuestions)
     const critical = course.examCritical === true
     const cardProps: CardProps = {
       code: course.code,
       title: course.title,
       // Punchy tagline where set; otherwise the real overview (clamped in Card).
-      desc: course.tagline ?? course.overview,
+      desc: course.tagline ?? learning.overview?.body,
       // Exam-critical courses keep their View course action even when a quiz
       // attempt is unavailable.
       flag: critical
@@ -37,7 +49,7 @@ function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
       level: String(course.level),
       credits: `${course.credits} credits`,
       questions: quiz ? String(quiz.bankSize) : undefined,
-      timeLimit: quiz ? `${quiz.quiz.quizDurationMinutes} min` : '',
+      timeLimit: quiz ? `${quiz.timerSeconds / 60} min` : '',
       difficulty: toLevel(course.difficulty),
       cta: {
         label: 'View course',
@@ -69,12 +81,13 @@ function buildItems(all: ReadonlyArray<Course>): DirectoryItem[] {
 }
 
 /** Cross the student account boundary before the course directory renders. */
-export default function CoursesPage() {
+export default function CoursesPage(): React.JSX.Element {
   return <StudentAccessGate returnPath="/courses"><CourseDirectoryPage /></StudentAccessGate>
 }
 
-function CourseDirectoryPage() {
-  const items = buildItems(courses)
+async function CourseDirectoryPage() {
+  const items = await buildItems(courses)
+  if (items === null) return <Feedback message="Course content is temporarily unavailable." tone="error" />
   const totalCount = courses.length
   const countLabel = String(totalCount).padStart(2, '0')
 

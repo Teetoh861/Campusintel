@@ -17,6 +17,7 @@ import { QuestionScreen } from './QuestionScreen'
 import { ResultsScreen } from './ResultsScreen'
 import { sampleQuestionsBySection } from './sampleQuestions'
 import { createQuizAttemptRecorder } from './attemptRecording'
+import { loadFreshQuiz } from './liveBank'
 import type { RecordingStatus } from './attemptRecording'
 import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
@@ -32,7 +33,8 @@ const HISTORY_GUARD_KEY = '__campusintelQuizGuard'
 // the comp's quiz.js cutoff so the per-position colour mapping stays honest.
 const BREAKDOWN_TICK_LIMIT = 25
 
-export function QuizClient(props: QuizCoreProps) {
+/** Run the existing quiz screens against the current managed bank and pinned attempt. */
+export function QuizClient(props: QuizCoreProps): React.JSX.Element {
   const {
     questions: questionBank,
     sections,
@@ -52,8 +54,12 @@ export function QuizClient(props: QuizCoreProps) {
   const [navOpen, setNavOpen] = useState(false)
   const [confirmingSubmit, setConfirmingSubmit] = useState(false)
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | null>(null)
+  const [bankError, setBankError] = useState<string | null>(null)
+  const [loadingBank, setLoadingBank] = useState(false)
+  const [activeSections, setActiveSections] = useState<ReadonlyArray<string>>(sections)
   const [recorder] = useState(() => createQuizAttemptRecorder(setRecordingStatus))
   const screenRef = useRef<Screen>('intro')
+  const startingRef = useRef(false)
   const disarmHistoryGuard = useRef<() => void>(() => {})
 
   const finishAttempt = useCallback((completion: 'submitted' | 'timed_out') => {
@@ -91,6 +97,14 @@ export function QuizClient(props: QuizCoreProps) {
       finishAttempt('timed_out')
     }
   }, [timeLeft, screen, finishAttempt])
+
+  useEffect(() => {
+    if (recordingStatus !== 'content-changed' || screenRef.current !== 'active') return
+    screenRef.current = 'intro'
+    disarmHistoryGuard.current()
+    setScreen('intro')
+    setBankError('The question bank changed while this attempt was starting. Try again.')
+  }, [recordingStatus])
 
   // Guard against accidentally losing an in-progress attempt. Only while the
   // quiz is active do we arm refresh/close and client-side Back protection.
@@ -156,18 +170,27 @@ export function QuizClient(props: QuizCoreProps) {
   }, [timerSeconds])
 
   const startNewAttempt = useCallback(() => {
-    if (screenRef.current === 'active') return
-    const nextQuestions = sampleQuestionsBySection(
-      questionBank,
-      sections,
-      maxQuestions,
-    )
-    screenRef.current = 'active'
-    resetAttempt()
-    setQuestions(nextQuestions)
-    recorder.begin(courseContentKey, nextQuestions)
-    setScreen('active')
-  }, [questionBank, sections, maxQuestions, resetAttempt, recorder, courseContentKey])
+    if (screenRef.current === 'active' || startingRef.current) return
+    startingRef.current = true
+    setLoadingBank(true)
+    setBankError(null)
+    void (async () => {
+      const fresh = await loadFreshQuiz(courseSlug)
+      startingRef.current = false
+      setLoadingBank(false)
+      if (!fresh || screenRef.current === 'active') {
+        setBankError('The current question bank is unavailable. Try again.')
+        return
+      }
+      const nextQuestions = sampleQuestionsBySection(fresh.questions, fresh.sections, fresh.maxQuestions)
+      setActiveSections(fresh.sections)
+      screenRef.current = 'active'
+      resetAttempt()
+      setQuestions(nextQuestions)
+      recorder.begin(courseContentKey, nextQuestions)
+      setScreen('active')
+    })()
+  }, [courseSlug, resetAttempt, recorder, courseContentKey])
 
   const submit = useCallback(() => {
     finishAttempt(timeLeft <= 0 ? 'timed_out' : 'submitted')
@@ -181,12 +204,31 @@ export function QuizClient(props: QuizCoreProps) {
   const cancelSubmit = useCallback(() => setConfirmingSubmit(false), [])
 
   const redoAttempt = useCallback(() => {
-    if (screenRef.current !== 'results') return
-    screenRef.current = 'active'
-    resetAttempt()
-    recorder.begin(courseContentKey, questions)
-    setScreen('active')
-  }, [resetAttempt, recorder, courseContentKey, questions])
+    if (screenRef.current !== 'results' || startingRef.current) return
+    startingRef.current = true
+    setLoadingBank(true)
+    setBankError(null)
+    void (async () => {
+      const fresh = await loadFreshQuiz(courseSlug)
+      startingRef.current = false
+      setLoadingBank(false)
+      if (!fresh) {
+        setBankError('The current question bank is unavailable. Try again.')
+        return
+      }
+      const currentRevisions = new Map(fresh.questions.map(question =>
+        [question.questionId, question.publishedRevision]))
+      if (questions.some(question => currentRevisions.get(question.questionId) !== question.publishedRevision)) {
+        setBankError('These questions have changed. Retake with new questions instead.')
+        return
+      }
+      setActiveSections(fresh.sections)
+      screenRef.current = 'active'
+      resetAttempt()
+      recorder.begin(courseContentKey, questions)
+      setScreen('active')
+    })()
+  }, [courseSlug, resetAttempt, recorder, courseContentKey, questions])
 
   const selectOption = useCallback(
     (optIdx: number) => {
@@ -224,10 +266,10 @@ export function QuizClient(props: QuizCoreProps) {
   // so we mint them from the index — deterministic and stable.
   const letterFor = useCallback(
     (name: string) => {
-      const i = sections.indexOf(name)
+      const i = activeSections.indexOf(name)
       return i >= 0 ? String.fromCharCode(65 + i) : '?'
     },
-    [sections],
+    [activeSections],
   )
 
   // Per-question correctness, computed once from the current answers map.
@@ -273,16 +315,25 @@ export function QuizClient(props: QuizCoreProps) {
       stat.total += 1
       if (r.ok) stat.correct += 1
     }
-    return sections
+    return activeSections
       .map((name) => byName.get(name))
       .filter((s): s is SectionStat => Boolean(s))
-  }, [perQuestion, sections, letterFor])
+  }, [perQuestion, activeSections, letterFor])
 
   const recordingNotice = recordingStatus === 'session-changed'
     ? 'Your account or session changed. This attempt could not be saved to history.'
     : recordingStatus === 'unavailable'
     ? 'Attempt history is unavailable. You can still finish and review this quiz.'
     : null
+  const bankNotice = bankError ? (
+    <p role="alert" className="border-b border-ci-border bg-ci-accent-50 px-6 py-3 text-center text-[13px] font-medium text-ci-navy">
+      {bankError}
+    </p>
+  ) : loadingBank ? (
+    <p role="status" className="border-b border-ci-border bg-ci-accent-50 px-6 py-3 text-center text-[13px] font-medium text-ci-navy">
+      Loading the latest questions…
+    </p>
+  ) : null
   const notice = recordingNotice ? (
     <p role="status" className="border-b border-ci-border bg-ci-accent-50 px-6 py-3 text-center text-[13px] font-medium text-ci-navy">
       {recordingNotice}
@@ -291,7 +342,7 @@ export function QuizClient(props: QuizCoreProps) {
 
   if (screen === 'intro') {
     return (
-      <IntroScreen
+      <>{bankNotice}<IntroScreen
         courseCode={props.courseCode}
         courseTitle={props.courseTitle}
         courseSlug={courseSlug}
@@ -299,7 +350,7 @@ export function QuizClient(props: QuizCoreProps) {
         timerSeconds={timerSeconds}
         sectionCount={sectionStats.length || sections.length}
         onStart={startNewAttempt}
-      />
+      /></>
     )
   }
 
@@ -385,6 +436,7 @@ export function QuizClient(props: QuizCoreProps) {
   return (
     <>
       {notice}
+      {bankNotice}
       <ResultsScreen
         courseCode={props.courseCode}
         courseSlug={courseSlug}

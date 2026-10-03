@@ -39,7 +39,17 @@ database. `read_published_managed_content(course_uuid)` returns only published
 revisions, and hides linked answers/rubrics while their parent question is
 unpublished or publishes a different revision. `getPublishedManagedContent`
 adds an application-side live Auth check and validates the returned shape.
-Student pages do not call it yet.
+Student course detail, course directory, and quiz pages now resolve
+`content_key` through `public.courses.id` before this published read. They do
+not substitute repository learning content when a publication is absent or the
+managed read fails.
+
+The quiz keeps repository timer, attempt limit, and section-order settings,
+while its live question bank comes from published CBT revisions. Each new
+attempt pins the selected `question_id`, item, and managed revision in
+`quiz_attempt_questions`. The private attempt RPC derives correctness and
+section labels from those immutable revisions; publication changes can affect
+new attempts without changing an active attempt's scoring state.
 
 The operator workspace at `/admin` discovers repository identities and
 institutional catalogue entries separately. Its guarded route uses the

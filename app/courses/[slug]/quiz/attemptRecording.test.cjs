@@ -4,12 +4,12 @@ const assert = require('node:assert/strict')
 const { createQuizAttemptRecorder } = require('./attemptRecording.ts')
 
 const questions = [
-  { questionId: '11111111-1111-4111-8111-111111111111' },
-  { questionId: '22222222-2222-4222-8222-222222222222' },
+  { questionId: '11111111-1111-4111-8111-111111111111', publishedRevision: 1 },
+  { questionId: '22222222-2222-4222-8222-222222222222', publishedRevision: 2 },
 ]
 const retakeQuestions = [
-  { questionId: '33333333-3333-4333-8333-333333333333' },
-  { questionId: '44444444-4444-4444-8444-444444444444' },
+  { questionId: '33333333-3333-4333-8333-333333333333', publishedRevision: 3 },
+  { questionId: '44444444-4444-4444-8444-444444444444', publishedRevision: 4 },
 ]
 const ids = [
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
@@ -100,7 +100,10 @@ test('signed-in start, first answer, changed answer and partial history use one 
   })
   assert.deepEqual(f.calls.filter(call => call.operation === 'record').map(call => call.expectedRevision), [0, 1])
   assert.deepEqual(Object.keys(f.calls.find(call => call.operation === 'start')).sort(),
-    ['attemptId', 'courseContentKey', 'operation'])
+    ['attemptId', 'courseContentKey', 'operation', 'questions'])
+  assert.deepEqual(f.calls.find(call => call.operation === 'start').questions,
+    questions.map((question, ordinal) => ({ questionId: question.questionId,
+      ordinal, publishedRevision: question.publishedRevision })))
   assert.equal(f.states.at(-1), 'recording')
 })
 

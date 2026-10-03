@@ -24419,3 +24419,19 @@ export const quizzes: Record<string, CourseQuiz> = {
 export function getQuizByCourseSlug(slug: string): CourseQuiz | undefined {
   return quizzes[slug]
 }
+
+/** Keep historical quiz policy and presentation settings separate from its question bank. */
+export function getQuizConfigurationByCourseSlug(
+  slug: string,
+): Omit<CourseQuiz, 'questions' | 'totalQuestions'> | undefined {
+  const quiz = quizzes[slug]
+  if (!quiz) return undefined
+  return {
+    courseSlug: quiz.courseSlug,
+    courseCode: quiz.courseCode,
+    title: quiz.title,
+    maxQuizQuestions: quiz.maxQuizQuestions,
+    quizDurationMinutes: quiz.quizDurationMinutes,
+    sections: quiz.sections,
+  }
+}
