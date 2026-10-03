@@ -1,6 +1,6 @@
 // Shared types for the quiz client + its screens. Kept separate so the
 // presentational screens don't have to import QuizClient.
-import type { QuizQuestion } from '@/lib/types'
+import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
 
 export type Screen = 'intro' | 'active' | 'results'
 export type ReviewFilter = 'missed' | 'all'
@@ -16,7 +16,7 @@ export type QuizCoreProps = {
   courseContentKey: string
   sections: ReadonlyArray<string>
   // Full bank; QuizClient samples and freezes an attempt before answer entry.
-  questions: ReadonlyArray<QuizQuestion>
+  questions: ReadonlyArray<ManagedQuizQuestion>
   timerSeconds: number
   maxQuestions: number
   totalInBank: number

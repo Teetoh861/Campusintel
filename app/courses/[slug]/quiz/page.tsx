@@ -4,9 +4,9 @@
 // route segment so other pages don't pay for it.
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { Feedback } from '@/components/chrome/Feedback'
 import { getCourseBySlug } from '@/lib/data/courses'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
+import { getStudentManagedQuiz } from '@/lib/managed-content/student-quiz'
 import { QuizClient } from './QuizClient'
 
 type PageProps = { params: Promise<{ slug: string }> }
@@ -15,17 +15,17 @@ type PageProps = { params: Promise<{ slug: string }> }
 export const dynamic = 'force-dynamic'
 
 /** Cross the student account boundary before the quiz bank is read. */
-export default async function QuizPage({ params }: PageProps) {
+export default async function QuizPage({ params }: PageProps): Promise<React.JSX.Element> {
   const { slug } = await params
   return <StudentAccessGate returnPath={`/courses/${slug}/quiz`}><Quiz slug={slug} /></StudentAccessGate>
 }
 
-function Quiz({ slug }: { slug: string }) {
+async function Quiz({ slug }: { slug: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
-  const usableQuiz = getUsableCourseQuiz(course, getQuizByCourseSlug(slug))
-  if (!usableQuiz) notFound()
-  const { quiz } = usableQuiz
+  const result = await getStudentManagedQuiz(slug)
+  if (result.status !== 'ready') return <Feedback message="The quiz is temporarily unavailable." tone="error" />
+  const usableQuiz = result.quiz
 
   return (
     <QuizClient
@@ -33,10 +33,10 @@ function Quiz({ slug }: { slug: string }) {
       courseTitle={course.title}
       courseSlug={course.slug}
       courseContentKey={course.contentKey}
-      sections={quiz.sections}
-      questions={quiz.questions}
+      sections={usableQuiz.sections}
+      questions={usableQuiz.questions}
       timerSeconds={usableQuiz.timerSeconds}
-      maxQuestions={quiz.maxQuizQuestions}
+      maxQuestions={usableQuiz.maxQuestions}
       totalInBank={usableQuiz.bankSize}
     />
   )

@@ -4,13 +4,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { Feedback } from '@/components/chrome/Feedback'
 import { courses, getCourseBySlug } from '@/lib/data/courses'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
-import {
-  getTheoryContentBySlug,
-  type TheoryQuestion,
-} from '@/lib/data/theory-questions'
+import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
+import { getPublishedManagedCourse } from '@/lib/managed-content/published'
+import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
+import { projectStudentLearning } from '@/lib/managed-content/student-projection'
+import type { ManagedTheoryQuestion } from '@/lib/managed-content/student-projection'
 import type {
   Course,
   Topic,
@@ -73,7 +73,7 @@ const SECTION_ORDER: ReadonlyArray<SectionDescriptor> = [
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
 /** Cross the student account boundary before any course content is read. */
-export default async function CourseDetailPage({ params }: PageProps) {
+export default async function CourseDetailPage({ params }: PageProps): Promise<React.JSX.Element> {
   const { slug } = await params
   return <StudentAccessGate returnPath={`/courses/${slug}`}><CourseDetail slug={slug} /></StudentAccessGate>
 }
@@ -81,19 +81,21 @@ export default async function CourseDetailPage({ params }: PageProps) {
 async function CourseDetail({ slug }: { slug: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
-  const usableQuiz = getUsableCourseQuiz(course, getQuizByCourseSlug(slug))
-  const quiz = usableQuiz?.quiz
-  const theory = getTheoryContentBySlug(slug)
-
-  const takeaways = course.keyTakeaways ?? []
-  const theoryQuestions = theory?.theoryQuestions ?? []
-  const formulaSheet = course.formulaSheet ?? []
+  const published = await getPublishedManagedCourse(course.contentKey)
+  if (published.status !== 'ok') return <Feedback message="Learning content is temporarily unavailable." tone="error" />
+  const projected = projectStudentLearning(published.content)
+  if (projected.status !== 'ok') return <Feedback message="Learning content is temporarily unavailable." tone="error" />
+  const { overview, theoryQuestions, quizQuestions } = projected.learning
+  const usableQuiz = getUsableManagedQuiz(slug,
+    getQuizConfigurationByCourseSlug(slug), quizQuestions)
+  const takeaways = overview?.keyTakeaways ?? []
+  const formulaSheet = overview?.formulaSheet ?? []
 
   const visible: ReadonlyArray<SectionDescriptor> = SECTION_ORDER.filter((s) => {
-    if (s.id === 'overview') return Boolean(course.overview)
+    if (s.id === 'overview') return Boolean(overview?.body)
     if (s.id === 'takeaways') return takeaways.length > 0
-    if (s.id === 'topics') return course.topics.length > 0
-    if (s.id === 'exam') return course.examFocus.length > 0
+    if (s.id === 'topics') return (overview?.topics?.length ?? 0) > 0
+    if (s.id === 'exam') return (overview?.examFocus?.length ?? 0) > 0
     if (s.id === 'formulas') return formulaSheet.length > 0
     if (s.id === 'textbooks') return course.textbooks.length > 0
     if (s.id === 'theory') return theoryQuestions.length > 0
@@ -106,7 +108,7 @@ async function CourseDetail({ slug }: { slug: string }) {
   const questionsValue = usableQuiz
     ? `${usableQuiz.attemptSize} questions per attempt · ${usableQuiz.bankSize}-question bank`
     : 'N/A'
-  const quizTimeValue = quiz ? `${quiz.quizDurationMinutes} min` : 'N/A'
+  const quizTimeValue = usableQuiz ? `${usableQuiz.timerSeconds / 60} min` : 'N/A'
 
   const accordionSections: ReadonlyArray<CourseAccordionSection> = visible.flatMap<CourseAccordionSection>((section) => {
     if (section.id === 'overview') return []
@@ -127,7 +129,7 @@ async function CourseDetail({ slug }: { slug: string }) {
         label: section.tocLabel,
         content: (
           <AccordionSectionContent h2="Syllabus contents">
-            <Topics items={course.topics} />
+            <Topics items={overview?.topics ?? []} />
           </AccordionSectionContent>
         ),
       }]
@@ -148,7 +150,7 @@ async function CourseDetail({ slug }: { slug: string }) {
             <p className="mt-3 max-w-[60ch] text-[16px] leading-[1.55] text-ci-gray-600">
               High-yield areas pulled from past papers. If your time is short, study these first.
             </p>
-            <ExamFocus items={course.examFocus} />
+            <ExamFocus items={overview?.examFocus ?? []} />
           </div>
         ),
       }]
@@ -200,8 +202,8 @@ async function CourseDetail({ slug }: { slug: string }) {
   // Closing-band kicker, built from the real attempt cap and bank size.
   const closingKicker = [
     course.code,
-    quiz ? questionsValue : null,
-    quiz ? `${quiz.quizDurationMinutes} minutes` : null,
+    usableQuiz ? questionsValue : null,
+    usableQuiz ? `${usableQuiz.timerSeconds / 60} minutes` : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -228,9 +230,9 @@ async function CourseDetail({ slug }: { slug: string }) {
           <h1 className="mt-3 text-balance text-[clamp(38px,7vw,64px)] font-extrabold leading-none tracking-[-0.035em] text-white">
             {course.title}
           </h1>
-          <p className="mt-5 max-w-[54ch] text-[clamp(17px,2.2vw,20px)] leading-[1.5] text-ci-blue-150">
-            {course.overview}
-          </p>
+          {overview && <p className="mt-5 max-w-[54ch] text-[clamp(17px,2.2vw,20px)] leading-[1.5] text-ci-blue-150">
+            {overview.body}
+          </p>}
 
           <div className="mt-[30px] flex w-full max-w-[560px] flex-col gap-3">
             {quizHref && <Link className={cx(btnBase, btnAccent, 'w-full')} href={quizHref}>
@@ -438,16 +440,17 @@ function FormulaSheet({ items }: { items: ReadonlyArray<FormulaEntry> }) {
   )
 }
 
-function TheoryList({ items }: { items: ReadonlyArray<TheoryQuestion> }) {
+function TheoryList({ items }: { items: ReadonlyArray<ManagedTheoryQuestion> }) {
+  let nextDisplayNumber = Math.max(0, ...items.map(item => item.displayNumber ?? 0)) + 1
   return (
     <ol className="grid grid-cols-1 gap-3">
       {items.map((q) => (
         <li
-          key={q.id}
+          key={q.itemId}
           className="flex gap-4 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] shadow-ci-card"
         >
-          <span className="flex-none pt-[2px] text-[13px] font-bold tracking-[0.04em] text-ci-accent-600">Q{q.id}</span>
-          <p className="text-[15.5px] leading-[1.55] text-ci-gray-700">{q.question}</p>
+          <span className="flex-none pt-[2px] text-[13px] font-bold tracking-[0.04em] text-ci-accent-600">Q{q.displayNumber ?? nextDisplayNumber++}</span>
+          <p className="text-[15.5px] leading-[1.55] text-ci-gray-700">{q.prompt}</p>
         </li>
       ))}
     </ol>

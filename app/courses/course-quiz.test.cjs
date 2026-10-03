@@ -51,10 +51,22 @@ async function fixture(quiz, run) {
     './[slug]/page.tsx', './[slug]/quiz/page.tsx', './[slug]/CourseToc.tsx', './[slug]/MobileCourseNav.tsx',
     './page.tsx', '../page.tsx', '../bookmarks/page.tsx',
   ].map(file => require.resolve(file))
-  const empty = () => null
   const bookmarkControl = () => React.createElement('button', { type: 'button' }, 'Bookmark control')
   const restore = installLoader()
   const originalLoad = Module._load
+  const courseId = '40000000-0000-4000-8000-000000000007'
+  const overview = { item_id: '11111111-1111-4111-8111-111111111111', course_id: courseId,
+    kind: 'course_overview', question_id: null, source_key: null, parent_item_id: null,
+    revision: 1, payload: { title: course.title, body: course.overview } }
+  const rows = [overview, ...(quiz?.questions ?? []).map((question, index) => ({
+    item_id: `22222222-2222-4222-8222-${String(index + 1).padStart(12, '0')}`,
+    course_id: courseId, kind: 'cbt_question', question_id: question.questionId,
+    source_key: null, parent_item_id: null, revision: 1,
+    payload: { prompt: question.question, options: question.options,
+      correctOption: question.correctAnswer, section: question.section,
+      ...(question.explanation ? { explanation: question.explanation } : {}) },
+  }))]
+  const publishedState = { rows, available: true }
   try {
     const { Card } = require('../../components/chrome/Card.tsx')
     const renderCards = (entries) => React.createElement(React.Fragment, null,
@@ -66,13 +78,38 @@ async function fixture(quiz, run) {
       }
       if (name === '@/lib/data/quizzes') return {
         getQuizByCourseSlug: slug => slug === course.slug ? quiz : undefined,
+        getQuizConfigurationByCourseSlug: slug => slug === course.slug && quiz
+          ? { courseSlug: quiz.courseSlug, courseCode: quiz.courseCode, title: quiz.title,
+            maxQuizQuestions: quiz.maxQuizQuestions, quizDurationMinutes: quiz.quizDurationMinutes,
+            sections: quiz.sections } : undefined,
+      }
+      if (name === '@/lib/managed-content/published') return {
+        getPublishedManagedCourse: async () => publishedState.available
+          ? { status: 'ok', courseId, content: publishedState.rows }
+          : { status: 'unavailable' },
+      }
+      if (name === '@/lib/managed-content/student-quiz') return {
+        getStudentManagedQuiz: async slug => {
+          if (slug !== course.slug) return { status: 'invalid-course' }
+          if (!publishedState.available) return { status: 'unavailable' }
+          const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
+          const questions = publishedState.rows.filter(row => row.kind === 'cbt_question').map((row, index) => ({
+            id: index + 1, questionId: row.question_id, question: row.payload.prompt,
+            options: row.payload.options, correctAnswer: row.payload.correctOption,
+            section: row.payload.section, publishedRevision: row.revision,
+          }))
+          const usable = getUsableManagedQuiz(slug, quiz, questions)
+          return usable ? { status: 'ready', quiz: usable } : { status: 'unavailable' }
+        },
       }
       if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
       if (name === './BookmarkButton') return { BookmarkButton: bookmarkControl }
       if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
         React.createElement('span', { 'data-course-view-slug': courseSlug }) }
-      if (name === './CourseAccordion') return { CourseAccordion: empty }
+      if (name === './CourseAccordion') return { CourseAccordion: ({ sections }) =>
+        React.createElement(React.Fragment, null, sections.map(section =>
+          React.createElement('section', { key: section.id }, section.content))) }
       if (name === './CourseDirectory') return { CourseDirectory: ({ items }) => renderCards(items) }
       if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
@@ -89,10 +126,11 @@ async function fixture(quiz, run) {
       quizRoute: granted(require(files[1]).default),
       CourseToc: require(files[2]).CourseToc,
       MobileCourseNav: require(files[3]).MobileCourseNav,
-      directory: require(files[4]).default,
+      directory: granted(require(files[4]).default),
       home: require(files[5]).default,
       bookmarks: require(files[6]).default,
       getContentAvailability: require('../../lib/dashboard/content-availability.ts').getContentAvailability,
+      publishedState,
     })
   } finally {
     restore()
@@ -145,7 +183,8 @@ test('usable quiz keeps both course-detail entry points and the quiz route', asy
   assert.match(html, new RegExp(`${Math.min(validQuiz.maxQuizQuestions, validQuiz.questions.length)} questions per attempt`))
   assert.match(html, new RegExp(`${validQuiz.questions.length}-question bank`))
   const route = await f.quizRoute(params)
-  assert.equal(route.props.questions, validQuiz.questions)
+  assert.deepEqual(route.props.questions.map(question => question.questionId),
+    validQuiz.questions.map(question => question.questionId))
   assert.equal(route.props.maxQuestions, validQuiz.maxQuizQuestions)
   assert.equal(route.props.timerSeconds, validQuiz.quizDurationMinutes * 60)
   assert.equal(route.props.totalInBank, validQuiz.questions.length)
@@ -166,6 +205,46 @@ test('displayed bank counts come from questions students can attempt', async () 
   })
 })
 
+test('next student request uses managed overview and theory publication without code fallback', async () => fixture(validQuiz, async f => {
+  f.publishedState.rows[0].payload.body = 'Managed publication replaces the repository overview.'
+  let html = renderToStaticMarkup(await f.detail(params))
+  assert.match(html, /Managed publication replaces the repository overview/)
+  assert.doesNotMatch(html, new RegExp(course.overview.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  f.publishedState.rows.push({ item_id: '33333333-3333-4333-8333-333333333333',
+    course_id: '40000000-0000-4000-8000-000000000007', kind: 'theory_question',
+    question_id: null, source_key: 'theory:1', parent_item_id: null, revision: 2,
+    payload: { prompt: 'Managed theory prompt' } })
+  html = renderToStaticMarkup(await f.detail(params))
+  assert.match(html, /Managed theory prompt/)
+  f.publishedState.rows = f.publishedState.rows.filter(row =>
+    row.kind !== 'course_overview' && row.kind !== 'theory_question')
+  html = renderToStaticMarkup(await f.detail(params))
+  assert.doesNotMatch(html, /Managed publication replaces the repository overview|Managed theory prompt/)
+  assert.doesNotMatch(html, new RegExp(course.overview.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+}))
+
+test('published CBT edits and withdrawals affect the next quiz route read', async () => fixture(validQuiz, async f => {
+  const question = f.publishedState.rows.find(row => row.kind === 'cbt_question')
+  question.payload.prompt = 'Operator published a new prompt'
+  question.revision = 2
+  let route = await f.quizRoute(params)
+  assert.equal(route.props.questions[0].question, 'Operator published a new prompt')
+  assert.equal(route.props.questions[0].publishedRevision, 2)
+  f.publishedState.rows = f.publishedState.rows.filter(row => row !== question)
+  route = await f.quizRoute(params)
+  assert.equal(route.props.totalInBank, validQuiz.questions.length - 1)
+  assert.ok(route.props.questions.every(item => item.questionId !== question.question_id))
+  f.publishedState.rows = f.publishedState.rows.filter(row => row.kind !== 'cbt_question')
+  assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
+}))
+
+test('managed read unavailability fails closed on detail, quiz and course directory', async () => fixture(validQuiz, async f => {
+  f.publishedState.available = false
+  assert.match(renderToStaticMarkup(await f.detail(params)), /Learning content is temporarily unavailable/)
+  assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
+  assert.match(renderToStaticMarkup(await f.directory()), /Course content is temporarily unavailable/)
+}))
+
 test('missing or unusable quiz removes all course-detail claims and the route rejects it', async () => {
   for (const quiz of [undefined, { ...validQuiz, maxQuizQuestions: 0 },
     { ...validQuiz, quizDurationMinutes: 0 }, { ...validQuiz, quizDurationMinutes: 1e308 }]) {
@@ -180,7 +259,7 @@ test('missing or unusable quiz removes all course-detail claims and the route re
       assert.match(html, new RegExp(`href="/courses/${course.slug}/materials"`))
       assert.match(visibleText, /Request material privately/)
       assert.equal((visibleText.match(/Bookmark control/g) || []).length, 1)
-      await assert.rejects(f.quizRoute(params), /notFound/)
+      assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
     })
   }
 })
@@ -202,7 +281,7 @@ test('homepage, course directory and bookmarks do not offer dead quiz card links
     [{ ...validQuiz, maxQuizQuestions: 0 }, false],
     [{ ...validQuiz, quizDurationMinutes: 1e308 }, false]]) {
     await fixture(quiz, async f => {
-      const [homeHtml, directoryHtml, bookmarkHtml] = [f.home(), f.directory(), f.bookmarks()]
+      const [homeHtml, directoryHtml, bookmarkHtml] = [f.home(), await f.directory(), f.bookmarks()]
         .map(element => renderToStaticMarkup(element))
       for (const html of [homeHtml, directoryHtml, bookmarkHtml]) {
         assert.match(html, new RegExp(`href="/courses/${course.slug}"`))

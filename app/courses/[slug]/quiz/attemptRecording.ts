@@ -1,15 +1,15 @@
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
-import type { QuizQuestion } from '@/lib/types'
+import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
 
-export type RecordingStatus = 'checking' | 'recording' | 'saved' | 'signed-out' | 'session-changed' | 'unavailable'
+export type RecordingStatus = 'checking' | 'recording' | 'saved' | 'signed-out' | 'session-changed' | 'content-changed' | 'unavailable'
 type Completion = 'submitted' | 'timed_out'
 type Answer = { questionId: string; ordinal: number; optionIndex: number }
-type WriteResult = 'saved' | 'session-changed' | 'unavailable'
+type WriteResult = 'saved' | 'session-changed' | 'content-changed' | 'unavailable'
 
 type Attempt = {
   id: string
   courseContentKey: string
-  questions: ReadonlyArray<QuizQuestion>
+  questions: ReadonlyArray<ManagedQuizQuestion>
   desired: Map<number, Answer>
   persisted: Map<number, number>
   revision: number
@@ -17,6 +17,12 @@ type Attempt = {
   status: RecordingStatus
   finishRequested: Completion | null
   draining: boolean
+}
+
+type QuizAttemptRecorder = {
+  begin: (courseContentKey: string, questions: ReadonlyArray<ManagedQuizQuestion>) => string
+  select: (ordinal: number, optionIndex: number) => void
+  finish: (completion: Completion) => void
 }
 
 const ENDPOINT = '/api/quiz-attempts'
@@ -43,7 +49,7 @@ export function createQuizAttemptRecorder(
   onStatus: (status: RecordingStatus) => void,
   request: typeof fetch = fetch,
   makeId: () => string = () => crypto.randomUUID(),
-) {
+): QuizAttemptRecorder {
   let current: Attempt | null = null
 
   function setStatus(attempt: Attempt, status: RecordingStatus): void {
@@ -91,6 +97,9 @@ export function createQuizAttemptRecorder(
         if (isObject(result) && (result.status === 'signed-out' || result.status === 'session-changed')) {
           return 'session-changed'
         }
+        if (isObject(result) && result.status === 'conflict' && command.operation === 'start') {
+          return 'content-changed'
+        }
         if (response.status !== 503) return 'unavailable'
       } catch {
         // Reuse the exact command, revision, and attempt ID after an uncertain response.
@@ -119,6 +128,9 @@ export function createQuizAttemptRecorder(
           attempt.token = session.token
           const started = await write(attempt, {
             operation: 'start', attemptId: attempt.id, courseContentKey: attempt.courseContentKey,
+            questions: attempt.questions.map((question, ordinal) => ({
+              questionId: question.questionId, ordinal, publishedRevision: question.publishedRevision,
+            })),
           }, 0, 'in_progress')
           if (started !== 'saved') {
             setStatus(attempt, started)
@@ -162,7 +174,7 @@ export function createQuizAttemptRecorder(
   }
 
   return {
-    begin(courseContentKey: string, questions: ReadonlyArray<QuizQuestion>): string {
+    begin(courseContentKey: string, questions: ReadonlyArray<ManagedQuizQuestion>): string {
       const attempt: Attempt = {
         id: makeId(), courseContentKey, questions, desired: new Map(), persisted: new Map(),
         revision: 0, token: '', status: 'checking', finishRequested: null, draining: false,

@@ -6,6 +6,10 @@ import { getStudentSessionUser } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import type { NextResponse } from 'next/server'
 
+type AccountClient = Awaited<ReturnType<typeof createClient>>
+const contentKey = z.string().min(1).max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+const repositoryRow = z.object({ id: z.string().uuid(), content_key: contentKey }).strict()
+
 const publishedRow = z.object({
   item_id: z.string().uuid(),
   course_id: z.string().uuid(),
@@ -22,6 +26,18 @@ export type PublishedContentResult =
   | { status: 'ok'; content: PublishedManagedContent[] }
   | { status: 'signed-out' | 'invalid-course' | 'unavailable' }
 
+export type PublishedCourseResult =
+  | { status: 'ok'; courseId: string; content: PublishedManagedContent[] }
+  | { status: 'signed-out' | 'invalid-course' | 'unavailable' }
+
+async function readRows(client: AccountClient, courseId: string): Promise<PublishedContentResult> {
+  const { data, error } = await client.rpc('read_published_managed_content', { p_course_id: courseId })
+  if (error) return { status: 'unavailable' }
+  const parsed = publishedRow.array().safeParse(data)
+  if (!parsed.success || parsed.data.some(row => row.course_id !== courseId)) return { status: 'unavailable' }
+  return { status: 'ok', content: parsed.data }
+}
+
 /** Validate the live account before reading the database's published-only projection. */
 export async function getPublishedManagedContent(
   courseId: string, response?: NextResponse,
@@ -32,11 +48,31 @@ export async function getPublishedManagedContent(
     const client = await createClient(response)
     const user = await getStudentSessionUser(response, client)
     if (user === null) return { status: 'signed-out' }
-    const { data, error } = await client.rpc('read_published_managed_content', { p_course_id: courseId })
-    if (error) return { status: 'unavailable' }
-    const parsed = publishedRow.array().safeParse(data)
-    if (!parsed.success || parsed.data.some(row => row.course_id !== courseId)) return { status: 'unavailable' }
-    return { status: 'ok', content: parsed.data }
+    return await readRows(client, courseId)
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+/** Resolve a repository content key through public.courses before the published read. */
+export async function getPublishedManagedCourse(
+  key: string, response?: NextResponse,
+): Promise<PublishedCourseResult> {
+  if (!contentKey.safeParse(key).success) return { status: 'invalid-course' }
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try {
+    const client = await createClient(response)
+    const user = await getStudentSessionUser(response, client)
+    if (user === null) return { status: 'signed-out' }
+    const bridge = await client.from('courses').select('id,content_key')
+      .eq('content_key', key).maybeSingle()
+    if (bridge.error) return { status: 'unavailable' }
+    const row = repositoryRow.safeParse(bridge.data)
+    if (!row.success || row.data.content_key !== key) return { status: 'unavailable' }
+    const published = await readRows(client, row.data.id)
+    return published.status === 'ok'
+      ? { status: 'ok', courseId: row.data.id, content: published.content }
+      : published
   } catch {
     return { status: 'unavailable' }
   }
