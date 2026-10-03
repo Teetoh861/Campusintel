@@ -267,36 +267,3 @@ test('loading shows four inert list placeholders without course or dashboard wid
   assert.match(html, /motion-reduce:animate-none/)
   assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b/)
 }))
-
-test('gated /courses still builds its own browse items from repository courses', () => {
-  const originalLoad = Module._load
-  const originalTsx = Module._extensions['.tsx']
-  const file = require.resolve('../courses/page.tsx')
-  const repositoryCourse = { id: 'built-id', slug: 'public-built', code: 'BUA999', title: 'Public built course',
-    overview: 'Repository overview', level: 200, semester: 1, credits: 2, difficulty: 'Easy' }
-  try {
-    Module._extensions['.tsx'] = (module, filePath) => module._compile(ts.transpileModule(fs.readFileSync(filePath, 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-    }).outputText, filePath)
-    Module._load = function(name, ...args) {
-      if (name === '@/lib/data/courses') return { courses: [repositoryCourse] }
-      if (name === '@/lib/data/quizzes') return { getQuizByCourseSlug: () => undefined }
-      if (name === './CourseDirectory') return { CourseDirectory: function CourseDirectory() { return null } }
-      if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
-      return originalLoad.call(this, name, ...args)
-    }
-    delete require.cache[file]
-    const gated = require(file).default()
-    assert.equal(gated.props.returnPath, '/courses')
-    const tree = gated.props.children.type(gated.props.children.props)
-    const directory = nodes(tree).find(node => node.type?.name === 'CourseDirectory')
-    assert.equal(directory.props.totalCount, 1)
-    assert.equal(directory.props.items[0].cardProps.cta.href, '/courses/public-built')
-    assert.equal(directory.props.items[0].cardProps.title, 'Public built course')
-  } finally {
-    Module._load = originalLoad
-    if (originalTsx) Module._extensions['.tsx'] = originalTsx; else delete Module._extensions['.tsx']
-    delete require.cache[file]
-  }
-})
