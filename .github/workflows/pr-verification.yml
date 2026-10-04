@@ -35,7 +35,8 @@ jobs:
       - name: Start local database for SQL tests
         if: steps.scope.outputs.db == 'true'
         run: |
-          if ! supabase db start > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+          if ! supabase start > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+            cat "$RUNNER_TEMP/supabase-start.log"
             echo 'Local Supabase service setup failed; database tests did not run.'
             exit 1
           fi
