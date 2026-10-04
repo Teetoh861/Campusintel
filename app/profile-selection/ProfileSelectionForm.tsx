@@ -33,7 +33,7 @@ const savedResponseSchema = z.object({
   }),
 })
 
-const selectClass = cx('h-12 w-full rounded-ci-btn border border-ci-gray-600 bg-ci-white px-3 py-2 text-base text-ci-ink',
+const selectClass = cx('h-12 w-full rounded-ci-btn border border-student-control-border bg-student-elevated-surface px-3 py-2 text-base text-student-text-primary',
   'disabled:cursor-not-allowed disabled:opacity-60', focusRingNavy)
 
 function selectedId(choice: { id: string }, options: Choice[]): string {
@@ -144,12 +144,12 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
 
   return <form noValidate onSubmit={save} className="space-y-3">
     {initial.status === 'complete' && <div className="space-y-1">
-      <h2 className="font-semibold text-ci-navy">Current selection</h2>
+      <h2 className="font-semibold text-student-primary">Current selection</h2>
       <SelectionSummary selection={initial.selection} />
     </div>}
     <div className="space-y-2">
       <div className="space-y-1">
-        <label htmlFor="department" className="block font-semibold text-ci-ink">Department</label>
+        <label htmlFor="department" className="block font-semibold text-student-text-primary">Department</label>
         <select id="department" ref={departmentRef} required disabled={!ready || pending} className={selectClass}
           aria-invalid={notice?.field === 'departmentId'}
           aria-describedby={notice?.field === 'departmentId' ? FIELD_ERRORS.departmentId.id : undefined}
@@ -163,7 +163,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
         </select>
       </div>
       <div className="space-y-1">
-        <label htmlFor="academic-level" className="block font-semibold text-ci-ink">Level</label>
+        <label htmlFor="academic-level" className="block font-semibold text-student-text-primary">Level</label>
         <select id="academic-level" ref={academicLevelRef} required disabled={!ready || pending || !draft.departmentId}
           className={selectClass} aria-invalid={notice?.field === 'academicLevelId'}
           aria-describedby={notice?.field === 'academicLevelId' ? FIELD_ERRORS.academicLevelId.id : undefined}
@@ -177,7 +177,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
         </select>
       </div>
       <div className="space-y-1">
-        <label htmlFor="academic-period" className="block font-semibold text-ci-ink">Semester</label>
+        <label htmlFor="academic-period" className="block font-semibold text-student-text-primary">Semester</label>
         <select id="academic-period" ref={academicPeriodRef}
           required disabled={!ready || pending || !draft.departmentId || !draft.academicLevelId}
           className={selectClass} aria-invalid={notice?.field === 'academicPeriodId'}

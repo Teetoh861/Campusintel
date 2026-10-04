@@ -36,8 +36,8 @@ export default async function AccountPage() {
   return <AuthShell title="Account">
     <AuthFlowSync signedIn continuityToken={continuityToken} />
     <p className="break-words">Signed in as {email}</p>
-    {profile.status === 'complete' ? <div className="space-y-2 border-t border-ci-border pt-3">
-      <h2 className="font-semibold text-ci-navy">Your selection</h2>
+    {profile.status === 'complete' ? <div className="space-y-2 border-t border-student-border pt-3">
+      <h2 className="font-semibold text-student-primary">Your selection</h2>
       <SelectionSummary selection={profile.selection} />
       <Link href={PROFILE_SELECTION_PATH} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Change selection</Link>
     </div> : <Feedback tone="error" message={profile.status === 'missing-profile'

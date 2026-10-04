@@ -1,7 +1,5 @@
-// Tailwind config — design tokens mirror the CSS custom properties defined
-// in styles/campusintel.css. The CSS variables remain the source of truth;
-// Tailwind utilities just reference them so anything written in Tailwind
-// stays consistent with the design.
+// Tailwind aliases for the single CSS token source in app/globals.css.
+// Legacy selectors may remain, but their p/t/g/r/n colors resolve there too.
 import type { Config } from 'tailwindcss'
 
 const config: Config = {
@@ -14,35 +12,95 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        tablet: '768px',
+        desktop: '1200px',
+        wide: '1600px',
+      },
       colors: {
-        // Variant B — "continuous blue" tokens (source: _design/variant-b-handoff).
-        // Drive new markup off these (bg-ci-navy, text-ci-paper, border-ci-border…).
+        // Legacy ci-* consumers now share one CSS source instead of hardcoded copies.
         ci: {
-          paper: '#FBFAF7',
-          'paper-2': '#F4F1EA',
-          white: '#FFFFFF',
-          ink: '#262320',
-          'gray-700': '#565047',
-          'gray-600': '#6B6459',
-          'gray-500': '#938B7D',
-          'gray-400': '#B4AC9E',
-          border: '#E7E2D8',
-          'border-2': '#DAD3C6',
-          'blue-50': '#E9EFF6',
-          'blue-100': '#D2E0EC',
-          'blue-150': '#C9D6EE',
-          'blue-200': '#A6C0DA',
-          'blue-400': '#5285B4',
-          'blue-600': '#14568F',
-          navy: '#003E7E',
-          'navy-700': '#00346A',
-          'navy-900': '#002850',
-          accent: '#E0A33E',
-          'accent-600': '#C6862A',
-          'accent-100': '#F7E8CC',
-          'accent-50': '#FBF3E2',
+          paper: 'var(--ci-paper)',
+          'paper-2': 'var(--ci-paper-2)',
+          white: 'var(--ci-white)',
+          ink: 'var(--ci-ink)',
+          'gray-700': 'var(--ci-gray-700)',
+          'gray-600': 'var(--ci-gray-600)',
+          'gray-500': 'var(--ci-gray-500)',
+          'gray-400': 'var(--ci-gray-400)',
+          border: 'var(--ci-border)',
+          'border-2': 'var(--ci-border-2)',
+          'blue-50': 'var(--ci-blue-50)',
+          'blue-100': 'var(--ci-blue-100)',
+          'blue-150': 'var(--ci-blue-150)',
+          'blue-200': 'var(--ci-blue-200)',
+          'blue-400': 'var(--ci-blue-400)',
+          'blue-600': 'var(--ci-blue-600)',
+          navy: 'var(--ci-navy)',
+          'navy-700': 'var(--ci-navy-700)',
+          'navy-900': 'var(--ci-navy-900)',
+          accent: 'var(--ci-accent)',
+          'accent-600': 'var(--ci-accent-600)',
+          'accent-100': 'var(--ci-accent-100)',
+          'accent-50': 'var(--ci-accent-50)',
         },
-        // Cobalt-indigo (primary)
+        student: {
+          primary: 'var(--student-primary)',
+          'primary-hover': 'var(--student-primary-hover)',
+          'primary-text': 'var(--student-primary-text)',
+          navigation: 'var(--student-navigation)',
+          'navigation-deep': 'var(--student-navigation-deep)',
+          'navigation-active': 'var(--student-navigation-active)',
+          'navigation-text': 'var(--student-navigation-text)',
+          'navigation-text-muted': 'var(--student-navigation-text-muted)',
+          'navigation-hover': 'var(--student-navigation-hover)',
+          'navigation-current': 'var(--student-navigation-current)',
+          'navigation-outline': 'var(--student-navigation-outline)',
+          'navigation-divider': 'var(--student-navigation-divider)',
+          'navigation-ring': 'var(--student-navigation-ring)',
+          accent: 'var(--student-accent)',
+          'accent-hover': 'var(--student-accent-hover)',
+          'accent-text': 'var(--student-accent-text)',
+          'accent-strong': 'var(--student-accent-strong)',
+          'accent-surface': 'var(--student-accent-surface)',
+          'accent-border': 'var(--student-accent-border)',
+          page: 'var(--student-page-surface)',
+          'page-surface': 'var(--student-page-surface)',
+          'page-glass': 'var(--student-page-glass)',
+          'brand-surface': 'var(--student-brand-surface)',
+          surface: 'var(--student-elevated-surface)',
+          'elevated-surface': 'var(--student-elevated-surface)',
+          'surface-muted': 'var(--student-surface-muted)',
+          text: 'var(--student-text-primary)',
+          'text-primary': 'var(--student-text-primary)',
+          'text-secondary': 'var(--student-text-secondary)',
+          'text-muted': 'var(--student-text-muted)',
+          'text-faint': 'var(--student-text-faint)',
+          link: 'var(--student-link)',
+          border: 'var(--student-border)',
+          'border-hover': 'var(--student-border-hover)',
+          'border-strong': 'var(--student-border-strong)',
+          'control-border': 'var(--student-control-border)',
+          focus: 'var(--student-focus)',
+          'focus-inverse': 'var(--student-focus-inverse)',
+          success: 'var(--student-success)',
+          'success-surface': 'var(--student-success-surface)',
+          warning: 'var(--student-warning)',
+          'warning-surface': 'var(--student-warning-surface)',
+          error: 'var(--student-error)',
+          'error-surface': 'var(--student-error-surface)',
+          'error-text': 'var(--student-error-text)',
+          disabled: 'var(--student-disabled)',
+          'disabled-surface': 'var(--student-disabled-surface)',
+          skeleton: 'var(--student-skeleton)',
+          'signal-track': 'var(--student-signal-track)',
+          'signal-track-inverse': 'var(--student-signal-track-inverse)',
+          'motif-light-ring': 'var(--student-motif-light-ring)',
+          signal: 'var(--student-signal)',
+          'signal-strong': 'var(--student-signal-strong)',
+          scrim: 'var(--student-scrim)',
+        },
+        // Legacy primary class names
         p: {
           50: 'var(--p-50)',
           100: 'var(--p-100)',
@@ -52,27 +110,27 @@ const config: Config = {
           700: 'var(--p-700)',
           900: 'var(--p-900)',
         },
-        // Teal (the signal)
+        // Legacy signal class names
         t: {
           50: 'var(--t-50)',
           500: 'var(--t-500)',
           600: 'var(--t-600)',
           700: 'var(--t-700)',
         },
-        // Green (completed / mastered)
+        // Independent success state
         g: {
           50: 'var(--g-50)',
           600: 'var(--g-600)',
           700: 'var(--g-700)',
         },
-        // Red (wrong / urgency)
+        // Independent error state
         r: {
           50: 'var(--r-50)',
           300: 'var(--r-300)',
           600: 'var(--r-600)',
           700: 'var(--r-700)',
         },
-        // Warm neutrals
+        // Legacy neutral class names
         n: {
           0: 'var(--n-0)',
           50: 'var(--n-50)',
@@ -149,21 +207,22 @@ const config: Config = {
       },
       maxWidth: {
         wrap: 'var(--maxw)',
-        'ci-content': '1200px',
+        'ci-content': 'var(--ci-maxw)',
+        'student-content': 'var(--student-maxw)',
       },
       boxShadow: {
-        'ci-card': '0 1px 2px rgba(38,35,32,.04), 0 12px 28px -10px rgba(38,35,32,.14)',
-        'ci-soft': '0 1px 2px rgba(38,35,32,.03), 0 18px 50px -22px rgba(27,35,84,.22)',
+        'ci-card': 'var(--ci-shadow-card)',
+        'ci-soft': 'var(--ci-shadow-soft)',
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
-        'ci-btn': '11px',
-        'ci-btn-sm': '9px',
-        'ci-card': '16px',
-        'ci-card-lg': '18px',
-        'ci-panel': '24px',
+        'ci-btn': 'var(--ci-radius-btn)',
+        'ci-btn-sm': 'var(--ci-radius-btn-sm)',
+        'ci-card': 'var(--ci-radius-card)',
+        'ci-card-lg': 'var(--ci-radius-card-lg)',
+        'ci-panel': 'var(--ci-radius-panel)',
       },
       keyframes: {
         'accordion-down': {

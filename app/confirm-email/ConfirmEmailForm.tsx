@@ -28,7 +28,7 @@ export function ConfirmEmailForm({ email, next, onStartOver }: { email: string; 
   })}>
     <AuthFormLayout
       fields={<>
-        <div><h2 tabIndex={-1} ref={heading} className="text-lg font-semibold text-ci-navy">Confirm email</h2><p className="mt-1 text-sm text-ci-gray-700">Enter the code you received at <span className="break-words font-medium">{email}</span>.</p></div>
+        <div><h2 tabIndex={-1} ref={heading} className="text-lg font-semibold text-student-primary">Confirm email</h2><p className="mt-1 text-sm text-student-text-secondary">Enter the code you received at <span className="break-words font-medium">{email}</span>.</p></div>
     <FormField id="code" label="Verification code" inputMode="numeric" autoComplete="one-time-code" maxLength={OTP_MAX_LENGTH}
       {...register('code')} error={errors.code?.message} disabled={pending} />
       </>}

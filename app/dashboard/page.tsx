@@ -21,7 +21,7 @@ type CompleteProfile = Extract<StudentProfileState, { status: 'complete' }>
 type ErrorState = 'missing-profile' | 'unavailable' | 'invariant-failure' | 'selection-changed'
 
 function DashboardFrame({ children }: { children: ReactNode }) {
-  return <section className="mx-auto w-full max-w-3xl px-5 pb-12 pt-5 min-[680px]:px-8 min-[680px]:pt-8">
+  return <section className="app-container student-page student-reading">
     {children}
   </section>
 }
@@ -35,7 +35,7 @@ function DashboardError({ state }: { state: ErrorState }) {
         ? 'Your semester selection changed. Reload to see the latest courses.'
         : AUTH_MESSAGES.unavailable
   return <DashboardFrame>
-    <h1 className="mb-3 text-xl font-bold text-ci-navy-900">Your semester</h1>
+    <h1 className="mb-3 text-xl font-bold text-student-text-primary">Your semester</h1>
     <Feedback message={message} tone="error" />
     {state === 'missing-profile' || state === 'invariant-failure'
       ? <Link href="/contact" className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Contact support</Link>
@@ -47,11 +47,11 @@ function SemesterContext({ selection }: { selection: CompleteProfile['selection'
   const labels = [selection.department.label, selection.academicLevel.label, selection.academicPeriod.label]
   const inactive = [selection.department, selection.academicLevel, selection.academicPeriod]
     .some(item => !item.isActive)
-  return <header className="flex items-start gap-3 border-b border-ci-border pb-3">
+  return <header className="flex items-start gap-3 border-b border-student-border pb-3">
     <div className="min-w-0 flex-1">
-      <h1 className="text-[15px] font-bold leading-5 text-ci-navy-900">Your semester</h1>
-      <p className="mt-0.5 text-[14px] leading-5 text-ci-gray-700">{labels.join(' · ')}</p>
-      {inactive && <p className="mt-1 text-[12px] leading-4 text-ci-gray-700">A saved choice is no longer selectable.</p>}
+      <h1 className="text-[15px] font-bold leading-5 text-student-text-primary">Your semester</h1>
+      <p className="mt-0.5 text-[14px] leading-5 text-student-text-secondary">{labels.join(' · ')}</p>
+      {inactive && <p className="mt-1 text-[12px] leading-4 text-student-text-secondary">A saved choice is no longer selectable.</p>}
     </div>
     <Link href={PROFILE_SELECTION_PATH} prefetch={false}
       className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
@@ -63,7 +63,7 @@ function SemesterContext({ selection }: { selection: CompleteProfile['selection'
 /** Render only the current session owner's persisted institutional semester. */
 export default async function DashboardPage() {
   if (!isStudentAuthEnabled()) return <DashboardFrame>
-    <h1 className="mb-3 text-xl font-bold text-ci-navy-900">Your semester</h1>
+    <h1 className="mb-3 text-xl font-bold text-student-text-primary">Your semester</h1>
     <Feedback message={AUTH_MESSAGES.comingSoon} />
   </DashboardFrame>
 

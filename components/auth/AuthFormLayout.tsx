@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 export type AuthFormFeedback = { message: string; tone?: FeedbackTone }
 
 export const authSecondaryNav = cx(
-  'inline-flex min-h-11 items-center rounded-ci-btn px-2 font-semibold text-ci-navy transition-colors hover:bg-ci-blue-50',
+  'inline-flex min-h-11 items-center rounded-ci-btn px-2 font-semibold text-student-primary transition-colors hover:bg-student-brand-surface',
   focusRingNavy,
 )
 

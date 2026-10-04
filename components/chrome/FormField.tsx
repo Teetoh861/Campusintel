@@ -13,14 +13,14 @@ export function FormField(
   const description = [help && !error && id + '-help', error && id + '-error'].filter(Boolean).join(' ') || undefined
   return <div className="space-y-1">
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0">
-      <label htmlFor={id} className="block font-semibold text-ci-ink">{label}</label>
-      {help && !error && <span id={id + '-help'} className="text-sm text-ci-gray-700">{help}</span>}
+      <label htmlFor={id} className="block font-semibold text-student-text-primary">{label}</label>
+      {help && !error && <span id={id + '-help'} className="text-sm text-student-text-secondary">{help}</span>}
     </div>
     <div className="relative">
       <input {...props} id={id} ref={ref} aria-invalid={!!error} aria-describedby={description}
-        className={cx('h-12 w-full rounded-ci-btn border border-ci-gray-600 bg-ci-white px-3 py-2 text-base text-ci-ink disabled:cursor-not-allowed disabled:opacity-60', focusRingNavy, !!trailing && 'pr-16', error && 'border-ci-navy', className)} />
+        className={cx('h-12 w-full rounded-ci-btn border border-student-control-border bg-student-elevated-surface px-3 py-2 text-base text-student-text-primary disabled:cursor-not-allowed disabled:opacity-60', focusRingNavy, !!trailing && 'pr-16', error && 'border-student-error', className)} />
       {trailing}
     </div>
-    {error && <p id={id + '-error'} className="text-sm leading-5 font-semibold text-ci-ink">{error}</p>}
+    {error && <p id={id + '-error'} className="text-sm leading-5 font-semibold text-student-error">{error}</p>}
   </div>
 }
