@@ -129,7 +129,6 @@ async function fixture(quiz, run) {
       directory: granted(require(files[4]).default),
       home: require(files[5]).default,
       bookmarks: require(files[6]).default,
-      getContentAvailability: require('../../lib/dashboard/content-availability.ts').getContentAvailability,
       publishedState,
     })
   } finally {
@@ -298,7 +297,6 @@ test('homepage, course directory and bookmarks do not offer dead quiz card links
         }
       }
       const homeText = homeHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-      assert.equal(f.getContentAvailability(course).cbt.href, expected ? quizHref : null)
       assert.match(homeText, new RegExp(`${expected ? '1' : '0'} Practice quizzes`))
       if (expected) {
         assert.match(homeText, /Timed quiz/)

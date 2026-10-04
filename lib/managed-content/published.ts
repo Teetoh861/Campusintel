@@ -38,6 +38,19 @@ async function readRows(client: AccountClient, courseId: string): Promise<Publis
   return { status: 'ok', content: parsed.data }
 }
 
+/** Read through the published-only RPC after a live student check on this exact
+ * cookie-bound client. The RPC requires a live account session; invalid results
+ * and read failures stay unavailable. Do not pass a service-role client here.
+ */
+export async function getPublishedManagedContentWithVerifiedClient(
+  client: AccountClient, courseId: string,
+): Promise<PublishedContentResult> {
+  if (!z.string().uuid().safeParse(courseId).success) return { status: 'invalid-course' }
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try { return await readRows(client, courseId) }
+  catch { return { status: 'unavailable' } }
+}
+
 /** Validate the live account before reading the database's published-only projection. */
 export async function getPublishedManagedContent(
   courseId: string, response?: NextResponse,
@@ -48,7 +61,7 @@ export async function getPublishedManagedContent(
     const client = await createClient(response)
     const user = await getStudentSessionUser(response, client)
     if (user === null) return { status: 'signed-out' }
-    return await readRows(client, courseId)
+    return await getPublishedManagedContentWithVerifiedClient(client, courseId)
   } catch {
     return { status: 'unavailable' }
   }
