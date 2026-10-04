@@ -30,7 +30,9 @@ identity is `campusintel`; a similarly named folder is insufficient.
    of it, fast-forwards local `develop`, and removes only the merged local
    worktree and branch. The caller can be on any clean non-feature branch;
    branch deletion checks updated local `develop`, which matches fetched
-   `origin/develop`. Move ignored private files such as `.env.local` out of the
+   `origin/develop`. For a pushed feature, cleanup temporarily uses local
+   `develop` as its deletion upstream and restores the original upstream if
+   cleanup fails. Move ignored private files such as `.env.local` out of the
    feature worktree first; cleanup refuses to remove them. It leaves remote
    branches alone.
 

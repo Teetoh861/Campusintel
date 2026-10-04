@@ -73,6 +73,10 @@ function deletionConfig(name) {
     `branch.${name}.merge=refs/heads/develop`]
 }
 
+function localConfigValues(cwd, key) {
+  return lines0(git(cwd, ['config', '--local', '-z', '--get-all', key], [0, 1]).stdout)
+}
+
 /** Remove a clean local feature only after confirming it was merged into origin/develop. */
 function cleanup(repo, name) {
   const { root } = repo
@@ -102,22 +106,48 @@ function cleanup(repo, name) {
   if (!mergedInto(root, localDevelop, remote)) {
     throw new Error('local develop cannot fast-forward to origin/develop; cleanup refused')
   }
-  // branch -d checks the upstream; use the develop ref after advancing it to fetched origin/develop.
-  const config = deletionConfig(name)
-  const deletionUpstream = git(root, [...config, 'for-each-ref', '--format=%(upstream)',
-    `refs/heads/${name}`]).stdout.trim()
-  if (deletionUpstream !== 'refs/heads/develop') {
-    throw new Error('feature deletion cannot use local develop as its merge safety base; cleanup refused')
+  const remoteKey = `branch.${name}.remote`
+  const mergeKey = `branch.${name}.merge`
+  const branchRef = `refs/heads/${name}`
+  const upstream = git(root, ['for-each-ref', '--format=%(upstream)', branchRef]).stdout.trim()
+  const pushedUpstream = upstream === `refs/remotes/origin/${name}`
+  if (upstream && upstream !== 'refs/heads/develop' && !pushedUpstream) {
+    throw new Error('feature branch has an unsupported upstream; cleanup refused')
   }
-  if (localDevelop !== remote) {
-    if (developWorktree) {
-      git(developWorktree.path, ['reset', '--keep', remote])
-    } else {
-      git(root, ['branch', '-f', 'develop', remote])
+  const configuredRemote = pushedUpstream ? localConfigValues(root, remoteKey) : []
+  const configuredMerge = pushedUpstream ? localConfigValues(root, mergeKey) : []
+  if (pushedUpstream &&
+      (configuredRemote.length !== 1 || configuredRemote[0] !== 'origin' ||
+       configuredMerge.length !== 1 || configuredMerge[0] !== branchRef)) {
+    throw new Error('feature branch has an unsupported upstream configuration; cleanup refused')
+  }
+
+  // Git treats branch.merge as multi-valued, so -c cannot replace a push -u upstream.
+  // Temporarily use local develop for branch -d, then restore the original upstream on failure.
+  const config = upstream ? [] : deletionConfig(name)
+  try {
+    if (pushedUpstream) git(root, ['branch', '--set-upstream-to=develop', name])
+    const deletionUpstream = git(root, [...config, 'for-each-ref', '--format=%(upstream)',
+      branchRef]).stdout.trim()
+    if (deletionUpstream !== 'refs/heads/develop') {
+      throw new Error('feature deletion cannot use local develop as its merge safety base; cleanup refused')
     }
+    if (localDevelop !== remote) {
+      if (developWorktree) {
+        git(developWorktree.path, ['reset', '--keep', remote])
+      } else {
+        git(root, ['branch', '-f', 'develop', remote])
+      }
+    }
+    if (feature) git(root, ['worktree', 'remove', '--', feature.path])
+    git(root, [...config, 'branch', '-d', '--', name])
+  } catch (error) {
+    if (pushedUpstream && refExists(root, branchRef)) {
+      git(root, ['config', '--local', '--replace-all', remoteKey, 'origin'])
+      git(root, ['config', '--local', '--replace-all', mergeKey, branchRef])
+    }
+    throw error
   }
-  if (feature) git(root, ['worktree', 'remove', '--', feature.path])
-  git(root, [...config, 'branch', '-d', '--', name])
   return `Updated local develop: ${remote}\nRemoved local feature branch: ${name}` +
     (feature ? `\nRemoved worktree: ${feature.path}` : '')
 }
