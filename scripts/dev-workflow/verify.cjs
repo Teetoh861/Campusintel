@@ -110,7 +110,7 @@ function runVerification(repo, options = {}) {
     })
     if (health.error || health.status !== 0) {
       rows.push({ name: 'Database tests', status: 'BLOCKED',
-        detail: 'local Supabase service unavailable; run supabase db start' })
+        detail: 'local Supabase service unavailable; run supabase start' })
     } else {
       check('Database tests', 'supabase', ['test', 'db', '--local'], 'supabase test db --local')
     }
