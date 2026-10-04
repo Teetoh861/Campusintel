@@ -27,7 +27,7 @@ test('profile selection pending state is an accessible, inert form skeleton', ()
     assert.doesNotMatch(html, /<(?:button|input|select)\b/)
     assert.equal((html.match(/\bh-12\b/g) || []).length, 3)
     assert.equal((html.match(/\bh-11\b/g) || []).length, 1)
-    assert.match(html, /bg-ci-blue-50/)
+    assert.match(html, /bg-student-skeleton/)
     assert.match(html, /motion-reduce:animate-none/)
   } finally {
     if (previousTsx) Module._extensions['.tsx'] = previousTsx

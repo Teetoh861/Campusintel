@@ -3,8 +3,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 function PendingField() {
   return <div className="space-y-1">
-    <Skeleton className="h-6 w-24 bg-ci-blue-50 motion-reduce:animate-none" />
-    <Skeleton className="h-12 w-full rounded-ci-btn bg-ci-blue-50 motion-reduce:animate-none" />
+    <Skeleton className="h-6 w-24 bg-student-skeleton motion-reduce:animate-none" />
+    <Skeleton className="h-12 w-full rounded-ci-btn bg-student-skeleton motion-reduce:animate-none" />
   </div>
 }
 
@@ -19,7 +19,7 @@ export default function Loading() {
           <PendingField />
           <PendingField />
         </div>
-        <Skeleton className="h-11 w-full rounded-ci-btn bg-ci-blue-100 motion-reduce:animate-none" />
+        <Skeleton className="h-11 w-full rounded-ci-btn bg-student-signal-track motion-reduce:animate-none" />
       </div>
     </div>
   </AuthShell>

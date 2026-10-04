@@ -2,8 +2,8 @@
    CampusIntel — QUIZ FLOW  (/courses/[slug]/quiz)
    Three screens: intro · active · results.
    Built on the shared tokens/chrome in campusintel.css.
-   Color story: teal = the timer (active) + the brand motif dot.
-   cobalt = actions & selection. green = correct / mastered.
+   Shared signal = timer and motif; primary = actions and selection.
+   Success and error roles mark correct and missed answers.
    ============================================================ */
 
 /* hide footer on the active (distraction-free) screen */
@@ -34,19 +34,19 @@ body[data-screen="active"] .site-footer{display:none;}
 /* ============================================================
    ACTIVE QUESTION  — focused, no motif
    ============================================================ */
-.quiz-bar{position:sticky;top:62px;z-index:40;background:rgba(250,248,244,.94);backdrop-filter:blur(10px);border-bottom:var(--hair);}
+.quiz-bar{position:sticky;top:62px;z-index:40;background:var(--student-page-glass);backdrop-filter:blur(10px);border-bottom:var(--hair);}
 .quiz-bar .qb-row{display:flex;align-items:center;gap:14px;height:54px;}
 .qb-progress-label{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--n-900);}
 .qb-progress-label .of{color:var(--n-600);font-weight:500;}
 .qb-spacer{flex:1;}
 
-/* timer — the single teal accent (normal); red urgency when low */
+/* timer — shared signal in normal state; error urgency when low */
 .qb-timer{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--n-900);border:1px solid var(--t-500);padding:8px 13px;line-height:1;background:var(--t-50);flex:none;}
 .qb-timer .td{width:8px;height:8px;border-radius:50%;background:var(--t-600);flex:none;}
 .qb-timer .tlabel{color:var(--t-700);font-size:10px;letter-spacing:.14em;}
-.qb-timer.warn{background:var(--r-600);border-color:var(--r-700);color:#fff;animation:tpulse 1.4s ease-in-out infinite;}
-.qb-timer.warn .td{background:#fff;}
-.qb-timer.warn .tlabel{color:rgba(255,255,255,.85);}
+.qb-timer.warn{background:var(--r-600);border-color:var(--r-700);color:var(--student-error-text);animation:tpulse 1.4s ease-in-out infinite;}
+.qb-timer.warn .td{background:var(--student-error-text);}
+.qb-timer.warn .tlabel{color:var(--student-error-text-muted);}
 @keyframes tpulse{0%,100%{opacity:1;}50%{opacity:.72;}}
 @media(prefers-reduced-motion:reduce){.qb-timer.warn{animation:none;}}
 
@@ -82,14 +82,14 @@ body[data-screen="active"] .site-footer{display:none;}
 .opt .opt-l{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--n-700);border:1px solid var(--n-300);width:30px;height:30px;display:grid;place-items:center;flex:none;transition:background .14s,color .14s,border-color .14s;letter-spacing:.02em;}
 .opt .opt-t{font-size:16px;line-height:1.45;color:var(--n-800);padding-top:5px;text-wrap:pretty;}
 .opt.sel{border-color:var(--p-600);background:var(--p-50);box-shadow:inset 0 0 0 1px var(--p-600);}
-.opt.sel .opt-l{background:var(--p-600);color:#fff;border-color:var(--p-600);}
+.opt.sel .opt-l{background:var(--p-600);color:var(--student-primary-text);border-color:var(--p-600);}
 .opt.sel .opt-t{color:var(--n-900);}
 
 /* controls */
 .qa-controls{display:flex;align-items:center;gap:12px;margin-top:28px;}
 .qa-controls .btn{flex:1;}
 /* fixed bottom action bar (mobile) */
-.qa-actionbar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(250,248,244,.96);backdrop-filter:blur(10px);border-top:1px solid var(--n-300);}
+.qa-actionbar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--student-page-glass);backdrop-filter:blur(10px);border-top:1px solid var(--n-300);}
 .qa-actionbar-in{display:flex;gap:12px;align-items:stretch;max-width:var(--maxw);margin:0 auto;padding:12px var(--gutter) calc(12px + env(safe-area-inset-bottom));}
 .qa-actionbar .btn{min-height:52px;}
 .qa-actionbar .qa-prev{flex:0 0 33%;}
@@ -110,7 +110,7 @@ body[data-screen="active"] .site-footer{display:none;}
 .qcell:hover{border-color:var(--n-500);}
 .qcell.answered{background:var(--n-900);color:var(--n-0);border-color:var(--n-900);}
 .qcell.current{border:2px solid var(--p-600);color:var(--p-600);background:var(--p-50);}
-.qcell.answered.current{background:var(--n-900);color:#fff;border-color:var(--p-600);}
+.qcell.answered.current{background:var(--n-900);color:var(--student-primary-text);border-color:var(--p-600);}
 .qcell.marked::after{content:"";position:absolute;top:0;right:0;border-width:0 7px 7px 0;border-style:solid;border-color:transparent var(--n-800) transparent transparent;}
 .qcell.answered.marked::after{border-color:transparent var(--n-0) transparent transparent;}
 
@@ -125,11 +125,11 @@ body[data-screen="active"] .site-footer{display:none;}
 .qnav-count{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--n-600);margin-top:12px;text-align:center;}
 
 /* mobile: navigator is a bottom sheet */
-.qnav-sheet{position:fixed;left:0;right:0;bottom:0;z-index:70;background:var(--n-0);border-top:1px solid var(--n-300);box-shadow:0 -12px 40px rgba(28,24,19,.14);transform:translateY(100%);transition:transform .26s ease;max-height:82vh;overflow-y:auto;}
+.qnav-sheet{position:fixed;left:0;right:0;bottom:0;z-index:70;background:var(--n-0);border-top:1px solid var(--n-300);box-shadow:var(--student-sheet-shadow);transform:translateY(100%);transition:transform .26s ease;max-height:82vh;overflow-y:auto;}
 .qnav-sheet.open{transform:translateY(0);}
 .qnav-sheet .qnav{padding:22px var(--gutter) calc(22px + env(safe-area-inset-bottom));}
 .qnav-sheet .qnav-close{display:inline-block;}
-.qnav-backdrop{position:fixed;inset:0;z-index:69;background:rgba(28,24,19,.28);opacity:0;pointer-events:none;transition:opacity .22s;}
+.qnav-backdrop{position:fixed;inset:0;z-index:69;background:var(--student-scrim);opacity:0;pointer-events:none;transition:opacity .22s;}
 .qnav-backdrop.open{opacity:1;pointer-events:auto;}
 .qnav-rail{display:none;}
 

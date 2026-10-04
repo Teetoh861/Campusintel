@@ -14,9 +14,9 @@ export function AuthNavActions({ signedIn, surface, onNavigate, logout }: {
 }) {
   const secondary = surface === 'blue' ? btnGhostOnBlue : btnGhost
   const focus = surface === 'blue'
-    ? 'focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-white'
+    ? 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:!outline-student-focus-inverse'
     : focusRingNavy
-  return <div className="grid w-64 shrink-0 grid-cols-5 gap-2" aria-busy={signedIn === null}>
+  return <div className="grid w-full grid-cols-5 gap-2" aria-busy={signedIn === null}>
     <div className="col-span-2 h-11">
       {signedIn !== null && <Link onClick={onNavigate} prefetch={false}
         href={signedIn ? STUDENT_HOME_PATH : AUTH_PATHS.login}
@@ -28,11 +28,11 @@ export function AuthNavActions({ signedIn, surface, onNavigate, logout }: {
       {signedIn === true ? <div className="flex h-11 items-center gap-1">
         <Link onClick={onNavigate} prefetch={false} href={AUTH_PATHS.account}
           className={cx('inline-flex h-11 shrink-0 items-center px-1 text-[13px] font-semibold',
-            surface === 'blue' ? 'text-ci-paper hover:text-white' : 'text-ci-navy hover:bg-ci-blue-50', focus)}>
+            surface === 'blue' ? 'text-student-navigation-text hover:text-student-navigation-text-muted' : 'text-student-primary hover:bg-student-brand-surface', focus)}>
           Account
         </Link>
         <div className="min-w-0 flex-1"><LogoutControl action={logout} inNav
-          className={cx(surface === 'blue' ? 'text-ci-paper hover:bg-ci-navy-700' : 'text-ci-navy hover:bg-ci-blue-50',
+          className={cx(surface === 'blue' ? 'text-student-navigation-text hover:bg-student-navigation-hover' : 'text-student-primary hover:bg-student-brand-surface',
             SLOT, '!px-2 text-[13px]', focus)} /></div>
       </div> : signedIn === false ?
         <Link onClick={onNavigate} href={AUTH_PATHS.register}

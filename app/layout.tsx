@@ -1,6 +1,4 @@
-// Root layout — Variant B ("continuous blue"). Loads Hanken Grotesk via
-// next/font (exposed as --font-hanken, the var tailwind's font-sans points at)
-// and loads the design CSS globally. Instrument Serif / Geist are gone.
+// Root layout — shared navigation, student design tokens, and legacy styles.
 import type { Metadata, Viewport } from 'next'
 import { Hanken_Grotesk } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
@@ -39,7 +37,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#003E7E',
 }
 
 export default function RootLayout({
@@ -47,7 +44,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={hanken.variable}>
-      <body className="font-sans bg-ci-paper text-ci-ink">
+      <body className="font-sans">
         <Nav />
         <main id="top">{children}</main>
         <Footer />

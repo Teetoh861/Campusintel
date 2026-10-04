@@ -1,37 +1,32 @@
-// Variant B shared UI atoms — button class strings (Tailwind utilities driven
-// by the ci-* tokens). Kept as plain strings/helpers so
-// both Server and Client components can compose them. See component-spec.md →
-// "Buttons (shared)".
+// Shared action styles for student and public chrome. Colors come from the
+// semantic student roles; every action remains at least 44px high on phone.
 
-// Base: inline-flex, gap 9px, weight 600, 16px, padding 14/24, radius 11px,
-// min-height 52px, 1.5px transparent border.
 export const btnBase =
-  'group inline-flex items-center justify-center gap-[9px] rounded-[11px] border-[1.5px] border-transparent px-6 py-[14px] min-h-[52px] text-base font-semibold leading-none tracking-[-0.01em] whitespace-nowrap transition-[transform,background-color,border-color,box-shadow] duration-150'
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-ci-btn border border-transparent px-5 py-2.5 text-[15px] font-semibold leading-5 text-center transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-student-disabled-surface disabled:text-student-disabled disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:bg-student-disabled-surface aria-disabled:text-student-disabled motion-reduce:transform-none motion-reduce:transition-none'
 
-export const btnSm = 'min-h-[44px] rounded-[9px] px-[18px] py-[11px] text-[15px]'
+export const btnSm = 'min-h-11 rounded-ci-btn-sm px-4 py-2 text-[14px] tablet:text-[15px]'
 
-// Shared keyboard focus on paper and other light surfaces.
-export const focusRingNavy = 'focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-ci-navy'
+// Retain the exported name while using the accessible semantic focus color.
+export const focusRingNavy =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus'
 
-// accent — primary on blue (amber, navy text, soft amber glow).
 export const btnAccent =
-  'bg-ci-accent text-ci-navy-900 shadow-[0_1px_1px_rgba(38,35,32,.04),0_10px_22px_-10px_rgba(224,163,62,.7)] hover:bg-ci-accent-600 hover:-translate-y-px'
+  'bg-student-accent text-student-accent-text hover:bg-student-accent-hover active:bg-student-accent'
 
-// navy — solid brand blue, paper text.
-export const btnNavy = 'bg-ci-navy text-ci-paper hover:bg-ci-navy-700 hover:-translate-y-px'
+export const btnNavy =
+  'bg-student-primary text-student-primary-text hover:bg-student-primary-hover active:bg-student-navigation'
 
-// white — the nav "Browse courses" button on the blue bar (navy text).
-export const btnWhite = 'bg-white text-ci-navy hover:bg-ci-blue-50'
+export const btnWhite =
+  'bg-student-surface text-student-primary hover:bg-student-brand-surface active:bg-student-surface-muted'
 
-// ghost on paper — transparent, navy text, hairline outline.
-export const btnGhost = 'bg-transparent text-ci-navy border-ci-border-2 hover:bg-ci-white hover:border-ci-blue-200'
+export const btnGhost =
+  'border-student-border-strong bg-transparent text-student-primary hover:border-student-primary hover:bg-student-brand-surface active:bg-student-surface-muted'
 
-// ghost on the blue field (hero) — white outline.
 export const btnGhostOnBlue =
-  'bg-transparent text-white border-white/45 hover:bg-white/10 hover:border-white/70'
+  'border-student-navigation-outline bg-transparent text-student-navigation-text hover:border-student-navigation-text hover:bg-student-navigation-hover active:bg-student-navigation-current focus-visible:!outline-student-focus-inverse'
 
-// light — on the deep-blue closing band (paper fill, navy text).
-export const btnLight = 'bg-ci-paper text-ci-navy hover:bg-ci-white hover:-translate-y-px'
+export const btnLight =
+  'bg-student-elevated-surface text-student-primary hover:bg-student-brand-surface active:bg-student-surface-muted focus-visible:!outline-student-focus-inverse'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ')

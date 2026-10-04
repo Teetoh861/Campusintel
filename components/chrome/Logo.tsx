@@ -1,6 +1,6 @@
 // Variant B brand mark — a refined line-segment open book whose strokes follow
 // `currentColor` (so it goes white on the blue nav, navy in the footer) plus a
-// separate amber bookmark detail. Source: component-spec.md → Nav / Footer.
+// separate accent bookmark detail. Source: component-spec.md → Nav / Footer.
 import { cx } from './ui'
 
 export function BookLogo({ size = 34, className }: { size?: number; className?: string }) {
@@ -30,7 +30,7 @@ export function BookLogo({ size = 34, className }: { size?: number; className?: 
       <line x1="20" y1="11.5" x2="20" y2="31.6" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" />
       <path
         d="M25.4 8.9v7.3l-2.4-1.8-2.4 1.8"
-        stroke="#E0A33E"
+        stroke="var(--student-accent)"
         strokeWidth="2.3"
         strokeLinejoin="round"
         strokeLinecap="round"

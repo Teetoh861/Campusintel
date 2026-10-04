@@ -53,7 +53,7 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
   })}>
     <AuthFormLayout
       fields={<>
-        <p className="text-sm text-ci-gray-700">Enter the recovery code you received at <span className="break-words font-medium">{email}</span>.</p>
+        <p className="text-sm text-student-text-secondary">Enter the recovery code you received at <span className="break-words font-medium">{email}</span>.</p>
     <FormField id="code" label="Verification code" inputMode="numeric" autoComplete="one-time-code" maxLength={OTP_MAX_LENGTH}
       {...register('code')} error={errors.code?.message} disabled={pending} />
       </>}

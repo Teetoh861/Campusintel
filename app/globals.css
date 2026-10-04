@@ -1,95 +1,314 @@
-/* globals.css — Tailwind directives, Variant B ("continuous blue") design
-   tokens, and the bridge that maps next/font output onto the legacy design
-   names that styles/campusintel.css still expects (dossier pages, until they
-   are reskinned chunk by chunk). */
+/* Student-facing tokens and layout primitives. Legacy dossier styles remain
+   in styles/campusintel.css; Tailwind reads these variables through ci-* and
+   student-* utilities. */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* =============================================================
-   Variant B design tokens (source: _design/variant-b-handoff).
-   Tailwind ci-* utilities mirror these; CSS vars stay available
-   for the few places that read them directly (e.g. HeroMotif blob).
-   ============================================================= */
 :root {
-  /* warm neutrals */
-  --ci-paper: #FBFAF7;
-  --ci-paper-2: #F4F1EA;
-  --ci-white: #FFFFFF;
-  --ci-ink: #262320;
-  --ci-gray-700: #565047;
-  --ci-gray-600: #6B6459;
-  --ci-gray-500: #938B7D;
-  --ci-gray-400: #B4AC9E;
-  --ci-border: #E7E2D8;
-  --ci-border-2: #DAD3C6;
+  /* Approved source colors. Semantic roles below determine their use. */
+  --ci-brand-navy: #1E417C;
+  --ci-brand-blue: #1F75BC;
+  --ci-brand-orange: #F68941;
+  --ci-brand-sky: #EAF7FD;
 
-  /* academic blue ramp (from #003e7e) */
-  --ci-blue-50: #E9EFF6;
-  --ci-blue-100: #D2E0EC;
-  --ci-blue-150: #C9D6EE;
-  --ci-blue-200: #A6C0DA;
-  --ci-blue-400: #5285B4;
-  --ci-blue-600: #14568F;
-  --ci-navy: #003E7E;
-  --ci-navy-700: #00346A;
-  --ci-navy-900: #002850;
+  /* Brand-derived compatibility ramp for existing ci-* utilities. */
+  --ci-paper: color-mix(in srgb, var(--ci-brand-sky) 35%, white);
+  --ci-paper-2: color-mix(in srgb, var(--ci-brand-sky) 60%, white);
+  --ci-white: white;
+  --ci-ink: color-mix(in srgb, var(--ci-brand-navy) 60%, black);
+  --ci-gray-700: color-mix(in srgb, var(--ci-ink) 85%, white);
+  --ci-gray-600: color-mix(in srgb, var(--ci-ink) 78%, white);
+  --ci-gray-500: color-mix(in srgb, var(--ci-ink) 72%, white);
+  --ci-gray-400: color-mix(in srgb, var(--ci-ink) 68%, white);
+  --ci-border: color-mix(in srgb, var(--ci-brand-navy) 16%, white);
+  --ci-border-2: color-mix(in srgb, var(--ci-brand-navy) 28%, white);
+  --ci-blue-50: var(--ci-brand-sky);
+  --ci-blue-100: color-mix(in srgb, var(--ci-brand-blue) 18%, white);
+  --ci-blue-150: color-mix(in srgb, var(--ci-brand-blue) 26%, white);
+  --ci-blue-200: color-mix(in srgb, var(--ci-brand-blue) 38%, white);
+  --ci-blue-400: color-mix(in srgb, var(--ci-brand-blue) 70%, white);
+  --ci-blue-600: var(--ci-brand-blue);
+  --ci-navy: var(--ci-brand-navy);
+  --ci-navy-700: color-mix(in srgb, var(--ci-brand-navy) 85%, black);
+  --ci-navy-900: color-mix(in srgb, var(--ci-brand-navy) 68%, black);
+  --ci-accent: var(--ci-brand-orange);
+  --ci-accent-600: color-mix(in srgb, var(--ci-brand-orange) 57%, black);
+  --ci-accent-100: color-mix(in srgb, var(--ci-brand-orange) 25%, white);
+  --ci-accent-50: color-mix(in srgb, var(--ci-brand-orange) 12%, white);
 
-  /* single amber accent */
-  --ci-accent: #E0A33E;
-  --ci-accent-600: #C6862A;
-  --ci-accent-100: #F7E8CC;
-  --ci-accent-50: #FBF3E2;
+  /* Student semantic roles. Keep component colors on these roles. */
+  --student-primary: var(--ci-brand-navy);
+  --student-primary-hover: var(--ci-navy-700);
+  --student-primary-text: var(--ci-white);
+  --student-navigation: var(--ci-brand-navy);
+  --student-navigation-deep: var(--ci-navy-900);
+  --student-navigation-active: var(--ci-brand-sky);
+  --student-navigation-text: var(--ci-white);
+  --student-navigation-text-muted: var(--ci-blue-100);
+  --student-navigation-hover: color-mix(in srgb, var(--student-navigation-text) 10%, transparent);
+  --student-navigation-current: color-mix(in srgb, var(--student-navigation-text) 16%, transparent);
+  --student-navigation-outline: color-mix(in srgb, var(--student-navigation-text) 70%, transparent);
+  --student-navigation-divider: color-mix(in srgb, var(--student-navigation-text) 20%, transparent);
+  --student-navigation-ring: var(--ci-blue-400);
+  --student-navigation-wash-start: color-mix(in srgb, var(--student-navigation-text) 12%, transparent);
+  --student-navigation-wash-end: color-mix(in srgb, var(--student-navigation-text) 2%, transparent);
+  --student-accent: var(--ci-brand-orange);
+  --student-accent-hover: color-mix(in srgb, var(--ci-brand-orange) 78%, white);
+  --student-accent-text: var(--ci-navy-900);
+  --student-accent-strong: var(--ci-accent-600);
+  --student-accent-surface: var(--ci-accent-50);
+  --student-accent-border: var(--ci-accent-100);
+  --student-page-surface: var(--ci-paper);
+  --student-page-glass: color-mix(in srgb, var(--student-page-surface) 94%, transparent);
+  --student-brand-surface: var(--ci-brand-sky);
+  --student-elevated-surface: var(--ci-white);
+  --student-surface-muted: color-mix(in srgb, var(--ci-brand-sky) 70%, white);
+  --student-text-primary: var(--ci-ink);
+  --student-text-secondary: var(--ci-gray-600);
+  --student-text-muted: var(--ci-gray-500);
+  --student-text-faint: var(--ci-gray-400);
+  --student-link: color-mix(in srgb, var(--ci-brand-blue) 80%, black);
+  --student-border: var(--ci-border);
+  --student-border-hover: var(--ci-border-2);
+  --student-border-strong: color-mix(in srgb, var(--ci-brand-navy) 55%, white);
+  --student-control-border: color-mix(in srgb, var(--ci-brand-navy) 65%, white);
+  --student-focus: var(--ci-brand-blue);
+  --student-focus-inverse: color-mix(in srgb, var(--ci-brand-orange) 50%, white);
+  --student-success: #216A4F;
+  --student-success-surface: #E7F4EC;
+  --student-warning: #7A4E0B;
+  --student-warning-surface: #FFF4DB;
+  --student-error: #A12E37;
+  --student-error-surface: #FDECEF;
+  --student-error-text: var(--ci-white);
+  --student-error-text-muted: color-mix(in srgb, var(--student-error-text) 85%, transparent);
+  --student-disabled: var(--ci-gray-500);
+  --student-disabled-surface: color-mix(in srgb, var(--ci-brand-navy) 10%, white);
+  --student-skeleton: color-mix(in srgb, var(--ci-brand-blue) 16%, white);
+  --student-signal-track: var(--ci-blue-100);
+  --student-signal-track-inverse: color-mix(in srgb, var(--student-navigation-text) 26%, transparent);
+  --student-motif-light-start: var(--student-brand-surface);
+  --student-motif-light-end: var(--ci-paper-2);
+  --student-motif-light-ring: var(--ci-blue-200);
+  --student-signal: var(--ci-brand-blue);
+  --student-signal-strong: var(--student-link);
+  --student-signal-rule: color-mix(in srgb, var(--student-signal) 28%, transparent);
+  --student-scrim: color-mix(in srgb, var(--student-text-primary) 28%, transparent);
 
-  /* shadows */
-  --ci-shadow-card: 0 1px 2px rgba(38, 35, 32, .04), 0 12px 28px -10px rgba(38, 35, 32, .14);
-  --ci-shadow-soft: 0 1px 2px rgba(38, 35, 32, .03), 0 18px 50px -22px rgba(27, 35, 84, .22);
+  /* Old class names remain, but their colors are aliases of the shared roles. */
+  --p-50: var(--student-brand-surface);
+  --p-100: var(--ci-blue-100);
+  --p-300: var(--ci-blue-400);
+  --p-500: var(--ci-brand-blue);
+  --p-600: var(--student-primary);
+  --p-700: var(--student-primary-hover);
+  --p-900: var(--student-navigation-deep);
+  --t-50: var(--student-brand-surface);
+  --t-500: var(--student-signal);
+  --t-600: var(--student-signal-strong);
+  --t-700: var(--student-primary);
+  --g-50: var(--student-success-surface);
+  --g-600: var(--student-success);
+  --g-700: color-mix(in srgb, var(--student-success) 80%, black);
+  --r-50: var(--student-error-surface);
+  --r-300: color-mix(in srgb, var(--student-error) 40%, white);
+  --r-600: var(--student-error);
+  --r-700: color-mix(in srgb, var(--student-error) 80%, black);
+  --n-0: var(--student-elevated-surface);
+  --n-50: var(--student-page-surface);
+  --n-100: var(--student-surface-muted);
+  --n-200: var(--student-border);
+  --n-300: var(--student-border-hover);
+  --n-400: var(--student-text-faint);
+  --n-500: var(--student-text-muted);
+  --n-600: var(--student-text-secondary);
+  --n-700: var(--ci-gray-700);
+  --n-800: var(--student-primary);
+  --n-900: var(--student-text-primary);
 
-  /* type / layout */
+  /* Compact names retained for existing consumers of this first slice. */
+  --student-page: var(--student-page-surface);
+  --student-surface: var(--student-elevated-surface);
+  --student-text: var(--student-text-primary);
+
+  --ci-shadow-card: 0 1px 2px color-mix(in srgb, var(--ci-brand-navy) 4%, transparent),
+    0 12px 28px -12px color-mix(in srgb, var(--ci-brand-navy) 16%, transparent);
+  --ci-shadow-soft: 0 2px 4px color-mix(in srgb, var(--ci-brand-navy) 4%, transparent),
+    0 20px 48px -24px color-mix(in srgb, var(--ci-brand-navy) 18%, transparent);
+  --student-sheet-shadow: 0 -12px 40px color-mix(in srgb, var(--student-text-primary) 14%, transparent);
   --ci-font: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
   --ci-maxw: 1200px;
-  --ci-gutter: 24px;
-
-  /* radii */
-  --ci-radius-btn: 11px;
+  --ci-gutter: 16px;
+  --student-maxw: 1280px;
+  --student-section-gap: 20px;
+  --student-card-padding: 14px;
+  --ci-radius-btn: 10px;
   --ci-radius-btn-sm: 9px;
-  --ci-radius-card: 16px;
-  --ci-radius-card-lg: 18px;
-  --ci-radius-panel: 24px;
+  --ci-radius-card: 14px;
+  --ci-radius-card-lg: 16px;
+  --ci-radius-panel: 18px;
   --ci-radius-pill: 999px;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 768px) {
+  :root {
+    --ci-gutter: 24px;
+    --student-section-gap: 28px;
+    --student-card-padding: 18px;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --ci-gutter: 32px;
+    --student-section-gap: 36px;
+    --student-card-padding: 24px;
+  }
+}
+
+@media (min-width: 1600px) {
   :root {
     --ci-gutter: 40px;
   }
 }
 
-/* Legacy font bridge: dossier pages (styles/campusintel.css) still read
-   var(--serif)/--sans/--mono. Instrument Serif + Geist are gone, so point the
-   sans face at Hanken Grotesk and fall the others back to system stacks until
-   those pages are reskinned. Loaded after campusintel.css so these win. */
+/* Legacy font bridge for dossier pages until those pages are reskinned. */
 :root {
   --serif: Georgia, "Times New Roman", serif;
   --sans: var(--font-hanken), -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 }
 
-@layer base {
-  /* Variant B base type. The bg/text colors are applied via utilities on
-     <body> in app/layout.tsx (font-sans bg-ci-paper text-ci-ink). */
-  body {
-    font-size: 17px;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
+/* The old stylesheet also declares body colors outside a CSS layer. Keep the
+   application surface here, after that import, so the semantic role wins. */
+body {
+  background: var(--student-page);
+  color: var(--student-text);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--student-brand-surface);
+  color: var(--student-text);
+}
+
+@layer components {
+  .app-container {
+    width: calc(100% - var(--ci-gutter) - var(--ci-gutter));
+    max-width: var(--student-maxw);
+    margin-inline: auto;
   }
 
-  ::selection {
-    background: var(--ci-accent-100);
-    color: var(--ci-navy-900);
+  .student-page {
+    padding-block: 16px 32px;
   }
+
+  .student-reading {
+    max-width: 48rem;
+  }
+
+  .student-form-width {
+    max-width: 30rem;
+  }
+
+  .student-surface {
+    min-width: 0;
+    padding: var(--student-card-padding);
+    border: 1px solid var(--student-border);
+    border-radius: var(--ci-radius-card);
+    background: var(--student-surface);
+  }
+
+  .student-surface-raised {
+    box-shadow: var(--ci-shadow-card);
+  }
+
+  .student-section + .student-section {
+    margin-top: var(--student-section-gap);
+  }
+
+  .student-stack {
+    display: grid;
+    gap: 12px;
+  }
+
+  .student-layout,
+  .student-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .student-layout > *,
+  .student-grid > * {
+    min-width: 0;
+  }
+
+  .student-title {
+    color: var(--student-text);
+    font-size: 1.5rem;
+    font-weight: 750;
+    line-height: 1.15;
+    letter-spacing: -.025em;
+  }
+
+  .student-section-title {
+    color: var(--student-text);
+    font-size: 1.2rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -.015em;
+  }
+
+  .student-meta {
+    color: var(--student-text-secondary);
+    font-size: .875rem;
+    line-height: 1.4;
+  }
+
+  .student-link {
+    color: var(--student-link);
+    text-decoration: underline;
+    text-underline-offset: .18em;
+  }
+
+  .student-link:hover {
+    color: var(--student-primary);
+  }
+
+  .student-link:focus-visible {
+    outline: 2px solid var(--student-focus);
+    outline-offset: 3px;
+  }
+}
+
+@media (min-width: 768px) {
+  .student-page { padding-block: 24px 48px; }
+  .student-stack { gap: 18px; }
+  .student-layout {
+    grid-template-columns: minmax(0, 1.65fr) minmax(220px, .9fr);
+    gap: 20px;
+  }
+  .student-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .student-title { font-size: 1.75rem; }
+  .student-section-title { font-size: 1.35rem; }
+}
+
+@media (min-width: 1200px) {
+  .student-page { padding-block: 32px 64px; }
+  .student-stack { gap: 24px; }
+  .student-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+    gap: 32px;
+  }
+  .student-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+  .student-title { font-size: 2rem; }
+  .student-section-title { font-size: 1.5rem; }
 }
 
 @layer utilities {
@@ -103,4 +322,8 @@
    timed attempt is running. (Shell/CSS hook only — no quiz logic involved.) */
 body[data-screen='active'] footer {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }

@@ -4,19 +4,7 @@
    ============================================================ */
 
 :root{
-  /* Primary — cobalt-indigo */
-  --p-50:#EEF1FC;  --p-100:#DBE1F8; --p-300:#8E9DEC; --p-500:#3D5AE0;
-  --p-600:#2B45CB; --p-700:#2138A3; --p-900:#16235C;
-  /* Teal — the signal */
-  --t-50:#E4F6F2;  --t-500:#12A892; --t-600:#0E9180; --t-700:#0B7468;
-  /* Green — completed / mastered only */
-  --g-50:#E7F4EA;  --g-600:#1E9D57; --g-700:#167045;
-  /* Red — wrong / missed / urgency (results + low-time timer only). Warm, brand-fit, not alarm. */
-  --r-50:#F7EAE4;  --r-300:#D79286; --r-600:#B23B2C; --r-700:#8C2D21;
-  /* Warm neutrals */
-  --n-0:#FFFFFF;  --n-50:#FAF8F4; --n-100:#F3EFE8; --n-200:#E7E1D6;
-  --n-300:#D5CDBE; --n-400:#ABA08C; --n-500:#837868; --n-600:#645B4D;
-  --n-700:#494337; --n-800:#2F2A21; --n-900:#1C1813;
+  /* Font and layout bridge. All active colors resolve from app/globals.css. */
 
   --serif:"Instrument Serif",Georgia,serif;
   --sans:"Geist",-apple-system,BlinkMacSystemFont,sans-serif;
@@ -68,7 +56,7 @@ img,svg{display:block;}
   min-height:48px;white-space:nowrap;
 }
 .btn .arrow{font-family:var(--mono);font-size:13px;}
-.btn-primary{background:var(--p-600);color:#fff;}
+.btn-primary{background:var(--p-600);color:var(--student-primary-text);}
 .btn-primary:hover{background:var(--p-700);}
 .btn-primary:active{background:var(--p-900);}
 .btn-secondary{background:var(--n-0);color:var(--n-800);border-color:var(--n-300);}
@@ -77,7 +65,7 @@ img,svg{display:block;}
 .btn-ghost{background:transparent;color:var(--p-600);}
 .btn-ghost:hover{background:var(--p-50);}
 .btn-ghost:active{background:var(--p-100);color:var(--p-700);}
-/* Saved/bookmarked state — teal signal tint (same tokens as the quiz timer)
+/* Saved/bookmarked state — shared signal tint (same tokens as the quiz timer)
    so an active bookmark reads unmistakably without competing with the primary
    Start-quiz button. */
 .btn-saved{background:var(--t-50);color:var(--t-700);border-color:var(--t-500);}
@@ -99,7 +87,7 @@ img,svg{display:block;}
 /* ============================================================
    GLOBAL CHROME — NAV
    ============================================================ */
-.site-nav{position:sticky;top:0;z-index:60;background:rgba(250,248,244,.9);backdrop-filter:blur(10px);border-bottom:var(--hair);}
+.site-nav{position:sticky;top:0;z-index:60;background:var(--student-page-glass);backdrop-filter:blur(10px);border-bottom:var(--hair);}
 .site-nav .bar{display:flex;align-items:center;height:62px;gap:14px;}
 .brand{display:inline-flex;align-items:center;gap:11px;}
 .brand .ap{color:var(--n-900);}
@@ -292,10 +280,7 @@ img,svg{display:block;}
 }
 
 /* ============================================================
-   CONTRAST PASS — every mono label & number meets WCAG AA
-   (≥4.5:1) on warm-paper (#FAF8F4) and white-card (#FFF)
-   backgrounds. Quiet, but never below readable contrast.
-   n-600 (#645B4D) = 6.3:1 on paper · 6.7:1 on white.
+   Legacy label contrast is controlled by the shared --n-* aliases.
    ============================================================ */
 .kicker,
 .nav-tag,
@@ -388,7 +373,7 @@ img,svg{display:block;}
 .examfocus .ef-h2{font-family:var(--serif);font-weight:400;font-size:clamp(24px,5vw,32px);line-height:1.05;letter-spacing:-.015em;color:var(--n-900);margin-top:14px;}
 .examfocus .ef-lead{font-size:15px;line-height:1.6;color:var(--n-700);margin-top:10px;max-width:60ch;}
 .focus-list{list-style:none;margin-top:20px;border-top:1px solid var(--t-500);}
-.focus-list li{display:grid;grid-template-columns:42px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid rgba(18,168,146,.28);}
+.focus-list li{display:grid;grid-template-columns:42px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid var(--student-signal-rule);}
 .focus-list .fl-n{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--t-700);letter-spacing:.06em;padding-top:2px;}
 .focus-list h3{font-size:16px;font-weight:600;color:var(--n-900);letter-spacing:-.01em;}
 .focus-list p{font-size:14.5px;line-height:1.5;color:var(--n-700);margin-top:4px;max-width:62ch;}
