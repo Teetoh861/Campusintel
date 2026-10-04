@@ -13,34 +13,19 @@ const profile = { status: 'complete', selection: {
   academicLevel: { id: selection.academicLevelId, label: '200 Level', isActive: true },
   academicPeriod: { id: selection.academicPeriodId, label: 'First Semester', isActive: true },
 } }
-const availability = (cbt, theory, notes = false) => ({
-  notes: { hasData: notes, href: null },
-  cbt: { hasData: cbt, href: cbt ? '/courses/resolved-slug/quiz' : null },
-  theory: { hasData: theory, href: theory ? '/courses/resolved-slug' : null },
-})
 const course = (id, code, content) => ({ institutionalCourseId: id, code, title: `${code} institutional title`, isFree: false, content })
 const ready = course('ready-id', 'BUA201', {
   state: 'ready', courseSlug: 'resolved-slug', courseHref: '/courses/resolved-slug',
-  availability: availability(true, true, true),
+  availability: { overview: true, theory: true, quiz: true },
 })
 const unbuilt = course('unbuilt-id', 'BUA203', { state: 'not-built' })
 const broken = course('broken-id', 'BUA205', { state: 'broken-link' })
+const noLearning = course('empty-id', 'BUA207', { state: 'no-learning' })
+const unavailable = course('failed-id', 'BUA209', { state: 'unavailable' })
 
 function nodes(element) {
   if (!element || typeof element !== 'object') return []
   return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
-
-function visibleText(element) {
-  if (typeof element === 'string' || typeof element === 'number') return [String(element)]
-  if (Array.isArray(element)) return element.flatMap(visibleText)
-  if (!element || typeof element !== 'object') return []
-  return visibleText(element.props?.children)
-}
-
-function assertUsesStyle(node, primitive) {
-  const actual = new Set(node.props.className.split(/\s+/))
-  for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
 }
 
 async function fixture(run) {
@@ -51,8 +36,9 @@ async function fixture(run) {
   const loadingFile = require.resolve('./loading.tsx')
   const state = {
     enabled: true, context: { user: { id: 'current-student' }, sessionId: 'live-session' },
-    contextError: null, result: { status: 'complete', selection, courses: [ready, unbuilt, broken] },
-    profile, domainCalls: [], profileReads: 0,
+    contextError: null, tokenError: null, result: { status: 'complete', selection, courses: [ready, unbuilt, broken] },
+    profile, domainCalls: [], profileReads: 0, clientReads: 0, contextReads: 0,
+    client: { source: 'request-scoped RLS client' },
   }
   const local = relative => path.join(__dirname, '../..', relative)
   try {
@@ -63,18 +49,37 @@ async function fixture(run) {
     Module._load = function(name, ...args) {
       if (name === 'next/navigation') return { redirect: destination => { throw new Error('redirect:' + destination) } }
       if (name === '@/lib/auth/config') return { isStudentAuthEnabled: () => state.enabled }
-      if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () => {
+      if (name === '@/lib/supabase/server') return { createClient: async () => {
+        state.clientReads++
+        return state.client
+      } }
+      if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async (_response, client) => {
+        state.contextReads++
+        assert.equal(client, state.client)
         if (state.contextError) throw state.contextError
         return state.context
       } }
       if (name === '@/lib/auth/account-continuity') return {
-        issueAccountContinuityToken: (id, sessionId) => `page:${id}:${sessionId}`,
+        issueAccountContinuityToken: (id, sessionId) => {
+          if (state.tokenError) throw state.tokenError
+          return `page:${id}:${sessionId}`
+        },
       }
       if (name === '@/lib/dashboard/current-student-courses') return {
-        getCurrentStudentCourses: async (...args) => { state.domainCalls.push(args); return state.result },
+        getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
+          assert.equal(client, state.client)
+          assert.equal(user, state.context.user)
+          state.domainCalls.push([client, user])
+          return state.result
+        },
       }
       if (name === '@/lib/profile/student-profile') return {
-        getCurrentStudentProfile: async () => { state.profileReads++; return state.profile },
+        getCurrentStudentProfileForVerifiedStudent: async (client, user) => {
+          assert.equal(client, state.client)
+          assert.equal(user, state.context.user)
+          state.profileReads++
+          return state.profile
+        },
       }
       if (name === '@/lib/profile/paths') return { PROFILE_SELECTION_PATH: '/profile-selection' }
       if (name === '@/components/auth/AuthFlowSync') return { AuthFlowSync: function AuthFlowSync() { return null } }
@@ -103,7 +108,9 @@ test('complete student sees saved context and every institutional course in doma
   const sync = nodes(tree).find(node => node.type?.name === 'AuthFlowSync')
   assert.equal(sync.props.continuityToken, 'page:current-student:live-session')
   const html = renderToStaticMarkup(tree)
-  assert.deepEqual(f.state.domainCalls, [[]], 'the page supplies no identity or selection argument')
+  assert.deepEqual(f.state.domainCalls, [[f.state.client, f.state.context.user]])
+  assert.equal(f.state.clientReads, 1)
+  assert.equal(f.state.contextReads, 1)
   assert.equal(f.state.profileReads, 1)
   assert.match(html, /Business Administration · 200 Level · First Semester/)
   assert.match(html, /href="\/profile-selection"/)
@@ -111,25 +118,28 @@ test('complete student sees saved context and every institutional course in doma
   assert.ok(html.indexOf('BUA203') < html.indexOf('BUA205'))
   assert.match(html, /BUA201 institutional title/)
   assert.match(html, /href="\/courses\/resolved-slug"/)
-  assert.match(html, /Content not yet available/)
+  assert.match(html, /Study content not yet available/)
   assert.match(html, /Content temporarily unavailable/)
+  assert.match(html, /href="\/bookmarks"/)
+  assert.match(html, /href="\/courses"/)
+  assert.match(html, /href="\/account"/)
+  assert.equal((html.match(/href="\/profile-selection"/g) || []).length, 1)
 }))
 
-test('dashboard context, support and retry actions use shared secondary buttons and focus', async () => fixture(async f => {
-  const { btnBase, btnSm, btnGhost, focusRingNavy } = require('../../components/chrome/ui.tsx')
-  const assertSecondaryAction = action => {
-    for (const primitive of [btnBase, btnSm, btnGhost, focusRingNavy]) assertUsesStyle(action, primitive)
-    assert.equal(new Set(action.props.className.split(/\s+/)).has('underline'), false)
-  }
+test('selection and recovery actions lead to their existing safe destinations', async () => fixture(async f => {
   const context = nodes(await f.page()).find(node => node.type?.name === 'SemesterContext')
   const change = nodes(context.type(context.props)).find(node => node.props?.href === '/profile-selection')
-  assertSecondaryAction(change)
+  assert.ok(change)
+  assert.equal(change.props.prefetch, false)
+  assert.match(change.props.className, /min-h-11/)
+  assert.match(change.props.className, /focus-visible:outline/)
   for (const [status, href] of [['missing-profile', '/contact'], ['unavailable', '/dashboard']]) {
     f.state.result = { status }
     const error = nodes(await f.page()).find(node => node.type?.name === 'DashboardError')
     const action = nodes(error.type(error.props)).find(node => node.props?.href === href)
     assert.ok(action)
-    assertSecondaryAction(action)
+    assert.match(action.props.className, /min-h-11/)
+    assert.match(action.props.className, /focus-visible:outline/)
   }
 }))
 
@@ -147,58 +157,41 @@ test('product surfaces own navy focus through shared chrome UI, not auth form st
   }
 })
 
-test('ready row has one large resolved-route target and displays only institutional identity', async () => fixture(async f => {
+test('ready course has one large route target and labels only available published learning', async () => fixture(async f => {
   const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
   assert.match(html, /<li[^>]*><a[^>]*href="\/courses\/resolved-slug"/)
-  assert.match(html, /min-h-\[76px\]/)
+  assert.match(html, /min-h-\[112px\]/)
   assert.match(html, /focus-visible:outline/)
-  assert.deepEqual(visibleText(f.CourseRow({ course: ready })), [ready.code, ready.title])
-  assert.doesNotMatch(html, /Quiz|Theory|Notes|<button\b/)
-  assert.doesNotMatch(html, /<svg\b/, 'course rows have no navigation icon')
+  assert.match(html, /BUA201 institutional title/)
+  assert.match(html, /Available: Overview · Theory · Practice quiz/)
+  assert.match(html, /Open course/)
   assert.equal((html.match(/<a\b/g) || []).length, 1, 'the row contains no nested links')
 
-  const noAvailability = { ...ready, content: { ...ready.content, availability: availability(false, false) } }
-  assert.equal(renderToStaticMarkup(React.createElement(f.CourseRow, { course: noAvailability })), html,
-    'availability data does not change dashboard row presentation')
+  const partial = { ...ready, content: { ...ready.content,
+    availability: { overview: false, theory: true, quiz: false } } }
+  const partialHtml = renderToStaticMarkup(React.createElement(f.CourseRow, { course: partial }))
+  assert.match(partialHtml, /Available: Theory/)
+  assert.doesNotMatch(partialHtml, /Overview|Practice quiz/)
+  assert.match(partialHtml, /href="\/courses\/resolved-slug"/)
 }))
 
-test('unbuilt and broken institutional rows remain visible without click targets', async () => fixture(async f => {
-  for (const [item, message] of [[unbuilt, 'Content not yet available'], [broken, 'Content temporarily unavailable']]) {
+test('courses without usable published learning remain visible and inert', async () => fixture(async f => {
+  for (const [item, message] of [
+    [unbuilt, 'Study content not yet available'], [noLearning, 'Study content not yet available'],
+    [broken, 'Content temporarily unavailable'], [unavailable, 'Content temporarily unavailable'],
+  ]) {
     const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: item }))
-    assert.deepEqual(visibleText(f.CourseRow({ course: item })), [item.code, item.title, message])
+    assert.match(html, new RegExp(message))
     assert.doesNotMatch(html, /<a\b|<button\b|href=/)
   }
 }))
 
-test('all course states share one content structure; only ready uses a linked wrapper', async () => fixture(async f => {
-  const tokens = value => new Set((value || '').split(/\s+/).filter(Boolean))
-  const courses = [ready, unbuilt, broken]
-  const wrappers = courses.map(item => f.CourseRow({ course: item }).props.children)
-  const contents = wrappers.map((wrapper, index) => {
-    assert.equal(React.Children.count(wrapper.props.children), 1)
-    const detail = wrapper.props.children
-    assert.equal(detail.type, 'div')
-    const code = nodes(detail).find(node => node.props?.children === courses[index].code)
-    const title = nodes(detail).find(node => node.props?.children === courses[index].title)
-    assert.ok(code && title)
-    return [tokens(detail.props.className), tokens(code.props.className), tokens(title.props.className)]
-  })
-  assert.deepEqual(contents[1], contents[0])
-  assert.deepEqual(contents[2], contents[0])
-  const [linkedClasses, unbuiltClasses, brokenClasses] = wrappers.map(wrapper => tokens(wrapper.props.className))
-  for (const token of unbuiltClasses) assert.ok(linkedClasses.has(token), `linked row lost shared geometry ${token}`)
-  assert.deepEqual(unbuiltClasses, brokenClasses)
-  assert.ok(linkedClasses.has('group') && !unbuiltClasses.has('group'))
-  assert.ok([...linkedClasses].every(token => !/(^|:)(rounded-|bg-|shadow-)/.test(token)),
-    'the continuous list must not gain card or selected-background styling')
-  const title = nodes(wrappers[0].props.children).find(node => node.props?.children === ready.title)
-  const titleClasses = tokens(title.props.className)
-  assert.ok(titleClasses.has('desktop:group-hover:text-student-primary'))
-  assert.ok([...titleClasses].filter(token => token.includes('group-hover:'))
-    .every(token => token.startsWith('desktop:')), 'hover cue stays desktop-only')
-  assert.equal(wrappers[0].props.href, '/courses/resolved-slug')
-  assert.equal(wrappers[1].type, 'div')
-  assert.equal(wrappers[2].type, 'div')
+test('Dashboard uses semantic course and utility regions with a Saved action', async () => fixture(async f => {
+  const html = await f.render()
+  assert.match(html, /<section[^>]*aria-labelledby="dashboard-courses-title"/)
+  assert.match(html, /<aside[^>]*aria-labelledby="dashboard-utilities-title"/)
+  assert.match(html, /href="\/bookmarks"[^>]*>Saved/)
+  assert.match(html, /aria-label="Your semester courses"/)
 }))
 
 test('zero-course complete selection is an honest empty semester', async () => fixture(async f => {
@@ -206,6 +199,7 @@ test('zero-course complete selection is an honest empty semester', async () => f
   const html = await f.render()
   assert.match(html, /Business Administration · 200 Level · First Semester/)
   assert.match(html, /No confirmed courses for this selection yet/)
+  assert.match(html, /href="\/bookmarks"/)
   assert.doesNotMatch(html, /<ul\b|Browse courses|CourseDirectory/)
 }))
 
@@ -218,6 +212,16 @@ test('signed-out and incomplete students follow existing login/selection routes'
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fdashboard/)
   f.state.result = { status: 'incomplete' }
   await assert.rejects(f.page, /redirect:\/profile-selection/)
+  assert.equal(f.state.profileReads, 0)
+}))
+
+test('continuity token failure stays in the unavailable state before student data reads', async () => fixture(async f => {
+  f.state.tokenError = new Error('signing secret')
+  const html = await f.render()
+  assert.match(html, /Something went wrong/)
+  assert.doesNotMatch(html, /signing secret|BUA201 institutional title/)
+  assert.equal(f.state.contextReads, 1)
+  assert.equal(f.state.domainCalls.length, 0)
   assert.equal(f.state.profileReads, 0)
 }))
 
@@ -260,10 +264,10 @@ test('profile-label read failures never display courses under stale context', as
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fdashboard/)
 }))
 
-test('loading shows four inert list placeholders without course or dashboard widgets', async () => fixture(async f => {
+test('loading announces status and shows inert course placeholders', async () => fixture(async f => {
   const html = renderToStaticMarkup(React.createElement(f.loading))
   assert.match(html, /role="status"[^>]*aria-live="polite"[^>]*aria-busy="true"/)
-  assert.equal((html.match(/min-h-\[76px\]/g) || []).length, 4)
+  assert.equal((html.match(/min-h-\[112px\]/g) || []).length, 4)
   assert.match(html, /motion-reduce:animate-none/)
   assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b/)
 }))

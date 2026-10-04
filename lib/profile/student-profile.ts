@@ -6,6 +6,7 @@ import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { createClient } from '@/lib/supabase/server'
 import { classifyStoredSelection, parseSubmittedSelection } from './selection'
+import type { User } from '@supabase/supabase-js'
 import type { SelectionIds } from './selection'
 import type { NextResponse } from 'next/server'
 
@@ -107,21 +108,34 @@ function completeState(ids: SelectionIds, references: References): StudentProfil
   }
 }
 
+async function readStudentProfile(client: StudentClient, id: string): Promise<StudentProfileState> {
+  const stored = await readStoredSelection(client, id)
+  if (stored.kind === 'missing-profile') return { status: 'missing-profile' }
+  if (stored.kind === 'unavailable') return { status: 'unavailable' }
+  if (stored.kind === 'invariant-failure') return { status: 'invariant-failure' }
+  const references = await readReferences(client)
+  if (references === null) return { status: 'unavailable' }
+  return stored.kind === 'incomplete'
+    ? { status: 'incomplete', options: presentOptions(references) }
+    : completeState(stored.ids, references)
+}
+
+/** Read labels with the page's already-validated cookie-bound RLS client. */
+export async function getCurrentStudentProfileForVerifiedStudent(
+  client: StudentClient, user: User,
+): Promise<StudentProfileState> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try { return await readStudentProfile(client, user.id) }
+  catch { return { status: 'unavailable' } }
+}
+
 /** Read only the live session owner's existing profile and ordered reference data. */
 export async function getCurrentStudentProfile(response?: NextResponse): Promise<StudentProfileState> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
     const student = await currentStudent(response)
     if (student === null) return { status: 'signed-out' }
-    const stored = await readStoredSelection(student.client, student.id)
-    if (stored.kind === 'missing-profile') return { status: 'missing-profile' }
-    if (stored.kind === 'unavailable') return { status: 'unavailable' }
-    if (stored.kind === 'invariant-failure') return { status: 'invariant-failure' }
-    const references = await readReferences(student.client)
-    if (references === null) return { status: 'unavailable' }
-    return stored.kind === 'incomplete'
-      ? { status: 'incomplete', options: presentOptions(references) }
-      : completeState(stored.ids, references)
+    return await readStudentProfile(student.client, student.id)
   } catch { return { status: 'unavailable' } }
 }
 

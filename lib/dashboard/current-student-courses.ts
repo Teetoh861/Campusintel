@@ -1,14 +1,19 @@
 import 'server-only'
 import { z } from 'zod'
-import { getStudentSessionUser } from '@/lib/auth/student-state'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
+import { getStudentSessionUser } from '@/lib/auth/student-state'
 import { getCourseByContentKey } from '@/lib/data/courses'
-import type { Course } from '@/lib/types'
+import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
+import { getPublishedManagedContentWithVerifiedClient } from '@/lib/managed-content/published'
+import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
+import { projectStudentLearning } from '@/lib/managed-content/student-projection'
 import { classifyStoredSelection } from '@/lib/profile/selection'
-import type { SelectionIds } from '@/lib/profile/selection'
 import { createClient } from '@/lib/supabase/server'
-import { getContentAvailability } from './content-availability'
-import type { ContentAvailability } from './content-availability'
+import type { User } from '@supabase/supabase-js'
+import type { SelectionIds } from '@/lib/profile/selection'
+import type { Course } from '@/lib/types'
+
+type StudentClient = Awaited<ReturnType<typeof createClient>>
 
 const PROFILE_COLUMNS = 'department_id,academic_level_id,academic_period_id'
 // Embedded relationships use PostgREST's left join so an unbuilt course stays visible.
@@ -42,11 +47,13 @@ type ApplicabilityRow = z.infer<typeof applicabilityRowSchema>
 export type DashboardContent =
   | { state: 'not-built' }
   | { state: 'broken-link' }
+  | { state: 'unavailable' }
+  | { state: 'no-learning' }
   | {
       state: 'ready'
       courseSlug: string
       courseHref: string
-      availability: ContentAvailability
+      availability: { overview: boolean; theory: boolean; quiz: boolean }
     }
 
 export type DashboardCourse = {
@@ -61,7 +68,7 @@ export type CurrentStudentCoursesResult =
   | { status: 'signed-out' | 'missing-profile' | 'incomplete' | 'unavailable' | 'invariant-failure' }
   | { status: 'complete'; selection: SelectionIds; courses: DashboardCourse[] }
 
-function resolveContent(row: ApplicabilityRow): DashboardContent {
+async function resolveContent(row: ApplicabilityRow, client: StudentClient): Promise<DashboardContent | 'signed-out'> {
   const institutional = row.institutional
   const repositoryCourseId = institutional.repository_course_id
   if (repositoryCourseId === null) return { state: 'not-built' }
@@ -84,11 +91,28 @@ function resolveContent(row: ApplicabilityRow): DashboardContent {
     return { state: 'broken-link' }
   }
 
+  // The course page reads this same published-only boundary. Repository quiz,
+  // theory and note files cannot establish what a student can study today.
+  const published = await getPublishedManagedContentWithVerifiedClient(client, repositoryCourseId)
+  if (published.status === 'signed-out') return 'signed-out'
+  if (published.status !== 'ok') return { state: 'unavailable' }
+  const projected = projectStudentLearning(published.content)
+  if (projected.status !== 'ok') return { state: 'unavailable' }
+  const { overview, theoryQuestions, quizQuestions } = projected.learning
+  const hasOverview = Boolean(overview && (
+    overview.body.trim() || overview.topics?.length || overview.examFocus?.length ||
+    overview.keyTakeaways?.length || overview.formulaSheet?.length
+  ))
+  const hasTheory = theoryQuestions.length > 0
+  const hasQuiz = getUsableManagedQuiz(course.slug,
+    getQuizConfigurationByCourseSlug(course.slug), quizQuestions) !== null
+  if (!hasOverview && !hasTheory && !hasQuiz) return { state: 'no-learning' }
+
   return {
     state: 'ready',
     courseSlug: course.slug,
     courseHref: `/courses/${encodeURIComponent(course.slug)}`,
-    availability: getContentAvailability(course),
+    availability: { overview: hasOverview, theory: hasTheory, quiz: hasQuiz },
   }
 }
 
@@ -98,14 +122,10 @@ function compareCodeThenId(a: DashboardCourse, b: DashboardCourse): number {
   return a.institutionalCourseId < b.institutionalCourseId ? -1 : 1
 }
 
-/** Read the live student's saved selection and its institutional courses. */
-export async function getCurrentStudentCourses(): Promise<CurrentStudentCoursesResult> {
-  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+async function readCurrentStudentCourses(
+  client: StudentClient, user: User,
+): Promise<CurrentStudentCoursesResult> {
   try {
-    const client = await createClient()
-    const user = await getStudentSessionUser(undefined, client)
-    if (user === null) return { status: 'signed-out' }
-
     const profile = await client.from('profiles')
       .select(PROFILE_COLUMNS).eq('id', user.id).maybeSingle()
     if (profile.error) return { status: 'unavailable' }
@@ -139,12 +159,36 @@ export async function getCurrentStudentCourses(): Promise<CurrentStudentCoursesR
         code: institutional.course_code,
         title: institutional.display_title,
         isFree: institutional.is_free,
-        content: resolveContent(row),
+        content: { state: 'not-built' },
       })
     }
+    const resolved = await Promise.all(parsed.data.map(row => resolveContent(row, client)))
+    if (resolved.includes('signed-out')) return { status: 'signed-out' }
+    resolved.forEach((content, index) => {
+      if (content !== 'signed-out') courses[index].content = content
+    })
     courses.sort(compareCodeThenId)
     return { status: 'complete', selection, courses }
   } catch {
     return { status: 'unavailable' }
   }
+}
+
+/** Reuse the page's already-validated student and its exact cookie-bound RLS client. */
+export async function getCurrentStudentCoursesForVerifiedStudent(
+  client: StudentClient, user: User,
+): Promise<CurrentStudentCoursesResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  return await readCurrentStudentCourses(client, user)
+}
+
+/** Read the live student's saved selection and its institutional courses. */
+export async function getCurrentStudentCourses(): Promise<CurrentStudentCoursesResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try {
+    const client = await createClient()
+    const user = await getStudentSessionUser(undefined, client)
+    if (user === null) return { status: 'signed-out' }
+    return await readCurrentStudentCourses(client, user)
+  } catch { return { status: 'unavailable' } }
 }
