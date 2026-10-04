@@ -12,6 +12,19 @@ const { runVerification, scope } = require('./verify.cjs')
 const CLI = path.join(__dirname, 'cli.cjs')
 const ORIGIN = 'https://github.com/Teetoh861/Campusintel.git'
 
+test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/pr-verification.yml'), 'utf8')
+  const startStep = workflow.split('      - name: Start local database for SQL tests\n')[1]
+    ?.split('      - name: Verify application and applicable optional checks\n')[0]
+  assert.ok(startStep, 'the local Supabase startup step exists')
+  assert.match(workflow, /uses: supabase\/setup-cli@v3\s+if: steps\.scope\.outputs\.db == 'true'\s+with:\s+version: 2\.109\.1/)
+  assert.match(startStep, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(startStep, /if ! supabase start > "\$RUNNER_TEMP\/supabase-start\.log" 2>&1; then/)
+  assert.match(startStep, /cat "\$RUNNER_TEMP\/supabase-start\.log"/)
+  assert.match(startStep, /exit 1/)
+  assert.doesNotMatch(workflow, /supabase db start/)
+})
+
 function run(program, args, cwd, allowed = [0]) {
   const result = spawnSync(program, args, { cwd, encoding: 'utf8' })
   assert.ok(allowed.includes(result.status), `${program} ${args[0]}: ${result.stderr}`)
@@ -185,6 +198,8 @@ test('verification distinguishes an unavailable DB service from failed SQL tests
     return { status: 0 }
   } })
   assert.equal(blocked.rows.find(row => row.name === 'Database tests').status, 'BLOCKED')
+  assert.match(blocked.output, /local Supabase service unavailable; run supabase start/)
+  assert.doesNotMatch(blocked.output, /supabase db start/)
   assert.equal(blocked.exitCode, 1)
   assert.equal(testRan, false)
 
