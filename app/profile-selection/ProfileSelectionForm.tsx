@@ -136,19 +136,22 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
     }
   }
 
-  if (!choicesAvailable) return <div className="space-y-3">
-    {initial.status === 'complete' && <SelectionSummary selection={initial.selection} />}
+  if (!choicesAvailable) return <div className="student-surface student-surface-raised space-y-3">
+    {initial.status === 'complete' && <div className="space-y-2">
+      <h2 className="font-semibold text-student-text-primary">Current selection</h2>
+      <SelectionSummary selection={initial.selection} />
+    </div>}
     <Feedback tone="error" message="Selection is unavailable. Please try again later." />
     {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
   </div>
 
-  return <form noValidate onSubmit={save} className="space-y-3">
-    {initial.status === 'complete' && <div className="space-y-1">
-      <h2 className="font-semibold text-student-primary">Current selection</h2>
+  return <form noValidate onSubmit={save} className="student-surface student-surface-raised grid gap-4">
+    {initial.status === 'complete' && <section aria-labelledby="current-selection-heading" className="space-y-2">
+      <h2 id="current-selection-heading" className="font-semibold text-student-text-primary">Current selection</h2>
       <SelectionSummary selection={initial.selection} />
-    </div>}
-    <div className="space-y-2">
-      <div className="space-y-1">
+    </section>}
+    <div className="grid gap-3 tablet:grid-cols-2 tablet:gap-4">
+      <div className="space-y-1 tablet:col-span-2">
         <label htmlFor="department" className="block font-semibold text-student-text-primary">Department</label>
         <select id="department" ref={departmentRef} required disabled={!ready || pending} className={selectClass}
           aria-invalid={notice?.field === 'departmentId'}
@@ -196,10 +199,15 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
       <Feedback compact tone="error" message={notice.message} />
       {notice.reload && <button type="button" className={cx(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
     </div>}
-    <button type="submit" disabled={!ready || pending} aria-busy={pending}
-      className={cx(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60', focusRingNavy)}>
-      {pending ? 'Saving…' : 'Save selection'}
-    </button>
-    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
+    <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
+      <button type="submit" disabled={!ready || pending} aria-busy={pending}
+        className={cx(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', focusRingNavy)}>
+        {pending ? 'Saving…' : 'Save selection'}
+      </button>
+      {initial.status === 'complete' && <Link href={AUTH_PATHS.account}
+        className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>
+        Back to account
+      </Link>}
+    </div>
   </form>
 }

@@ -1,9 +1,10 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
-import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
+import { AuthUnavailable } from '@/components/auth/AuthShell'
 import { Feedback } from '@/components/chrome/Feedback'
 import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
+import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { AUTH_MESSAGES, AUTH_PATHS } from '@/lib/auth/constants'
@@ -17,13 +18,17 @@ export const metadata = { title: 'Profile selection | CampusIntell', robots: { i
 
 /** Load the live student's profile on the server; only presentation data enters the form. */
 export default async function ProfileSelectionPage() {
-  if (!isStudentAuthEnabled()) return <AuthShell title="Profile selection"><AuthUnavailable /></AuthShell>
+  if (!isStudentAuthEnabled()) return <ProfilePageFrame title="Profile selection" narrow>
+    <div className="student-surface"><AuthUnavailable /></div>
+  </ProfilePageFrame>
   let continuityToken: string | undefined
   try {
     const context = await getStudentSessionContext()
     if (context !== null) continuityToken = issueAccountContinuityToken(context.user.id, context.sessionId)
   } catch {
-    return <AuthShell title="Profile selection"><Feedback tone="error" message={AUTH_MESSAGES.unavailable} /></AuthShell>
+    return <ProfilePageFrame title="Profile selection" narrow>
+      <div className="student-surface"><Feedback tone="error" message={AUTH_MESSAGES.unavailable} /></div>
+    </ProfilePageFrame>
   }
   if (!continuityToken) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
   const profile = await getCurrentStudentProfile()
@@ -31,15 +36,16 @@ export default async function ProfileSelectionPage() {
     redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
   }
   const complete = profile.status === 'complete'
-  return <AuthShell title={complete ? 'Change selection' : 'Profile selection'}>
+  return <ProfilePageFrame title={complete ? 'Change selection' : 'Profile selection'}
+    description={complete ? 'Update the details used for your courses.' : 'Choose the details used for your courses.'} narrow>
     <AuthFlowSync signedIn continuityToken={continuityToken} />
-    {profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} /> : <>
+    {profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} /> : <div className="student-surface space-y-3">
       <Feedback tone="error" message={profile.status === 'missing-profile'
         ? 'Your profile could not be found. Please contact support.'
         : profile.status === 'invariant-failure'
           ? 'Your profile needs attention. Please contact support.'
           : AUTH_MESSAGES.unavailable} />
       <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>
-    </>}
-  </AuthShell>
+    </div>}
+  </ProfilePageFrame>
 }

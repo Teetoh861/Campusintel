@@ -237,6 +237,21 @@ test('profile edit and reload actions keep shared button hierarchy and focus', a
   check(nodes(f.render()).find(node => node.props?.children === 'Reload choices'), btnGhost)
 }, true))
 
+test('selection form stays compact and uses the student surface at phone and tablet widths', async () => fixture(async f => {
+  const form = f.render()
+  assert.equal(form.type, 'form')
+  assert.match(form.props.className, /student-surface student-surface-raised/)
+  const fields = nodes(form).find(node => node.props?.className?.includes('tablet:grid-cols-2'))
+  assert.ok(fields)
+  assert.match(nodes(fields).find(node => node.props?.className?.includes('tablet:col-span-2'))?.props.className,
+    /tablet:col-span-2/)
+  for (const id of ['department', 'academic-level', 'academic-period']) {
+    assert.match(f.select(id).props.className, /h-12/)
+  }
+  assert.match(nodes(form).find(node => node.type === 'button' && node.props.type === 'submit').props.className,
+    /min-h-11/)
+}))
+
 test('failed, unavailable, invalid and revoked saves have controlled outcomes', async () => fixture(async f => {
   const cases = [
     [503, { status: 'unavailable', details: 'private SQL error' }, 'Save failed. Please try again.'],

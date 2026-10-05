@@ -1,4 +1,4 @@
-import { AuthShell } from '@/components/auth/AuthShell'
+import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
 import { Skeleton } from '@/components/ui/skeleton'
 
 function PendingField() {
@@ -8,19 +8,20 @@ function PendingField() {
   </div>
 }
 
-/** Keep the private page's loading state within the existing form surface. */
+/** Keep the private page's loading state within the student profile workspace. */
 export default function Loading() {
-  return <AuthShell title="Profile selection">
-    <div role="status" aria-live="polite" aria-busy="true" className="space-y-3">
+  return <ProfilePageFrame title="Profile selection" narrow>
+    <div role="status" aria-live="polite" aria-busy="true"
+      className="student-surface student-surface-raised space-y-3">
       <span className="sr-only">Please wait.</span>
       <div aria-hidden="true" className="space-y-3">
-        <div className="space-y-2">
-          <PendingField />
+        <div className="grid gap-3 tablet:grid-cols-2 tablet:gap-4">
+          <div className="tablet:col-span-2"><PendingField /></div>
           <PendingField />
           <PendingField />
         </div>
         <Skeleton className="h-11 w-full rounded-ci-btn bg-student-signal-track motion-reduce:animate-none" />
       </div>
     </div>
-  </AuthShell>
+  </ProfilePageFrame>
 }

@@ -78,7 +78,7 @@ test('incomplete account reaches selection; completed account stays and offers i
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
   f.state.profile = { status: 'complete', options, selection }
   const account = await f.account()
-  assert.equal(account.props.title, 'Account')
+  assert.equal(account.props.title, 'Your profile')
   const link = nodes(account).find(node => node.props?.children === 'Change selection')
   assert.equal(link.props.href, '/profile-selection')
   page = await f.selectionPage()
@@ -106,7 +106,7 @@ test('auth and selection redirects terminate, including a completed student open
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', options, selection }
-  assert.equal((await f.account()).props.title, 'Account')
+  assert.equal((await f.account()).props.title, 'Your profile')
   assert.equal((await f.selectionPage()).props.title, 'Change selection')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
   assert.equal(getSafeReturnPath('/profile-selection'), '/profile-selection')
@@ -125,7 +125,53 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
   }
   f.state.enabled = false
   const reads = f.state.reads
-  assert.equal((await f.account()).props.children.type.name, 'AuthUnavailable')
-  assert.equal((await f.selectionPage()).props.children.type.name, 'AuthUnavailable')
+  assert.equal(nodes(await f.account()).find(node => node.type?.name === 'AuthUnavailable')?.type.name, 'AuthUnavailable')
+  assert.equal(nodes(await f.selectionPage()).find(node => node.type?.name === 'AuthUnavailable')?.type.name, 'AuthUnavailable')
   assert.equal(f.state.reads, reads)
+}))
+
+test('Account puts academic selection first and shows only the real email and sign out action', async () => fixture(async f => {
+  f.state.profile = { status: 'complete', options, selection }
+  const account = await f.account()
+  const frame = account.type(account.props)
+  const frameNodes = nodes(frame)
+  assert.equal(frameNodes.find(node => node.type === 'h1')?.props.children, 'Your profile')
+  const sections = frameNodes.filter(node => node.type === 'section')
+  assert.deepEqual(sections.map(section => nodes(section).find(node => node.type === 'h2')?.props.children),
+    ['Academic profile', 'Account', 'Settings'])
+  assert.match(sections[0].props.className, /student-surface/)
+  assert.match(nodes(account).find(node => node.props?.className?.includes('tablet:grid-cols-['))?.props.className,
+    /desktop:grid-cols-\[/)
+  const summary = nodes(sections[0]).find(node => node.type?.name === 'SelectionSummary')
+  assert.equal(summary?.props.selection, selection)
+  const summaryRows = nodes(summary.type(summary.props))
+  assert.deepEqual(summaryRows.filter(node => node.type === 'dt').map(node => node.props.children),
+    ['Department', 'Level', 'Semester'])
+  assert.deepEqual(summaryRows.filter(node => node.type === 'dd').map(node => node.props.children[0]),
+    ['Fixture department', 'Fixture level', 'Fixture semester'])
+  assert.equal(nodes(sections[0]).find(node => node.props?.children === 'Change selection')?.props.href,
+    '/profile-selection')
+  assert.equal(nodes(sections[1]).find(node => node.type === 'dd')?.props.children, 'student@example.test')
+  assert.ok(nodes(sections[2]).some(node => node.type?.name === 'LogoutButton'))
+  assert.equal(frameNodes.find(node => node.props?.children === 'Dashboard')?.props.href, '/dashboard')
+  const visibleCopy = [account.props.title, account.props.description,
+    ...frameNodes.map(node => node.props?.children).filter(value => typeof value === 'string')].join(' ')
+  assert.doesNotMatch(visibleCopy, /trial|subscription|early access|upgrade|billing|allowance/i)
+}))
+
+test('Profile selection uses the student workspace for incomplete, complete and error states', async () => fixture(async f => {
+  let page = await f.selectionPage()
+  let frame = page.type(page.props)
+  assert.match(frame.props.className, /app-container student-page/)
+  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Profile selection')
+  assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.status, 'incomplete')
+  f.state.profile = { status: 'complete', options, selection }
+  page = await f.selectionPage()
+  assert.equal(page.props.title, 'Change selection')
+  assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.selection, selection)
+  f.state.profile = { status: 'unavailable' }
+  page = await f.selectionPage()
+  assert.match(nodes(page).find(node => node.props?.className?.includes('student-surface'))?.props.className,
+    /student-surface/)
+  assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
 }))
