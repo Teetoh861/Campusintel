@@ -60,9 +60,13 @@ select is(
 -- Identity A: reference reads and owner-scoped selection writes
 -- ---------------------------------------------------------------------------
 
+-- Model the live Auth sessions carried by legitimate browser JWTs.
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '55555555-5555-4555-8555-555555555555', now(), now());
+
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated"}';
+  '{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 
 select throws_ok(
   $$ update public.profiles

@@ -60,7 +60,7 @@ select throws_ok($$select public.write_quiz_attempt('a1000000-0000-4000-8000-000
   '42501', null, 'signed-out browser cannot invoke the write RPC');
 reset role;
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"a1000000-0000-4000-8000-000000000001"}';
 select throws_ok($$select public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000001', (select course_id from quiz_fixture),
   2, 'start', null, 'in_progress', (select selection from quiz_fixture))$$,
@@ -200,13 +200,13 @@ select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
 reset role;
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"a1000000-0000-4000-8000-000000000002"}';
 select is((select count(*)::int from public.quiz_attempt_questions), 0,
   'another student cannot read selected revision history');
 select throws_ok($$insert into public.quiz_attempt_questions(attempt_id, question_id, ordinal, item_id, content_revision)
   select 'a2000000-0000-4000-8000-000000000001', question_id, 2, item_id, content_revision
   from quiz_selected limit 1$$, '42501', null, 'student cannot write a snapshot directly');
-set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"a1000000-0000-4000-8000-000000000001"}';
 select is((select count(*)::int from public.quiz_attempt_questions), 4,
   'owner can read selected revision history');
 reset role;
