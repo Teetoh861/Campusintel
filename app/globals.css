@@ -317,13 +317,11 @@ body {
   }
 }
 
-/* The quiz active screen is distraction-free. QuizClient sets
-   <body data-screen="active|intro|results">; hide the global footer while a
-   timed attempt is running. (Shell/CSS hook only — no quiz logic involved.) */
-body[data-screen='active'] footer {
-  display: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+}
+/* Keep ordinary site navigation out of the active assessment's tab order. */
+body[data-screen="active"] > nav[data-screen-label="Nav"],
+body[data-screen="active"] > footer[data-screen-label="Footer"] {
+  display: none;
 }

@@ -33,13 +33,12 @@ function installLoader() {
   }
 }
 
-const { getUsableCourseQuiz, course, validQuiz } = (() => {
+const { course, validQuiz } = (() => {
   const restore = installLoader()
   try {
-    const { getUsableCourseQuiz } = require('../../lib/data/quiz-availability.ts')
     const course = require('../../lib/data/courses.ts').getCourseBySlug('financial-accounting-1')
     const validQuiz = require('../../lib/data/quizzes.ts').getQuizByCourseSlug(course.slug)
-    return { getUsableCourseQuiz, course, validQuiz }
+    return { course, validQuiz }
   } finally {
     restore()
   }
@@ -118,7 +117,8 @@ async function fixture(quiz, run) {
     }
     for (const file of files) delete require.cache[file]
     const granted = page => async props => {
-      const content = (await page(props)).props.children
+      const children = (await page(props)).props.children
+      const content = typeof children === 'function' ? children('server-page-token') : children
       return content.type(content.props)
     }
     await run({
@@ -153,24 +153,6 @@ test('fixture restores loaders and the module cache after success and failure', 
     assert.equal(Module._extensions['.tsx'], originalTsx)
     assert.deepEqual({ ...require.cache }, originalCache)
   }
-})
-
-test('usable quiz requires a matching course and a nonempty timed attempt', () => {
-  const ready = getUsableCourseQuiz(course, validQuiz)
-  assert.equal(ready.href, quizHref)
-  assert.equal(ready.bankSize, validQuiz.questions.length)
-  assert.equal(ready.attemptSize, Math.min(validQuiz.maxQuizQuestions, validQuiz.questions.length))
-  assert.equal(ready.timerSeconds, validQuiz.quizDurationMinutes * 60)
-  for (const quiz of [
-    undefined,
-    { ...validQuiz, courseSlug: 'different-course' },
-    { ...validQuiz, questions: [] },
-    { ...validQuiz, maxQuizQuestions: 0 },
-    { ...validQuiz, maxQuizQuestions: 0.5 },
-    { ...validQuiz, quizDurationMinutes: 0 },
-    { ...validQuiz, quizDurationMinutes: Infinity },
-    { ...validQuiz, quizDurationMinutes: 1e308 },
-  ]) assert.equal(getUsableCourseQuiz(course, quiz), null)
 })
 
 test('usable quiz keeps both course-detail entry points and the quiz route', async () => fixture(validQuiz, async f => {
@@ -275,36 +257,33 @@ test('course navigation exposes a quiz action only when given a usable destinati
   }
 }))
 
-test('homepage, course directory and bookmarks do not offer dead quiz card links', async () => {
-  for (const [quiz, expected] of [[validQuiz, true], [undefined, false],
-    [{ ...validQuiz, maxQuizQuestions: 0 }, false],
-    [{ ...validQuiz, quizDurationMinutes: 1e308 }, false]]) {
-    await fixture(quiz, async f => {
-      const [homeHtml, directoryHtml, bookmarkHtml] = [f.home(), await f.directory(), f.bookmarks()]
-        .map(element => renderToStaticMarkup(element))
-      for (const html of [homeHtml, directoryHtml, bookmarkHtml]) {
-        assert.match(html, new RegExp(`href="/courses/${course.slug}"`))
-        assert.match(html, new RegExp(course.code))
-        assert.match(html, new RegExp(course.title))
-        assert.match(html, new RegExp(`${course.credits} credits`))
-        assert.match(html, /View course/)
-        if (expected) {
-          assert.match(html, new RegExp(`href="${quizHref}"`))
-          assert.match(html, new RegExp(`${validQuiz.questions.length} questions`))
-        } else {
-          assert.doesNotMatch(html, new RegExp(`href="${quizHref}"`))
-          assert.doesNotMatch(html, /(?:\d+|—) questions/)
-        }
-      }
-      const homeText = homeHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-      assert.match(homeText, new RegExp(`${expected ? '1' : '0'} Practice quizzes`))
-      if (expected) {
-        assert.match(homeText, /Timed quiz/)
-        assert.match(homeText, new RegExp(`${validQuiz.quizDurationMinutes} min`))
-      } else {
-        assert.match(homeText, /Course details/)
-        assert.doesNotMatch(homeText, /Notes and past papers|Timed quiz/)
-      }
-    })
+test('public home and saved cards never infer quiz readiness from repository questions', async () => fixture(validQuiz, async f => {
+  const publicCards = () => [f.home(), f.bookmarks()].map(element => renderToStaticMarkup(element))
+  const assertNeutral = html => {
+    assert.match(html, new RegExp(`href="/courses/${course.slug}"`))
+    assert.match(html, /View course/)
+    assert.doesNotMatch(html, new RegExp(`href="${quizHref}"`))
+    assert.doesNotMatch(html, /Start quiz|Timed quiz|Practice quizzes/)
+    assert.doesNotMatch(html, new RegExp(`${validQuiz.questions.length} questions`))
+    assert.doesNotMatch(html, new RegExp(`${validQuiz.quizDurationMinutes} min`))
   }
-})
+  publicCards().forEach(assertNeutral)
+
+  // Repository data still exists, but the operator can withdraw all published CBT.
+  const originalRows = f.publishedState.rows
+  f.publishedState.rows = originalRows.filter(row => row.kind !== 'cbt_question')
+  const withdrawn = renderToStaticMarkup(await f.directory())
+  assert.doesNotMatch(withdrawn, new RegExp(`href="${quizHref}"`))
+  assert.doesNotMatch(withdrawn, new RegExp(`${validQuiz.questions.length} questions`))
+  publicCards().forEach(assertNeutral)
+
+  f.publishedState.rows = originalRows
+  const restored = renderToStaticMarkup(await f.directory())
+  assert.match(restored, new RegExp(`href="${quizHref}"`))
+  assert.match(restored, new RegExp(`${validQuiz.questions.length} questions`))
+  publicCards().forEach(assertNeutral)
+
+  f.publishedState.available = false
+  assert.match(renderToStaticMarkup(await f.directory()), /Course content is temporarily unavailable/)
+  publicCards().forEach(assertNeutral)
+}))

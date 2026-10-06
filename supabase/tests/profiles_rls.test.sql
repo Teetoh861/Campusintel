@@ -14,7 +14,7 @@
 --
 -- Two authenticated identities are simulated the way PostgREST presents a
 -- signed-in user to Postgres: SET ROLE authenticated plus a request.jwt.claims
--- setting carrying `sub`, which is what auth.uid() reads. No real GoTrue
+-- setting carrying `sub` and a matching live `session_id`. No real GoTrue
 -- sign-in is needed, and no service-role access is used anywhere.
 --
 -- Note on time: the whole file runs inside one transaction, so now() is
@@ -271,9 +271,14 @@ select is(
 -- Identity A — authenticated
 -- ---------------------------------------------------------------------------
 
+-- Model the live Auth sessions carried by legitimate browser JWTs.
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', now(), now()),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', now(), now());
+
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 
 select is(
   (select count(*)::int from public.profiles
@@ -373,7 +378,7 @@ select throws_ok(
 -- ---------------------------------------------------------------------------
 
 set local request.jwt.claims =
-  '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';
+  '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}';
 
 select is(
   (select num_nonnulls(

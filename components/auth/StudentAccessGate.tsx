@@ -13,7 +13,10 @@ import { AuthFlowSync } from './AuthFlowSync'
 import type { ReactElement, ReactNode } from 'react'
 
 /** Render children only for a live student with a completed selection; every failure is closed. */
-export async function StudentAccessGate({ returnPath, children }: { returnPath: string; children: ReactNode }): Promise<ReactElement> {
+export async function StudentAccessGate({ returnPath, children }: {
+  returnPath: string
+  children: ReactNode | ((continuityToken: string) => ReactNode)
+}): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <AuthUnavailable />
   const login = AUTH_PATHS.login + '?next=' + encodeURIComponent(getSafeReturnPath(returnPath))
   let continuityToken: string | undefined
@@ -26,5 +29,7 @@ export async function StudentAccessGate({ returnPath, children }: { returnPath: 
   if (profile.status === 'signed-out') redirect(login)
   if (profile.status === 'incomplete') redirect(PROFILE_SELECTION_PATH)
   if (profile.status !== 'complete') return <Feedback message={AUTH_MESSAGES.unavailable} tone="error" />
-  return <><AuthFlowSync signedIn continuityToken={continuityToken} />{children}</>
+  return <><AuthFlowSync signedIn continuityToken={continuityToken} />
+    {typeof children === 'function' ? children(continuityToken) : children}
+  </>
 }

@@ -17,10 +17,12 @@ export const dynamic = 'force-dynamic'
 /** Cross the student account boundary before the quiz bank is read. */
 export default async function QuizPage({ params }: PageProps): Promise<React.JSX.Element> {
   const { slug } = await params
-  return <StudentAccessGate returnPath={`/courses/${slug}/quiz`}><Quiz slug={slug} /></StudentAccessGate>
+  return <StudentAccessGate returnPath={`/courses/${slug}/quiz`}>
+    {continuityToken => <Quiz slug={slug} continuityToken={continuityToken} />}
+  </StudentAccessGate>
 }
 
-async function Quiz({ slug }: { slug: string }) {
+async function Quiz({ slug, continuityToken }: { slug: string; continuityToken: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
   const result = await getStudentManagedQuiz(slug)
@@ -29,6 +31,7 @@ async function Quiz({ slug }: { slug: string }) {
 
   return (
     <QuizClient
+      continuityToken={continuityToken}
       courseCode={course.code}
       courseTitle={course.title}
       courseSlug={course.slug}

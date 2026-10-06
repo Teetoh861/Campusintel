@@ -24,9 +24,14 @@ values
    'authenticated', 'authenticated', 'phase-b-b@example.test', 'x',
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
 
+-- Model the live Auth sessions carried by legitimate browser JWTs.
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '55555555-5555-4555-8555-555555555555', now(), now()),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '66666666-6666-4666-8666-666666666666', now(), now());
+
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated"}';
+  '{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 
 select lives_ok(
   $$ update public.profiles
@@ -167,7 +172,7 @@ select is(
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub":"66666666-6666-4666-8666-666666666666","role":"authenticated"}';
+  '{"sub":"66666666-6666-4666-8666-666666666666","role":"authenticated","session_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}';
 
 select throws_ok(
   $$ update public.profiles
@@ -242,7 +247,7 @@ select is(
 );
 
 set local request.jwt.claims =
-  '{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated"}';
+  '{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 
 select is(
   (

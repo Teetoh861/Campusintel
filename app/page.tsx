@@ -5,8 +5,6 @@
 import Link from 'next/link'
 import { courses } from '@/lib/data/courses'
 import type { Course } from '@/lib/types'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import { Card, type CardProps } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
@@ -25,7 +23,6 @@ const toLevel = (d: Course['difficulty']): DifficultyLevel =>
 const HOMEPAGE_FEATURED_COUNT = 2
 
 function cardPropsFor(course: Course, index: number): CardProps {
-  const quiz = getUsableCourseQuiz(course, getQuizByCourseSlug(course.slug))
   const critical = course.examCritical === true
   return {
     intelIndex: intelIndex(index),
@@ -34,15 +31,13 @@ function cardPropsFor(course: Course, index: number): CardProps {
     // Punchy homepage tagline under the title (falls back to the full overview
     // for any future featured course without one).
     desc: course.tagline ?? course.overview,
-    // The amber flag marks exam-critical content; its quiz action appears only
-    // when an attempt is usable. View course stays available for every card.
+    // The public page cannot inspect protected managed publication.
     flag: critical
       ? { kind: 'critical', label: 'Exam-critical' }
       : { kind: 'tracked', label: 'Tracked' },
     level: String(course.level),
     credits: `${course.credits} credits`,
-    questions: quiz ? String(quiz.bankSize) : undefined,
-    timeLimit: quiz ? `${quiz.quiz.quizDurationMinutes} MIN` : '—',
+    timeLimit: '',
     difficulty: toLevel(course.difficulty),
     cta: {
       label: 'View course',
@@ -50,14 +45,6 @@ function cardPropsFor(course: Course, index: number): CardProps {
       variant: 'primary',
       withArrow: true,
     },
-    secondaryCta: critical && quiz
-      ? {
-          label: 'Start quiz',
-          href: quiz.href,
-          variant: 'secondary',
-          withArrow: true,
-        }
-      : undefined,
   }
 }
 
@@ -70,8 +57,6 @@ function pickFeatured(all: ReadonlyArray<Course>): ReadonlyArray<Course> {
 export default function HomePage() {
   const courseCount = courses.length
   const textbookCount = courses.reduce((sum, c) => sum + c.textbooks.length, 0)
-  const usableQuizCount = courses.filter((course) =>
-    getUsableCourseQuiz(course, getQuizByCourseSlug(course.slug)) !== null).length
   const courseCountLabel = String(courseCount).padStart(2, '0')
   // Source order is preserved by pickFeatured; the render order then pulls
   // examCritical to the front so the lone amber moment leads the grid.
@@ -84,9 +69,6 @@ export default function HomePage() {
   // featured course (first flagged). Falls back to the lead featured course so
   // the preview is never empty if the flag is removed entirely.
   const previewCourse = courses.find((c) => c.examCritical === true) ?? featured[0]
-  const previewQuiz = previewCourse
-    ? getUsableCourseQuiz(previewCourse, getQuizByCourseSlug(previewCourse.slug))
-    : null
   // A second, different course peeks out behind the main preview (decorative).
   const behindCourse = featured.find((c) => c.slug !== previewCourse?.slug) ?? courses[1]
 
@@ -154,8 +136,6 @@ export default function HomePage() {
                   href={`/courses/${previewCourse.slug}`}
                   level={String(previewCourse.level)}
                   credits={previewCourse.credits}
-                  questions={previewQuiz?.bankSize}
-                  quizMinutes={previewQuiz?.quiz.quizDurationMinutes}
                   examCritical={previewCourse.examCritical === true}
                   behindCode={behindCourse?.code}
                   behindTitle={behindCourse?.title}
@@ -200,7 +180,6 @@ export default function HomePage() {
           <div className="grid w-full grid-cols-2 gap-x-5 gap-y-[30px] min-[680px]:flex min-[680px]:justify-between">
             <Stat value={courseCountLabel} label="Courses" />
             <Stat value={String(textbookCount)} label="Textbooks indexed" />
-            <Stat value={String(usableQuizCount)} label="Practice quizzes" />
             <Stat value="Peer" label="Tutors coming soon" soon />
           </div>
           <p className="mt-6 border-t border-ci-border pt-5 text-[14.5px] font-medium text-ci-gray-600">
@@ -258,8 +237,6 @@ type HeroPreviewProps = {
   href: string
   level: string
   credits: number
-  questions?: number
-  quizMinutes?: number
   examCritical: boolean
   behindCode?: string
   behindTitle?: string
@@ -272,8 +249,6 @@ function HeroPreview({
   href,
   level,
   credits,
-  questions,
-  quizMinutes,
   examCritical,
   behindCode,
   behindTitle,
@@ -319,19 +294,14 @@ function HeroPreview({
           <span className="text-[12.5px] font-medium text-ci-gray-600">
             <b className="font-bold text-ci-navy-900">{credits}</b> credits
           </span>
-          {questions ? (
-            <span className="text-[12.5px] font-medium text-ci-gray-600">
-              <b className="font-bold text-ci-navy-900">{questions}</b> questions
-            </span>
-          ) : null}
         </div>
         <div className="flex items-center justify-between px-[22px] py-4">
           <div className="flex flex-col gap-[5px]">
             <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-ci-gray-500">
-              {quizMinutes ? 'Timed quiz' : 'Course details'}
+              Course details
             </span>
             <span className="text-[14px] font-bold text-ci-navy-900">
-              {quizMinutes ? `${quizMinutes} min` : 'Explore this course'}
+              Explore this course
             </span>
           </div>
           <Link className={cx(btnBase, btnSm, 'bg-ci-navy text-ci-paper hover:bg-ci-navy-700')} href={href}>

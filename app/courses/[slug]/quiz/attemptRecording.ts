@@ -13,7 +13,7 @@ type Attempt = {
   desired: Map<number, Answer>
   persisted: Map<number, number>
   revision: number
-  token: string
+  readonly token: string
   status: RecordingStatus
   finishRequested: Completion | null
   draining: boolean
@@ -46,6 +46,7 @@ function pause(milliseconds: number): Promise<void> {
 
 /** Send only question identity and the chosen option; the server owns identity and correctness. */
 export function createQuizAttemptRecorder(
+  pageToken: string,
   onStatus: (status: RecordingStatus) => void,
   request: typeof fetch = fetch,
   makeId: () => string = () => crypto.randomUUID(),
@@ -55,30 +56,6 @@ export function createQuizAttemptRecorder(
   function setStatus(attempt: Attempt, status: RecordingStatus): void {
     attempt.status = status
     if (current === attempt) onStatus(status)
-  }
-
-  async function context(): Promise<{ status: 'ready'; token: string } | { status: 'signed-out' | 'unavailable' }> {
-    for (let number = 0; number < MAX_REQUESTS; number += 1) {
-      try {
-        const response = await request(ENDPOINT, {
-          method: 'GET', cache: 'no-store', credentials: 'same-origin',
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        })
-        const body: unknown = await response.json()
-        if (response.ok && isObject(body) && body.status === 'ready' &&
-            typeof body.continuityToken === 'string' && body.continuityToken.length > 0) {
-          return { status: 'ready', token: body.continuityToken }
-        }
-        if (response.status === 401 && isObject(body) && body.status === 'signed-out') {
-          return { status: 'signed-out' }
-        }
-        if (response.status !== 503) return { status: 'unavailable' }
-      } catch {
-        // A failed request may have reached the server; retrying GET has no write effect.
-      }
-      if (number < MAX_REQUESTS - 1) await pause(RETRY_DELAY_MS * (number + 1))
-    }
-    return { status: 'unavailable' }
   }
 
   async function write(attempt: Attempt, command: Record<string, unknown>, revision: number,
@@ -120,12 +97,6 @@ export function createQuizAttemptRecorder(
     void (async () => {
       try {
         if (attempt.status === 'checking') {
-          const session = await context()
-          if (session.status !== 'ready') {
-            setStatus(attempt, session.status)
-            return
-          }
-          attempt.token = session.token
           const started = await write(attempt, {
             operation: 'start', attemptId: attempt.id, courseContentKey: attempt.courseContentKey,
             questions: attempt.questions.map((question, ordinal) => ({
@@ -175,9 +146,13 @@ export function createQuizAttemptRecorder(
 
   return {
     begin(courseContentKey: string, questions: ReadonlyArray<ManagedQuizQuestion>): string {
+      // A second Start event for the mounted attempt must not create another row.
+      if (current && ['checking', 'recording'].includes(current.status) && current.finishRequested === null) {
+        return current.id
+      }
       const attempt: Attempt = {
         id: makeId(), courseContentKey, questions, desired: new Map(), persisted: new Map(),
-        revision: 0, token: '', status: 'checking', finishRequested: null, draining: false,
+        revision: 0, token: pageToken, status: 'checking', finishRequested: null, draining: false,
       }
       current = attempt
       onStatus('checking')

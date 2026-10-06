@@ -52,6 +52,11 @@ values
    'authenticated', 'authenticated', 'bookmarks-b@example.test', 'x', now(),
    '{"provider":"email","providers":["email"]}', '{}', now(), now());
 
+-- Model the live Auth sessions carried by legitimate browser JWTs.
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', now(), now()),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', now(), now());
+
 set local role anon;
 select throws_ok($$ select count(*) from public.student_bookmarks $$, '42501', null,
   'anonymous users cannot read account bookmarks');
@@ -65,7 +70,7 @@ select throws_ok($$ select public.reconcile_student_bookmarks(
 reset role;
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 insert into public.student_bookmarks (user_id, course_id)
 values ('11111111-1111-4111-8111-111111111111', '40000000-0000-4000-8000-000000000001');
 insert into public.student_bookmarks (user_id, course_id)
@@ -128,7 +133,7 @@ select ('50000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
 from generate_series(1, 40) as n;
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 select throws_ok($$ select public.reconcile_student_bookmarks(
   'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   array(select ('50000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid
@@ -157,7 +162,7 @@ delete from public.student_bookmarks
 reset role;
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}';
 select is((select count(*)::int from public.student_bookmarks), 0,
   'another account cannot read the first owner bookmark');
 select is(public.reconcile_student_bookmarks(
@@ -178,7 +183,7 @@ select is((select count(*)::int from public.student_bookmarks), 2,
   'cross-account delete did not affect the first owner');
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 delete from public.student_bookmarks
 where user_id = '11111111-1111-4111-8111-111111111111';
 select is((select count(*)::int from public.student_bookmarks), 0,

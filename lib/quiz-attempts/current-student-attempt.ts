@@ -4,7 +4,7 @@ import type { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { issueAccountContinuityToken, matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
+import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getCourseByContentKey } from '@/lib/data/courses'
 import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
 import { getPublishedManagedCourse } from '@/lib/managed-content/published'
@@ -16,19 +16,6 @@ import { writeAttemptCommand } from './rpc'
 import type { AttemptAnswer, AttemptSelection } from './rpc'
 
 const registrySchema = z.object({ id: z.string().uuid(), content_key: z.string().min(1) }).strict()
-
-/** Provide opaque page/session continuity for a future quiz caller, without user IDs. */
-export async function getQuizAttemptContext(response?: NextResponse): Promise<
-  { status: 'ready'; continuityToken: string } | { status: 'signed-out' | 'unavailable' }
-> {
-  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
-  try {
-    const context = await getStudentSessionContext(response)
-    return context === null ? { status: 'signed-out' } : {
-      status: 'ready', continuityToken: issueAccountContinuityToken(context.user.id, context.sessionId),
-    }
-  } catch { return { status: 'unavailable' } }
-}
 
 /** Validate live identity and delegate all scoring to the attempt's pinned managed revisions. */
 export async function writeCurrentStudentAttempt(

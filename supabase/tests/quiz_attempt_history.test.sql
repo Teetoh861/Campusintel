@@ -283,9 +283,14 @@ select is((select updated_at from public.quiz_attempts
            where id = '80000000-0000-4000-8000-000000000001'),
           now(), 'the existing internal trigger maintains updated_at');
 
+-- Model the live Auth sessions carried by legitimate browser JWTs.
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', now(), now()),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', now(), now());
+
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated"}';
+  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 select is((select count(*)::int from public.quiz_attempts
            where id = '80000000-0000-4000-8000-000000000001'),
           1, 'owner A can read their attempt');
@@ -317,7 +322,7 @@ select throws_ok($$delete from public.quiz_attempt_answers
   '42501', null, 'authenticated cannot directly DELETE an own answer');
 
 set local request.jwt.claims =
-  '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated"}';
+  '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}';
 select is((select count(*)::int from public.quiz_attempts
            where id = '80000000-0000-4000-8000-000000000001'),
           0, 'B cannot read A''s attempt');
