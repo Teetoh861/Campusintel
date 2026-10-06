@@ -1,20 +1,17 @@
-// ResultsScreen — Variant B debrief (warm off-white). VISUAL RESKIN ONLY:
-// navy score hero (AA-safe, not amber), section breakdown with per-position
-// ticks (green correct / muted-red missed), and a review list defaulting to
-// missed. Every figure still traces to the shared per-question map; color is
-// never the only signal (glyphs + text labels carry meaning). No logic changed.
+// app/courses/[slug]/quiz/ResultsScreen.tsx — Present practice results and review the sampled attempt.
 'use client'
 
 import Link from 'next/link'
 import { useState } from 'react'
-import type { QuizQuestion } from '@/lib/types'
-import type { AnswersMap, ReviewFilter, SectionStat } from './types'
 import { btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
 import { ReviewCard } from './ReviewCard'
+import type { ReactElement } from 'react'
+import type { QuizQuestion } from '@/lib/types'
+import type { AnswersMap, ReviewFilter, SectionStat } from './types'
 
 // Verdict thresholds (percent). Match the comp.
 const STRONG_PCT = 70
-const PASS_PCT = 50
+const PRACTICE_TARGET_PCT = 50
 // Section tag thresholds. >=80% mastered, <70% revisit, neutral between.
 const MASTERED_PCT = 80
 const REVISIT_PCT = 70
@@ -32,11 +29,13 @@ type Props = {
   sections: ReadonlyArray<SectionStat>
   tickLimit: number
   reviewFilter: ReviewFilter
+  preparing: boolean
   onReviewFilterChange: (f: ReviewFilter) => void
   onRetakeWithNewQuestions: () => void
   onRedoQuestions: () => void
 }
 
+/** Show the completed attempt's score, section breakdown and answer review. */
 export function ResultsScreen({
   courseCode,
   courseSlug,
@@ -46,20 +45,21 @@ export function ResultsScreen({
   sections,
   tickLimit,
   reviewFilter,
+  preparing,
   onReviewFilterChange,
   onRetakeWithNewQuestions,
   onRedoQuestions,
-}: Props) {
+}: Props): ReactElement {
   const [resultsFilter, setResultsFilter] = useState<ResultsFilter>('all')
   const total = questions.length
   const pct = total === 0 ? 0 : Math.round((correctCount / total) * 100)
   const missedCount = total - correctCount
   const verdict =
     pct >= STRONG_PCT
-      ? 'Strong · exam ready'
-      : pct >= PASS_PCT
-      ? 'Pass · close the gaps'
-      : 'Below pass · regroup'
+      ? 'Strong practice result'
+      : pct >= PRACTICE_TARGET_PCT
+      ? 'Practice target met · close the gaps'
+      : 'Below practice target · regroup'
 
   // The weakest section drives the prose hook above the breakdown.
   const weakest = [...sections].sort(
@@ -104,10 +104,10 @@ export function ResultsScreen({
           </p>
         ) : null}
         <div className="mt-6 flex flex-wrap gap-[13px]">
-          <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetakeWithNewQuestions}>
-            Retake with new questions
+          <button type="button" className={cx(btnBase, btnAccent, 'disabled:opacity-50')} disabled={preparing} onClick={onRetakeWithNewQuestions}>
+            {preparing ? 'Preparing assessment…' : 'Retake with new questions'}
           </button>
-          <button type="button" className={cx(btnBase, btnGhost)} onClick={onRedoQuestions}>
+          <button type="button" className={cx(btnBase, btnGhost, 'disabled:opacity-50')} disabled={preparing} onClick={onRedoQuestions}>
             Redo these questions
           </button>
         </div>
@@ -170,10 +170,10 @@ export function ResultsScreen({
 
           {/* actions */}
           <div className="mt-12 flex flex-wrap gap-[13px]">
-            <button type="button" className={cx(btnBase, btnAccent)} onClick={onRetakeWithNewQuestions}>
-              Retake with new questions
+            <button type="button" className={cx(btnBase, btnAccent, 'disabled:opacity-50')} disabled={preparing} onClick={onRetakeWithNewQuestions}>
+              {preparing ? 'Preparing assessment…' : 'Retake with new questions'}
             </button>
-            <button type="button" className={cx(btnBase, btnGhost)} onClick={onRedoQuestions}>
+            <button type="button" className={cx(btnBase, btnGhost, 'disabled:opacity-50')} disabled={preparing} onClick={onRedoQuestions}>
               Redo these questions
             </button>
             <Link className={cx(btnBase, btnGhost)} href={`/courses/${courseSlug}`}>

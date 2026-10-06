@@ -10,6 +10,7 @@ export type AnswersMap = Record<number, number>
 export type MarkedMap = Record<number, boolean>
 
 export type QuizCoreProps = {
+  continuityToken: string
   courseCode: string
   courseTitle: string
   courseSlug: string

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthOrigin, isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
 import { AuthRequestError } from '@/lib/auth/request'
-import { getQuizAttemptContext, writeCurrentStudentAttempt } from '@/lib/quiz-attempts/current-student-attempt'
+import { writeCurrentStudentAttempt } from '@/lib/quiz-attempts/current-student-attempt'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -57,12 +57,6 @@ async function readWriteRequest(request: Request): Promise<unknown> {
     if (error instanceof AuthRequestError) throw error
     throw new AuthRequestError(400, 'Invalid body')
   } finally { reader.releaseLock() }
-}
-
-/** Return continuity for the live HttpOnly student session; no history is written. */
-export async function GET(): Promise<Response> {
-  const response = privateJson({ status: 'unavailable' })
-  return finish(response, await getQuizAttemptContext(response))
 }
 
 /** Start, patch or finish an attempt. Identity and quiz metadata are server-owned. */

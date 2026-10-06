@@ -4,6 +4,15 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { IntroScreen } from './IntroScreen'
+import { QuestionScreen } from './QuestionScreen'
+import { ResultsScreen } from './ResultsScreen'
+import { sampleQuestionsBySection } from './sampleQuestions'
+import { createQuizAttemptRecorder } from './attemptRecording'
+import { createAssessmentClock } from './assessmentClock'
+import { loadFreshQuiz } from './liveBank'
+import { AssessmentConfirmation } from './AssessmentConfirmation'
+import type { ReactElement } from 'react'
 import type {
   AnswersMap,
   MarkedMap,
@@ -12,14 +21,7 @@ import type {
   Screen,
   SectionStat,
 } from './types'
-import { IntroScreen } from './IntroScreen'
-import { QuestionScreen } from './QuestionScreen'
-import { ResultsScreen } from './ResultsScreen'
-import { sampleQuestionsBySection } from './sampleQuestions'
-import { createQuizAttemptRecorder } from './attemptRecording'
-import { loadFreshQuiz } from './liveBank'
 import type { RecordingStatus } from './attemptRecording'
-import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 
 // Timer flips to the red urgency treatment at this threshold (in seconds).
 // The pulse keyframe is already wired in quiz.css and respects
@@ -27,6 +29,7 @@ import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
 const WARN_THRESHOLD_SECONDS = 5 * 60
 const TICK_INTERVAL_MS = 1000
 const HISTORY_GUARD_KEY = '__campusintelQuizGuard'
+const BANK_CHANGED_NOTICE = 'The published question bank changed. Review the updated conditions and confirm readiness again.'
 
 // Sections with at most this many questions get discrete per-question ticks
 // in the breakdown; larger sections fall back to a proportional bar. Mirrors
@@ -34,7 +37,7 @@ const HISTORY_GUARD_KEY = '__campusintelQuizGuard'
 const BREAKDOWN_TICK_LIMIT = 25
 
 /** Run the existing quiz screens against the current managed bank and pinned attempt. */
-export function QuizClient(props: QuizCoreProps): React.JSX.Element {
+export function QuizClient(props: QuizCoreProps): ReactElement {
   const {
     questions: questionBank,
     sections,
@@ -45,36 +48,48 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
   } = props
 
   const [screen, setScreen] = useState<Screen>('intro')
+  const [pendingStartIntent, setPendingStartIntent] = useState<'new' | 'redo'>('new')
+  const [briefing, setBriefing] = useState(() => ({
+    questionCount: Math.min(maxQuestions, questionBank.length),
+    sectionCount: new Set(questionBank.map(question => question.section)).size,
+    timerSeconds,
+    version: 0,
+  }))
   const [questions, setQuestions] = useState<QuizCoreProps['questions']>([])
   const [current, setCurrent] = useState(0)
   const [answers, setAnswers] = useState<AnswersMap>({})
   const [marked, setMarked] = useState<MarkedMap>({})
+  const [attemptDuration, setAttemptDuration] = useState(timerSeconds)
   const [timeLeft, setTimeLeft] = useState(timerSeconds)
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('missed')
   const [navOpen, setNavOpen] = useState(false)
   const [confirmingSubmit, setConfirmingSubmit] = useState(false)
+  const [confirmingLeave, setConfirmingLeave] = useState(false)
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | null>(null)
   const [bankError, setBankError] = useState<string | null>(null)
   const [loadingBank, setLoadingBank] = useState(false)
   const [activeSections, setActiveSections] = useState<ReadonlyArray<string>>(sections)
-  const [recorder] = useState(() => createQuizAttemptRecorder(setRecordingStatus))
+  const [recorder] = useState(() => createQuizAttemptRecorder(props.continuityToken, setRecordingStatus))
+  const [clock] = useState(() => createAssessmentClock())
   const screenRef = useRef<Screen>('intro')
   const startingRef = useRef(false)
-  const disarmHistoryGuard = useRef<() => void>(() => {})
+  const disarmHistoryGuard = useRef<(restoreEntry?: boolean) => void>(() => {})
+  const submitInvoker = useRef<HTMLElement | null>(null)
+  const leaveInvoker = useRef<HTMLElement | null>(null)
 
   const finishAttempt = useCallback((completion: 'submitted' | 'timed_out') => {
     if (screenRef.current !== 'active') return
     screenRef.current = 'results'
+    clock.stop()
     recorder.finish(completion)
     disarmHistoryGuard.current()
     setConfirmingSubmit(false)
+    setConfirmingLeave(false)
     setNavOpen(false)
     setScreen('results')
-  }, [recorder])
+  }, [clock, recorder])
 
-  // The active screen is distraction-free: campusintel.css/quiz.css hides the
-  // global footer when <body data-screen="active">. Sync that to the local
-  // state machine for the lifetime of this component.
+  // Global chrome is hidden only while the active assessment is mounted.
   useEffect(() => {
     document.body.setAttribute('data-screen', screen)
     return () => {
@@ -82,29 +97,39 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
     }
   }, [screen])
 
-  // Countdown. Runs only on the active screen; functional setState avoids
-  // closure traps. Hitting zero auto-submits via the timeLeft effect below.
+  // Sample a deadline, including when a suspended tab resumes. Callback count
+  // cannot extend the assessment. The screen transition makes expiry one-shot.
   useEffect(() => {
     if (screen !== 'active') return
-    const id = setInterval(() => {
-      setTimeLeft((s) => (s <= 0 ? 0 : s - 1))
-    }, TICK_INTERVAL_MS)
-    return () => clearInterval(id)
-  }, [screen])
-
-  useEffect(() => {
-    if (screen === 'active' && timeLeft <= 0) {
-      finishAttempt('timed_out')
+    clock.start(attemptDuration)
+    const update = () => {
+      const reading = clock.read()
+      setTimeLeft(reading.secondsLeft)
+      if (reading.expiredNow) finishAttempt('timed_out')
     }
-  }, [timeLeft, screen, finishAttempt])
+    const whenVisible = () => { if (document.visibilityState === 'visible') update() }
+    update()
+    const id = setInterval(update, TICK_INTERVAL_MS)
+    document.addEventListener('visibilitychange', whenVisible)
+    window.addEventListener('focus', update)
+    window.addEventListener('pageshow', update)
+    return () => {
+      clearInterval(id)
+      clock.stop()
+      document.removeEventListener('visibilitychange', whenVisible)
+      window.removeEventListener('focus', update)
+      window.removeEventListener('pageshow', update)
+    }
+  }, [screen, clock, finishAttempt, attemptDuration])
 
   useEffect(() => {
     if (recordingStatus !== 'content-changed' || screenRef.current !== 'active') return
     screenRef.current = 'intro'
+    clock.stop()
     disarmHistoryGuard.current()
     setScreen('intro')
     setBankError('The question bank changed while this attempt was starting. Try again.')
-  }, [recordingStatus])
+  }, [recordingStatus, clock])
 
   // Guard against accidentally losing an in-progress attempt. Only while the
   // quiz is active do we arm refresh/close and client-side Back protection.
@@ -129,14 +154,19 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
       window.removeEventListener('popstate', handlePopState)
     }
 
+    const leaveForCourse = () => {
+      removeListeners()
+      disarmHistoryGuard.current = () => {}
+      clock.stop()
+      window.location.replace(`/courses/${encodeURIComponent(courseSlug)}`)
+    }
+
     const handlePopState = () => {
       const shouldLeave = window.confirm(
-        'Leave the quiz? This attempt will be lost.',
+        'Leave assessment? This local attempt cannot be resumed.',
       )
       if (shouldLeave) {
-        removeListeners()
-        disarmHistoryGuard.current = () => {}
-        window.history.back()
+        leaveForCourse()
         return
       }
       window.history.pushState(sentinelState, '', window.location.href)
@@ -145,10 +175,10 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('popstate', handlePopState)
 
-    disarmHistoryGuard.current = () => {
+    disarmHistoryGuard.current = (restoreEntry = true) => {
       removeListeners()
       disarmHistoryGuard.current = () => {}
-      if (window.history.state?.[HISTORY_GUARD_KEY]) {
+      if (restoreEntry && window.history.state?.[HISTORY_GUARD_KEY]) {
         window.history.back()
       }
     }
@@ -157,20 +187,31 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
       removeListeners()
       disarmHistoryGuard.current = () => {}
     }
-  }, [screen])
+  }, [screen, courseSlug, clock])
 
-  const resetAttempt = useCallback(() => {
+  const leaveAssessment = useCallback(() => {
+    if (screenRef.current !== 'active') return
+    clock.stop()
+    disarmHistoryGuard.current(false)
+    window.location.replace(`/courses/${encodeURIComponent(courseSlug)}`)
+  }, [clock, courseSlug])
+
+  const resetAttempt = useCallback((acceptedDuration: number) => {
+    clock.stop()
     setAnswers({})
     setMarked({})
     setCurrent(0)
-    setTimeLeft(timerSeconds)
+    setAttemptDuration(acceptedDuration)
+    setTimeLeft(acceptedDuration)
     setReviewFilter('missed')
     setNavOpen(false)
     setConfirmingSubmit(false)
-  }, [timerSeconds])
+    setConfirmingLeave(false)
+  }, [clock])
 
   const startNewAttempt = useCallback(() => {
     if (screenRef.current === 'active' || startingRef.current) return
+    setPendingStartIntent('new')
     startingRef.current = true
     setLoadingBank(true)
     setBankError(null)
@@ -182,29 +223,50 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
         setBankError('The current question bank is unavailable. Try again.')
         return
       }
+      const questionCount = Math.min(fresh.maxQuestions, fresh.questions.length)
+      const sectionCount = new Set(fresh.questions.map(question => question.section)).size
+      if (questionCount !== briefing.questionCount || sectionCount !== briefing.sectionCount ||
+          fresh.timerSeconds !== briefing.timerSeconds) {
+        setBriefing(current => ({ questionCount, sectionCount, timerSeconds: fresh.timerSeconds,
+          version: current.version + 1 }))
+        screenRef.current = 'intro'
+        setScreen('intro')
+        setBankError(BANK_CHANGED_NOTICE)
+        return
+      }
       const nextQuestions = sampleQuestionsBySection(fresh.questions, fresh.sections, fresh.maxQuestions)
       setActiveSections(fresh.sections)
       screenRef.current = 'active'
-      resetAttempt()
+      resetAttempt(fresh.timerSeconds)
       setQuestions(nextQuestions)
       recorder.begin(courseContentKey, nextQuestions)
       setScreen('active')
     })()
-  }, [courseSlug, resetAttempt, recorder, courseContentKey])
+  }, [courseSlug, resetAttempt, recorder, courseContentKey, briefing])
 
   const submit = useCallback(() => {
-    finishAttempt(timeLeft <= 0 ? 'timed_out' : 'submitted')
-  }, [finishAttempt, timeLeft])
+    const reading = clock.read()
+    finishAttempt(reading.secondsLeft === 0 ? 'timed_out' : 'submitted')
+  }, [clock, finishAttempt])
 
   // Manual submit is gated behind a confirmation modal to prevent an
   // accidental early submission (V2 spec). The buttons open the modal; the
   // modal's confirm calls the real submit() above. The timer auto-submit does
   // NOT go through here — it transitions straight to results.
-  const requestSubmit = useCallback(() => setConfirmingSubmit(true), [])
-  const cancelSubmit = useCallback(() => setConfirmingSubmit(false), [])
+  const requestSubmit = useCallback(() => {
+    submitInvoker.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConfirmingSubmit(true)
+  }, [])
+  const requestLeave = useCallback(() => {
+    leaveInvoker.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConfirmingLeave(true)
+  }, [])
 
   const redoAttempt = useCallback(() => {
-    if (screenRef.current !== 'results' || startingRef.current) return
+    const canRedo = screenRef.current === 'results' ||
+      (screenRef.current === 'intro' && pendingStartIntent === 'redo')
+    if (!canRedo || startingRef.current) return
+    setPendingStartIntent('redo')
     startingRef.current = true
     setLoadingBank(true)
     setBankError(null)
@@ -219,24 +281,42 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
       const currentRevisions = new Map(fresh.questions.map(question =>
         [question.questionId, question.publishedRevision]))
       if (questions.some(question => currentRevisions.get(question.questionId) !== question.publishedRevision)) {
+        screenRef.current = 'results'
+        setScreen('results')
         setBankError('These questions have changed. Retake with new questions instead.')
+        return
+      }
+      if (fresh.timerSeconds !== briefing.timerSeconds) {
+        setBriefing(current => ({
+          questionCount: Math.min(fresh.maxQuestions, fresh.questions.length),
+          sectionCount: new Set(fresh.questions.map(question => question.section)).size,
+          timerSeconds: fresh.timerSeconds,
+          version: current.version + 1,
+        }))
+        screenRef.current = 'intro'
+        setScreen('intro')
+        setBankError(BANK_CHANGED_NOTICE)
         return
       }
       setActiveSections(fresh.sections)
       screenRef.current = 'active'
-      resetAttempt()
+      resetAttempt(fresh.timerSeconds)
       recorder.begin(courseContentKey, questions)
       setScreen('active')
     })()
-  }, [courseSlug, resetAttempt, recorder, courseContentKey, questions])
+  }, [courseSlug, resetAttempt, recorder, courseContentKey, questions, briefing.timerSeconds, pendingStartIntent])
 
   const selectOption = useCallback(
     (optIdx: number) => {
       if (screenRef.current !== 'active') return
+      if (clock.read().secondsLeft === 0) {
+        finishAttempt('timed_out')
+        return
+      }
       recorder.select(current, optIdx)
       setAnswers((a) => ({ ...a, [current]: optIdx }))
     },
-    [current, recorder],
+    [current, recorder, clock, finishAttempt],
   )
 
   const toggleMark = useCallback(() => {
@@ -342,15 +422,18 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
 
   if (screen === 'intro') {
     return (
-      <>{bankNotice}<IntroScreen
+      <IntroScreen
         courseCode={props.courseCode}
         courseTitle={props.courseTitle}
         courseSlug={courseSlug}
-        questionCount={Math.min(maxQuestions, questionBank.length)}
-        timerSeconds={timerSeconds}
-        sectionCount={sectionStats.length || sections.length}
-        onStart={startNewAttempt}
-      /></>
+        questionCount={briefing.questionCount}
+        timerSeconds={briefing.timerSeconds}
+        sectionCount={briefing.sectionCount}
+        briefingVersion={briefing.version}
+        preparing={loadingBank}
+        error={bankError}
+        onStart={pendingStartIntent === 'redo' ? redoAttempt : startNewAttempt}
+      />
     )
   }
 
@@ -384,51 +467,24 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
           onSubmit={requestSubmit}
           onOpenNav={() => setNavOpen(true)}
           onCloseNav={() => setNavOpen(false)}
+          onLeave={requestLeave}
         />
 
-        {confirmingSubmit ? (
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-6"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ci-submit-confirm-title"
-          >
-            <div
-              className="absolute inset-0 bg-ci-navy-900/40"
-              onClick={cancelSubmit}
-              aria-hidden="true"
-            />
-            <div className="relative z-[1] w-full max-w-[440px] rounded-[16px] border border-ci-border bg-ci-white p-6 shadow-ci-card">
-              <h2
-                id="ci-submit-confirm-title"
-                className="text-[19px] font-semibold leading-[1.3] tracking-[-0.01em] text-ci-navy-900"
-              >
-                Submit assessment?
-              </h2>
-              <p className="mt-3 text-[15px] leading-[1.5] text-ci-gray-600">
-                {unanswered > 0
-                  ? `You have ${unanswered} unanswered question${unanswered === 1 ? '' : 's'}. Are you sure you want to submit?`
-                  : 'Are you sure you want to submit?'}
-              </p>
-              <div className="mt-6 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  className={cx(btnBase, btnSm, btnGhost)}
-                  onClick={cancelSubmit}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className={cx(btnBase, btnSm, btnAccent)}
-                  onClick={submit}
-                >
-                  Submit
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <AssessmentConfirmation kind="submit" open={confirmingSubmit} onOpenChange={setConfirmingSubmit}
+          answered={answeredCount} unanswered={unanswered} flagged={Object.keys(marked).length}
+          onConfirm={submit} onRestoreFocus={event => {
+            if (screenRef.current === 'active' && submitInvoker.current?.isConnected) {
+              event.preventDefault()
+              submitInvoker.current.focus()
+            }
+          }} />
+        <AssessmentConfirmation kind="leave" open={confirmingLeave} onOpenChange={setConfirmingLeave}
+          onConfirm={leaveAssessment} onRestoreFocus={event => {
+            if (screenRef.current === 'active' && leaveInvoker.current?.isConnected) {
+              event.preventDefault()
+              leaveInvoker.current.focus()
+            }
+          }} />
       </>
     )
   }
@@ -446,6 +502,7 @@ export function QuizClient(props: QuizCoreProps): React.JSX.Element {
         sections={sectionStats}
         tickLimit={BREAKDOWN_TICK_LIMIT}
         reviewFilter={reviewFilter}
+        preparing={loadingBank}
         onReviewFilterChange={setReviewFilter}
         onRetakeWithNewQuestions={startNewAttempt}
         onRedoQuestions={redoAttempt}

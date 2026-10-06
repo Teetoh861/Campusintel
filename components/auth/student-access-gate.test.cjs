@@ -167,7 +167,9 @@ test('completed students reach every existing surface with page account continui
   assert.ok(nodes(await child.type(child.props)).some(node => node.type?.name === 'BookmarkButton'))
   const quiz = await f.visit(PROTECTED[2][0], PROTECTED[2][1]())
   const quizChild = quiz.result.props.children[1]
-  assert.equal((await quizChild.type(quizChild.props)).type.name, 'QuizClient')
+  const quizClient = await quizChild.type(quizChild.props)
+  assert.equal(quizClient.type.name, 'QuizClient')
+  assert.equal(quizClient.props.continuityToken, 'page:student:fixture-session')
   assert.ok(f.state.contentReads > 0)
 }))
 

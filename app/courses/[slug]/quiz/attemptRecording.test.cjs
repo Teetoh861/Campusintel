@@ -35,8 +35,12 @@ function fixture(options = {}) {
   const states = []
   const attempts = new Map()
   let nextId = 0
-  let getStatus = options.getStatus || 'ready'
+  let signedOut = false
+  let liveToken = 'opaque-test-token'
+  const submittedTokens = []
   const apply = command => {
+    if (signedOut) return reply({ status: 'signed-out' }, 401)
+    if (submittedTokens.at(-1) !== liveToken) return reply({ status: 'session-changed' }, 409)
     let attempt = attempts.get(command.attemptId)
     if (command.operation === 'start') {
       if (!attempt) {
@@ -67,22 +71,86 @@ function fixture(options = {}) {
     assert.equal(url, '/api/quiz-attempts')
     assert.equal(init.credentials, 'same-origin')
     assert.equal(init.cache, 'no-store')
-    if (init.method === 'GET') {
-      calls.push({ operation: 'context' })
-      return getStatus === 'ready'
-        ? reply({ status: 'ready', continuityToken: 'opaque-test-token' })
-        : reply({ status: getStatus }, getStatus === 'signed-out' ? 401 : 503)
-    }
     assert.equal(init.method, 'POST')
     assert.equal(init.headers['x-campus-account-continuity'], 'opaque-test-token')
     assert.equal(init.headers['Content-Type'], 'application/json')
     const command = JSON.parse(init.body)
     calls.push(command)
+    submittedTokens.push(init.headers['x-campus-account-continuity'])
     return options.onPost ? options.onPost(command, apply) : apply(command)
   }
-  const recorder = createQuizAttemptRecorder(status => states.push(status), request, () => ids[nextId++])
-  return { calls, states, attempts, recorder, setGetStatus: value => { getStatus = value } }
+  const recorder = createQuizAttemptRecorder('opaque-test-token', status => states.push(status), request, () => ids[nextId++])
+  return { calls, states, attempts, submittedTokens, recorder,
+    signOut: () => { signedOut = true }, switchSession: token => { liveToken = token } }
 }
+
+test('page A cannot acquire account B continuity after a switch before Start', async () => {
+  const f = fixture()
+  f.switchSession('account-b-token')
+  f.recorder.begin('financial-accounting-1', questions)
+  await waitFor(() => f.states.at(-1) === 'session-changed', 'old page was not rejected')
+  assert.equal(f.attempts.size, 0)
+  assert.deepEqual(f.calls.map(call => call.operation), ['start'])
+  assert.deepEqual(f.submittedTokens, ['opaque-test-token'])
+})
+
+test('a delayed failed Start retry cannot replace the page token with the new session', async () => {
+  const gate = deferred()
+  let starts = 0
+  const f = fixture({ onPost: async (command, apply) => {
+    if (command.operation === 'start' && ++starts === 1) {
+      await gate.promise
+      throw new Error('request failed before a response')
+    }
+    return apply(command)
+  } })
+  f.recorder.begin('financial-accounting-1', questions)
+  await waitFor(() => starts === 1, 'first Start did not begin')
+  f.switchSession('account-b-token')
+  gate.resolve()
+  await waitFor(() => f.states.at(-1) === 'session-changed', 'retry was not rejected')
+  assert.equal(f.attempts.size, 0)
+  assert.deepEqual(f.submittedTokens, ['opaque-test-token', 'opaque-test-token'])
+})
+
+test('a session change while start, record or finish is in flight cannot write under the replacement session', async () => {
+  for (const operation of ['start', 'record', 'finish']) {
+    const gate = deferred()
+    const f = fixture({ onPost: async (command, apply) => {
+      if (command.operation === operation) await gate.promise
+      return apply(command)
+    } })
+    const id = f.recorder.begin('financial-accounting-1', questions)
+    if (operation !== 'start') await waitFor(() => f.attempts.has(id), 'Start was not saved')
+    if (operation === 'record') f.recorder.select(0, 1)
+    else if (operation === 'finish') f.recorder.finish('submitted')
+    await waitFor(() => f.calls.some(call => call.operation === operation), `${operation} did not begin`)
+    f.switchSession('account-b-token')
+    gate.resolve()
+    await waitFor(() => f.states.at(-1) === 'session-changed', `${operation} was not rejected`)
+    if (operation === 'start') assert.equal(f.attempts.size, 0)
+    else {
+      assert.equal(f.attempts.get(id).revision, 0)
+      assert.equal(f.attempts.get(id).status, 'in_progress')
+    }
+    assert.ok(f.submittedTokens.every(token => token === 'opaque-test-token'))
+  }
+})
+
+test('duplicate Start keeps one attempt ID and one server start command', async () => {
+  const gate = deferred()
+  const f = fixture({ onPost: async (command, apply) => {
+    if (command.operation === 'start') await gate.promise
+    return apply(command)
+  } })
+  const first = f.recorder.begin('financial-accounting-1', questions)
+  const second = f.recorder.begin('financial-accounting-1', questions)
+  assert.equal(first, second)
+  assert.equal(f.calls.filter(call => call.operation === 'start').length, 1)
+  gate.resolve()
+  await waitFor(() => f.attempts.has(first), 'Start was not saved')
+  assert.equal(f.attempts.size, 1)
+})
 
 test('signed-in start, first answer, changed answer and partial history use one logical attempt', async () => {
   const f = fixture()
@@ -157,14 +225,15 @@ test('timeout, redo, and retake each finish or start the correct attempt identit
   assert.equal(f.attempts.get(first).status, 'timed_out')
 })
 
-test('signed-out quiz attempts remain local and send no write', async () => {
-  const f = fixture({ getStatus: 'signed-out' })
+test('a signed-out start fails closed without persisting queued answers', async () => {
+  const f = fixture()
+  f.signOut()
   f.recorder.begin('financial-accounting-1', questions)
   f.recorder.select(0, 1)
   f.recorder.finish('submitted')
-  await waitFor(() => f.states.at(-1) === 'signed-out', 'signed-out context was not recognized')
+  await waitFor(() => f.states.at(-1) === 'session-changed', 'signed-out write was not rejected')
   assert.equal(f.attempts.size, 0)
-  assert.deepEqual(f.calls, [{ operation: 'context' }])
+  assert.deepEqual(f.calls.map(call => call.operation), ['start'])
 })
 
 test('continuity failure stops writes and does not switch the owner of an in-progress attempt', async () => {
@@ -193,9 +262,9 @@ test('recording failure never reports a saved attempt or blocks a later local qu
   f.recorder.finish('submitted')
   assert.equal(f.states.includes('saved'), false)
   assert.equal(f.attempts.get(first).status, 'in_progress')
-  f.setGetStatus('signed-out')
+  f.signOut()
   f.recorder.begin('financial-accounting-1', questions)
-  await waitFor(() => f.states.at(-1) === 'signed-out', 'later signed-out quiz did not continue')
+  await waitFor(() => f.states.at(-1) === 'session-changed', 'later signed-out write was not rejected')
 })
 
 test('a delayed old finish does not report success for a new attempt', async () => {

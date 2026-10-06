@@ -2,8 +2,6 @@
 // that reads account-backed state from the live student session.
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { courses } from '@/lib/data/courses'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import { getUsableCourseQuiz } from '@/lib/data/quiz-availability'
 import type { Course } from '@/lib/types'
 import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
@@ -19,7 +17,6 @@ const toLevel = (d: Course['difficulty']): DifficultyLevel =>
   d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
 
 function buildCardProps(course: Course): CardProps {
-  const quiz = getUsableCourseQuiz(course, getQuizByCourseSlug(course.slug))
   const critical = course.examCritical === true
   return {
     code: course.code,
@@ -30,8 +27,7 @@ function buildCardProps(course: Course): CardProps {
       : { kind: 'tracked', label: 'Tracked' },
     level: String(course.level),
     credits: `${course.credits} credits`,
-    questions: quiz ? String(quiz.bankSize) : undefined,
-    timeLimit: quiz ? `${quiz.quiz.quizDurationMinutes} min` : '',
+    timeLimit: '',
     difficulty: toLevel(course.difficulty),
     cta: {
       label: 'View course',
@@ -39,14 +35,6 @@ function buildCardProps(course: Course): CardProps {
       variant: 'primary',
       withArrow: true,
     },
-    secondaryCta: critical && quiz
-      ? {
-          label: 'Start quiz',
-          href: quiz.href,
-          variant: 'secondary',
-          withArrow: true,
-        }
-      : undefined,
   }
 }
 
