@@ -142,6 +142,7 @@
   --ci-maxw: 1200px;
   --ci-gutter: 16px;
   --student-maxw: 1280px;
+  --student-header-height: 56px;
   --student-section-gap: 20px;
   --student-card-padding: 14px;
   --ci-radius-btn: 10px;
@@ -155,6 +156,7 @@
 @media (min-width: 768px) {
   :root {
     --ci-gutter: 24px;
+    --student-header-height: 64px;
     --student-section-gap: 28px;
     --student-card-padding: 18px;
   }
@@ -163,6 +165,7 @@
 @media (min-width: 1200px) {
   :root {
     --ci-gutter: 32px;
+    --student-header-height: 72px;
     --student-section-gap: 36px;
     --student-card-padding: 24px;
   }

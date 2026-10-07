@@ -6,7 +6,9 @@ import { BlueCover } from '@/components/chrome/BlueCover'
 import { buildWhatsAppUrl, WHATSAPP_NUMBER } from '@/lib/whatsapp'
 import { CONTACT_EMAIL } from '@/lib/contact'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+import type { ReactElement } from 'react'
+
+const WRAP = 'app-container'
 
 // Pretty-print a digits-only number for display. Conservatively NG-specific:
 // +234 ### ### #### when the input is a 13-digit number starting 234,
@@ -20,7 +22,8 @@ function formatPhone(digits: string): string {
   return `+${digits}`
 }
 
-export default function ContactPage() {
+/** Render the existing public information with shared responsive gutters. */
+export default function ContactPage(): ReactElement {
   const phoneDisplay = formatPhone(WHATSAPP_NUMBER)
   const telHref = `tel:+${WHATSAPP_NUMBER}`
   const waHref = buildWhatsAppUrl()
@@ -33,7 +36,7 @@ export default function ContactPage() {
         lede="Questions, a course you want decoded, or a correction on the intel: reach us on whichever line suits you. WhatsApp is fastest."
       />
 
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Contact methods">
+      <section className="bg-ci-paper student-page" data-screen-label="Contact methods">
         <div className={WRAP}>
           <div className="mx-auto flex max-w-[680px] flex-col gap-4">
             {/* WhatsApp: the highlighted/primary method (amber-tinted) */}

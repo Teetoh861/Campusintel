@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { AuthUnavailable } from '@/components/auth/AuthShell'
 import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
+import { btnBase, buttonClassName, btnGhost, btnSm, focusRingNavy } from '@/components/chrome/ui'
 import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -45,7 +45,7 @@ export default async function ProfileSelectionPage() {
         : profile.status === 'invariant-failure'
           ? 'Your profile needs attention. Please contact support.'
           : AUTH_MESSAGES.unavailable} />
-      <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>
+      <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>
     </div>}
   </ProfilePageFrame>
 }

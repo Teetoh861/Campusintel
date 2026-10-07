@@ -7,10 +7,13 @@ import { BlueCover } from '@/components/chrome/BlueCover'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
 import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+import type { ReactElement } from 'react'
+
+const WRAP = 'app-container'
 const WAITLIST_MESSAGE = "I'd like to join the CampusIntel tutoring waitlist."
 
-export default function TutorsPage() {
+/** Render the existing public information with shared responsive gutters. */
+export default function TutorsPage(): ReactElement {
   const waitlistHref = buildWhatsAppUrl(WAITLIST_MESSAGE)
   return (
     <>
@@ -21,9 +24,9 @@ export default function TutorsPage() {
         lede="The human layer on top of the intel: one-on-one help from students who have already aced the paper."
       />
 
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Coming soon">
+      <section className="bg-ci-paper student-page" data-screen-label="Coming soon">
         <div className={WRAP}>
-          <div className="rounded-[24px] border border-ci-border bg-ci-white p-[36px_24px] shadow-ci-card min-[900px]:p-[48px_44px]">
+          <div className="rounded-[24px] border border-ci-border bg-ci-white p-[36px_24px] shadow-ci-card desktop:p-[48px_44px]">
             <span className="inline-flex items-center gap-2 rounded-full border border-ci-blue-200 bg-ci-blue-50 px-[15px] py-[7px] text-[12.5px] font-bold uppercase tracking-[0.12em] text-ci-navy">
               <span className="h-[6px] w-[6px] rounded-full bg-ci-navy" />
               Coming soon
@@ -66,7 +69,7 @@ export default function TutorsPage() {
 
 function CmRow({ k, v }: { k: string; v: string }) {
   return (
-    <div className="grid grid-cols-1 gap-1 border-b border-ci-border py-[14px] min-[680px]:grid-cols-[130px_1fr] min-[680px]:gap-4">
+    <div className="grid grid-cols-1 gap-1 border-b border-ci-border py-[14px] tablet:grid-cols-[130px_1fr] tablet:gap-4">
       <span className="text-[12px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">{k}</span>
       <span className="text-[15.5px] leading-[1.5] text-ci-gray-700">{v}</span>
     </div>

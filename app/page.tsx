@@ -1,16 +1,15 @@
-// Homepage — Variant B ("continuous blue"). Server-rendered. Structure and copy
-// follow _design/variant-b-handoff (component-spec.md + the V3 reference), built
-// with Tailwind utilities driven by the ci-* tokens. Real course data flows in
-// from lib/data/courses.ts; stat figures derive from it where possible.
+// app/page.tsx — Public student account entry and repository catalogue preview; no published-readiness claims.
 import Link from 'next/link'
 import { courses } from '@/lib/data/courses'
-import type { Course } from '@/lib/types'
-import { Card, type CardProps } from '@/components/chrome/Card'
+import { Card } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
+import { btnAccent, btnBase, buttonClassName, btnGhost, btnGhostOnBlue, btnSm, cx } from '@/components/chrome/ui'
+import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
-import { btnAccent, btnBase, btnGhost, btnGhostOnBlue, btnSm, cx } from '@/components/chrome/ui'
+import type { Course } from '@/lib/types'
+import type { ReactElement } from 'react'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+const WRAP = 'app-container'
 
 const intelIndex = (i: number) => `Intel ${String(i + 1).padStart(2, '0')}`
 
@@ -54,7 +53,8 @@ function pickFeatured(all: ReadonlyArray<Course>): ReadonlyArray<Course> {
   return flagged.length > 0 ? flagged : all.slice(0, HOMEPAGE_FEATURED_COUNT)
 }
 
-export default function HomePage() {
+/** Public account entry with honest expectations for protected course and material destinations. */
+export default function HomePage(): ReactElement {
   const courseCount = courses.length
   const textbookCount = courses.reduce((sum, c) => sum + c.textbooks.length, 0)
   const courseCountLabel = String(courseCount).padStart(2, '0')
@@ -76,8 +76,8 @@ export default function HomePage() {
     <>
       {/* ================= HERO ================= */}
       <header className="relative overflow-hidden bg-ci-navy" data-screen-label="Hero">
-        <div className={cx(WRAP, 'pb-16 pt-14 min-[900px]:pb-24 min-[900px]:pt-[88px]')}>
-          <div className="grid grid-cols-1 items-center gap-[52px] min-[900px]:grid-cols-[1.05fr_.95fr] min-[900px]:gap-16">
+        <div className={cx(WRAP, 'py-12 tablet:py-14 desktop:pb-24 desktop:pt-[88px]')}>
+          <div className="grid grid-cols-1 items-center gap-[52px] tablet:grid-cols-[1.05fr_.95fr] tablet:gap-8 desktop:gap-16">
             <div>
               <span className="mb-6 inline-flex items-center gap-[10px]">
                 <span className="h-[7px] w-[7px] rounded-full bg-ci-accent" />
@@ -85,7 +85,7 @@ export default function HomePage() {
                   University of Lagos
                 </span>
               </span>
-              <h1 className="text-balance text-[clamp(43px,8.5vw,76px)] font-extrabold leading-[.99] tracking-[-0.035em] text-white">
+              <h1 className="max-w-[20ch] text-balance text-[43px] tablet:text-[48px] desktop:max-w-none desktop:text-[76px] font-extrabold leading-[.99] tracking-[-0.035em] text-white">
                 The inside track on{' '}
                 <span className="relative whitespace-nowrap">
                   every paper
@@ -104,10 +104,11 @@ export default function HomePage() {
                 <Link className={cx(btnBase, btnAccent)} href="/courses">
                   Browse courses
                 </Link>
-                <Link className={cx(btnBase, btnGhostOnBlue)} href="/materials">
+                <Link className={buttonClassName(btnBase, btnGhostOnBlue)} href="/materials">
                   Request material privately
                 </Link>
               </div>
+              <p className="mt-3 text-sm text-ci-blue-200">A student account is required to view courses and request materials.</p>
               <div className="mt-[30px] flex items-center gap-3 text-sm text-ci-blue-200">
                 <span className="flex">
                   {['A', 'O', 'E', '+'].map((initial, i) => (
@@ -126,7 +127,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="relative hidden justify-center min-[900px]:flex">
+            <div className="relative hidden justify-center tablet:flex">
               <HeroMotif tone="on-blue" />
               {previewCourse ? (
                 <HeroPreview
@@ -147,7 +148,7 @@ export default function HomePage() {
       </header>
 
       {/* ================= FEATURED COURSES ================= */}
-      <section className="py-16 min-[900px]:py-[104px]" id="courses" data-screen-label="Featured courses">
+      <section className="py-16 desktop:py-[104px]" id="courses" data-screen-label="Featured courses">
         <div className={WRAP}>
           <div className="mb-[42px] flex flex-wrap items-end justify-between gap-6">
             <div>
@@ -157,13 +158,14 @@ export default function HomePage() {
               <h2 className="mt-[14px] max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
                 Start with the courses that move your grade.
               </h2>
+              <p className="mt-3 text-sm text-ci-gray-600">Student account required to open course pages.</p>
             </div>
-            <Link className={cx(btnBase, btnSm, btnGhost)} href="/courses">
+            <Link className={buttonClassName(btnBase, btnSm, btnGhost)} href="/courses">
               View all {courseCount} courses
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 tablet:grid-cols-2">
             {featured.map((course, i) => (
               <Card key={course.id} {...cardPropsFor(course, i)} />
             ))}
@@ -173,11 +175,11 @@ export default function HomePage() {
 
       {/* ================= STATS ================= */}
       <section className="border-y border-ci-border bg-ci-paper-2" aria-label="At a glance">
-        <div className={cx(WRAP, 'py-10 min-[900px]:py-12')}>
-          {/* Mobile: 2-col grid. >=680px: a flex row with space-between so the
+        <div className={cx(WRAP, 'py-10 desktop:py-12')}>
+          {/* Phone: 2-col grid. Tablet and desktop: a flex row with space-between so the
               first stat is flush-left, the last flush-right, and the middle two
               fall on the 1/3 and 2/3 marks with equal gaps between all four. */}
-          <div className="grid w-full grid-cols-2 gap-x-5 gap-y-[30px] min-[680px]:flex min-[680px]:justify-between">
+          <div className="grid w-full grid-cols-2 gap-x-5 gap-y-[30px] tablet:flex tablet:justify-between">
             <Stat value={courseCountLabel} label="Courses" />
             <Stat value={String(textbookCount)} label="Textbooks indexed" />
             <Stat value="Peer" label="Tutors coming soon" soon />
@@ -190,7 +192,7 @@ export default function HomePage() {
       </section>
 
       {/* ================= PEER TUTORING ================= */}
-      <section className="py-12 min-[900px]:py-16" data-screen-label="Peer tutoring">
+      <section className="py-12 desktop:py-16" data-screen-label="Peer tutoring">
         <div className={WRAP}>
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <h2 className="text-[clamp(26px,4vw,34px)] font-extrabold tracking-[-0.025em] text-ci-navy-900">
@@ -201,7 +203,7 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 min-[680px]:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 tablet:grid-cols-2">
             <Link
               href="/tutors"
               className="flex min-h-11 flex-col justify-center rounded-[14px] border border-ci-border bg-ci-white p-5 transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-ci-border-2 hover:shadow-ci-card"
@@ -254,7 +256,7 @@ function HeroPreview({
   behindTitle,
 }: HeroPreviewProps) {
   return (
-    <div className="relative z-[2] w-full max-w-[380px] px-0 pb-[18px] pt-[30px] min-[900px]:max-w-[400px]">
+    <div className="relative z-[2] w-full max-w-[380px] px-0 pb-[18px] pt-[30px] desktop:max-w-[400px]">
       {/* faded second course card peeking out behind for depth (decorative) */}
       {behindCode && behindTitle ? (
         <div
@@ -304,7 +306,7 @@ function HeroPreview({
               Explore this course
             </span>
           </div>
-          <Link className={cx(btnBase, btnSm, 'bg-ci-navy text-ci-paper hover:bg-ci-navy-700')} href={href}>
+          <Link className={buttonClassName(btnBase, btnSm, 'bg-ci-navy text-ci-paper hover:bg-ci-navy-700')} href={href}>
             View course
           </Link>
         </div>

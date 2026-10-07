@@ -7,7 +7,7 @@ import { LogoutButton } from '@/components/auth/LogoutButton'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_PATHS, AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
+import { btnBase, buttonClassName, btnGhost, btnSm, focusRingNavy } from '@/components/chrome/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
@@ -50,7 +50,7 @@ export default async function AccountPage() {
               <SelectionSummary selection={profile.selection} />
             </div>
             <Link href={PROFILE_SELECTION_PATH} prefetch={false}
-              className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:col-start-2 tablet:row-start-1 tablet:w-auto tablet:justify-self-end')}>
+              className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:col-start-2 tablet:row-start-1 tablet:w-auto tablet:justify-self-end')}>
               Change selection
             </Link>
           </> : <div className="tablet:col-span-2">

@@ -72,3 +72,26 @@ test('an unavailable account does not render a false saved or empty state', () =
   assert.doesNotMatch(listHtml, /this device/)
   assert.doesNotMatch(renderToStaticMarkup(button()), /Bookmarked|this device/)
 })
+
+test('loading keeps the Saved heading and never claims the account has no bookmarks', () => {
+  snapshot = { mode: 'loading', keys: [] }
+  const html = renderToStaticMarkup(list())
+  assert.match(html, /<h1[^>]*>Saved files<\/h1>/)
+  assert.match(html, /role="status"[^>]*>Loading your saved courses/)
+  assert.doesNotMatch(html, /Your bookmarks are empty|No saved files yet|00 saved|Browse courses/)
+})
+
+test('empty copy appears only after the store resolves an empty result, without replacing page identity', () => {
+  for (const mode of ['account', 'local']) {
+    snapshot = { mode, keys: [] }
+    const html = renderToStaticMarkup(list())
+    assert.match(html, /<h1[^>]*>Saved files<\/h1>/)
+    assert.match(html, /Your bookmarks are empty/)
+    assert.doesNotMatch(html, /Loading your saved courses/)
+  }
+  snapshot = { mode: 'account', keys: ['first-content'] }
+  const saved = renderToStaticMarkup(list())
+  assert.match(saved, /<h1[^>]*>Saved files<\/h1>/)
+  assert.match(saved, /Remove FIRST101 from bookmarks/)
+  assert.doesNotMatch(saved, /Your bookmarks are empty/)
+})

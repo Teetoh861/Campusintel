@@ -4,9 +4,12 @@
 import { BlueCover } from '@/components/chrome/BlueCover'
 import { TutorForm } from './TutorForm'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+import type { ReactElement } from 'react'
 
-export default function BecomeTutorPage() {
+const WRAP = 'app-container'
+
+/** Render the existing public information with shared responsive gutters. */
+export default function BecomeTutorPage(): ReactElement {
   return (
     <>
       <BlueCover
@@ -16,7 +19,7 @@ export default function BecomeTutorPage() {
         lede="Know a course cold? Help juniors decode it, and get paid for the sessions you run. Tell us what you can teach."
       />
 
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Application form">
+      <section className="bg-ci-paper student-page" data-screen-label="Application form">
         <div className={WRAP}>
           <TutorForm />
         </div>

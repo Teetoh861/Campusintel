@@ -87,12 +87,13 @@ test('incomplete account reaches selection; completed account stays and offers i
 }))
 
 test('account and profile error links use shared secondary button focus', async () => fixture(async f => {
-  const { btnBase, btnSm, btnGhost, focusRingNavy } = require('../../components/chrome/ui.tsx')
   const check = link => {
     const actual = new Set(link.props.className.split(/\s+/))
-    for (const primitive of [btnBase, btnSm, btnGhost, focusRingNavy]) {
-      for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
+    for (const token of ['min-h-11', 'px-4', 'py-2', 'text-[14px]', 'border-student-border-strong',
+      'bg-transparent', 'focus-visible:outline', 'focus-visible:outline-2', 'focus-visible:outline-student-focus']) {
+      assert.ok(actual.has(token), `missing action style ${token}`)
     }
+    for (const token of ['border-transparent', 'px-5', 'py-2.5', 'text-[15px]']) assert.equal(actual.has(token), false)
     assert.equal(actual.has('underline'), false)
   }
   f.state.profile = { status: 'complete', options, selection }
