@@ -5,34 +5,21 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLogoutAction } from '@/components/auth/LogoutButton'
-import { AuthNavActions } from '@/components/auth/AuthNavActions'
 import { useNavigationSession } from '@/components/auth/NavigationSession'
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { isStudentDestinationActive, STUDENT_NAVIGATION_GROUPS } from '@/lib/product/student-navigation'
 import { BookLogo, Wordmark } from './Logo'
+import { NavigationAccountControls } from './NavigationAccountControls'
 import { cx } from './ui'
+import type { StudentDestination } from '@/lib/product/student-navigation'
 import type { ReactElement } from 'react'
 
-const STUDY_LINKS = [
-  { href: '/courses', label: 'Courses' },
-  { href: '/bookmarks', label: 'Bookmarks' },
-] as const
-
-const UTILITY_LINKS = [
-  { href: '/tutors', label: 'Tutors' },
-  { href: '/contact', label: 'Contact' },
-] as const
-
-const NAV_LINKS = [...STUDY_LINKS, ...UTILITY_LINKS]
 const WRAP = 'app-container'
 const DESKTOP_QUERY = '(min-width: 1200px)'
 const FOCUS_ON_BLUE =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus-inverse'
 const FOCUS_ON_PAPER =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus'
-
-function isCurrent(pathname: string, href: string): boolean {
-  return pathname === href || (href === '/courses' && pathname.startsWith('/courses/'))
-}
 
 type Props = {
   variant?: 'blue' | 'cream'
@@ -54,10 +41,10 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
     return () => desktop.removeEventListener('change', closeAtDesktop)
   }, [])
 
-  const topLink = (link: (typeof NAV_LINKS)[number]) => {
-    const active = isCurrent(pathname, link.href)
+  const topLink = (link: StudentDestination) => {
+    const active = isStudentDestinationActive(pathname, link)
     return <Link
-      key={link.href}
+      key={link.id}
       href={link.href}
       aria-current={active ? 'page' : undefined}
       className={cx(
@@ -71,10 +58,10 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
     </Link>
   }
 
-  const drawerLink = (link: (typeof NAV_LINKS)[number]) => {
-    const active = isCurrent(pathname, link.href)
+  const drawerLink = (link: StudentDestination) => {
+    const active = isStudentDestinationActive(pathname, link)
     return <Link
-      key={link.href}
+      key={link.id}
       href={link.href}
       aria-current={active ? 'page' : undefined}
       className={cx(
@@ -102,14 +89,14 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
             </Link>
 
             {signedIn && <div className="ml-auto hidden items-center gap-1 tablet:flex desktop:hidden">
-              {STUDY_LINKS.map(topLink)}
+              {STUDENT_NAVIGATION_GROUPS.study.map(topLink)}
             </div>}
             {signedIn && <div className="ml-auto hidden items-center gap-1 desktop:flex">
-              {NAV_LINKS.map(topLink)}
+              {STUDENT_NAVIGATION_GROUPS.desktop.map(topLink)}
             </div>}
 
             <div className={signedIn ? 'ml-1 hidden desktop:block' : 'ml-auto'}>
-              <AuthNavActions signedIn={signedIn} surface="blue" onNavigate={close} logout={logout} />
+              <NavigationAccountControls signedIn={signedIn} surface="blue" onNavigate={close} logout={logout} />
             </div>
 
             {signedIn && <SheetTrigger asChild><button type="button"
@@ -135,15 +122,15 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
         <div className="mt-6 space-y-6">
           <div className="tablet:hidden">
             <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-student-text-muted">Study</h3>
-            {STUDY_LINKS.map(drawerLink)}
+            {STUDENT_NAVIGATION_GROUPS.study.map(drawerLink)}
           </div>
           <div>
             <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-student-text-muted">Your account</h3>
-            <AuthNavActions signedIn surface="paper" onNavigate={close} logout={logout} />
+            <NavigationAccountControls signedIn surface="paper" onNavigate={close} logout={logout} />
           </div>
           <div className="border-t border-student-border pt-4">
             <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-student-text-muted">Support</h3>
-            {UTILITY_LINKS.map(drawerLink)}
+            {STUDENT_NAVIGATION_GROUPS.utility.map(drawerLink)}
           </div>
         </div>
       </SheetContent>}

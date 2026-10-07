@@ -4,6 +4,7 @@
 import Link from 'next/link'
 import { CONTACT_EMAIL } from '@/lib/contact'
 import { useNavigationSession } from '@/components/auth/NavigationSession'
+import { STUDENT_FOOTER_GROUPS } from '@/lib/product/student-navigation'
 import { BookLogo, Wordmark } from './Logo'
 import type { ReactElement } from 'react'
 
@@ -41,9 +42,8 @@ export function Footer({ year }: { year: number }): ReactElement {
               Explore
             </h2>
             <ul>
-              <li><Link href="/courses" className={linkClass}>Courses</Link></li>
-              <li><Link href="/tutors" className={linkClass}>Tutoring</Link></li>
-              <li><Link href="/bookmarks" className={linkClass}>Bookmarks</Link></li>
+              {STUDENT_FOOTER_GROUPS.explore.map(({ destination, label }) =>
+                <li key={destination.id}><Link href={destination.href} className={linkClass}>{label}</Link></li>)}
             </ul>
           </div>}
 
@@ -52,9 +52,9 @@ export function Footer({ year }: { year: number }): ReactElement {
               Support
             </h2>
             <ul>
-              {signedIn && <li>
-                <Link href="/contact" className={linkClass}>Contact</Link>
-              </li>}
+              {signedIn && STUDENT_FOOTER_GROUPS.support.map(destination => <li key={destination.id}>
+                <Link href={destination.href} className={linkClass}>{destination.label}</Link>
+              </li>)}
               {!signedIn && <li>{supportEmail}</li>}
               {signedIn && <li><Link href="/become-a-tutor" className={linkClass}>Apply to tutor</Link></li>}
             </ul>

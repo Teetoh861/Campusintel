@@ -37,16 +37,23 @@ async function studentNavigation({ evaluate, send, waitFor, click }) {
   const closed = await evaluate(`(() => {
     const nav = document.querySelector('[data-screen-label="Nav"]'), trigger = nav.querySelector('button[aria-label="Open menu"]');
     return { height: nav.getBoundingClientRect().height, main: document.querySelector('main').getBoundingClientRect().y,
+      viewport: innerWidth,
       triggerVisible: trigger.getBoundingClientRect().width > 0,
-      visibleLinks: [...nav.querySelectorAll('a')].filter(a => a.getBoundingClientRect().width).map(a => a.getAttribute('href')) };
+      visibleLinks: [...nav.querySelectorAll('a')].filter(a => a.getBoundingClientRect().width).map(a => a.getAttribute('href')),
+      footerLinks: [...document.querySelector('footer').querySelectorAll('a')]
+        .filter(a => a.getAttribute('href').startsWith('/') && a.getAttribute('href') !== '/')
+        .map(a => [a.textContent.trim(), a.getAttribute('href')]) };
   })()`)
+  assert.deepEqual(closed.footerLinks, [
+    ['Courses', '/courses'], ['Tutoring', '/tutors'], ['Bookmarks', '/bookmarks'],
+    ['Contact', '/contact'], ['Apply to tutor', '/become-a-tutor'],
+  ])
   if (!closed.triggerVisible) {
-    for (const path of ['/courses', '/bookmarks', '/tutors', '/contact', '/dashboard', '/account']) {
-      assert.ok(closed.visibleLinks.includes(path), `desktop link ${path}`)
-    }
+    assert.deepEqual(closed.visibleLinks, ['/', '/courses', '/bookmarks', '/tutors', '/contact', '/dashboard', '/account'])
     assert.equal(await evaluate('document.querySelectorAll("[role=dialog]").length'), 0)
     return { desktop: true }
   }
+  assert.deepEqual(closed.visibleLinks, closed.viewport < 768 ? ['/'] : ['/', '/courses', '/bookmarks'])
   const open = async () => {
     await evaluate('document.querySelector(`[data-screen-label=Nav] button[aria-label="Open menu"]`).focus()')
     await press(send, 'Enter')
@@ -60,12 +67,17 @@ async function studentNavigation({ evaluate, send, waitFor, click }) {
     const close = [...dialog.querySelectorAll('button')].find(b => b.textContent.trim() === 'Close');
     return { height: nav.getBoundingClientRect().height, main: document.querySelector('main').getBoundingClientRect().y,
       width: dialog.getBoundingClientRect().width, viewport: innerWidth, closeHeight: close.getBoundingClientRect().height,
+      visibleLinks: [...dialog.querySelectorAll('a')].filter(a => a.getBoundingClientRect().width)
+        .map(a => [a.textContent.trim(), a.getAttribute('href')]),
       scrollLocked: document.body.hasAttribute('data-scroll-locked'), backgroundHidden: nav.closest('[aria-hidden=true]') !== null };
   })()`)
   assert.equal(modal.height, closed.height)
   assert.equal(modal.main, closed.main)
   assert.ok(modal.width <= Math.min(modal.viewport, 384))
   assert.ok(modal.closeHeight >= 44)
+  const accountAndSupport = [['Dashboard', '/dashboard'], ['Account', '/account'], ['Tutors', '/tutors'], ['Contact', '/contact']]
+  assert.deepEqual(modal.visibleLinks, modal.viewport < 768
+    ? [['Courses', '/courses'], ['Bookmarks', '/bookmarks'], ...accountAndSupport] : accountAndSupport)
   assert.equal(modal.scrollLocked, true)
   assert.equal(modal.backgroundHidden, true)
   for (let i = 0; i < 16; i++) {

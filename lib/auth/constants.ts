@@ -1,4 +1,6 @@
 // lib/auth/constants.ts — Shared non-secret auth rules and destinations.
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 128
 export const EMAIL_MAX_LENGTH = 254
@@ -10,7 +12,7 @@ export const PASSWORD_RESET_STATE = 'password-reset'
 export const AUTH_PATHS = {
   login: '/login', register: '/register', confirm: '/confirm-email',
   resend: '/resend-confirmation', forgot: '/forgot-password',
-  reset: '/reset-password', account: '/account',
+  reset: '/reset-password', account: STUDENT_DESTINATIONS.account.href,
 } as const
 export const AUTH_API = {
   login: '/api/auth/login', register: '/api/auth/register', confirm: '/api/auth/confirm-email',
@@ -18,7 +20,7 @@ export const AUTH_API = {
   verifyRecovery: '/api/auth/verify-recovery', cancelRecovery: '/api/auth/cancel-recovery',
   reset: '/api/auth/reset-password', logout: '/api/auth/logout', session: '/api/auth/session',
 } as const satisfies Record<string, `/api/auth/${string}`>
-export const STUDENT_HOME_PATH = '/dashboard'
+export const STUDENT_HOME_PATH = STUDENT_DESTINATIONS.dashboard.href
 export const OPERATOR_HOME_PATH = '/admin'
 export const DEFAULT_AUTH_REDIRECT = STUDENT_HOME_PATH
 export const PASSWORD_RESET_DESTINATION = AUTH_PATHS.login + '?state=' + PASSWORD_RESET_STATE
