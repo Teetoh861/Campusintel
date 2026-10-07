@@ -1,6 +1,10 @@
 // lib/auth/config.ts — Lazy, server-only rollout and configuration checks.
 import 'server-only'
 
+const HOSTNAME_MAX_LENGTH = 253
+const HOSTNAME_LABEL_MAX_LENGTH = 63
+const DEPLOYMENT_HOSTNAME = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])?$/i
+
 /** Only the literal true enables student authentication; missing values fail closed. */
 export function isStudentAuthEnabled(): boolean {
   return process.env.STUDENT_AUTH_ENABLED === 'true'
@@ -47,4 +51,21 @@ export function getAuthOrigin(): string {
     throw new Error('Auth configuration unavailable')
   }
   return url.origin
+}
+
+function getPreviewAuthOrigin(): string | null {
+  if (process.env.VERCEL !== '1' || process.env.VERCEL_ENV !== 'preview') return null
+  const hostname = process.env.VERCEL_URL
+  if (!hostname || hostname !== hostname.trim() || hostname.length > HOSTNAME_MAX_LENGTH ||
+      !DEPLOYMENT_HOSTNAME.test(hostname) ||
+      hostname.split('.').some(label => label.length > HOSTNAME_LABEL_MAX_LENGTH)) return null
+  return `https://${hostname.toLowerCase()}`
+}
+
+/** Accept the canonical origin and, only on Vercel Preview, the exact current deployment origin. */
+export function isTrustedAuthOrigin(origin: string | null): boolean {
+  if (origin === getAuthOrigin()) return true
+  // Vercel supplies this hostname server-side; request Host/Origin cannot extend the trusted set.
+  const previewOrigin = getPreviewAuthOrigin()
+  return previewOrigin !== null && origin === previewOrigin
 }
