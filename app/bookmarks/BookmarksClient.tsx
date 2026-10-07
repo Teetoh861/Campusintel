@@ -1,13 +1,17 @@
-// BookmarksClient — the saved grid for local or account-backed bookmarks.
+// app/bookmarks/BookmarksClient.tsx — Stable loading, empty and saved presentations for the existing store.
 'use client'
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { Card, type CardProps } from '@/components/chrome/Card'
+import { Card } from '@/components/chrome/Card'
+import { TaskHeader } from '@/components/chrome/TaskHeader'
+import { Skeleton } from '@/components/ui/skeleton'
 import { btnAccent, btnBase, cx } from '@/components/chrome/ui'
 import { useBookmarks } from '@/lib/bookmarks/client'
+import type { CardProps } from '@/components/chrome/Card'
+import type { ReactElement } from 'react'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+const WRAP = 'app-container'
 
 export type BookmarkableCourse = {
   id: string
@@ -23,7 +27,8 @@ type Props = {
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
-export function BookmarksClient({ catalog }: Props) {
+/** Present saved courses honestly while account-backed bookmarks load. */
+export function BookmarksClient({ catalog }: Props): ReactElement {
   const { snapshot, remove, refresh } = useBookmarks(catalog)
   const [error, setError] = useState(false)
 
@@ -52,115 +57,57 @@ export function BookmarksClient({ catalog }: Props) {
 
   const count = matches.length
   const countLabel = pad2(count)
-  // Treat the pre-hydration pass the same as "no bookmarks": render the empty
-  // state alone. Avoids the SSR'd "00 Saved" cover flashing before the
-  // localStorage read completes, and keeps the empty case a single clean block.
-  const showEmpty = snapshot.mode === 'loading' || snapshot.mode === 'unavailable' || count === 0
+  const loading = snapshot.mode === 'loading'
+  const unavailable = snapshot.mode === 'unavailable'
 
-  if (showEmpty) {
-    return (
-      <section className="bg-ci-paper pb-20 pt-12 min-[900px]:pt-16" data-screen-label="Saved grid">
-        <div className={WRAP}>
-          <nav className="mb-10 flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-gray-500" aria-label="Breadcrumb">
-            <Link href="/" className="transition-colors hover:text-ci-navy">Home</Link>
-            <span className="text-ci-gray-400">/</span>
-            <span className="text-ci-navy-900">Bookmarks</span>
-          </nav>
-          <div className="mx-auto max-w-[540px] rounded-[20px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[48px_28px] text-center">
-            <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
-              {snapshot.mode === 'unavailable' ? 'Temporarily unavailable' : 'No saved files yet'}
+  return <>
+    <TaskHeader label="Cover" title="Saved files"
+      crumbs={[{ label: 'Home', href: '/' }, { label: 'Bookmarks' }]}
+      count={loading || unavailable ? undefined : `${countLabel} saved`}
+      description={snapshot.mode === 'local'
+        ? 'Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.'
+        : 'Your shortlist of courses. Bookmarks are saved to your account for the next study run.'} />
+    <section className="student-page" data-screen-label="Saved grid">
+      <div className={WRAP}>
+        {loading ? <>
+          <p role="status" className="student-meta mb-4">Loading your saved courses…</p>
+          <div className="student-grid" aria-hidden="true">
+            {[0, 1, 2].map(index => <Skeleton key={index}
+              className="h-44 rounded-ci-card bg-student-skeleton motion-reduce:animate-none" />)}
+          </div>
+        </> : unavailable || count === 0 ?
+          <div className="student-surface mx-auto max-w-[540px] text-center">
+            <div className="student-meta font-semibold">
+              {unavailable ? 'Temporarily unavailable' : 'No saved files yet'}
             </div>
-            <h3 className="mt-[14px] text-[26px] font-extrabold tracking-[-0.02em] text-ci-navy-900">
-              {snapshot.mode === 'unavailable' ? 'Could not load bookmarks' : 'Your bookmarks are empty'}
-            </h3>
-            <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-[1.55] text-ci-gray-600">
-              {snapshot.mode === 'unavailable'
-                ? 'We could not check your saved courses. Please try again.'
+            <h2 className="student-section-title mt-3">
+              {unavailable ? 'Could not load bookmarks' : 'Your bookmarks are empty'}
+            </h2>
+            <p className="student-meta mx-auto mt-3 max-w-[42ch]">
+              {unavailable ? 'We could not check your saved courses. Please try again.'
                 : 'Bookmark a course from its page and it lands here, ready for your next study run.'}
             </p>
-            <div className="mt-6 inline-flex">
-              {snapshot.mode === 'unavailable' ? (
-                <button type="button" className={cx(btnBase, btnAccent)} onClick={() => { void refresh() }}>
-                  Try again
-                </button>
-              ) : (
-                <Link className={cx(btnBase, btnAccent)} href="/courses">Browse courses</Link>
-              )}
+            <div className="mt-5 inline-flex">
+              {unavailable ? <button type="button" className={cx(btnBase, btnAccent)}
+                onClick={() => { void refresh() }}>Try again</button>
+                : <Link className={cx(btnBase, btnAccent)} href="/courses">Browse courses</Link>}
             </div>
-          </div>
-        </div>
-      </section>
-    )
-  }
-
-  return (
-    <>
-      <header
-        className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ci-navy),var(--ci-navy-900))] text-white"
-        data-screen-label="Cover"
-      >
-        <svg
-          className="absolute right-[-60px] top-[-50px] z-0 h-[300px] w-[300px] text-ci-blue-600 opacity-50"
-          viewBox="0 0 200 200"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="100" cy="100" r="90" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 12" strokeLinecap="round" />
-        </svg>
-        <div className={`${WRAP} relative z-[1] pb-[42px] pt-[30px] min-[900px]:pb-[52px] min-[900px]:pt-10`}>
-          <nav className="mb-[26px] flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200" aria-label="Breadcrumb">
-            <Link href="/" className="transition-colors hover:text-white">Home</Link>
-            <span className="text-white/35">/</span>
-            <span className="text-white">Bookmarks</span>
-          </nav>
-          <div className="flex items-baseline gap-[10px]">
-            <span className="text-[clamp(46px,8vw,68px)] font-extrabold leading-[0.9] tracking-[-0.02em] text-ci-accent [font-variant-numeric:tabular-nums]">
-              {countLabel}
-            </span>
-            <span className="text-[14px] font-semibold tracking-[0.04em] text-ci-blue-200">Saved</span>
-          </div>
-          <h1 className="mt-3 text-balance text-[clamp(36px,6.5vw,58px)] font-extrabold leading-none tracking-[-0.035em] text-white">
-            Saved files
-          </h1>
-          <p className="mt-5 max-w-[54ch] text-[clamp(16px,2.1vw,19px)] leading-[1.5] text-ci-blue-150">
-            {snapshot.mode === 'local'
-              ? 'Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.'
-              : 'Your shortlist of courses. Bookmarks are saved to your account for the next study run.'}
-          </p>
-        </div>
-      </header>
-
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Saved grid">
-        <div className={WRAP}>
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-[13.5px] font-medium text-ci-gray-600">
-            <span>{snapshot.mode === 'local' ? 'Saved to this device' : 'Saved to your account'}</span>
-            <span className="[font-variant-numeric:tabular-nums]">
-              {countLabel} {count === 1 ? 'file' : 'files'}
-            </span>
-          </div>
-          {error ? <p role="alert" className="mb-4 text-[14px] font-semibold text-r-600">
-            Could not remove that bookmark. Try again.
-          </p> : null}
-          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2 min-[900px]:grid-cols-3 min-[900px]:gap-6">
-            {matches.map((c) => (
-              <Card
-                key={c.id}
-                {...c.cardProps}
-                cornerAction={
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-ci-border-2 bg-ci-white text-[24px] font-medium leading-none text-ci-gray-600 shadow-sm transition-[background-color,border-color,color,transform] hover:-translate-y-px hover:border-r-600 hover:bg-r-50 hover:text-r-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-r-600 focus-visible:ring-offset-2"
-                    onClick={() => { void removeCourse(c) }}
-                    aria-label={`Remove ${c.code} from bookmarks`}
-                  >
-                    <span aria-hidden="true">&times;</span>
-                  </button>
-                }
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
-  )
+          </div> : <>
+            <p className="student-meta mb-4">{snapshot.mode === 'local' ? 'Saved to this device' : 'Saved to your account'}</p>
+            {error && <p role="alert" className="mb-4 text-sm font-semibold text-student-error">
+              Could not remove that bookmark. Try again.
+            </p>}
+            <div className="student-grid">
+              {matches.map(course => <Card key={course.id} {...course.cardProps}
+                cornerAction={<button type="button"
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-student-border-strong bg-student-surface text-2xl leading-none text-student-text-secondary transition-colors hover:border-student-error hover:bg-student-error-surface hover:text-student-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus"
+                  onClick={() => { void removeCourse(course) }}
+                  aria-label={`Remove ${course.code} from bookmarks`}>
+                  <span aria-hidden="true">&times;</span>
+                </button>} />)}
+            </div>
+          </>}
+      </div>
+    </section>
+  </>
 }

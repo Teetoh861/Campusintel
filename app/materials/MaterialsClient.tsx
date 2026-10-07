@@ -1,16 +1,17 @@
 // app/materials/MaterialsClient.tsx — General material request form; page.tsx owns the account boundary.
 'use client'
 
-import type { ReactElement } from 'react'
 import { useState } from 'react'
+import { TaskHeader } from '@/components/chrome/TaskHeader'
 import { courses } from '@/lib/data/courses'
 import {
   buildMaterialRequestEmailUrl,
   buildMaterialShareEmailUrl,
 } from '@/lib/material-email'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
+import type { ReactElement } from 'react'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+const WRAP = 'app-container'
 const MAX_COURSE_LENGTH = 120
 
 /** Course picker that builds private material request/share email handoffs. */
@@ -28,20 +29,12 @@ export function MaterialsClient(): ReactElement {
 
   return (
     <>
-      <header className="bg-ci-navy text-white" data-screen-label="Materials">
-        <div className={cx(WRAP, 'py-14 min-[900px]:py-[72px]')}>
-          <h1 className="max-w-[18ch] text-balance text-[clamp(36px,7vw,56px)] font-extrabold leading-none tracking-[-0.035em]">
-            Request or send materials
-          </h1>
-          <p className="mt-5 max-w-[54ch] text-[17px] leading-[1.6] text-ci-blue-200 min-[900px]:text-[19px]">
-            Request study material privately for any course, or email notes and past questions of your own.
-          </p>
-        </div>
-      </header>
+      <TaskHeader label="Materials" title="Request or send materials"
+        description="Request study material privately for any course, or email notes and past questions of your own." />
 
-      <section className="py-14 min-[900px]:py-[72px]" data-screen-label="Choose a course">
+      <section className="student-page" data-screen-label="Choose a course">
         <div className={WRAP}>
-          <div className="max-w-[720px] rounded-[18px] border border-ci-border bg-ci-white p-6 shadow-ci-card min-[680px]:p-8">
+          <div className="student-surface student-reading">
             <div>
               <label htmlFor="materials-course" className="text-[14px] font-bold text-ci-navy-900">
                 Select a course
@@ -79,7 +72,7 @@ export function MaterialsClient(): ReactElement {
               />
             </div>
 
-            <div className="mt-8 grid grid-cols-1 gap-3 min-[600px]:grid-cols-2">
+            <div className="mt-8 grid grid-cols-1 gap-3 tablet:grid-cols-2">
               <a
                 href={requestHref}
                 aria-disabled={!hasCourse}

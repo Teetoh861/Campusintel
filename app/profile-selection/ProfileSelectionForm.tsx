@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { z } from 'zod'
 import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, btnGhost, btnNavy, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
+import { btnBase, buttonClassName, btnGhost, btnNavy, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
 import { AUTH_CONTINUITY_HEADER, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
@@ -142,7 +142,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
       <SelectionSummary selection={initial.selection} />
     </div>}
     <Feedback tone="error" message="Selection is unavailable. Please try again later." />
-    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={cx(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
+    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
   </div>
 
   return <form noValidate onSubmit={save} className="student-surface student-surface-raised grid gap-4">
@@ -197,15 +197,15 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
     </div>
     {notice && <div id={notice.field ? FIELD_ERRORS[notice.field].id : undefined} className="space-y-1">
       <Feedback compact tone="error" message={notice.message} />
-      {notice.reload && <button type="button" className={cx(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
+      {notice.reload && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
     </div>}
     <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
       <button type="submit" disabled={!ready || pending} aria-busy={pending}
-        className={cx(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', focusRingNavy)}>
+        className={buttonClassName(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', focusRingNavy)}>
         {pending ? 'Saving…' : 'Save selection'}
       </button>
       {initial.status === 'complete' && <Link href={AUTH_PATHS.account}
-        className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>
+        className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>
         Back to account
       </Link>}
     </div>

@@ -1,6 +1,8 @@
 // Shared action styles for student and public chrome. Colors come from the
 // semantic student roles; every action remains at least 44px high on phone.
 
+import { cn } from '@/lib/utils'
+
 export const btnBase =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-ci-btn border border-transparent px-5 py-2.5 text-[15px] font-semibold leading-5 text-center transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-student-disabled-surface disabled:text-student-disabled disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:bg-student-disabled-surface aria-disabled:text-student-disabled motion-reduce:transform-none motion-reduce:transition-none'
 
@@ -28,6 +30,12 @@ export const btnGhostOnBlue =
 export const btnLight =
   'bg-student-elevated-surface text-student-primary hover:bg-student-brand-surface active:bg-student-surface-muted focus-visible:!outline-student-focus-inverse'
 
+/** Join classes without resolving conflicts, preserving existing callers' output. */
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ')
+}
+
+/** Resolve competing utilities only for actions that explicitly opt into button composition. */
+export function buttonClassName(...parts: Array<string | false | null | undefined>): string {
+  return cn(parts)
 }

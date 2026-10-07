@@ -127,12 +127,20 @@ test('complete student sees saved context and every institutional course in doma
 }))
 
 test('selection and recovery actions lead to their existing safe destinations', async () => fixture(async f => {
+  const checkOutline = action => {
+    const classes = new Set(action.props.className.split(/\s+/))
+    for (const token of ['border-student-border-strong', 'text-[14px]', 'py-2',
+      'focus-visible:outline', 'focus-visible:outline-2']) assert.ok(classes.has(token), `missing ${token}`)
+    for (const token of ['border-transparent', 'text-[15px]', 'py-2.5']) assert.equal(classes.has(token), false)
+  }
   const context = nodes(await f.page()).find(node => node.type?.name === 'SemesterContext')
   const change = nodes(context.type(context.props)).find(node => node.props?.href === '/profile-selection')
   assert.ok(change)
   assert.equal(change.props.prefetch, false)
   assert.match(change.props.className, /min-h-11/)
   assert.match(change.props.className, /focus-visible:outline/)
+  checkOutline(change)
+  checkOutline(nodes(await f.page()).find(node => node.props?.href === '/bookmarks'))
   for (const [status, href] of [['missing-profile', '/contact'], ['unavailable', '/dashboard']]) {
     f.state.result = { status }
     const error = nodes(await f.page()).find(node => node.type?.name === 'DashboardError')
@@ -140,6 +148,7 @@ test('selection and recovery actions lead to their existing safe destinations', 
     assert.ok(action)
     assert.match(action.props.className, /min-h-11/)
     assert.match(action.props.className, /focus-visible:outline/)
+    checkOutline(action)
   }
 }))
 

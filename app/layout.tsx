@@ -1,5 +1,4 @@
 // Root layout — shared navigation, student design tokens, and legacy styles.
-import type { Metadata, Viewport } from 'next'
 import { Hanken_Grotesk } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 
@@ -8,6 +7,9 @@ import './globals.css'
 
 import { Nav } from '@/components/chrome/Nav'
 import { Footer } from '@/components/chrome/Footer'
+import { NavigationSessionProvider } from '@/components/auth/NavigationSession'
+import type { Metadata, Viewport } from 'next'
+import type { ReactElement, ReactNode } from 'react'
 
 const hanken = Hanken_Grotesk({
   subsets: ['latin'],
@@ -39,15 +41,18 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
+/** Share presentation state while keeping route authorization in the existing server boundaries. */
 export default function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+}: Readonly<{ children: ReactNode }>): ReactElement {
   return (
     <html lang="en" className={hanken.variable}>
-      <body className="font-sans">
-        <Nav />
-        <main id="top">{children}</main>
-        <Footer />
+      <body className="flex min-h-dvh flex-col font-sans">
+        <NavigationSessionProvider>
+          <Nav />
+          <main id="top" className="flex-1">{children}</main>
+          <Footer year={new Date().getFullYear()} />
+        </NavigationSessionProvider>
         <Analytics />
       </body>
     </html>

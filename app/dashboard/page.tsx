@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { ArrowUpRight, BookOpen, UserRound } from 'lucide-react'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
+import { btnBase, buttonClassName, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import { AUTH_MESSAGES, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -41,8 +41,8 @@ function DashboardError({ state }: { state: ErrorState }) {
       <h1 className="mb-3 text-xl font-bold text-student-text-primary">Your semester</h1>
       <Feedback message={message} tone="error" />
       {state === 'missing-profile' || state === 'invariant-failure'
-        ? <Link href="/contact" className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Contact support</Link>
-        : <a href={STUDENT_HOME_PATH} className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Try again</a>}
+        ? <Link href="/contact" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Contact support</Link>
+        : <a href={STUDENT_HOME_PATH} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Try again</a>}
     </section>
   </DashboardFrame>
 }
@@ -58,7 +58,7 @@ function SemesterContext({ selection }: { selection: CompleteProfile['selection'
       {inactive && <p className="mt-1 text-[12px] leading-4 text-student-text-secondary">A saved choice is no longer selectable.</p>}
     </div>
     <Link href={PROFILE_SELECTION_PATH} prefetch={false}
-      className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
+      className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
       Change<span className="sr-only"> semester selection</span>
     </Link>
   </header>
@@ -133,7 +133,7 @@ export default async function DashboardPage() {
         <div className="flex min-h-11 items-center justify-between gap-3">
           <h2 id="dashboard-courses-title" className="student-section-title">Your courses</h2>
           <Link href="/bookmarks" prefetch={false}
-            className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
+            className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
             Saved<span className="sr-only"> courses</span>
           </Link>
         </div>

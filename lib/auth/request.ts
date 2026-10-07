@@ -2,7 +2,7 @@
 import 'server-only'
 import { isIP } from 'node:net'
 import { AUTH_BODY_MAX_BYTES, AUTH_MESSAGES } from './constants'
-import { getAuthOrigin, isStudentAuthEnabled } from './config'
+import { getAuthOrigin, isStudentAuthEnabled, isTrustedAuthOrigin } from './config'
 import type { ZodType } from 'zod'
 
 export class AuthRequestError extends Error {
@@ -12,7 +12,7 @@ export class AuthRequestError extends Error {
 /** Reject disabled, cross-origin and malformed POSTs before any Supabase operation. */
 export async function readAuthRequest<T>(request: Request, schema: ZodType<T>): Promise<T> {
   if (!isStudentAuthEnabled()) throw new AuthRequestError(503, AUTH_MESSAGES.comingSoon)
-  if (request.headers.get('origin') !== getAuthOrigin() ||
+  if (!isTrustedAuthOrigin(request.headers.get('origin')) ||
       ['cross-site', 'same-site'].includes(request.headers.get('sec-fetch-site') || '')) {
     throw new AuthRequestError(403, 'This request could not be accepted.')
   }

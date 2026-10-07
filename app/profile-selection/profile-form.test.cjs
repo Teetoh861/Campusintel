@@ -222,19 +222,22 @@ test('mismatched or malformed success cannot claim a saved profile', async () =>
 }, true))
 
 test('profile edit and reload actions keep shared button hierarchy and focus', async () => fixture(async f => {
-  const { btnBase, btnSm, btnGhost, btnNavy, focusRingNavy } = require('../../components/chrome/ui.tsx')
-  const check = (node, variant) => {
+  const check = (node, outlined) => {
     const actual = new Set(node.props.className.split(/\s+/))
-    for (const primitive of [btnBase, btnSm, variant, focusRingNavy]) {
-      for (const token of primitive.split(/\s+/)) assert.ok(actual.has(token), `missing shared style ${token}`)
+    const required = ['min-h-11', 'px-4', 'py-2', 'text-[14px]', 'tablet:text-[15px]',
+      'focus-visible:outline', 'focus-visible:outline-2', 'focus-visible:outline-student-focus',
+      ...(outlined ? ['border-student-border-strong', 'bg-transparent'] : ['bg-student-primary'])]
+    for (const token of required) assert.ok(actual.has(token), `missing action style ${token}`)
+    for (const token of ['px-5', 'py-2.5', 'text-[15px]', ...(outlined ? ['border-transparent'] : [])]) {
+      assert.equal(actual.has(token), false, `conflicting action style ${token}`)
     }
     assert.equal(actual.has('underline'), false)
   }
-  check(nodes(f.render()).find(node => node.props?.children === 'Back to account'), btnGhost)
-  check(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit'), btnNavy)
+  check(nodes(f.render()).find(node => node.props?.children === 'Back to account'), true)
+  check(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit'), false)
   f.respond(async () => response(400, { status: 'invalid-selection' }))
   await f.submit()
-  check(nodes(f.render()).find(node => node.props?.children === 'Reload choices'), btnGhost)
+  check(nodes(f.render()).find(node => node.props?.children === 'Reload choices'), true)
 }, true))
 
 test('selection form stays compact and uses the student surface at phone and tablet widths', async () => fixture(async f => {

@@ -1,14 +1,12 @@
-// CourseDirectory — Variant B client island for /courses. Owns the search
-// query + three segmented filters (level, semester, difficulty) and renders the
-// sticky filter bar, result count, reused homepage .ccard grid and empty state.
-// Visual reskin only: the filter behaviour is unchanged from the dossier
-// version. Card markup is precomputed on the server (cardProps).
+// app/courses/CourseDirectory.tsx — Responsive directory for server-resolved published course cards.
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Card, type CardProps } from '@/components/chrome/Card'
-import { btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
+import { Card } from '@/components/chrome/Card'
+import { btnBase, buttonClassName, btnGhost, btnSm, cx } from '@/components/chrome/ui'
+import type { CardProps } from '@/components/chrome/Card'
 import type { Course } from '@/lib/types'
+import type { ReactElement } from 'react'
 
 export type DirectoryItem = {
   id: string
@@ -45,14 +43,15 @@ const DIFFICULTY_OPTIONS: ReadonlyArray<Option<DifficultyFilter>> = [
   { val: 'hard', label: 'Hard' },
 ]
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+const WRAP = 'app-container'
 
 type Props = {
   items: ReadonlyArray<DirectoryItem>
   totalCount: number
 }
 
-export function CourseDirectory({ items, totalCount }: Props) {
+/** Filter and page the current catalogue with intentional tablet and desktop composition. */
+export function CourseDirectory({ items, totalCount }: Props): ReactElement {
   const [query, setQuery] = useState('')
   const [level, setLevel] = useState<LevelFilter>('all')
   const [semester, setSemester] = useState<SemesterFilter>('all')
@@ -86,7 +85,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
   }, [items, trimmed, level, semester, difficulty])
 
   useEffect(() => {
-    const desktop = window.matchMedia('(min-width: 900px)')
+    const desktop = window.matchMedia('(min-width: 1200px)')
     const updatePerPage = () => setPerPage(desktop.matches ? 9 : 6)
     updatePerPage()
     desktop.addEventListener('change', updatePerPage)
@@ -124,13 +123,13 @@ export function CourseDirectory({ items, totalCount }: Props) {
       {/* ===================== STICKY SEARCH + FILTERS ===================== */}
       <div
         ref={directoryTopRef}
-        className="scroll-mt-[74px] border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px] min-[900px]:sticky min-[900px]:top-[74px] min-[900px]:z-40"
+        className="scroll-mt-[var(--student-header-height)] border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px] desktop:sticky desktop:top-[var(--student-header-height)] desktop:z-40"
         data-screen-label="Search and filter"
       >
         <div className={WRAP}>
-          <div className="flex flex-col gap-[14px] py-4 min-[900px]:flex-row min-[900px]:flex-wrap min-[900px]:items-center min-[900px]:gap-5 min-[900px]:py-[18px]">
+          <div className="flex flex-col gap-[14px] py-4 desktop:flex-row desktop:flex-wrap desktop:items-center desktop:gap-5 desktop:py-[18px]">
             {/* search */}
-            <label className="flex min-h-[52px] items-center gap-3 rounded-[11px] border border-ci-border-2 bg-ci-white px-4 py-3 transition-[border-color,box-shadow] duration-150 focus-within:border-ci-navy focus-within:shadow-[0_0_0_3px_var(--ci-blue-50)] min-[900px]:flex-[1_1_280px] min-[900px]:min-w-[260px]">
+            <label className="flex min-h-[52px] items-center gap-3 rounded-[11px] border border-ci-border-2 bg-ci-white px-4 py-3 transition-[border-color,box-shadow] duration-150 focus-within:border-ci-navy focus-within:shadow-[0_0_0_3px_var(--ci-blue-50)] desktop:flex-[1_1_280px] desktop:min-w-[260px]">
               <MagnifyingGlass />
               <input
                 type="text"
@@ -147,7 +146,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
                   type="button"
                   aria-label="Clear search"
                   onClick={() => setQuery('')}
-                  className="inline-flex h-7 w-7 flex-none items-center justify-center rounded-[6px] text-[18px] leading-none text-ci-gray-500 transition-colors hover:bg-ci-paper-2 hover:text-ci-ink"
+                  className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-[6px] text-[18px] leading-none text-ci-gray-500 transition-colors hover:bg-ci-paper-2 hover:text-ci-ink"
                 >
                   &times;
                 </button>
@@ -155,9 +154,9 @@ export function CourseDirectory({ items, totalCount }: Props) {
             </label>
 
             {/* filters + count */}
-            <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[18px] min-[900px]:flex-[2_1_100%] min-[900px]:gap-y-[14px]">
+            <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[18px] desktop:flex-[2_1_100%] desktop:gap-y-[14px]">
               {/* Mobile: native themed dropdowns. */}
-              <div className="order-1 w-full min-[900px]:hidden">
+              <div className="order-1 w-full desktop:hidden">
                 <div className="flex items-center gap-2">
                   <span className="text-[13px] font-bold text-ci-navy-900">Filter courses</span>
                   {activeFilterCount > 0 ? (
@@ -192,7 +191,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
               </div>
 
               {/* Desktop: retain the existing inline segmented controls. */}
-              <div id="course-filters-panel" className="hidden min-[900px]:contents">
+              <div id="course-filters-panel" className="hidden desktop:contents">
                 <Seg label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
                 <Seg label="Semester" value={semester} options={SEMESTER_OPTIONS} onChange={setSemester} />
                 <Seg label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} />
@@ -218,11 +217,11 @@ export function CourseDirectory({ items, totalCount }: Props) {
       </div>
 
       {/* ===================== GRID / EMPTY ===================== */}
-      <section className="pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Course grid">
+      <section className="student-page" data-screen-label="Course grid">
         <div className={WRAP}>
           {filtered.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 gap-5 min-[900px]:grid-cols-3 min-[900px]:gap-6">
+              <div className="student-grid">
                 {visibleItems.map((item) => (
                   <Card key={item.id} {...item.cardProps} />
                 ))}
@@ -237,7 +236,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
                     type="button"
                     disabled={page === 1}
                     onClick={() => changePage(page - 1)}
-                    className="inline-flex min-h-10 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
+                    className="inline-flex min-h-11 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
                   >
                     Previous
                   </button>
@@ -251,7 +250,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
                         aria-current={isCurrent ? 'page' : undefined}
                         onClick={() => changePage(pageNumber)}
                         className={cx(
-                          'inline-flex h-10 min-w-10 items-center justify-center rounded-[9px] border px-3 text-[13.5px] font-bold transition-colors',
+                          'inline-flex h-11 min-w-11 items-center justify-center rounded-[9px] border px-3 text-[13.5px] font-bold transition-colors',
                           isCurrent
                             ? 'border-ci-navy bg-ci-navy text-white'
                             : 'border-ci-border-2 bg-ci-white text-ci-navy hover:border-ci-blue-200 hover:bg-ci-paper-2',
@@ -265,7 +264,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
                     type="button"
                     disabled={page === totalPages}
                     onClick={() => changePage(page + 1)}
-                    className="inline-flex min-h-10 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
+                    className="inline-flex min-h-11 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -284,7 +283,7 @@ export function CourseDirectory({ items, totalCount }: Props) {
                 check back as coverage expands.
               </p>
               <div className="mt-6 inline-flex">
-                <button type="button" onClick={reset} className={cx(btnBase, btnSm, btnGhost)}>
+                <button type="button" onClick={reset} className={buttonClassName(btnBase, btnSm, btnGhost)}>
                   Reset filters
                 </button>
               </div>
@@ -363,7 +362,7 @@ function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>)
             type="button"
             aria-pressed={value === o.val}
             onClick={() => onChange(o.val)}
-            className="min-h-[40px] border-r border-ci-border px-[14px] py-[9px] text-[13.5px] font-semibold text-ci-gray-600 transition-colors last:border-r-0 hover:bg-ci-paper-2 hover:text-ci-navy aria-pressed:bg-ci-navy aria-pressed:text-white"
+            className="min-h-11 border-r border-ci-border px-[14px] py-[9px] text-[13.5px] font-semibold text-ci-gray-600 transition-colors last:border-r-0 hover:bg-ci-paper-2 hover:text-ci-navy aria-pressed:bg-ci-navy aria-pressed:text-white"
           >
             {o.label}
           </button>

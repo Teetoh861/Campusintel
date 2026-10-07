@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { btnBase, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
+import { btnBase, buttonClassName, btnGhost, btnSm, cx, focusRingNavy } from '@/components/chrome/ui'
 import type { ReactElement, ReactNode } from 'react'
 
 /** Keep the student profile routes in the same bounded workspace as Dashboard. */
@@ -18,7 +18,7 @@ export function ProfilePageFrame({ title, description, back, narrow = false, chi
           {description && <p className="student-meta mt-1">{description}</p>}
         </div>
         {back && <Link href={back.href} prefetch={false}
-          className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
+          className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
           {back.label}
         </Link>}
       </header>

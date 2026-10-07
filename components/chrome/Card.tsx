@@ -3,8 +3,10 @@
 // component. The 3-bar difficulty indicator lives in <SignalBar>.
 // (component-spec.md → Card)
 import Link from 'next/link'
-import { SignalBar, type DifficultyLevel } from './SignalBar'
+import { SignalBar } from './SignalBar'
 import { cx } from './ui'
+import type { DifficultyLevel } from './SignalBar'
+import type { ReactElement, ReactNode } from 'react'
 
 export type CardFlag = {
   // 'critical' is the lone amber accent for an exam-critical course;
@@ -46,15 +48,16 @@ export type CardProps = {
   // Optional interactive node appended to the right of the card footer. Only
   // the bookmarks list sets this (a Remove control); when absent the footer
   // renders exactly as before.
-  footerAction?: React.ReactNode
+  footerAction?: ReactNode
   // Optional control pinned to the card's top-right corner (the bookmarks
   // Remove ×). Absolutely positioned over the card; the header padding leaves
   // room so it never collides with the exam-critical tag.
-  cornerAction?: React.ReactNode
+  cornerAction?: ReactNode
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
+/** Render a course card with separate space for an optional remove control. */
 export function Card({
   code,
   title,
@@ -71,7 +74,7 @@ export function Card({
   updated,
   footerAction,
   cornerAction,
-}: CardProps) {
+}: CardProps): ReactElement {
   const critical = flag?.kind === 'critical'
   const diffLabel = difficultyLabel ?? titleCase(difficulty)
 
@@ -101,7 +104,7 @@ export function Card({
         ) : null}
       </div>
 
-      <h3 className="text-[19px] font-bold leading-[1.2] tracking-[-0.02em] text-student-text-primary tablet:text-[21px]">
+      <h3 className={cx('text-[19px] font-bold leading-[1.2] tracking-[-0.02em] text-student-text-primary tablet:text-[21px]', Boolean(cornerAction) && 'pr-12')}>
         {title}
       </h3>
 
