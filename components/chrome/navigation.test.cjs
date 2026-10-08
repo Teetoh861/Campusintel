@@ -105,7 +105,7 @@ test('AuthNavActions owns only entry/logout while chrome composes ordinary produ
 }))
 
 test('Footer retains current labels/order and independent support links', async () => fixture(async f => {
-  assert.deepEqual(links(f.footer()).map(([, href]) => href), ['/', 'mailto:support@campusintell.com'])
+  assert.deepEqual(links(f.footer()).map(([, href]) => href), ['/', 'mailto:hello@campusintell.com'])
   await f.respond({ enabled: true, signedIn: true })
   assert.deepEqual(links(f.footer()).filter(([, href]) => href.startsWith('/') && href !== '/'), [
     ['Courses', '/courses'], ['Tutoring', '/tutors'], ['Bookmarks', '/bookmarks'],

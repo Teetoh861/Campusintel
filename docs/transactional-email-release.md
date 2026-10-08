@@ -15,8 +15,8 @@ there is no application Resend SDK or callback-link architecture.
 | Transactional sending domain | `auth.campusintell.com` |
 | Sender display name | `CampusIntell` |
 | From address | `no-reply@auth.campusintell.com` |
-| Required Reply-To | `support@campusintell.com` |
-| Public support | `support@campusintell.com` (`lib/contact.ts`) |
+| Required Reply-To | `hello@campusintell.com` |
+| Public support | `hello@campusintell.com` (`lib/contact.ts`) |
 | Separate material requests | `campusintell@gmail.com` (`lib/material-email.ts`), unchanged |
 
 The support inbox must receive mail and have a named monitoring owner. Sending-domain
@@ -88,7 +88,7 @@ SMTP credentials are not application variables and must never have `NEXT_PUBLIC_
 
 ### Reply handling: required external acceptance gate
 
-Received confirmation and recovery email must contain `Reply-To: support@campusintell.com`.
+Received confirmation and recovery email must contain `Reply-To: hello@campusintell.com`.
 Supabase's documented SMTP configuration exposes sender name/address but does not document
 an independent Reply-To setting. Resend can transport headers supplied by its SMTP client;
 an HTML template or application environment variable does not set a message header.
