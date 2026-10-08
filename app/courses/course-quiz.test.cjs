@@ -48,11 +48,13 @@ const quizHref = `/courses/${course.slug}/quiz`
 async function fixture(quiz, run) {
   const files = [
     './[slug]/page.tsx', './[slug]/quiz/page.tsx', './[slug]/CourseToc.tsx', './[slug]/MobileCourseNav.tsx',
-    './page.tsx', '../page.tsx', '../bookmarks/page.tsx',
+    './page.tsx', '../page.tsx', '../bookmarks/page.tsx', './[slug]/materials/page.tsx',
   ].map(file => require.resolve(file))
   const bookmarkControl = () => React.createElement('button', { type: 'button' }, 'Bookmark control')
   const restore = installLoader()
   const originalLoad = Module._load
+  const productNavigation = require('../../lib/product/student-navigation.ts')
+  const destinations = structuredClone(productNavigation.STUDENT_DESTINATIONS)
   const courseId = '40000000-0000-4000-8000-000000000007'
   const overview = { item_id: '11111111-1111-4111-8111-111111111111', course_id: courseId,
     kind: 'course_overview', question_id: null, source_key: null, parent_item_id: null,
@@ -72,6 +74,7 @@ async function fixture(quiz, run) {
       entries.map(({ id, cardProps }) => React.createElement(Card, { ...cardProps, key: id })))
     Module._load = function(name, ...args) {
       if (name === 'server-only') return {}
+      if (name === '@/lib/product/student-navigation') return { ...productNavigation, STUDENT_DESTINATIONS: destinations }
       if (name === '@/lib/data/courses') return {
         courses: [course], getCourseBySlug: slug => slug === course.slug ? course : undefined,
       }
@@ -112,6 +115,7 @@ async function fixture(quiz, run) {
       if (name === './CourseDirectory') return { CourseDirectory: ({ items }) => renderCards(items) }
       if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
+      if (name === '@/components/auth/PublicHomeBoundary') return { PublicHomeBoundary: ({ children }) => children }
       if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
       return originalLoad.call(this, name, ...args)
     }
@@ -129,6 +133,8 @@ async function fixture(quiz, run) {
       directory: granted(require(files[4]).default),
       home: require(files[5]).default,
       bookmarks: require(files[6]).default,
+      materials: granted(require(files[7]).default),
+      destinations,
       publishedState,
     })
   } finally {
@@ -137,6 +143,26 @@ async function fixture(quiz, run) {
 }
 
 const params = { params: Promise.resolve({ slug: course.slug }) }
+
+test('course and material breadcrumbs consume canonical Dashboard and All Courses destinations', async () => fixture(validQuiz, async f => {
+  const breadcrumbLinks = element => {
+    const html = renderToStaticMarkup(element)
+    const breadcrumb = html.match(/<nav\b[^>]*aria-label="Breadcrumb"[^>]*>(.*?)<\/nav>/s)?.[1]
+    assert.ok(breadcrumb, 'course breadcrumb landmark')
+    return [...breadcrumb.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gs)]
+      .map(([, href, label]) => [label, href])
+  }
+  const expected = [['Dashboard', '/dashboard'], ['All Courses', '/courses']]
+  assert.deepEqual(breadcrumbLinks(await f.detail(params)), expected)
+  assert.deepEqual(breadcrumbLinks(await f.materials(params)), [...expected, [course.code, `/courses/${course.slug}`]])
+
+  // A changed canonical contract must flow through, without local labels or hrefs.
+  f.destinations.dashboard = { id: 'dashboard', href: '/home-regression', label: 'Student home' }
+  f.destinations.courses = { id: 'courses', href: '/library-regression', label: 'Course library' }
+  const updated = [['Student home', '/home-regression'], ['Course library', '/library-regression']]
+  assert.deepEqual(breadcrumbLinks(await f.detail(params)), updated)
+  assert.deepEqual(breadcrumbLinks(await f.materials(params)), [...updated, [course.code, `/library-regression/${course.slug}`]])
+}))
 
 test('fixture restores loaders and the module cache after success and failure', async () => {
   const originalLoad = Module._load

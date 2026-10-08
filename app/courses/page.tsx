@@ -8,6 +8,7 @@ import { getPublishedManagedCourse } from '@/lib/managed-content/published'
 import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
 import { projectStudentLearning } from '@/lib/managed-content/student-projection'
 import { CourseDirectory } from './CourseDirectory'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { Course } from '@/lib/types'
 import type { CardProps } from '@/components/chrome/Card'
 import type { DifficultyLevel } from '@/components/chrome/SignalBar'
@@ -89,14 +90,14 @@ async function CourseDirectoryPage(): Promise<ReactElement> {
   const countLabel = String(totalCount).padStart(2, '0')
 
   return (
-    <>
-      <TaskHeader label="Index header" title="Course directory"
-        crumbs={[{ label: 'Home', href: '/' }, { label: 'Courses' }]}
+    <div data-student-app>
+      <TaskHeader label="Index header" title={STUDENT_DESTINATIONS.courses.label}
+        crumbs={[{ label: 'Dashboard', href: STUDENT_DESTINATIONS.dashboard.href }, { label: STUDENT_DESTINATIONS.courses.label }]}
         description="Every course we have decoded, in one place. Search a code or title, or filter by level, semester and difficulty."
         count={`${countLabel} courses`}
         meta="Now serving Business Administration · 200 Level · First and Second Semester" />
 
       <CourseDirectory items={items} totalCount={totalCount} />
-    </>
+    </div>
   )
 }

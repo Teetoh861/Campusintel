@@ -1,13 +1,14 @@
+// app/courses/[slug]/BookmarkButton.tsx — Account-backed reversible bookmark state and existing confirmation feedback.
 'use client'
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { btnBase, btnGhostOnBlue, btnLight, cx } from '@/components/chrome/ui'
+import { BookmarkToggle } from '@/components/student/BookmarkToggle'
 import { useBookmarks } from '@/lib/bookmarks/client'
 import type { BookmarkCourseAlias } from '@/lib/bookmarks/contract'
+import type { ReactElement } from 'react'
 
-// variant places the button on a navy field: 'cover' = white-outline (the
-// course cover), 'closing' = light/paper (the closing quiz band).
+/** Keep the same owner-bound store and retry behavior behind both course bookmark controls. */
 export function BookmarkButton({
   slug, code, contentKey, catalog,
   variant = 'cover',
@@ -17,7 +18,7 @@ export function BookmarkButton({
   contentKey: string
   catalog: ReadonlyArray<BookmarkCourseAlias>
   variant?: 'cover' | 'closing'
-}) {
+}): ReactElement {
   const { snapshot, toggle, refresh } = useBookmarks(catalog)
   const [toast, setToast] = useState<'added' | 'removed' | 'error' | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -48,58 +49,12 @@ export function BookmarkButton({
     showToast(result ?? 'error')
   }
 
-  const variantClass = variant === 'closing' ? btnLight : btnGhostOnBlue
-  // Saved affordance per field: keep the light fill on the closing band; add a
-  // faint white fill + brighter border on the white-outline cover button.
-  const savedClass = variant === 'closing' ? 'bg-ci-white' : 'bg-white/10 border-white/70'
-
   return (
     <>
-      {variant === 'cover' ? (
-        <button
-          type="button"
-          onClick={() => { void onToggle() }}
-          disabled={snapshot.mode === 'loading'}
-          aria-label={unavailable ? 'Retry bookmarks' : isSaved ? 'Remove bookmark' : 'Add bookmark'}
-          aria-pressed={isSaved}
-          className={cx(
-            'inline-flex h-[52px] w-[52px] flex-none items-center justify-center rounded-[11px] border-[1.5px] border-white/45 text-white transition-[background-color,border-color,transform] duration-150 hover:-translate-y-px hover:border-white/70 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ci-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ci-navy',
-            isSaved && savedClass,
-          )}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            className={cx('h-6 w-6', isSaved ? 'text-ci-accent' : 'text-white')}
-            fill={isSaved ? 'currentColor' : 'none'}
-          >
-            <path
-              d="M7 4.75A1.75 1.75 0 0 1 8.75 3h6.5A1.75 1.75 0 0 1 17 4.75v15l-5-3.2-5 3.2v-15Z"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => { void onToggle() }}
-          disabled={snapshot.mode === 'loading'}
-          aria-pressed={isSaved}
-          className={cx(btnBase, variantClass, isSaved && savedClass)}
-        >
-          {unavailable ? 'Retry bookmarks' : isSaved ? (
-            <>
-              Bookmarked{' '}
-              <span aria-hidden="true">✓</span>
-            </>
-          ) : (
-            'Bookmark course'
-          )}
-        </button>
-      )}
+      <BookmarkToggle pressed={isSaved} onClick={() => { void onToggle() }}
+        disabled={snapshot.mode === 'loading'} tone={variant === 'cover' ? 'dark' : 'light'}
+        label={unavailable ? 'Retry bookmarks' : `Bookmark ${code}`}
+        text={variant === 'closing' ? unavailable ? 'Retry bookmarks' : 'Bookmark' : undefined} />
       {/* Path to the saved list — surfaced only once this course is saved, so
           it's relevant exactly when shown. Quiet white-on-navy link. */}
       {variant === 'closing' && isSaved ? (

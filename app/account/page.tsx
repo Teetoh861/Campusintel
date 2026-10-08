@@ -7,19 +7,21 @@ import { LogoutButton } from '@/components/auth/LogoutButton'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_PATHS, AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, buttonClassName, btnGhost, btnSm, focusRingNavy } from '@/components/chrome/ui'
+import { btnBase, buttonClassName, btnGhost, btnSm } from '@/components/chrome/ui'
+import { studentFocusControl } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
 import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
+import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Account | CampusIntell', robots: { index: false, follow: false } }
 
 /** Keep Auth and Profile independently validated at this protected student entry point. */
-export default async function AccountPage() {
+export default async function AccountPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <ProfilePageFrame title="Your profile" narrow>
     <AuthUnavailable />
   </ProfilePageFrame>
@@ -50,7 +52,7 @@ export default async function AccountPage() {
               <SelectionSummary selection={profile.selection} />
             </div>
             <Link href={PROFILE_SELECTION_PATH} prefetch={false}
-              className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:col-start-2 tablet:row-start-1 tablet:w-auto tablet:justify-self-end')}>
+              className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl, 'w-full tablet:col-start-2 tablet:row-start-1 tablet:w-auto tablet:justify-self-end')}>
               Change selection
             </Link>
           </> : <div className="tablet:col-span-2">
@@ -66,6 +68,10 @@ export default async function AccountPage() {
         <section aria-labelledby="account-heading" className="student-surface">
           <h2 id="account-heading" className="text-base font-bold text-student-text-primary">Account</h2>
           <dl className="mt-3 min-w-0">
+            {profile.status === 'complete' && <>
+              <dt className="student-meta">First name</dt>
+              <dd className="mb-3 mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{profile.firstName}</dd>
+            </>}
             <dt className="student-meta">Email</dt>
             <dd className="mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{email}</dd>
           </dl>

@@ -1,6 +1,7 @@
 // Server-owned structure and completeness rules for student profile selections.
 import 'server-only'
 import { z } from 'zod'
+import { firstNameSchema } from './first-name'
 
 const selectionSchema = z.object({
   departmentId: z.string().uuid(),
@@ -15,6 +16,15 @@ const storedSelectionSchema = z.object({
 }).strict()
 
 export type SelectionIds = z.infer<typeof selectionSchema>
+
+const profileSelectionSchema = selectionSchema.extend({ first_name: firstNameSchema })
+export type ProfileSelectionInput = z.infer<typeof profileSelectionSchema>
+
+/** Accept a real first name and three catalogue IDs, never caller-owned identity fields. */
+export function parseSubmittedProfileSelection(input: unknown): ProfileSelectionInput | null {
+  const result = profileSelectionSchema.safeParse(input)
+  return result.success ? result.data : null
+}
 
 /** Accept exactly three reference IDs; identity and provider fields are never input. */
 export function parseSubmittedSelection(input: unknown): SelectionIds | null {

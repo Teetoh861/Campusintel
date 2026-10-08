@@ -40,20 +40,25 @@ async function studentNavigation({ evaluate, send, waitFor, click }) {
       viewport: innerWidth,
       triggerVisible: trigger.getBoundingClientRect().width > 0,
       visibleLinks: [...nav.querySelectorAll('a')].filter(a => a.getBoundingClientRect().width).map(a => a.getAttribute('href')),
+      logoutCount: [...nav.querySelectorAll('button')].filter(button => button.textContent.trim() === 'Log out').length,
       footerLinks: [...document.querySelector('footer').querySelectorAll('a')]
-        .filter(a => a.getAttribute('href').startsWith('/') && a.getAttribute('href') !== '/')
-        .map(a => [a.textContent.trim(), a.getAttribute('href')]) };
+        .filter(a => a.getAttribute('href').startsWith('/') && !a.hasAttribute('aria-label'))
+        .map(a => [a.textContent.trim(), a.getAttribute('href')]),
+      footer: { text: document.querySelector('footer').textContent.trim(),
+        marks: document.querySelectorAll('footer img[src*="campusintell-mark"]').length,
+        height: document.querySelector('footer').getBoundingClientRect().height } };
   })()`)
-  assert.deepEqual(closed.footerLinks, [
-    ['Courses', '/courses'], ['Tutoring', '/tutors'], ['Bookmarks', '/bookmarks'],
-    ['Contact', '/contact'], ['Apply to tutor', '/become-a-tutor'],
-  ])
+  assert.deepEqual(closed.footerLinks, [])
+  assert.equal(closed.footer.text, 'The inside track on every paper.')
+  assert.equal(closed.footer.marks, 1)
+  assert.ok(closed.footer.height <= 80, 'compact Student App footer')
+  assert.equal(closed.logoutCount, 0)
   if (!closed.triggerVisible) {
-    assert.deepEqual(closed.visibleLinks, ['/', '/courses', '/bookmarks', '/tutors', '/contact', '/dashboard', '/account'])
+    assert.deepEqual(closed.visibleLinks, ['/dashboard', '/courses', '/tutors', '/contact', '/account'])
     assert.equal(await evaluate('document.querySelectorAll("[role=dialog]").length'), 0)
     return { desktop: true }
   }
-  assert.deepEqual(closed.visibleLinks, closed.viewport < 768 ? ['/'] : ['/', '/courses', '/bookmarks'])
+  assert.deepEqual(closed.visibleLinks, ['/dashboard'])
   const open = async () => {
     await evaluate('document.querySelector(`[data-screen-label=Nav] button[aria-label="Open menu"]`).focus()')
     await press(send, 'Enter')
@@ -69,15 +74,16 @@ async function studentNavigation({ evaluate, send, waitFor, click }) {
       width: dialog.getBoundingClientRect().width, viewport: innerWidth, closeHeight: close.getBoundingClientRect().height,
       visibleLinks: [...dialog.querySelectorAll('a')].filter(a => a.getBoundingClientRect().width)
         .map(a => [a.textContent.trim(), a.getAttribute('href')]),
+      logoutCount: [...dialog.querySelectorAll('button')].filter(button => button.textContent.trim() === 'Log out').length,
       scrollLocked: document.body.hasAttribute('data-scroll-locked'), backgroundHidden: nav.closest('[aria-hidden=true]') !== null };
   })()`)
   assert.equal(modal.height, closed.height)
   assert.equal(modal.main, closed.main)
   assert.ok(modal.width <= Math.min(modal.viewport, 384))
   assert.ok(modal.closeHeight >= 44)
-  const accountAndSupport = [['Dashboard', '/dashboard'], ['Account', '/account'], ['Tutors', '/tutors'], ['Contact', '/contact']]
-  assert.deepEqual(modal.visibleLinks, modal.viewport < 768
-    ? [['Courses', '/courses'], ['Bookmarks', '/bookmarks'], ...accountAndSupport] : accountAndSupport)
+  assert.deepEqual(modal.visibleLinks, [['Dashboard', '/dashboard'], ['All Courses', '/courses'],
+    ['Tutors', '/tutors'], ['Help & Support', '/contact'], ['Account', '/account']])
+  assert.equal(modal.logoutCount, 0)
   assert.equal(modal.scrollLocked, true)
   assert.equal(modal.backgroundHidden, true)
   for (let i = 0; i < 16; i++) {

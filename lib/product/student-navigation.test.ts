@@ -10,24 +10,24 @@ import { isStudentDestinationActive, STUDENT_DESTINATIONS, STUDENT_FOOTER_GROUPS
 test('current destinations have unique semantic IDs and independent canonical href/label contracts', () => {
   assert.deepEqual(STUDENT_DESTINATIONS, {
     dashboard: { id: 'dashboard', href: '/dashboard', label: 'Dashboard' },
-    courses: { id: 'courses', href: '/courses', label: 'Courses' },
+    myCourses: { id: 'myCourses', href: '/my-courses', label: 'My Courses' },
+    courses: { id: 'courses', href: '/courses', label: 'All Courses' },
     bookmarks: { id: 'bookmarks', href: '/bookmarks', label: 'Bookmarks' },
     tutors: { id: 'tutors', href: '/tutors', label: 'Tutors' },
-    contact: { id: 'contact', href: '/contact', label: 'Contact' },
+    contact: { id: 'contact', href: '/contact', label: 'Help & Support' },
     account: { id: 'account', href: '/account', label: 'Account' },
+    materials: { id: 'materials', href: '/materials', label: 'Request Material' },
   })
   const ids = Object.values(STUDENT_DESTINATIONS).map(destination => destination.id)
-  assert.equal(new Set(ids).size, 6)
+  assert.equal(new Set(ids).size, 8)
   assert.equal(STUDENT_DESTINATIONS.bookmarks.label, 'Bookmarks')
 })
 
-test('responsive navigation groups retain current membership/order and reference canonical objects', () => {
+test('locked desktop and menu navigation use canonical objects without contextual destinations or logout', () => {
   assert.deepEqual(Object.fromEntries(Object.entries(STUDENT_NAVIGATION_GROUPS)
     .map(([group, destinations]) => [group, destinations.map(destination => destination.id)])), {
-    study: ['courses', 'bookmarks'],
-    utility: ['tutors', 'contact'],
-    desktop: ['courses', 'bookmarks', 'tutors', 'contact'],
-    account: ['dashboard', 'account'],
+    desktop: ['courses', 'tutors', 'contact', 'account'],
+    menu: ['dashboard', 'courses', 'tutors', 'contact', 'account'],
   })
   for (const group of Object.values(STUDENT_NAVIGATION_GROUPS)) {
     for (const destination of group) assert.equal(destination, STUDENT_DESTINATIONS[destination.id])
@@ -37,10 +37,10 @@ test('responsive navigation groups retain current membership/order and reference
 test('Footer subsets use canonical destinations and preserve their existing contextual labels', () => {
   assert.deepEqual(STUDENT_FOOTER_GROUPS.explore.map(({ destination, label }) =>
     [destination.id, destination.href, label]), [
-    ['courses', '/courses', 'Courses'], ['tutors', '/tutors', 'Tutoring'], ['bookmarks', '/bookmarks', 'Bookmarks'],
+    ['myCourses', '/my-courses', 'My Courses'], ['courses', '/courses', 'All Courses'], ['tutors', '/tutors', 'Tutoring'], ['bookmarks', '/bookmarks', 'Bookmarks'],
   ])
   assert.deepEqual(STUDENT_FOOTER_GROUPS.support.map(destination =>
-    [destination.id, destination.href, destination.label]), [['contact', '/contact', 'Contact']])
+    [destination.id, destination.href, destination.label]), [['contact', '/contact', 'Help & Support']])
   for (const { destination } of STUDENT_FOOTER_GROUPS.explore) {
     assert.equal(destination, STUDENT_DESTINATIONS[destination.id])
   }

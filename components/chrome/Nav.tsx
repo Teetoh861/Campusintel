@@ -8,7 +8,9 @@ import { useLogoutAction } from '@/components/auth/LogoutButton'
 import { useNavigationSession } from '@/components/auth/NavigationSession'
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { isStudentDestinationActive, STUDENT_NAVIGATION_GROUPS } from '@/lib/product/student-navigation'
-import { BookLogo, Wordmark } from './Logo'
+import { STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { studentFocusDark, studentFocusRow, studentFocusControl } from '@/components/student/ui'
+import { BrandMark, Wordmark } from './Logo'
 import { NavigationAccountControls } from './NavigationAccountControls'
 import { cx } from './ui'
 import type { StudentDestination } from '@/lib/product/student-navigation'
@@ -16,10 +18,8 @@ import type { ReactElement } from 'react'
 
 const WRAP = 'app-container'
 const DESKTOP_QUERY = '(min-width: 1200px)'
-const FOCUS_ON_BLUE =
-  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus-inverse'
-const FOCUS_ON_PAPER =
-  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus'
+const FOCUS_ON_BLUE = studentFocusDark
+const FOCUS_ON_PAPER = studentFocusRow
 
 type Props = {
   variant?: 'blue' | 'cream'
@@ -46,9 +46,10 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
     return <Link
       key={link.id}
       href={link.href}
+      prefetch={false}
       aria-current={active ? 'page' : undefined}
       className={cx(
-        'inline-flex min-h-11 items-center rounded-ci-btn-sm px-3 text-[15px] font-semibold transition-colors',
+        'student-nav-link inline-flex min-h-11 items-center rounded-ci-btn-sm px-2 text-[14px] font-semibold transition-colors',
         active ? 'bg-student-navigation-current text-student-navigation-text' :
           'text-student-navigation-text-muted hover:bg-student-navigation-hover hover:text-student-navigation-text',
         FOCUS_ON_BLUE,
@@ -63,9 +64,10 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
     return <Link
       key={link.id}
       href={link.href}
+      prefetch={false}
       aria-current={active ? 'page' : undefined}
       className={cx(
-        'flex min-h-11 items-center rounded-ci-btn-sm px-3 text-[15px] font-semibold transition-colors',
+        'student-nav-row flex min-h-12 items-center rounded-ci-btn-sm px-3 text-[16px] font-semibold transition-colors',
         active ? 'bg-student-brand-surface text-student-primary' :
           'text-student-text hover:bg-student-surface-muted',
         FOCUS_ON_PAPER,
@@ -80,33 +82,32 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
     <Sheet open={signedIn && open} onOpenChange={setOpen}>
       <nav className="sticky top-0 z-[60] bg-student-navigation text-student-navigation-text" data-screen-label="Nav"
         data-variant={variant} aria-label="Primary">
-        <div className={WRAP}>
+        <div className={signedIn ? `${WRAP} student-workspace` : WRAP}>
           <div className="flex h-[var(--student-header-height)] items-center gap-2 tablet:gap-3 desktop:gap-4">
-            <Link href="/" className={cx('inline-flex min-h-11 shrink-0 items-center gap-2 rounded-ci-btn-sm',
-              FOCUS_ON_BLUE)} aria-label="CampusIntel home" onClick={close}>
-              <BookLogo size={30} />
-              <Wordmark className="text-[17px] tablet:text-[19px]" />
+            <Link href={signedIn ? STUDENT_HOME_PATH : '/'} prefetch={false} className={cx('inline-flex min-h-11 shrink-0 items-center gap-2 rounded-ci-btn-sm',
+              FOCUS_ON_BLUE)} aria-label="CampusIntell home" aria-current={signedIn && pathname === STUDENT_HOME_PATH ? 'page' : undefined} onClick={close}>
+              <BrandMark size={30} />
+              <Wordmark tone="white" />
             </Link>
 
-            {signedIn && <div className="ml-auto hidden items-center gap-1 tablet:flex desktop:hidden">
-              {STUDENT_NAVIGATION_GROUPS.study.map(topLink)}
-            </div>}
             {signedIn && <div className="ml-auto hidden items-center gap-1 desktop:flex">
               {STUDENT_NAVIGATION_GROUPS.desktop.map(topLink)}
             </div>}
 
-            <div className={signedIn ? 'ml-1 hidden desktop:block' : 'ml-auto'}>
-              <NavigationAccountControls signedIn={signedIn} surface="blue" onNavigate={close} logout={logout} />
-            </div>
+            {!signedIn && <div className="ml-auto">
+              <NavigationAccountControls signedIn={false} surface="blue" onNavigate={close} logout={logout} />
+            </div>}
 
             {signedIn && <SheetTrigger asChild><button type="button"
-              className={cx('ml-auto inline-flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-[5px] rounded-ci-btn-sm hover:bg-student-navigation-hover tablet:ml-1 desktop:hidden',
+              className={cx('ml-auto inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-ci-btn-sm border border-student-navigation-divider hover:bg-student-navigation-hover desktop:hidden',
                 FOCUS_ON_BLUE)}
               aria-label="Open menu"
             >
-              <span className="h-[2px] w-[22px] rounded-sm bg-student-navigation-text" />
-              <span className="h-[2px] w-[22px] rounded-sm bg-student-navigation-text" />
-              <span className="h-[2px] w-[22px] rounded-sm bg-student-navigation-text" />
+              <span aria-hidden="true" className="flex flex-col gap-1">
+                <span className="h-[2px] w-4 bg-student-navigation-text" />
+                <span className="h-[2px] w-4 bg-student-navigation-text" />
+                <span className="h-[2px] w-4 bg-student-navigation-text" />
+              </span>
             </button></SheetTrigger>}
           </div>
         </div>
@@ -114,24 +115,13 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
       {signedIn && <SheetContent side="right"
         className="z-[80] h-dvh w-full max-w-sm overflow-y-auto overscroll-contain border-student-border bg-student-surface px-5 py-6 text-student-text shadow-ci-card"
         overlayClassName="z-[70] bg-student-scrim"
-        closeClassName={cx('right-3 top-3 flex h-11 w-11 items-center justify-center rounded-ci-btn-sm text-student-primary opacity-100 hover:bg-student-brand-surface focus:ring-0', FOCUS_ON_PAPER)}>
+        closeClassName={cx('right-3 top-3 flex h-11 w-11 items-center justify-center rounded-ci-btn-sm text-student-primary opacity-100 hover:bg-student-brand-surface focus:ring-0', studentFocusControl)}>
         <SheetTitle className="pr-12 text-xl font-bold text-student-text-primary">Navigation</SheetTitle>
         <SheetDescription className="mt-2 pr-10 text-sm text-student-text-secondary">
           Your study space and account.
         </SheetDescription>
-        <div className="mt-6 space-y-6">
-          <div className="tablet:hidden">
-            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-student-text-muted">Study</h3>
-            {STUDENT_NAVIGATION_GROUPS.study.map(drawerLink)}
-          </div>
-          <div>
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-student-text-muted">Your account</h3>
-            <NavigationAccountControls signedIn surface="paper" onNavigate={close} logout={logout} />
-          </div>
-          <div className="border-t border-student-border pt-4">
-            <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-student-text-muted">Support</h3>
-            {STUDENT_NAVIGATION_GROUPS.utility.map(drawerLink)}
-          </div>
+        <div className="mt-6">
+          {STUDENT_NAVIGATION_GROUPS.menu.map(drawerLink)}
         </div>
       </SheetContent>}
     </Sheet>

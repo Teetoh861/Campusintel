@@ -43,7 +43,7 @@ const DIFFICULTY_OPTIONS: ReadonlyArray<Option<DifficultyFilter>> = [
   { val: 'hard', label: 'Hard' },
 ]
 
-const WRAP = 'app-container'
+const WRAP = 'app-container student-workspace'
 
 type Props = {
   items: ReadonlyArray<DirectoryItem>

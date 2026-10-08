@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { getCourseBySlug } from '@/lib/data/courses'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
 import {
   buildMaterialRequestEmailUrl,
@@ -39,12 +40,12 @@ function CourseMaterials({ slug }: { slug: string }) {
             className="mb-9 flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200"
             aria-label="Breadcrumb"
           >
-            <Link href="/" className="transition-colors hover:text-white">Home</Link>
+            <Link href={STUDENT_DESTINATIONS.dashboard.href} className="transition-colors hover:text-white">{STUDENT_DESTINATIONS.dashboard.label}</Link>
             <span className="text-white/35">/</span>
-            <Link href="/courses" className="transition-colors hover:text-white">Courses</Link>
+            <Link href={STUDENT_DESTINATIONS.courses.href} className="transition-colors hover:text-white">{STUDENT_DESTINATIONS.courses.label}</Link>
             <span className="text-white/35">/</span>
             <Link
-              href={`/courses/${course.slug}`}
+              href={`${STUDENT_DESTINATIONS.courses.href}/${course.slug}`}
               className="transition-colors hover:text-white"
             >
               {course.code}

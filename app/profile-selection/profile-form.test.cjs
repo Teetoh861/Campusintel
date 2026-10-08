@@ -6,6 +6,32 @@ const Module = require('node:module')
 const ts = require('typescript')
 const React = require('react')
 
+test('first name is labelled, validated, focusable and included in the secure save', async () => fixture(async f => {
+  assert.equal(f.input().props.name, 'first_name')
+  assert.equal(f.input().props.autoComplete, 'given-name')
+  const focused = []
+  f.input().props.ref.current = { focus: () => focused.push('first-name') }
+  f.setName('  ')
+  await f.submit(); f.render(); f.flushEffects()
+  assert.equal(f.requests.length, 0)
+  assert.equal(focused.at(-1), 'first-name')
+  assert.equal(f.input().props['aria-invalid'], true)
+  f.setName("  Ọlá Anne-Marie  ")
+  f.choose('department', f.ids.department); f.choose('academic-level', f.ids.level); f.choose('academic-period', f.ids.period)
+  f.respond(async () => response(200, { ...f.saved(), firstName: 'Ọlá Anne-Marie' }))
+  await f.submit()
+  assert.equal(JSON.parse(f.requests[0][1].body).first_name, '  Ọlá Anne-Marie  ')
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
+}))
+
+test('one-time name completion pre-fills persisted academic choices and never invents a name', async () => fixture(async f => {
+  f.initial.status = 'incomplete'; f.initial.firstName = null; f.remount()
+  assert.equal(f.input().props.value, '')
+  assert.equal(f.select('department').props.value, f.ids.department)
+  assert.equal(f.select('academic-level').props.value, f.ids.level)
+  assert.equal(f.select('academic-period').props.value, f.ids.period)
+}, true))
+
 function nodes(element) {
   if (!element || typeof element !== 'object') return []
   return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
@@ -33,7 +59,7 @@ async function fixture(run, complete = false) {
     academicLevel: { id: ids.level, label: 'Stage Q', isActive: true },
     academicPeriod: { id: ids.period, label: 'Term R', isActive: true },
   }
-  const initial = complete ? { status: 'complete', options, selection } : { status: 'incomplete', options }
+  const initial = complete ? { status: 'complete', options, selection, firstName: 'Adaeze' } : { status: 'incomplete', options, firstName: 'Adaeze' }
   const state = [], refs = [], effectDeps = [], effects = [], requests = [], navigations = []
   let stateIndex = 0, refIndex = 0, effectIndex = 0
   let pageToken = 'page:fixture-student'
@@ -76,11 +102,13 @@ async function fixture(run, complete = false) {
     const { ProfileSelectionForm } = require(file)
     const render = () => { stateIndex = 0; refIndex = 0; effectIndex = 0; return ProfileSelectionForm({ initial, continuityToken: pageToken }) }
     const flushEffects = () => { while (effects.length) effects.shift()() }
+    const input = () => nodes(render()).find(node => node.type === 'input' && node.props.id === 'first-name')
+    const setName = value => input().props.onChange({ target: { value } })
     const select = id => nodes(render()).find(node => node.type === 'select' && node.props.id === id)
     const submit = () => render().props.onSubmit({ preventDefault() {} })
     const choose = (id, value) => select(id).props.onChange({ target: { value } })
     const saved = (departmentId = ids.department, academicLevelId = ids.level, academicPeriodId = ids.period) => ({
-      status: 'complete', selection: {
+      status: 'complete', firstName: 'Adaeze', selection: {
         department: { id: departmentId, label: 'Persisted unit', isActive: true },
         academicLevel: { id: academicLevelId, label: 'Persisted stage', isActive: true },
         academicPeriod: { id: academicPeriodId, label: 'Persisted term', isActive: true },
@@ -88,7 +116,7 @@ async function fixture(run, complete = false) {
     })
     render()
     flushEffects()
-    await run({ ids, options, initial, render, select, submit, choose, flushEffects, requests, navigations, saved,
+    await run({ ids, options, initial, render, input, setName, select, submit, choose, flushEffects, requests, navigations, saved,
       changeIncomingToken: value => { pageToken = value },
       remount: () => { state.length = 0; refs.length = 0; effectDeps.length = 0; effects.length = 0; render(); flushEffects() },
       respond: fn => { responder = fn }, notice: () => nodes(render()).find(node => node.type?.name === 'Feedback')?.props.message })
@@ -125,7 +153,7 @@ test('server-returned choices keep database order and enable Department → Leve
   assert.equal(f.requests[0][1].method, 'PUT')
   assert.equal(f.requests[0][1].headers['x-campus-account-continuity'], 'page:fixture-student')
   assert.deepEqual(JSON.parse(f.requests[0][1].body), {
-    departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period,
+    departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period, first_name: 'Adaeze',
   })
   assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }))
@@ -215,7 +243,7 @@ test('mismatched or malformed success cannot claim a saved profile', async () =>
   await f.submit()
   assert.deepEqual(f.navigations, [])
   assert.equal(f.notice(), 'Save could not be confirmed. Reload the page.')
-  f.respond(async () => response(200, { status: 'complete', selection: { private: 'provider detail' } }))
+  f.respond(async () => response(200, { status: 'complete', firstName: 'Adaeze', selection: { private: 'provider detail' } }))
   await f.submit()
   assert.deepEqual(f.navigations, [])
   assert.equal(f.requests.length, 2)
@@ -258,7 +286,7 @@ test('selection form stays compact and uses the student surface at phone and tab
 test('failed, unavailable, invalid and revoked saves have controlled outcomes', async () => fixture(async f => {
   const cases = [
     [503, { status: 'unavailable', details: 'private SQL error' }, 'Save failed. Please try again.'],
-    [400, { status: 'invalid-selection' }, 'A choice is no longer available. Reload and choose again.'],
+    [400, { status: 'invalid-selection' }, 'Review your first name and choices, or reload if a choice is no longer available.'],
     [409, { status: 'missing-profile' }, 'Your profile could not be found. Please contact support.'],
     [409, { status: 'invariant-failure' }, 'Your profile needs attention. Please contact support.'],
     [400, { status: 'invalid-request' }, 'Save failed. Please try again.'],
