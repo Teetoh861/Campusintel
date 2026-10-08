@@ -5,16 +5,18 @@ import { authJson, authError } from '@/lib/auth/response'
 import { consumeAuthLimit } from '@/lib/auth/rate-limit'
 import { getAuthGateway } from '@/lib/supabase/auth-gateway'
 import { AUTH_OTP_TYPES, EMAIL_CONFIRMATION_REQUIRED } from '@/lib/auth/constants'
-import { mapAuthFailure, classifyEmailInitiation } from '@/lib/auth/errors'
+import { mapAuthFailure } from '@/lib/auth/errors'
+import { initiateAuthEmail } from '@/lib/auth/email-initiation'
 import { loginSchema } from '@/lib/auth/schemas'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { createClient } from '@/lib/supabase/server'
 import { requireVerifiedSession } from '@/lib/auth/verified-session'
 import { checkResendAcknowledgment } from '@/lib/auth/signup-result'
 import { recordSuccessfulLogin } from '@/lib/analytics/server'
+import type { NextResponse } from 'next/server'
 
 /** Verify credentials server-side; serialize only a validated destination. */
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
   try {
     const body = await readAuthRequest(request, loginSchema)
     const existing = await rejectExistingStudent()
@@ -26,10 +28,10 @@ export async function POST(request: Request) {
       const failure = mapAuthFailure(error, 'login')
       if (failure.code === EMAIL_CONFIRMATION_REQUIRED) {
         await consumeAuthLimit('RESEND_CONFIRMATION', body.email, address)
-        const { data: resendData, error: resendError } = await getAuthGateway(address).resend({ type: AUTH_OTP_TYPES.confirmation, email: body.email })
-        const resendFailure = classifyEmailInitiation(resendError, 'resend')
+        const gateway = getAuthGateway(address)
+        const resendFailure = await initiateAuthEmail('resend',
+          () => gateway.resend({ type: AUTH_OTP_TYPES.confirmation, email: body.email }), checkResendAcknowledgment)
         if (resendFailure) return authJson({ error: resendFailure.error }, resendFailure.status)
-        if (resendError === null) checkResendAcknowledgment(resendData)
         return authJson({ code: failure.code })
       }
       return authJson({ error: failure.error }, failure.status)

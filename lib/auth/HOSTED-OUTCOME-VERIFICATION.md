@@ -1,5 +1,8 @@
 # Hosted Auth outcome verification — 2026-09-16
 
+> Historical hosted evidence; it does not certify current SMTP/DNS configuration.
+> The current initiation/template contract is [transactional email release](../../docs/transactional-email-release.md).
+
 Application: `http://localhost:3000`.
 Provider: CampusIntell Staging, `https://znwluaiylogqapansuht.supabase.co`.
 All times below are UTC; Lagos is UTC+1.
