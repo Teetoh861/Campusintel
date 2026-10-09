@@ -1,3 +1,4 @@
+// app/my-courses/my-courses.test.cjs — Register presentation and unchanged server ownership/recovery contracts.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -84,7 +85,7 @@ async function fixture(run) {
       if (name === '@/lib/profile/paths') return { PROFILE_SELECTION_PATH: '/profile-selection' }
       if (name === '@/components/auth/AuthFlowSync') return { AuthFlowSync: function AuthFlowSync() { return null } }
       if (name === '@/components/ui/skeleton') return {
-        Skeleton: ({ className }) => React.createElement('div', { className }),
+        Skeleton: ({ className, ...props }) => React.createElement('div', { className, ...props }),
       }
       if (name === '@/lib/auth/constants') return originalLoad.call(this, local('lib/auth/constants.ts'), ...args)
       if (name === '@/components/chrome/Feedback') return originalLoad.call(this, local('components/chrome/Feedback.tsx'), ...args)
@@ -103,113 +104,122 @@ async function fixture(run) {
   }
 }
 
-test('complete student sees saved context and every institutional course in domain order', async () => fixture(async f => {
-  const tree = await f.page()
-  const sync = nodes(tree).find(node => node.type?.name === 'AuthFlowSync')
-  assert.equal(sync.props.continuityToken, 'page:current-student:live-session')
-  const html = renderToStaticMarkup(tree)
+const anchors = html => [...html.matchAll(/<a\b[^>]*>[\s\S]*?<\/a>/g)].map(match => match[0])
+const anchor = (html, href) => anchors(html).find(link => link.includes(`href="${href}"`))
+
+test('verified student sees the PageBand, real context/counts and every course in domain order', async () => fixture(async f => {
+  const tree = await f.page(), html = renderToStaticMarkup(tree)
+  assert.equal(nodes(tree).find(node => node.type?.name === 'AuthFlowSync').props.continuityToken, 'page:current-student:live-session')
   assert.deepEqual(f.state.domainCalls, [[f.state.client, f.state.context.user]])
-  assert.equal(f.state.clientReads, 1)
-  assert.equal(f.state.contextReads, 1)
-  assert.equal(f.state.profileReads, 1)
+  assert.deepEqual([f.state.clientReads, f.state.contextReads, f.state.profileReads], [1, 1, 1])
+  assert.match(html, /class="student-page-band"/)
+  assert.match(html, /<h1[^>]*>My Courses<\/h1>/)
+  assert.equal((html.match(/<h1\b/g) || []).length, 1)
+  assert.match(html, /Your semester, in one place\./)
   assert.match(html, /Business Administration · 200 Level · First Semester/)
-  assert.match(html, /href="\/profile-selection"/)
-  assert.ok(html.indexOf('BUA201') < html.indexOf('BUA203'))
-  assert.ok(html.indexOf('BUA203') < html.indexOf('BUA205'))
-  assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /href="\/courses\/resolved-slug"/)
-  assert.match(html, /Study content not yet available/)
-  assert.match(html, /Content temporarily unavailable/)
-  assert.match(html, /href="\/bookmarks"/)
-  assert.match(html, /href="\/courses"/)
-  assert.match(html, /href="\/account"/)
-  assert.equal((html.match(/href="\/profile-selection"/g) || []).length, 1)
-}))
-
-test('selection and recovery actions lead to their existing safe destinations', async () => fixture(async f => {
-  const checkOutline = action => {
-    const classes = new Set(action.props.className.split(/\s+/))
-    for (const token of ['border-student-border-strong', 'text-[14px]', 'py-2',
-      'student-focus-control']) assert.ok(classes.has(token), `missing ${token}`)
-    for (const token of ['border-transparent', 'text-[15px]', 'py-2.5']) assert.equal(classes.has(token), false)
-  }
-  const context = nodes(await f.page()).find(node => node.type?.name === 'SemesterContext')
-  const change = nodes(context.type(context.props)).find(node => node.props?.href === '/profile-selection')
-  assert.ok(change)
-  assert.equal(change.props.prefetch, false)
-  assert.match(change.props.className, /min-h-11/)
-  assert.match(change.props.className, /focus-visible:outline/)
-  checkOutline(change)
-  checkOutline(nodes(await f.page()).find(node => node.props?.href === '/bookmarks'))
-  for (const [status, href] of [['missing-profile', '/contact'], ['unavailable', '/my-courses']]) {
-    f.state.result = { status }
-    const error = nodes(await f.page()).find(node => node.type?.name === 'MyCoursesError')
-    const action = nodes(error.type(error.props)).find(node => node.props?.href === href)
-    assert.ok(action)
-    assert.match(action.props.className, /min-h-11/)
-    assert.match(action.props.className, /focus-visible:outline/)
-    checkOutline(action)
-  }
-}))
-
-test('product surfaces own navy focus through shared chrome UI, not auth form styling', () => {
-  const root = path.join(__dirname, '../..')
-  const source = file => fs.readFileSync(path.join(root, file), 'utf8')
-  assert.match(source('components/chrome/ui.tsx'), /export const focusRingNavy\b/)
-  assert.doesNotMatch(source('components/chrome/FormField.tsx'), /\bAUTH_FOCUS\b/)
-  for (const file of ['app/my-courses/page.tsx', 'app/my-courses/CourseRow.tsx', 'app/account/page.tsx',
-    'app/profile-selection/page.tsx', 'app/profile-selection/ProfileSelectionForm.tsx']) {
-    const text = source(file)
-    assert.match(text, /import\s*\{[^}]*\bstudentFocus(?:Control|Card)\b[^}]*\}\s*from\s*['"]@\/components\/student\/ui['"]/, file)
-    assert.doesNotMatch(text, /\bAUTH_(?:FOCUS|LINK)\b/, file)
-    assert.doesNotMatch(text, /import\s*\{[^}]*\bAUTH_[A-Z_]+\b[^}]*\}\s*from\s*['"]@\/components\/chrome\/FormField['"]/, file)
-  }
-})
-
-test('ready course has one large route target and labels only available published learning', async () => fixture(async f => {
-  const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
-  assert.match(html, /<li[^>]*><a[^>]*href="\/courses\/resolved-slug"/)
-  assert.match(html, /min-h-\[112px\]/)
-  assert.match(html, /student-focus-card/)
-  assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /Available: Overview · Theory · Practice quiz/)
-  assert.match(html, /Open course/)
-  assert.equal((html.match(/<a\b/g) || []).length, 1, 'the row contains no nested links')
-
-  const partial = { ...ready, content: { ...ready.content,
-    availability: { overview: false, theory: true, quiz: false } } }
-  const partialHtml = renderToStaticMarkup(React.createElement(f.CourseRow, { course: partial }))
-  assert.match(partialHtml, /Available: Theory/)
-  assert.doesNotMatch(partialHtml, /Overview|Practice quiz/)
-  assert.match(partialHtml, /href="\/courses\/resolved-slug"/)
-}))
-
-test('courses without usable published learning remain visible and inert', async () => fixture(async f => {
-  for (const [item, message] of [
-    [unbuilt, 'Study content not yet available'], [noLearning, 'Study content not yet available'],
-    [broken, 'Content temporarily unavailable'], [unavailable, 'Content temporarily unavailable'],
-  ]) {
-    const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: item }))
-    assert.match(html, new RegExp(message))
-    assert.doesNotMatch(html, /<a\b|<button\b|href=/)
-  }
-}))
-
-test('My Courses uses semantic course and utility regions with a Bookmarks action', async () => fixture(async f => {
-  const html = await f.render()
-  assert.match(html, /<section[^>]*aria-labelledby="my-courses-list-title"/)
-  assert.match(html, /<aside[^>]*aria-labelledby="my-courses-utilities-title"/)
-  assert.match(html, /href="\/bookmarks"[^>]*>Bookmarks/)
+  assert.match(html, /3 courses · 1 ready to study/)
+  assert.ok(html.indexOf('BUA201') < html.indexOf('BUA203') && html.indexOf('BUA203') < html.indexOf('BUA205'))
+  assert.equal((html.match(/<li\b/g) || []).length, 3)
   assert.match(html, /aria-label="Your semester courses"/)
+  assert.match(html, /href="\/courses\/resolved-slug"/)
+  assert.doesNotMatch(html, /Quick links|Open course|href="\/(bookmarks|account|courses)"|<aside\b|<input\b|<select\b|<form\b|role="tab/)
 }))
 
-test('zero-course complete selection is an honest empty semester', async () => fixture(async f => {
+test('summary derives total/readiness and singular grammar from the actual course set', async () => fixture(async f => {
+  for (const [courses, expected] of [
+    [[ready], '1 course · 1 ready to study'], [[ready, unbuilt], '2 courses · 1 ready to study'],
+    [[unbuilt, noLearning], '2 courses · 0 ready to study'],
+    [[ready, unbuilt, broken, noLearning, unavailable], '5 courses · 1 ready to study'],
+  ]) {
+    f.state.result = { status: 'complete', selection, courses }
+    const html = await f.render()
+    assert.ok(html.includes(expected))
+    assert.equal((html.match(/<li\b/g) || []).length, courses.length)
+    assert.doesNotMatch(html, /progress|completion|streak|study hours|score|last.studied|Continue studying/i)
+  }
+}))
+
+test('Change and error recovery retain canonical routes, compact borders and shared focus', async () => fixture(async f => {
+  const check = html => {
+    assert.ok(html)
+    const classes = new Set(/class="([^"]+)"/.exec(html)[1].split(/\s+/))
+    for (const token of ['min-h-11', 'border-student-border-strong', 'student-focus-control', 'bg-student-surface', 'py-2']) assert.ok(classes.has(token), token)
+    assert.equal(classes.has('border-transparent'), false)
+  }
+  check(anchor(await f.render(), '/profile-selection'))
+  for (const [status, href] of [['missing-profile', '/contact'], ['invariant-failure', '/contact'], ['unavailable', '/my-courses']]) {
+    f.state.result = { status }
+    check(anchor(await f.render(), href))
+  }
+  const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8')
+  assert.match(source, /href=\{PROFILE_SELECTION_PATH\}/)
+  assert.match(source, /STUDENT_DESTINATIONS\.courses\.href/)
+  assert.match(source, /STUDENT_DESTINATIONS\.materials\.href/)
+}))
+
+test('ready rows are one canonical link and advertise only existing learning families', async () => fixture(async f => {
+  const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
+  assert.equal(anchors(html).length, 1)
+  assert.ok(anchor(html, '/courses/resolved-slug'))
+  assert.match(html, /student-focus-row/)
+  assert.match(html, /BUA201 institutional title/)
+  assert.match(html, /Notes · Theory · CBT practice/)
+  assert.doesNotMatch(html, /Open course|Available:|Overview|Practice quiz|<button\b/)
+  for (const [availability, expected] of [
+    [{ overview: true, theory: false, quiz: false }, 'Notes'],
+    [{ overview: false, theory: true, quiz: false }, 'Theory'],
+    [{ overview: false, theory: false, quiz: true }, 'CBT practice'],
+    [{ overview: true, theory: false, quiz: true }, 'Notes · CBT practice'],
+    [{ overview: true, theory: true, quiz: false }, 'Notes · Theory'],
+    [{ overview: false, theory: true, quiz: true }, 'Theory · CBT practice'],
+  ]) {
+    const course = { ...ready, content: { ...ready.content, availability } }
+    const partial = renderToStaticMarkup(React.createElement(f.CourseRow, { course }))
+    assert.ok(partial.includes(`<p>${expected}</p>`), expected)
+    assert.equal(anchors(partial).length, 1)
+    assert.doesNotMatch(partial, /unavailable|disabled|<del\b/)
+  }
+}))
+
+test('all unavailable course identities stay inert; hollow rails belong only to missing content', async () => fixture(async f => {
+  for (const item of [unbuilt, noLearning, broken, unavailable]) {
+    const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: item }))
+    assert.ok(html.includes(item.code) && html.includes(item.title))
+    assert.doesNotMatch(html, /<a\b|<button\b|href=|chevron|tabindex=/)
+    if (item === unbuilt || item === noLearning) {
+      assert.match(html, /data-status="unavailable"/)
+      assert.match(html, /Study content not yet available/)
+      assert.doesNotMatch(html, /Content temporarily unavailable/)
+    } else {
+      assert.match(html, /Content temporarily unavailable/)
+      assert.match(html, /student-course-row-error/)
+      assert.doesNotMatch(html, /student-status-rail|Study content not yet available|Coming soon/)
+    }
+  }
+}))
+
+test('Request Material appears once only for genuinely missing learning, using /materials', async () => fixture(async f => {
+  for (const [courses, show] of [
+    [[ready, unbuilt], true], [[noLearning], true], [[unbuilt, noLearning], true],
+    [[ready], false], [[broken, unavailable], false], [[ready, broken, unavailable], false],
+  ]) {
+    f.state.result = { status: 'complete', selection, courses }
+    const html = await f.render()
+    assert.equal(anchors(html).filter(link => link.includes('href="/materials"')).length, show ? 1 : 0)
+    assert.equal(html.includes('Missing material for one of your courses?'), show)
+    assert.doesNotMatch(html, /href="\/request-material"/)
+  }
+}))
+
+test('empty semester is distinct and offers Change selection plus Browse All Courses only', async () => fixture(async f => {
   f.state.result = { status: 'complete', selection, courses: [] }
   const html = await f.render()
   assert.match(html, /Business Administration · 200 Level · First Semester/)
-  assert.match(html, /No confirmed courses for this selection yet/)
-  assert.match(html, /href="\/bookmarks"/)
-  assert.doesNotMatch(html, /<ul\b|Browse courses|CourseDirectory/)
+  assert.match(html, /No confirmed courses for this selection yet\./)
+  assert.match(html, /hasn’t confirmed the course list for this academic selection/)
+  assert.match(anchor(html, '/courses'), /Browse All Courses/)
+  assert.ok(anchors(html).some(link => link.includes('href="/profile-selection"') && link.includes('Change selection')))
+  assert.doesNotMatch(html, /<ul\b|href="\/(bookmarks|account|materials)"|role="alert"|ready to study/)
 }))
 
 test('signed-out and incomplete students follow existing login/selection routes', async () => fixture(async f => {
@@ -224,59 +234,64 @@ test('signed-out and incomplete students follow existing login/selection routes'
   assert.equal(f.state.profileReads, 0)
 }))
 
-test('continuity token failure stays in the unavailable state before student data reads', async () => fixture(async f => {
+test('continuity failure stays unavailable before private course/profile reads', async () => fixture(async f => {
   f.state.tokenError = new Error('signing secret')
   const html = await f.render()
-  assert.match(html, /Something went wrong/)
+  assert.match(html, /Courses temporarily unavailable/)
   assert.doesNotMatch(html, /signing secret|BUA201 institutional title/)
-  assert.equal(f.state.contextReads, 1)
-  assert.equal(f.state.domainCalls.length, 0)
-  assert.equal(f.state.profileReads, 0)
+  assert.deepEqual([f.state.contextReads, f.state.domainCalls.length, f.state.profileReads], [1, 0, 0])
 }))
 
-test('domain errors remain distinct and profile-label reads cannot mix selections', async () => fixture(async f => {
-  for (const [status, message] of [
-    ['missing-profile', 'profile could not be found'],
-    ['unavailable', 'Something went wrong'],
-    ['invariant-failure', 'course information needs attention'],
+test('domain failures retain truthful recovery and never look like an empty semester', async () => fixture(async f => {
+  for (const [status, message, href] of [
+    ['missing-profile', 'profile could not be found', '/contact'],
+    ['unavailable', 'Courses temporarily unavailable', '/my-courses'],
+    ['invariant-failure', 'course information needs attention', '/contact'],
   ]) {
-    f.state.result = { status }
+    f.state.result = { status, message: 'private Supabase provider error', courses: [ready] }
     const html = await f.render()
     assert.match(html, new RegExp(message))
-    assert.doesNotMatch(html, /current-student|live-session|department-id/)
+    assert.match(html, /role="alert"/)
+    assert.ok(anchor(html, href))
+    assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|No confirmed courses/)
   }
-  f.state.result = { status: 'complete', selection, courses: [ready] }
-  f.state.profile = { ...profile, selection: { ...profile.selection,
-    academicPeriod: { ...profile.selection.academicPeriod, id: 'changed-period' },
-  } }
-  const html = await f.render()
-  assert.match(html, /selection changed/)
-  assert.doesNotMatch(html, /BUA201 institutional title|Business Administration · 200 Level/)
+}))
+
+test('every selection mismatch fails closed before rendering mixed context/courses', async () => fixture(async f => {
+  for (const dimension of ['department', 'academicLevel', 'academicPeriod']) {
+    f.state.profile = { ...profile, selection: { ...profile.selection,
+      [dimension]: { ...profile.selection[dimension], id: 'changed-selection' },
+    } }
+    const html = await f.render()
+    assert.match(html, /selection changed/)
+    assert.ok(anchor(html, '/my-courses'))
+    assert.doesNotMatch(html, /BUA201|Business Administration|No confirmed courses/)
+  }
   f.state.contextError = new Error('provider secret')
   assert.doesNotMatch(await f.render(), /provider secret/)
 }))
 
-test('profile-label read failures never display courses under stale context', async () => fixture(async f => {
+test('profile-label read failures cannot expose courses or bypass completion', async () => fixture(async f => {
   for (const [status, expected] of [
-    ['missing-profile', 'profile could not be found'],
-    ['invariant-failure', 'course information needs attention'],
-    ['unavailable', 'Something went wrong'],
+    ['missing-profile', 'profile could not be found'], ['invariant-failure', 'course information needs attention'],
+    ['unavailable', 'Courses temporarily unavailable'],
   ]) {
     f.state.profile = { status }
-    const html = await f.render()
-    assert.match(html, new RegExp(expected))
-    assert.doesNotMatch(html, /BUA201 institutional title/)
+    assert.match(await f.render(), new RegExp(expected))
+    assert.doesNotMatch(await f.render(), /BUA201 institutional title/)
   }
-  f.state.profile = { status: 'incomplete' }
-  await assert.rejects(f.page, /redirect:\/profile-selection/)
-  f.state.profile = { status: 'signed-out' }
-  await assert.rejects(f.page, /redirect:\/login\?next=%2Fmy-courses/)
+  for (const [status, destination] of [['incomplete', '/profile-selection'], ['signed-out', '/login?next=%2Fmy-courses']]) {
+    f.state.profile = { status }
+    await assert.rejects(f.page, error => error.message === 'redirect:' + destination)
+  }
 }))
 
-test('loading announces status and shows inert course placeholders', async () => fixture(async f => {
+test('loading reuses the PageBand/register and inert, static accessible skeletons', async () => fixture(async f => {
   const html = renderToStaticMarkup(React.createElement(f.loading))
+  assert.match(html, /class="student-page-band"/)
   assert.match(html, /role="status"[^>]*aria-live="polite"[^>]*aria-busy="true"/)
-  assert.equal((html.match(/min-h-\[112px\]/g) || []).length, 4)
-  assert.match(html, /motion-reduce:animate-none/)
-  assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b/)
+  assert.equal((html.match(/<li\b/g) || []).length, 6)
+  assert.match(html, /aria-hidden="true"/)
+  assert.match(html, /animate-none/)
+  assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b|animate-pulse|Business Administration|BUA201|\d+%/)
 }))
