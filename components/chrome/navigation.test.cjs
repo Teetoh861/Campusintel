@@ -106,7 +106,7 @@ test('Dashboard home state belongs to the lockup and to the explicit menu destin
 }))
 
 test('Footer separates unchanged public support from compact authenticated Student App identity', async () => fixture(async f => {
-  assert.deepEqual(links(f.footer()).map(([, href]) => href), ['/', 'mailto:support@campusintell.com'])
+  assert.deepEqual(links(f.footer()).map(([, href]) => href), ['/', 'mailto:hello@campusintell.com'])
   const publicHtml = renderToStaticMarkup(f.footer())
   assert.match(publicHtml, /Academic intelligence for the University of Lagos\./)
   assert.match(publicHtml, /© 2026 CampusIntel/)

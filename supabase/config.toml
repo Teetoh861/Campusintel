@@ -109,8 +109,8 @@ port = 54324
 # Uncomment to expose additional ports for testing user applications that send emails.
 # smtp_port = 54325
 # pop3_port = 54326
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# admin_email = "no-reply@auth.campusintell.com"
+# sender_name = "CampusIntell"
 
 [storage]
 enabled = true
@@ -228,21 +228,24 @@ enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
+# Local-only short cooldown for tests; configure and verify hosted limits separately.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
+# Approved hosted provider: Resend. This example stays disabled; local mail is captured above.
+# Configure hosted SMTP in Supabase, not by applying this local config or a DB migration.
+# Reply-To and the release matrix: docs/transactional-email-release.md
 # [auth.email.smtp]
 # enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# host = "smtp.resend.com"
+# port = 465
+# user = "resend"
+# pass = "env(RESEND_SMTP_PASSWORD)"
+# admin_email = "no-reply@auth.campusintell.com"
+# sender_name = "CampusIntell"
 
 [auth.email.template.confirmation]
 subject = "Confirm your CampusIntell email"

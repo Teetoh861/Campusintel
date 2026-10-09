@@ -1,5 +1,8 @@
 # Student Auth flow-outcome audit — 2026-09-16
 
+> Historical audit: the delivery-failure 503 behavior recorded below has been superseded
+> by neutral initiation. Current contract: [transactional email release](../../docs/transactional-email-release.md).
+
 Follow-up: the controlled hosted signup responses and browser outcomes have now been
 observed. See [Hosted outcome verification](HOSTED-OUTCOME-VERIFICATION.md) for that
 evidence and the current delivery/security-test status. Hosted limitations below describe

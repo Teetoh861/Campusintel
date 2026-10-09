@@ -32,6 +32,8 @@ export function safeAuthMessage(message: unknown): string {
 const RECIPIENT_COOLDOWN = /^for security purposes/i
 
 export type EmailSendOutcome = 'sent' | 'cooldown' | 'limited' | 'policy' | 'failed'
+export type EmailInitiationAction = 'register' | 'resend' | 'recovery'
+export type EmailInitiationFailure = { status: number; error: string }
 
 /** One authoritative reading of a provider email-send result; callers decide what each outcome means for their flow. */
 export function classifyEmailSend(error: unknown): EmailSendOutcome {
@@ -45,14 +47,12 @@ export function classifyEmailSend(error: unknown): EmailSendOutcome {
   return 'failed'
 }
 
-/** Accepted sends and recipient cooldowns share one neutral acknowledgment: a cooldown rejection is only ever
- * returned for an existing recipient, so exposing it would answer whether the address is registered. A cooldown
- * never issues a new code; the prior confirmation code stays usable, while a prior recovery code may already be
- * consumed, which only the verification endpoint decides. Recipient-independent limits and failures stay truthful. */
-export function classifyEmailInitiation(error: unknown, action: 'register' | 'resend' | 'recovery'): Failure | null {
+/** Hide recipient-dependent cooldowns and delivery failures behind the same neutral acknowledgment as a no-op.
+ * Only recipient-independent quotas and signup password policy remain outward failures. An acknowledgment
+ * promises neither a new code nor delivery; verification alone decides whether a code is usable. */
+export function classifyEmailInitiation(error: unknown, action: EmailInitiationAction): EmailInitiationFailure | null {
   const outcome = classifyEmailSend(error)
-  if (outcome === 'sent' || outcome === 'cooldown') return null
   if (outcome === 'limited') return { status: 429, error: AUTH_MESSAGES.limited }
   if (outcome === 'policy' && action === 'register') return { status: 400, error: AUTH_MESSAGES.signupPassword }
-  return { status: 503, error: AUTH_MESSAGES.unavailable }
+  return null
 }

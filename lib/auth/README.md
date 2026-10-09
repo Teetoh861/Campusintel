@@ -5,6 +5,11 @@ Student auth is server-only and separate from the custom admin cookie. Only lite
 `STUDENT_AUTH_ENABLED=true` enables it; keep it disabled until the remaining Phase A
 launch gates are complete. Missing configuration is read lazily and fails closed.
 
+The current email identity, hosted template contract and release procedure live in
+[transactional email release readiness](../../docs/transactional-email-release.md).
+The dated verification/audit documents in this directory record historical results,
+not current deployment status or email-initiation response contracts.
+
 The browser submits email/password/OTP in same-origin POST bodies. It never calls
 Supabase Auth. For login and confirmation, access and refresh tokens move directly from the Auth-only gateway
 into the request-scoped publishable-key SSR client. Supabase owns cookie names,
@@ -86,7 +91,8 @@ The migration requires pg_cron and schedules expiry cleanup every minute, indepe
 of recovery traffic. The cleanup function is owner-only; service_role can execute
 only issue/consume and cannot read the table directly. Expiry is checked on every
 consume even before cleanup runs. Enable and monitor the cron job when deploying.
-The migration has not been applied to hosted Supabase.
+Verify the migration and active cron job in each target environment's deployment evidence;
+repository documentation is not a live record of hosted migration state.
 
 ## Verification commands
 
@@ -109,30 +115,24 @@ the production canonical Site URL before building, not only before starting Node
 
 ## Human deployment configuration
 
-Delivery target: `auth-interface` to `develop`. Do not target main.
+Follow [the current deployment handoff](../../docs/transactional-email-release.md)
+for application variables, Supabase/Resend settings, DNS, Reply-To and release tests.
+SMTP credentials remain outside the application and source control. Local template/config
+changes and SQL migrations do not configure hosted SMTP or hosted email templates.
 
-Vercel requires `NEXT_PUBLIC_SUPABASE_URL`,
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
-`AUTH_INTERNAL_SECRET` (strong, independently generated random secret),
-`STUDENT_AUTH_ENABLED=false` initially, and
-`NEXT_PUBLIC_SITE_URL=https://campusintell.com`.
+Email initiation acknowledges a request, never mailbox delivery. An eligible recipient's
+delivery failure, provider exception, recipient cooldown and an ineligible/nonexistent
+recipient's no-op all receive the same neutral response. Signup and resend have the same
+property: an existing confirmed signup or an ineligible resend can skip mail transport.
+Recipient-independent application/provider limits still return 429; signup password
+policy still returns 400. Application configuration failures and invalid SDK success
+envelopes fail closed. Verification and recovery grants retain their separate authority.
 
-Hosted Supabase requires Site URL `https://campusintell.com`, email confirmation
-enabled, minimum password length 8, IP forwarding enabled for server Auth, and
-reviewed production Auth rate limits. Deploy the rate-limit and recovery-grant migrations before
-enabling auth. Copy the local OTP confirmation/recovery templates to hosted
-Supabase: display the code without action links.
-Do not restore an automatic verification link in either template.
-
-Resend/SMTP: verify `auth.campusintell.com`, configure SPF, DKIM and DMARC, and use
-`CampusIntell <no-reply@auth.campusintell.com>` as sender. Configure Resend SMTP
-credentials inside Supabase; never put an SMTP password in a NEXT_PUBLIC variable.
-Verify delivery under realistic volume. Keep request-body capture disabled in any
-future application logging, error reporting or analytics integration.
-
-Before rollout, resolve the production dependency audit findings and finish the
-remaining Phase A account lifecycle, attempt-recording and analytics launch gates.
-No production dashboard or deployment configuration is changed by A2.
+Server diagnostics record only action and a bounded outcome (failed, exception,
+cooldown, limited, policy or invalid-acknowledgment). They contain no recipient, IP,
+password, OTP, token, provider message or raw acknowledgment. Monitor these events
+alongside private Supabase Auth and Resend delivery evidence. Do not capture request
+bodies or full email content in application logging, analytics or error reporting.
 
 ## Local email delivery
 

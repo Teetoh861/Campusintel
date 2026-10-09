@@ -1,6 +1,9 @@
 <!-- lib/auth/VERIFICATION.md — Executed A2 checks, file inventory and remaining release blockers. -->
 # A2 verification — 2026-09-12
 
+> Historical A2 verification, not current deployment status. Use the current
+> [transactional email release procedure](../../docs/transactional-email-release.md) for launch checks.
+
 Branch: auth-interface. Base: develop at 517c1791583a5cb388875ca618c7a749af7c238b.
 The initial working tree was clean. No staging, commits, pushes or branch changes occurred.
 
