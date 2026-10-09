@@ -55,6 +55,16 @@ const nextConfig = {
           },
         ],
       },
+      // Keep the API override last; route responses cannot replace configured headers.
+      {
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Referrer-Policy',
+            value: 'no-referrer',
+          },
+        ],
+      },
     ]
   },
 }

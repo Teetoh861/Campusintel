@@ -1,50 +1,15 @@
-// Variant B brand mark — a refined line-segment open book whose strokes follow
-// `currentColor` (so it goes white on the blue nav, navy in the footer) plus a
-// separate accent bookmark detail. Source: component-spec.md → Nav / Footer.
+// components/chrome/Logo.tsx — Supplied official C mark and wordmark artwork.
+import Image from 'next/image'
 import { cx } from './ui'
+import type { ReactElement } from 'react'
 
-export function BookLogo({ size = 34, className }: { size?: number; className?: string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 40 40"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        d="M20 11.5C16.8 9.3 13 8.6 9.2 9.1c-.7.1-1.2.7-1.2 1.4v17.1c0 .9.8 1.5 1.6 1.4 3.4-.4 6.9.3 10.4 2.6"
-        stroke="currentColor"
-        strokeWidth="2.3"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      <path
-        d="M20 11.5c3.2-2.2 7-2.9 10.8-2.4.7.1 1.2.7 1.2 1.4v17.1c0 .9-.8 1.5-1.6 1.4-3.4-.4-6.9.3-10.4 2.6"
-        stroke="currentColor"
-        strokeWidth="2.3"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      <line x1="20" y1="11.5" x2="20" y2="31.6" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" />
-      <path
-        d="M25.4 8.9v7.3l-2.4-1.8-2.4 1.8"
-        stroke="var(--student-accent)"
-        strokeWidth="2.3"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        fill="none"
-      />
-    </svg>
-  )
+/** Use the owner's approved C artwork unchanged rather than drawing a replacement. */
+export function BrandMark({ size = 34, className }: { size?: number; className?: string }): ReactElement {
+  return <Image src="/brand/campusintell-mark.png" width={size} height={size} alt="" className={className} />
 }
 
-// Wordmark "Campus Intell" with a hair-thin space between the words.
-export function Wordmark({ className }: { className?: string }) {
-  return (
-    <span className={cx('font-extrabold tracking-[-0.025em] whitespace-nowrap', className)}>
-      Campus{' '}Intell
-    </span>
-  )
+/** Render the owner's exact wordmark artwork for dark or light chrome. */
+export function Wordmark({ tone = 'navy', className }: { tone?: 'white' | 'navy'; className?: string }): ReactElement {
+  return <Image src={`/brand/campusintell-wordmark-${tone}.png`} width={859} height={135} alt=""
+    className={cx('block h-[18px] w-auto shrink-0 tablet:h-5', className)} />
 }

@@ -1,5 +1,6 @@
 // app/page.tsx — Public student account entry and repository catalogue preview; no published-readiness claims.
 import Link from 'next/link'
+import { PublicHomeBoundary } from '@/components/auth/PublicHomeBoundary'
 import { courses } from '@/lib/data/courses'
 import { Card } from '@/components/chrome/Card'
 import { HeroMotif } from '@/components/chrome/HeroMotif'
@@ -10,6 +11,7 @@ import type { Course } from '@/lib/types'
 import type { ReactElement } from 'react'
 
 const WRAP = 'app-container'
+export const dynamic = 'force-dynamic'
 
 const intelIndex = (i: number) => `Intel ${String(i + 1).padStart(2, '0')}`
 
@@ -73,7 +75,7 @@ export default function HomePage(): ReactElement {
   const behindCourse = featured.find((c) => c.slug !== previewCourse?.slug) ?? courses[1]
 
   return (
-    <>
+    <PublicHomeBoundary>
       {/* ================= HERO ================= */}
       <header className="relative overflow-hidden bg-ci-navy" data-screen-label="Hero">
         <div className={cx(WRAP, 'py-12 tablet:py-14 desktop:pb-24 desktop:pt-[88px]')}>
@@ -225,7 +227,7 @@ export default function HomePage(): ReactElement {
           </div>
         </div>
       </section>
-    </>
+    </PublicHomeBoundary>
   )
 }
 

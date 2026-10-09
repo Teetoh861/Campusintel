@@ -11,6 +11,7 @@ export const config = {
   matcher: [
     '/account/:path*',
     '/dashboard/:path*',
+    '/my-courses/:path*',
     '/profile-selection',
     '/courses/:path*',
     '/materials',

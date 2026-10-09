@@ -1,282 +1,217 @@
+// app/dashboard/dashboard.test.cjs — Real identity, command-centre hierarchy and private server boundaries.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const Module = require('node:module')
 const path = require('node:path')
-const React = require('react')
-const { renderToStaticMarkup } = require('react-dom/server')
 const ts = require('typescript')
-
-const selection = { departmentId: 'department-id', academicLevelId: 'level-id', academicPeriodId: 'period-id' }
-const profile = { status: 'complete', selection: {
-  department: { id: selection.departmentId, label: 'Business Administration', isActive: true },
-  academicLevel: { id: selection.academicLevelId, label: '200 Level', isActive: true },
-  academicPeriod: { id: selection.academicPeriodId, label: 'First Semester', isActive: true },
-} }
-const course = (id, code, content) => ({ institutionalCourseId: id, code, title: `${code} institutional title`, isFree: false, content })
-const ready = course('ready-id', 'BUA201', {
-  state: 'ready', courseSlug: 'resolved-slug', courseHref: '/courses/resolved-slug',
-  availability: { overview: true, theory: true, quiz: true },
-})
-const unbuilt = course('unbuilt-id', 'BUA203', { state: 'not-built' })
-const broken = course('broken-id', 'BUA205', { state: 'broken-link' })
-const noLearning = course('empty-id', 'BUA207', { state: 'no-learning' })
-const unavailable = course('failed-id', 'BUA209', { state: 'unavailable' })
-
-function nodes(element) {
-  if (!element || typeof element !== 'object') return []
-  return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
+const { renderToStaticMarkup } = require('react-dom/server')
 
 async function fixture(run) {
-  const originalLoad = Module._load
-  const originalTsx = Module._extensions['.tsx']
-  const pageFile = require.resolve('./page.tsx')
-  const rowFile = require.resolve('./CourseRow.tsx')
-  const loadingFile = require.resolve('./loading.tsx')
-  const state = {
-    enabled: true, context: { user: { id: 'current-student' }, sessionId: 'live-session' },
-    contextError: null, tokenError: null, result: { status: 'complete', selection, courses: [ready, unbuilt, broken] },
-    profile, domainCalls: [], profileReads: 0, clientReads: 0, contextReads: 0,
-    client: { source: 'request-scoped RLS client' },
-  }
-  const local = relative => path.join(__dirname, '../..', relative)
+  const load = Module._load, tsx = Module._extensions['.tsx'], cache = { ...require.cache }
+  const state = { enabled: true, context: { user: { id: 'student', email: 'not-a-name@example.test' }, sessionId: 'session' },
+    failure: false, client: {}, profile: { status: 'complete', firstName: 'Ọlá', selection: {
+      department: { id: 'dept', label: 'Business Administration', isActive: true },
+      academicLevel: { id: 'level', label: '200 Level', isActive: true },
+      academicPeriod: { id: 'period', label: 'First Semester', isActive: true },
+    } }, profileReads: 0, courseReads: 0, current: { status: 'complete',
+      selection: { departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period' },
+      courses: [] } }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
-      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
     }).outputText, file)
     Module._load = function(name, ...args) {
-      if (name === 'next/navigation') return { redirect: destination => { throw new Error('redirect:' + destination) } }
+      if (name === 'next/navigation') return { redirect: target => { throw Error('redirect:' + target) } }
       if (name === '@/lib/auth/config') return { isStudentAuthEnabled: () => state.enabled }
-      if (name === '@/lib/supabase/server') return { createClient: async () => {
-        state.clientReads++
-        return state.client
-      } }
-      if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async (_response, client) => {
-        state.contextReads++
-        assert.equal(client, state.client)
-        if (state.contextError) throw state.contextError
+      if (name === '@/lib/supabase/server') return { createClient: async () => state.client }
+      if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () => {
+        if (state.failure) throw Error('private provider details')
         return state.context
       } }
-      if (name === '@/lib/auth/account-continuity') return {
-        issueAccountContinuityToken: (id, sessionId) => {
-          if (state.tokenError) throw state.tokenError
-          return `page:${id}:${sessionId}`
-        },
-      }
-      if (name === '@/lib/dashboard/current-student-courses') return {
-        getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
-          assert.equal(client, state.client)
-          assert.equal(user, state.context.user)
-          state.domainCalls.push([client, user])
-          return state.result
-        },
-      }
-      if (name === '@/lib/profile/student-profile') return {
-        getCurrentStudentProfileForVerifiedStudent: async (client, user) => {
-          assert.equal(client, state.client)
-          assert.equal(user, state.context.user)
-          state.profileReads++
-          return state.profile
-        },
-      }
-      if (name === '@/lib/profile/paths') return { PROFILE_SELECTION_PATH: '/profile-selection' }
-      if (name === '@/components/auth/AuthFlowSync') return { AuthFlowSync: function AuthFlowSync() { return null } }
-      if (name === '@/components/ui/skeleton') return {
-        Skeleton: ({ className }) => React.createElement('div', { className }),
-      }
-      if (name === '@/lib/auth/constants') return originalLoad.call(this, local('lib/auth/constants.ts'), ...args)
-      if (name === '@/components/chrome/Feedback') return originalLoad.call(this, local('components/chrome/Feedback.tsx'), ...args)
-      if (name === '@/components/chrome/ui') return originalLoad.call(this, local('components/chrome/ui.tsx'), ...args)
-      return originalLoad.call(this, name, ...args)
+      if (name === '@/lib/auth/account-continuity') return { issueAccountContinuityToken: () => 'page-token' }
+      if (name === '@/lib/profile/student-profile') return { getCurrentStudentProfileForVerifiedStudent: async (client, user) => {
+        assert.equal(client, state.client); assert.equal(user, state.context.user)
+        state.profileReads++; return state.profile
+      } }
+      if (name === '@/components/auth/AuthFlowSync') return { AuthFlowSync: () => null }
+      if (name === '@/lib/dashboard/current-student-courses') return { getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
+        assert.equal(client, state.client); assert.equal(user, state.context.user)
+        state.courseReads++; return state.current
+      } }
+      return load.call(this, name, ...args)
     }
-    for (const file of [pageFile, rowFile, loadingFile]) delete require.cache[file]
-    const page = require(pageFile).default
-    const { CourseRow } = require(rowFile)
-    const loading = require(loadingFile).default
-    await run({ state, page, CourseRow, loading, render: async () => renderToStaticMarkup(await page()) })
+    const page = require('./page.tsx').default
+    const home = require('../../components/auth/PublicHomeBoundary.tsx').PublicHomeBoundary
+    await run({ state, page, home, html: async () => renderToStaticMarkup(await page()) })
   } finally {
-    Module._load = originalLoad
-    if (originalTsx) Module._extensions['.tsx'] = originalTsx; else delete Module._extensions['.tsx']
-    for (const file of [pageFile, rowFile, loadingFile]) delete require.cache[file]
+    Module._load = load
+    if (tsx) Module._extensions['.tsx'] = tsx; else delete Module._extensions['.tsx']
+    for (const key of Object.keys(require.cache)) if (!Object.hasOwn(cache, key)) delete require.cache[key]
   }
 }
 
-test('complete student sees saved context and every institutional course in domain order', async () => fixture(async f => {
-  const tree = await f.page()
-  const sync = nodes(tree).find(node => node.type?.name === 'AuthFlowSync')
-  assert.equal(sync.props.continuityToken, 'page:current-student:live-session')
-  const html = renderToStaticMarkup(tree)
-  assert.deepEqual(f.state.domainCalls, [[f.state.client, f.state.context.user]])
-  assert.equal(f.state.clientReads, 1)
-  assert.equal(f.state.contextReads, 1)
+test('Dashboard is a real personalized command centre, without semester rows or fabricated activity', async () => fixture(async f => {
+  const html = await f.html()
+  for (const text of ['Welcome back, Ọlá', 'Business Administration', '200 Level', 'First Semester',
+    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request Material', 'Help &amp; Support', 'Account', 'Waitlist']) assert.ok(html.includes(text), text)
+  assert.doesNotMatch(html, /Your semester courses|Progress|streak|GPA|credits remaining|Tobi|not-a-name@|Saved files/)
   assert.equal(f.state.profileReads, 1)
-  assert.match(html, /Business Administration · 200 Level · First Semester/)
-  assert.match(html, /href="\/profile-selection"/)
-  assert.ok(html.indexOf('BUA201') < html.indexOf('BUA203'))
-  assert.ok(html.indexOf('BUA203') < html.indexOf('BUA205'))
-  assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /href="\/courses\/resolved-slug"/)
-  assert.match(html, /Study content not yet available/)
-  assert.match(html, /Content temporarily unavailable/)
-  assert.match(html, /href="\/bookmarks"/)
-  assert.match(html, /href="\/courses"/)
-  assert.match(html, /href="\/account"/)
-  assert.equal((html.match(/href="\/profile-selection"/g) || []).length, 1)
+  assert.equal(f.state.courseReads, 1)
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8'), /CourseRow|use client/)
 }))
 
-test('selection and recovery actions lead to their existing safe destinations', async () => fixture(async f => {
-  const checkOutline = action => {
-    const classes = new Set(action.props.className.split(/\s+/))
-    for (const token of ['border-student-border-strong', 'text-[14px]', 'py-2',
-      'focus-visible:outline', 'focus-visible:outline-2']) assert.ok(classes.has(token), `missing ${token}`)
-    for (const token of ['border-transparent', 'text-[15px]', 'py-2.5']) assert.equal(classes.has(token), false)
-  }
-  const context = nodes(await f.page()).find(node => node.type?.name === 'SemesterContext')
-  const change = nodes(context.type(context.props)).find(node => node.props?.href === '/profile-selection')
-  assert.ok(change)
-  assert.equal(change.props.prefetch, false)
-  assert.match(change.props.className, /min-h-11/)
-  assert.match(change.props.className, /focus-visible:outline/)
-  checkOutline(change)
-  checkOutline(nodes(await f.page()).find(node => node.props?.href === '/bookmarks'))
-  for (const [status, href] of [['missing-profile', '/contact'], ['unavailable', '/dashboard']]) {
-    f.state.result = { status }
-    const error = nodes(await f.page()).find(node => node.type?.name === 'DashboardError')
-    const action = nodes(error.type(error.props)).find(node => node.props?.href === href)
-    assert.ok(action)
-    assert.match(action.props.className, /min-h-11/)
-    assert.match(action.props.className, /focus-visible:outline/)
-    checkOutline(action)
-  }
+test('Practice includes current course CBT and nonfunctional Coming soon AI upload, separate from material requests', async () => fixture(async f => {
+  const html = await f.html()
+  assert.match(html, /Verified CBT practice/)
+  assert.match(html, /href="\/my-courses"/)
+  assert.match(html, /Upload to Practice/)
+  assert.match(html, /Coming soon/)
+  assert.match(html, /personal AI-assisted practice/)
+  const upload = html.match(/<section aria-labelledby="upload-practice-title"[\s\S]*?<\/section>/)?.[0]
+  assert.ok(upload)
+  assert.doesNotMatch(upload, /<a |<button|type="file"|href=/)
+  assert.match(html, /href="\/materials"/)
+  assert.doesNotMatch(html, /sparkle|wand|robot|chat|copilot/i)
+  const practice = html.match(/<article aria-labelledby="practice-title"[\s\S]*?<\/article>/)?.[0]
+  assert.ok(practice.includes(upload), 'future upload is attached to the same Practice proposition')
+  assert.ok(practice.indexOf(upload) < practice.indexOf('dashboard-practice-action'), 'quiet upload note precedes the live practice action')
+  assert.match(html, /id="practice-title">Practice<\/h2>/)
+  assert.doesNotMatch(html, /Practice quizzes|dashboard-status/)
+  assert.match(upload, /class="student-status-rail" data-status="soon">Coming soon/)
+  assert.match(html, /class="student-status-rail" data-status="waitlist">Waitlist/)
 }))
 
-test('product surfaces own navy focus through shared chrome UI, not auth form styling', () => {
-  const root = path.join(__dirname, '../..')
-  const source = file => fs.readFileSync(path.join(root, file), 'utf8')
-  assert.match(source('components/chrome/ui.tsx'), /export const focusRingNavy\b/)
-  assert.doesNotMatch(source('components/chrome/FormField.tsx'), /\bAUTH_FOCUS\b/)
-  for (const file of ['app/dashboard/page.tsx', 'app/dashboard/CourseRow.tsx', 'app/account/page.tsx',
-    'app/profile-selection/page.tsx', 'app/profile-selection/ProfileSelectionForm.tsx']) {
-    const text = source(file)
-    assert.match(text, /import\s*\{[^}]*\bfocusRingNavy\b[^}]*\}\s*from\s*['"]@\/components\/chrome\/ui['"]/, file)
-    assert.doesNotMatch(text, /\bAUTH_(?:FOCUS|LINK)\b/, file)
-    assert.doesNotMatch(text, /import\s*\{[^}]*\bAUTH_[A-Z_]+\b[^}]*\}\s*from\s*['"]@\/components\/chrome\/FormField['"]/, file)
-  }
-})
-
-test('ready course has one large route target and labels only available published learning', async () => fixture(async f => {
-  const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
-  assert.match(html, /<li[^>]*><a[^>]*href="\/courses\/resolved-slug"/)
-  assert.match(html, /min-h-\[112px\]/)
-  assert.match(html, /focus-visible:outline/)
-  assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /Available: Overview · Theory · Practice quiz/)
-  assert.match(html, /Open course/)
-  assert.equal((html.match(/<a\b/g) || []).length, 1, 'the row contains no nested links')
-
-  const partial = { ...ready, content: { ...ready.content,
-    availability: { overview: false, theory: true, quiz: false } } }
-  const partialHtml = renderToStaticMarkup(React.createElement(f.CourseRow, { course: partial }))
-  assert.match(partialHtml, /Available: Theory/)
-  assert.doesNotMatch(partialHtml, /Overview|Practice quiz/)
-  assert.match(partialHtml, /href="\/courses\/resolved-slug"/)
+test('academic identity owns a full-width band outside the bounded course/action workspace', async () => fixture(async f => {
+  const tree = await f.page(), shell = tree.props.children[1]
+  assert.equal(shell.props['data-student-app'], true)
+  assert.equal(shell.props.className, 'dashboard-page', 'the band is not enclosed by a bounded page card')
+  const [identity, workspace] = shell.props.children
+  const band = identity.type(identity.props)
+  assert.equal(band.type, 'header')
+  assert.equal(band.props.className, 'dashboard-identity student-enter')
+  const inner = band.props.children[1]
+  assert.ok(inner.props.className.split(' ').includes('student-workspace'), 'only the inner academic content is constrained')
+  assert.equal(workspace.props.className, 'student-workspace dashboard-workspace')
+  assert.equal(workspace.props.children[0].type.name, 'PrimaryCards')
+  assert.equal(workspace.props.children[1].type.name, 'SupportingActions')
 }))
 
-test('courses without usable published learning remain visible and inert', async () => fixture(async f => {
-  for (const [item, message] of [
-    [unbuilt, 'Study content not yet available'], [noLearning, 'Study content not yet available'],
-    [broken, 'Content temporarily unavailable'], [unavailable, 'Content temporarily unavailable'],
-  ]) {
-    const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: item }))
-    assert.match(html, new RegExp(message))
-    assert.doesNotMatch(html, /<a\b|<button\b|href=/)
-  }
+test('Courses and material retains personal Bookmarks first and quiet icon-led help/account destinations', async () => fixture(async f => {
+  const html = await f.html()
+  const material = html.match(/<section aria-labelledby="material-title"[\s\S]*?<\/section>/)?.[0]
+  assert.ok(material)
+  assert.match(material, />Courses and material<\/h2>/)
+  assert.deepEqual([...material.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
+    ['/bookmarks', '/courses', '/materials'])
+  assert.deepEqual([...material.matchAll(/<h3>(.*?)<\/h3>/g)].map(match => match[1]),
+    ['Bookmarks', 'All Courses', 'Request Material'])
+  assert.match(material, /dashboard-bookmark-card/)
+  const utilities = html.match(/<section aria-labelledby="utilities-title"[\s\S]*?<\/section>/)?.[0]
+  assert.ok(utilities)
+  assert.deepEqual([...utilities.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
+    ['/tutors', '/contact', '/account'])
+  assert.equal((utilities.match(/class="[^"]*dashboard-utility-icon"/g) || []).length, 3)
+  assert.equal((utilities.match(/class="[^"]*dashboard-utility-arrow"/g) || []).length, 3)
+  assert.match(utilities, /data-status="waitlist">Waitlist/)
+  assert.doesNotMatch(utilities, /Log out|Logout|<button/)
 }))
 
-test('Dashboard uses semantic course and utility regions with a Saved action', async () => fixture(async f => {
-  const html = await f.render()
-  assert.match(html, /<section[^>]*aria-labelledby="dashboard-courses-title"/)
-  assert.match(html, /<aside[^>]*aria-labelledby="dashboard-utilities-title"/)
-  assert.match(html, /href="\/bookmarks"[^>]*>Saved/)
-  assert.match(html, /aria-label="Your semester courses"/)
-}))
-
-test('zero-course complete selection is an honest empty semester', async () => fixture(async f => {
-  f.state.result = { status: 'complete', selection, courses: [] }
-  const html = await f.render()
-  assert.match(html, /Business Administration · 200 Level · First Semester/)
-  assert.match(html, /No confirmed courses for this selection yet/)
-  assert.match(html, /href="\/bookmarks"/)
-  assert.doesNotMatch(html, /<ul\b|Browse courses|CourseDirectory/)
-}))
-
-test('signed-out and incomplete students follow existing login/selection routes', async () => fixture(async f => {
+test('server guards redirect absent sessions or incomplete names and keep failures private', async () => fixture(async f => {
   f.state.context = null
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fdashboard/)
-  assert.equal(f.state.domainCalls.length, 0)
-  f.state.context = { user: { id: 'current-student' }, sessionId: 'live-session' }
-  f.state.result = { status: 'signed-out' }
-  await assert.rejects(f.page, /redirect:\/login\?next=%2Fdashboard/)
-  f.state.result = { status: 'incomplete' }
-  await assert.rejects(f.page, /redirect:\/profile-selection/)
   assert.equal(f.state.profileReads, 0)
-}))
-
-test('continuity token failure stays in the unavailable state before student data reads', async () => fixture(async f => {
-  f.state.tokenError = new Error('signing secret')
-  const html = await f.render()
+  assert.equal(f.state.courseReads, 0)
+  f.state.context = { user: { id: 'student' }, sessionId: 'session' }
+  f.state.profile = { status: 'incomplete', firstName: null, options: {} }
+  await assert.rejects(f.page, /redirect:\/profile-selection/)
+  f.state.failure = true
+  const html = await f.html()
   assert.match(html, /Something went wrong/)
-  assert.doesNotMatch(html, /signing secret|BUA201 institutional title/)
-  assert.equal(f.state.contextReads, 1)
-  assert.equal(f.state.domainCalls.length, 0)
-  assert.equal(f.state.profileReads, 0)
+  assert.doesNotMatch(html, /private provider details|Welcome back/)
 }))
 
-test('domain errors remain distinct and profile-label reads cannot mix selections', async () => fixture(async f => {
-  for (const [status, message] of [
-    ['missing-profile', 'profile could not be found'],
-    ['unavailable', 'Something went wrong'],
-    ['invariant-failure', 'course information needs attention'],
-  ]) {
-    f.state.result = { status }
-    const html = await f.render()
-    assert.match(html, new RegExp(message))
-    assert.doesNotMatch(html, /current-student|live-session|department-id/)
-  }
-  f.state.result = { status: 'complete', selection, courses: [ready] }
-  f.state.profile = { ...profile, selection: { ...profile.selection,
-    academicPeriod: { ...profile.selection.academicPeriod, id: 'changed-period' },
-  } }
-  const html = await f.render()
-  assert.match(html, /selection changed/)
-  assert.doesNotMatch(html, /BUA201 institutional title|Business Administration · 200 Level/)
-  f.state.contextError = new Error('provider secret')
-  assert.doesNotMatch(await f.render(), /provider secret/)
+const mappedCourse = (index, state) => ({ institutionalCourseId: `course-${index}`, code: `COURSE${index}`,
+  title: 'Mapped course', isFree: false, content: state === 'ready'
+    ? { state, courseSlug: 'mapped-course', courseHref: '/courses/mapped-course',
+      availability: { overview: true, theory: false, quiz: false } }
+    : { state } })
+const courseCard = html => html.match(/<a\b[^>]*class="dashboard-course-file[^>]*>(.*?)<\/a>/s)?.[1]
+
+test('course summary uses the mapped collection and existing ready state, without repeating academic metadata', async () => fixture(async f => {
+  const states = ['ready', 'ready', 'ready', 'ready', 'ready', 'not-built', 'no-learning', 'unavailable']
+  f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
+  const html = await f.html(), card = courseCard(html)
+  assert.ok(card)
+  assert.match(card, /8 courses · 5 ready to study/)
+  assert.doesNotMatch(card, /200 Level|First Semester|Business Administration|progress|completion|score|streak|study hours|%/i)
+  assert.match(html, /200 Level/)
+  assert.match(html, /First Semester/)
+  assert.equal(f.state.profileReads, 1)
+  assert.equal(f.state.courseReads, 1)
+  const source = fs.readFileSync(path.join(__dirname, '../../components/dashboard/PrimaryCards.tsx'), 'utf8')
+  assert.match(source, /course\.content\.state === 'ready'/)
+  assert.doesNotMatch(source, /availability\.(?:overview|theory|quiz)|getCourseBy|supabase/)
 }))
 
-test('profile-label read failures never display courses under stale context', async () => fixture(async f => {
-  for (const [status, expected] of [
-    ['missing-profile', 'profile could not be found'],
-    ['invariant-failure', 'course information needs attention'],
-    ['unavailable', 'Something went wrong'],
+test('course summary handles singular, plural and zero-ready collections honestly', async () => fixture(async f => {
+  for (const [states, expected] of [
+    [['ready'], '1 course · 1 ready to study'],
+    [['ready', 'not-built'], '2 courses · 1 ready to study'],
+    [['not-built'], '1 course · Study content coming gradually'],
+    [['not-built', 'broken-link', 'unavailable', 'no-learning'], '4 courses · Study content coming gradually'],
   ]) {
-    f.state.profile = { status }
-    const html = await f.render()
-    assert.match(html, new RegExp(expected))
-    assert.doesNotMatch(html, /BUA201 institutional title/)
+    f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
+    const card = courseCard(await f.html())
+    assert.ok(card.includes(expected), expected)
+    assert.doesNotMatch(card, /0 ready to study|1 courses|progress|completion/i)
   }
-  f.state.profile = { status: 'incomplete' }
-  await assert.rejects(f.page, /redirect:\/profile-selection/)
-  f.state.profile = { status: 'signed-out' }
+}))
+
+test('empty, unavailable and changed selections do not invent course statistics', async () => fixture(async f => {
+  assert.match(courseCard(await f.html()), /No confirmed courses for this selection yet/)
+  assert.doesNotMatch(courseCard(await f.html()), /0 courses|ready to study/)
+  for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
+    f.state.current = { status }
+    assert.match(courseCard(await f.html()), /Course information is temporarily unavailable/)
+    assert.doesNotMatch(courseCard(await f.html()), /\d+ courses?|ready to study/)
+  }
+  for (const field of ['departmentId', 'academicLevelId', 'academicPeriodId']) {
+    f.state.current = { status: 'complete', selection: {
+      departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period', [field]: 'changed',
+    }, courses: [mappedCourse(1, 'ready')] }
+    assert.match(courseCard(await f.html()), /Course information is temporarily unavailable/)
+    assert.doesNotMatch(courseCard(await f.html()), /1 course|ready to study/)
+  }
+}))
+
+test('course-data session loss and incomplete selection retain server routing gates', async () => fixture(async f => {
+  f.state.current = { status: 'signed-out' }
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fdashboard/)
+  f.state.current = { status: 'incomplete' }
+  await assert.rejects(f.page, /redirect:\/profile-selection/)
 }))
 
-test('loading announces status and shows inert course placeholders', async () => fixture(async f => {
-  const html = renderToStaticMarkup(React.createElement(f.loading))
-  assert.match(html, /role="status"[^>]*aria-live="polite"[^>]*aria-busy="true"/)
-  assert.equal((html.match(/min-h-\[112px\]/g) || []).length, 4)
-  assert.match(html, /motion-reduce:animate-none/)
-  assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b/)
+test('public Home survives lookup failures while verified students route through guarded Dashboard', async () => fixture(async f => {
+  const children = 'public marketing'
+  f.state.context = null
+  assert.equal(await f.home({ children }), children)
+  f.state.failure = true
+  assert.equal(await f.home({ children }), children)
+  f.state.failure = false
+  f.state.context = { user: { id: 'student' }, sessionId: 'session' }
+  await assert.rejects(f.home({ children }), /redirect:\/dashboard/)
+  f.state.enabled = false
+  assert.equal(await f.home({ children }), children)
 }))
+
+test('semantic focus, official C texture and reduced motion have shared owners', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../styles/student-app.css'), 'utf8')
+  for (const name of ['control', 'row', 'dark', 'card']) assert.match(css, new RegExp(`student-focus-${name}:focus-visible`))
+  assert.match(css, /inset 0 0 0/)
+  assert.match(css, /prefers-reduced-motion: reduce/)
+  assert.match(css, /\.student-enter \{ animation: none; \}/)
+  assert.match(css, /forced-colors: active/)
+  assert.match(css, /c-pattern-white\.png/)
+  assert.doesNotMatch(css, /text-decoration: underline|0 -3px 0|Geist|Playfair|Myriad/)
+})

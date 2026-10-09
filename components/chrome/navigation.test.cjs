@@ -8,7 +8,7 @@ const { fixture, nodes } = require('./navigation.fixture.cjs')
 const { AUTH_STATUS_EVENT } = require('../../lib/auth/constants.ts')
 
 const header = f => renderToStaticMarkup(nodes(f.nav()).find(node => node.type === 'nav'))
-const forbidden = /href="\/(?:courses|bookmarks|tutors|contact|materials|dashboard|account)"|Open menu/
+const forbidden = /href="\/(?:courses|my-courses|bookmarks|tutors|contact|materials|dashboard|account)"|Open menu/
 
 const links = tree => nodes(tree).filter(node => node.props?.href)
   .map(node => [node.props.children, node.props.href])
@@ -38,18 +38,19 @@ test('initial, failed, malformed, disabled and signed-out session status never e
   assert.match(footer, /mailto:/)
 }))
 
-test('confirmed sign-in presents desktop study/account links and an accessible Sheet trigger', async () => fixture(async f => {
+test('confirmed sign-in presents the locked desktop destinations without contextual links or logout', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
   const html = header(f)
-  for (const path of ['courses', 'bookmarks', 'tutors', 'contact', 'dashboard', 'account']) {
+  for (const path of ['courses', 'tutors', 'contact', 'account']) {
     assert.match(html, new RegExp(`href="/${path}"`))
   }
-  assert.match(html, /Log out/)
+  assert.doesNotMatch(html, /Log out|href="\/(my-courses|bookmarks|materials)"/)
+  assert.equal((html.match(/href="\/dashboard"/g) || []).length, 1, 'Dashboard home is carried by the brand lockup')
   assert.ok(nodes(f.nav()).find(node => node.type === f.sheet.SheetTrigger))
   const content = nodes(f.nav()).find(node => node.type === f.sheet.SheetContent)
   assert.match(content.props.className, /overflow-y-auto/)
   assert.match(content.props.closeClassName, /h-11 w-11/)
-  assert.match(renderToStaticMarkup(f.footer()), /href="\/courses"/)
+  assert.match(renderToStaticMarkup(f.footer()), /The inside track on every paper\./)
   assert.equal(f.requests.length, 1, 'Header and Footer share one lookup')
 }))
 
@@ -65,52 +66,75 @@ test('public and student auth actions independently retain compact sizes and out
   check(actions().find(node => node.props.href === '/login'), 'px-2', 'border-student-navigation-outline')
   check(actions().find(node => node.props.href === '/register'), 'px-2', 'border-transparent')
   await f.respond({ enabled: true, signedIn: true })
-  assert.equal(actions().length, 4, 'Dashboard and Account retain their header and Sheet presentations')
-  for (const link of actions()) check(link, 'px-3', link.props.className.includes('border-student-navigation-outline')
-    ? 'border-student-navigation-outline' : 'border-student-border-strong')
+  assert.equal(actions().length, 0, 'auth actions do not own application links')
+  const ordinary = nodes(f.nav()).filter(node => node.props?.href === '/dashboard' && !node.props['aria-label'])
+  assert.equal(ordinary.length, 1, 'Dashboard is explicit only in the menu')
+  assert.ok(ordinary.every(node => !node.props.className.includes('border-transparent')))
+
 }))
 
-test('current tablet/header and Sheet groups keep independent product membership and order', async () => fixture(async f => {
+test('desktop and Sheet consume the locked breakpoint groups; Account remains an ordinary destination', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
-  const groups = nodes(f.nav()).filter(node => node.type === 'div')
-  const tablet = groups.find(node => node.props.className === 'ml-auto hidden items-center gap-1 tablet:flex desktop:hidden')
-  const desktop = groups.find(node => node.props.className === 'ml-auto hidden items-center gap-1 desktop:flex')
-  assert.deepEqual(links(tablet), [['Courses', '/courses'], ['Bookmarks', '/bookmarks']])
-  assert.deepEqual(links(desktop), [
-    ['Courses', '/courses'], ['Bookmarks', '/bookmarks'], ['Tutors', '/tutors'], ['Contact', '/contact'],
-  ])
+  const expected = [['All Courses', '/courses'], ['Tutors', '/tutors'],
+    ['Help & Support', '/contact'], ['Account', '/account']]
+  const desktop = nodes(f.nav()).find(node => node.props?.className === 'ml-auto hidden items-center gap-1 desktop:flex')
+  assert.deepEqual(links(desktop), expected)
   const content = nodes(f.nav()).find(node => node.type === f.sheet.SheetContent)
-  const study = nodes(content).find(node => node.props?.className === 'tablet:hidden')
-  assert.deepEqual(links(study), [['Courses', '/courses'], ['Bookmarks', '/bookmarks']])
-  const support = nodes(content).find(node => node.props?.className === 'border-t border-student-border pt-4')
-  assert.deepEqual(links(support), [['Tutors', '/tutors'], ['Contact', '/contact']])
-  const account = accountControls(f).filter(node => node.props?.href)
-  assert.deepEqual(account.map(node => [node.props.children, node.props.href]), [
-    ['Dashboard', '/dashboard'], ['Account', '/account'], ['Dashboard', '/dashboard'], ['Account', '/account'],
-  ])
-  assert.ok(account.every(node => node.props.prefetch === false))
+  assert.deepEqual(links(content), [['Dashboard', '/dashboard'], ...expected])
+  assert.doesNotMatch(renderToStaticMarkup(content), /Log out|href="\/(my-courses|bookmarks|materials)"/)
+  assert.equal(nodes(f.nav()).find(node => node.props?.['aria-label'] === 'CampusIntell home').props.href, '/dashboard')
+  assert.deepEqual(accountControls(f).filter(node => node.props?.href), [])
 }))
 
-test('AuthNavActions owns only entry/logout while chrome composes ordinary product links', async () => fixture(async f => {
+test('logout lives in Account and authenticated shared chrome contains no session action', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
-  const authActions = accountControls(f).filter(node => node.type?.name === 'AuthNavActions')
-  assert.equal(authActions.length, 2)
-  for (const action of authActions) {
-    const tree = action.type(action.props)
-    assert.deepEqual(links(tree), [])
-    assert.match(renderToStaticMarkup(tree), /Log out/)
-  }
+  assert.equal(accountControls(f).length, 0)
+  assert.doesNotMatch(renderToStaticMarkup(f.nav()), /Log out/)
+  assert.doesNotMatch(renderToStaticMarkup(f.footer()), /Log out/)
+  assert.match(fs.readFileSync(path.join(__dirname, '../../app/account/page.tsx'), 'utf8'), /<LogoutButton\s*\/>/)
   const source = fs.readFileSync(path.join(__dirname, '../auth/AuthNavActions.tsx'), 'utf8')
   assert.doesNotMatch(source, /STUDENT_HOME_PATH|STUDENT_DESTINATIONS|STUDENT_NAVIGATION_GROUPS|AUTH_PATHS\.account|\/dashboard|\/account|\bDashboard\b/)
 }))
 
-test('Footer retains current labels/order and independent support links', async () => fixture(async f => {
-  assert.deepEqual(links(f.footer()).map(([, href]) => href), ['/', 'mailto:hello@campusintell.com'])
+test('Dashboard home state belongs to the lockup and to the explicit menu destination', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
-  assert.deepEqual(links(f.footer()).filter(([, href]) => href.startsWith('/') && href !== '/'), [
-    ['Courses', '/courses'], ['Tutoring', '/tutors'], ['Bookmarks', '/bookmarks'],
-    ['Contact', '/contact'], ['Apply to tutor', '/become-a-tutor'],
-  ])
+  f.path('/dashboard')
+  const current = nodes(f.nav()).filter(node => node.props?.['aria-current'] === 'page')
+  assert.equal(current.length, 2)
+  assert.ok(current.every(node => node.props.href === '/dashboard'))
+  assert.equal(current.filter(node => node.props['aria-label'] === 'CampusIntell home').length, 1)
+}))
+
+test('Footer separates unchanged public support from compact authenticated Student App identity', async () => fixture(async f => {
+  assert.deepEqual(links(f.footer()).map(([, href]) => href), ['/', 'mailto:hello@campusintell.com'])
+  const publicHtml = renderToStaticMarkup(f.footer())
+  assert.match(publicHtml, /Academic intelligence for the University of Lagos\./)
+  assert.match(publicHtml, /© 2026 CampusIntel/)
+  await f.respond({ enabled: true, signedIn: true })
+  const studentHtml = renderToStaticMarkup(f.footer())
+  assert.equal(links(f.footer()).length, 0, 'compact identity does not duplicate application navigation')
+  assert.match(studentHtml, /class="student-footer"/)
+  assert.match(studentHtml, /The inside track on every paper\./)
+  assert.equal((studentHtml.match(/src="\/brand\/campusintell-mark\.png"/g) || []).length, 1)
+  assert.match(studentHtml, /width="24" height="24" alt=""/)
+  assert.doesNotMatch(studentHtml, /wordmark|<h2|<ul|My Courses|All Courses|Tutoring|Bookmarks|Help &amp; Support|Apply to tutor|mailto:/)
+  f.change(); await f.respond({ enabled: true, signedIn: false })
+  assert.equal(renderToStaticMarkup(f.footer()), publicHtml, 'logout restores the same public footer')
+}))
+
+test('shared chrome uses the official white/navy wordmark artwork inside one named home link', async () => fixture(async f => {
+  for (const signedIn of [false, true]) {
+    if (signedIn) await f.respond({ enabled: true, signedIn: true })
+    const nav = header(f), footer = renderToStaticMarkup(f.footer())
+    for (const [html, tone] of [[nav, 'white'], ...(!signedIn ? [[footer, 'navy']] : [])]) {
+      assert.match(html, /aria-label="CampusIntell home"/)
+      assert.doesNotMatch(html, /CampusIntel home|>CampusIntell<\/span>/)
+      assert.equal((html.match(/src="\/brand\/campusintell-mark\.png"/g) || []).length, 1)
+      assert.equal((html.match(new RegExp(`src="/brand/campusintell-wordmark-${tone}\\.png"`, 'g')) || []).length, 1)
+      assert.match(html, /width="859" height="135" alt=""/)
+      assert.match(html, /h-\[18px\] w-auto shrink-0 tablet:h-5/)
+    }
+  }
 }))
 
 test('nested course highlighting changes neither other links nor account action semantics', async () => fixture(async f => {
@@ -119,7 +143,7 @@ test('nested course highlighting changes neither other links nor account action 
     f.path(pathname)
     const current = nodes(f.nav()).filter(node => node.props?.['aria-current'] === 'page')
     assert.deepEqual(current.map(node => node.props.href), pathname.startsWith('/courses/') || pathname === '/courses'
-      ? ['/courses', '/courses', '/courses'] : [])
+      ? ['/courses', '/courses'] : [])
   }
   assert.ok(accountControls(f).filter(node => node.props?.href).every(node => node.props['aria-current'] === undefined))
 }))
