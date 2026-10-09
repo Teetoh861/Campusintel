@@ -1,10 +1,14 @@
-// app/my-courses/page.tsx — Preserved request-scoped semester courses for the current student.
+// app/my-courses/page.tsx — Request-scoped semester register with verified academic context.
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowUpRight, BookOpen, UserRound } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
-import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, buttonClassName, btnGhost, btnSm, cx } from '@/components/chrome/ui'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { CourseRegister } from '@/components/student/CourseRow'
+import { EmptyState } from '@/components/student/EmptyState'
+import { Notice } from '@/components/student/Notice'
+import { PageBand } from '@/components/student/PageBand'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { AUTH_MESSAGES, AUTH_PATHS } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -12,14 +16,12 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/dashboard/current-student-courses'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { CourseRow } from './CourseRow'
-import { studentFocusControl } from '@/components/student/ui'
-import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { ReactElement, ReactNode } from 'react'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
-const focusRingNavy = studentFocusControl
 const MY_COURSES_PATH = STUDENT_DESTINATIONS.myCourses.href
 
 export const dynamic = 'force-dynamic'
@@ -28,73 +30,55 @@ export const metadata = { title: 'My Courses | CampusIntell', robots: { index: f
 type CompleteProfile = Extract<StudentProfileState, { status: 'complete' }>
 type ErrorState = 'missing-profile' | 'unavailable' | 'invariant-failure' | 'selection-changed'
 
-function MyCoursesFrame({ children }: { children: ReactNode }) {
-  return <div className="app-container student-workspace student-page" data-student-app>
-    {children}
-  </div>
+function MyCoursesFrame({ children }: { children: ReactNode }): ReactElement {
+  return <div className="student-register-page" data-student-app>{children}</div>
 }
 
-function MyCoursesError({ state }: { state: ErrorState }) {
+function MyCoursesError({ state }: { state: ErrorState }): ReactElement {
   const message = state === 'missing-profile'
     ? 'Your profile could not be found. Please contact support.'
     : state === 'invariant-failure'
       ? 'Your course information needs attention. Please contact support.'
       : state === 'selection-changed'
         ? 'Your semester selection changed. Reload to see the latest courses.'
-        : AUTH_MESSAGES.unavailable
+        : 'We couldn’t load your courses just now. Your selection is saved.'
+  const title = state === 'missing-profile' ? 'Profile unavailable'
+    : state === 'invariant-failure' ? 'Course information needs attention'
+      : state === 'selection-changed' ? 'Study context changed' : 'Courses temporarily unavailable'
   return <MyCoursesFrame>
-    <section className="student-reading">
-      <h1 className="mb-3 text-xl font-bold text-student-text-primary">My Courses</h1>
-      <Feedback message={message} tone="error" />
-      {state === 'missing-profile' || state === 'invariant-failure'
-        ? <Link href={STUDENT_DESTINATIONS.contact.href} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Contact support</Link>
-        : <a href={MY_COURSES_PATH} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'mt-3')}>Try again</a>}
-    </section>
+    <PageBand title="My Courses" lede="Your semester, in one place." />
+    <div className="student-workspace student-register-workspace">
+      <Notice title={title} action={state === 'missing-profile' || state === 'invariant-failure'
+        ? <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Contact support</Link>
+        : <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>}>
+        {message}
+      </Notice>
+    </div>
   </MyCoursesFrame>
 }
 
-function SemesterContext({ selection }: { selection: CompleteProfile['selection'] }) {
+function SemesterContext({ selection, total, ready }: {
+  selection: CompleteProfile['selection']; total: number; ready: number
+}): ReactElement {
   const labels = [selection.department.label, selection.academicLevel.label, selection.academicPeriod.label]
-  const inactive = [selection.department, selection.academicLevel, selection.academicPeriod]
-    .some(item => !item.isActive)
-  return <header className="flex items-start gap-3 rounded-ci-card border border-student-border bg-student-brand-surface px-3 py-3 tablet:items-center tablet:px-5 tablet:py-4 desktop:px-6">
-    <div className="min-w-0 flex-1">
-      <h1 className="text-[16px] font-bold leading-5 text-student-text-primary tablet:text-[18px]">My Courses</h1>
-      <p className="mt-0.5 text-[13px] leading-[1.35] text-student-text-secondary tablet:text-[15px]">{labels.join(' · ')}</p>
-      {inactive && <p className="mt-1 text-[12px] leading-4 text-student-text-secondary">A saved choice is no longer selectable.</p>}
-    </div>
-    <Link href={PROFILE_SELECTION_PATH} prefetch={false}
-      className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
-      Change<span className="sr-only"> semester selection</span>
-    </Link>
-  </header>
-}
-
-function QuickLinks() {
-  return <aside aria-labelledby="my-courses-utilities-title" className="min-w-0 desktop:col-start-2 desktop:row-start-1">
-    <h2 id="my-courses-utilities-title" className="mb-2 text-[14px] font-bold text-student-text-primary tablet:text-[16px]">Quick links</h2>
-    <div className="grid grid-cols-2 gap-2 tablet:gap-3 desktop:grid-cols-1">
-      <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false}
-        className={cx('student-surface flex min-h-11 items-center gap-2 !p-3 text-[14px] font-semibold text-student-primary desktop:hover:border-student-border-hover', focusRingNavy)}>
-        <BookOpen aria-hidden="true" className="h-4 w-4 shrink-0" />
-        <span className="min-w-0">{STUDENT_DESTINATIONS.courses.label}</span>
-        <ArrowUpRight aria-hidden="true" className="ml-auto hidden h-4 w-4 shrink-0 desktop:block" />
+  const inactive = [selection.department, selection.academicLevel, selection.academicPeriod].some(item => !item.isActive)
+  return <PageBand title="My Courses" lede="Your semester, in one place."
+    context={<p>{labels.join(' · ')}{inactive && <span className="student-context-inactive">A saved choice is no longer selectable.</span>}</p>}
+    aside={<div className="student-register-context-actions">
+      {total > 0 && <p className="student-register-summary">{total} {total === 1 ? 'course' : 'courses'} · {ready} ready to study</p>}
+      <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
+        Change<span className="sr-only"> semester selection</span>
       </Link>
-      <Link href={STUDENT_DESTINATIONS.account.href} prefetch={false}
-        className={cx('student-surface flex min-h-11 items-center gap-2 !p-3 text-[14px] font-semibold text-student-primary desktop:hover:border-student-border-hover', focusRingNavy)}>
-        <UserRound aria-hidden="true" className="h-4 w-4 shrink-0" />
-        <span className="min-w-0">{STUDENT_DESTINATIONS.account.label}</span>
-        <ArrowUpRight aria-hidden="true" className="ml-auto hidden h-4 w-4 shrink-0 desktop:block" />
-      </Link>
-    </div>
-  </aside>
+    </div>} />
 }
 
 /** Render only the current session owner's persisted institutional semester. */
 export default async function MyCoursesPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <MyCoursesFrame>
-    <h1 className="mb-3 text-xl font-bold text-student-text-primary">My Courses</h1>
-    <Feedback message={AUTH_MESSAGES.comingSoon} />
+    <PageBand title="My Courses" lede="Your semester, in one place." />
+    <div className="student-workspace student-register-workspace">
+      <Notice title="My Courses is not available yet" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
+    </div>
   </MyCoursesFrame>
 
   let verified: {
@@ -133,23 +117,29 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
   }
 
   return <>{continuity}<MyCoursesFrame>
-    <SemesterContext selection={profile.selection} />
-    <div className="mt-4 grid min-w-0 gap-6 desktop:mt-6 desktop:grid-cols-[minmax(0,1fr)_minmax(240px,280px)] desktop:items-start desktop:gap-8">
-      <section aria-labelledby="my-courses-list-title" className="min-w-0 desktop:col-start-1 desktop:row-start-1">
-        <div className="flex min-h-11 items-center justify-between gap-3">
-          <h2 id="my-courses-list-title" className="student-section-title">Your courses</h2>
-          <Link href={STUDENT_DESTINATIONS.bookmarks.href} prefetch={false}
-            className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'shrink-0 !px-3')}>
-            Bookmarks<span className="sr-only"> courses</span>
-          </Link>
-        </div>
-        {result.courses.length === 0
-          ? <div className="mt-3"><Feedback message="No confirmed courses for this selection yet." /></div>
-          : <ul className="mt-3 grid min-w-0 gap-2 tablet:grid-cols-2 tablet:gap-3" aria-label="Your semester courses">
+    <SemesterContext selection={profile.selection} total={result.courses.length}
+      ready={result.courses.filter(course => course.content.state === 'ready').length} />
+    <div className="student-workspace student-register-workspace">
+      {result.courses.length === 0
+        ? <EmptyState title="No confirmed courses for this selection yet." actions={<>
+          <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Change selection</Link>
+          <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnGhost)}>Browse All Courses</Link>
+        </>}>
+          CampusIntell hasn’t confirmed the course list for this academic selection yet. Check your selection, or look through the full library.
+        </EmptyState>
+        : <section aria-labelledby="my-courses-list-title">
+          <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
+          <CourseRegister label="Your semester courses">
             {result.courses.map(course => <CourseRow key={course.institutionalCourseId} course={course} />)}
-          </ul>}
-      </section>
-      <QuickLinks />
+          </CourseRegister>
+          {result.courses.some(course => course.content.state === 'not-built' || course.content.state === 'no-learning') &&
+            <div className="student-register-request">
+              <p>Missing material for one of your courses?</p>
+              <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false} className={studentAction('student-register-request-link')}>
+                {STUDENT_DESTINATIONS.materials.label}<ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+              </Link>
+            </div>}
+        </section>}
     </div>
   </MyCoursesFrame></>
 }

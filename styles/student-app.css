@@ -13,6 +13,72 @@
   margin-inline: auto;
 }
 .student-workspace.app-container { width: calc(100% - var(--student-workspace-gutter) * 2); }
+/* Semester registers share these Student App primitives; Dashboard composition stays separate. */
+#top:has(> .student-register-page) { background: var(--student-surface); }
+.student-register-page { background: var(--student-surface); padding-bottom: 32px; }
+.student-page-band { background: var(--student-brand-surface); border-bottom: 1px solid var(--student-border); }
+.student-page-band-inner { display: grid; gap: 16px; align-items: end; padding-block: 16px 20px; }
+.student-page-band-body,
+.student-page-band-aside { min-width: 0; }
+.student-page-band-context { color: var(--student-primary); font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.student-context-inactive { display: block; margin-top: 4px; color: var(--student-text-secondary); font-weight: 400; }
+.student-page-band-title { margin-top: 4px; color: var(--student-primary); font-size: clamp(1.75rem, 1.585rem + .674vw, 2.125rem); line-height: 1.12; font-weight: 750; letter-spacing: -.02em; }
+.student-page-band-lede { margin-top: 4px; color: var(--student-text-secondary); font-size: 16px; line-height: 1.5; }
+.student-register-context-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 12px; border-top: 1px solid var(--student-border); }
+.student-register-context-actions > a { flex: none; }
+.student-register-context-actions > a:only-child { margin-left: auto; }
+.student-register-summary { color: var(--student-primary); font-size: 14px; font-weight: 600; line-height: 1.3; }
+.student-register-workspace { padding-top: 20px; }
+.student-course-register { list-style: none; margin: 0; padding: 0 8px; border: 1px solid var(--student-border); border-radius: 16px; background: var(--student-surface); overflow: hidden; }
+.student-course-register > li { min-width: 0; border-bottom: 1px solid var(--student-border); }
+.student-course-register > li:last-child { border-bottom: 0; }
+.student-course-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; min-height: 84px; padding: 12px 8px; color: var(--student-text-primary); text-decoration: none; }
+.student-course-row-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.student-course-row-code { margin-bottom: 2px; color: var(--student-link); font-size: 13px; line-height: 1.25; font-weight: 600; letter-spacing: .02em; }
+.student-course-row-title { color: var(--student-primary); font-size: 16px; line-height: 1.25; font-weight: 700; text-wrap: pretty; }
+.student-course-row-meta { margin-top: 6px; color: var(--student-text-secondary); font-size: 13px; font-weight: 600; line-height: 1.3; }
+.student-course-row-meta .student-status-rail { align-items: flex-start; font-size: inherit; line-height: inherit; }
+.student-course-row-meta .student-status-rail::before { margin-top: 1px; }
+.student-course-row-error { display: flex; align-items: flex-start; gap: 7px; color: var(--student-error); }
+.student-course-row-error > svg { flex: none; margin-top: 2px; }
+.student-course-row-chevron { align-self: center; flex: none; color: var(--student-text-muted); }
+.student-course-row-link { transition: background-color 140ms ease; }
+.student-course-row-link:hover { background: var(--student-surface-muted); }
+.student-course-row-link:hover .student-course-row-chevron { color: var(--student-primary); }
+.student-course-row-link:active { background: var(--student-brand-surface); }
+.student-register-request { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 16px; padding-inline: 8px; }
+.student-register-request > p { color: var(--student-text-muted); font-size: 14px; line-height: 1.4; }
+.student-register-request-link { padding-inline: 4px; color: var(--student-link); text-decoration: none; }
+.student-notice { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border: 1px solid var(--student-border); border-radius: 16px; background: var(--student-brand-surface); }
+.student-notice > svg { flex: none; margin-top: 1px; color: var(--student-link); }
+.student-notice-body { min-width: 0; overflow-wrap: anywhere; }
+.student-notice-title { color: var(--student-primary); font-size: 15px; line-height: 1.25; font-weight: 700; }
+.student-notice-text { margin-top: 2px; color: var(--student-text-secondary); font-size: 14px; line-height: 1.4; }
+.student-notice-action { margin-top: 8px; }
+.student-notice[data-tone='error'] { border-color: color-mix(in srgb, var(--student-error) 26%, var(--student-surface)); background: var(--student-error-surface); }
+.student-notice[data-tone='error'] > svg,
+.student-notice[data-tone='error'] .student-notice-title { color: var(--student-error); }
+.student-empty-state { padding: 32px 24px; border: 1.5px dashed var(--student-control-border); border-radius: 16px; }
+.student-empty-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 12px; border-radius: 12px; background: var(--student-brand-surface); color: var(--student-link); }
+.student-empty-title { color: var(--student-primary); font-size: 17px; line-height: 1.25; font-weight: 700; }
+.student-empty-text { max-width: 420px; margin-top: 8px; color: var(--student-text-secondary); font-size: 14px; line-height: 1.4; }
+.student-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+@media (min-width: 768px) {
+  .student-page-band-inner { grid-template-columns: minmax(0,1fr) minmax(0,1.3fr); padding-block: 24px; }
+  .student-page-band-body:only-child { grid-column: 1 / -1; }
+  .student-register-context-actions { justify-content: flex-end; padding-top: 0; border-top: 0; }
+  .student-course-register { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-rows: repeat(var(--student-register-rows),auto); grid-auto-flow: column; }
+  .student-course-register[data-count='1'] { grid-template-columns: minmax(0,1fr); }
+  .student-course-register > li[data-column='1'] { padding-right: 8px; }
+  .student-course-register > li[data-column='2'] { padding-left: 8px; border-left: 1px solid var(--student-border); }
+  .student-course-register > li[data-column-end='true'] { border-bottom: 0; }
+}
+@media (min-width: 1200px) {
+  .student-page-band-inner { padding-block: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .student-course-row-link { transition: none; }
+}
 .dashboard-page { background: var(--student-surface); }
 .dashboard-workspace { padding-block: 20px 40px; }
 .dashboard-identity { position: relative; overflow: hidden; background: var(--student-brand-surface); }
