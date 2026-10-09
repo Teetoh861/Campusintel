@@ -6,12 +6,14 @@ import { useState } from 'react'
 import { Card } from '@/components/chrome/Card'
 import { TaskHeader } from '@/components/chrome/TaskHeader'
 import { Skeleton } from '@/components/ui/skeleton'
+import { BookmarkToggle } from '@/components/student/BookmarkToggle'
 import { btnAccent, btnBase, cx } from '@/components/chrome/ui'
 import { useBookmarks } from '@/lib/bookmarks/client'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { CardProps } from '@/components/chrome/Card'
 import type { ReactElement } from 'react'
 
-const WRAP = 'app-container'
+const WRAP = 'app-container student-workspace'
 
 export type BookmarkableCourse = {
   id: string
@@ -29,12 +31,12 @@ const pad2 = (n: number) => String(n).padStart(2, '0')
 
 /** Present saved courses honestly while account-backed bookmarks load. */
 export function BookmarksClient({ catalog }: Props): ReactElement {
-  const { snapshot, remove, refresh } = useBookmarks(catalog)
+  const { snapshot, toggle, refresh } = useBookmarks(catalog)
   const [error, setError] = useState(false)
 
-  const removeCourse = async (course: BookmarkableCourse) => {
+  const toggleCourse = async (course: BookmarkableCourse) => {
     setError(false)
-    if (!await remove(course)) setError(true)
+    if (await toggle(course) === null) setError(true)
   }
 
   const byKey = new Map<string, BookmarkableCourse>()
@@ -60,10 +62,10 @@ export function BookmarksClient({ catalog }: Props): ReactElement {
   const loading = snapshot.mode === 'loading'
   const unavailable = snapshot.mode === 'unavailable'
 
-  return <>
-    <TaskHeader label="Cover" title="Saved files"
-      crumbs={[{ label: 'Home', href: '/' }, { label: 'Bookmarks' }]}
-      count={loading || unavailable ? undefined : `${countLabel} saved`}
+  return <div data-student-app>
+    <TaskHeader label="Cover" title={STUDENT_DESTINATIONS.bookmarks.label}
+      crumbs={[{ label: 'Dashboard', href: STUDENT_DESTINATIONS.dashboard.href }, { label: STUDENT_DESTINATIONS.bookmarks.label }]}
+      count={loading || unavailable ? undefined : `${countLabel} bookmarks`}
       description={snapshot.mode === 'local'
         ? 'Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.'
         : 'Your shortlist of courses. Bookmarks are saved to your account for the next study run.'} />
@@ -78,7 +80,7 @@ export function BookmarksClient({ catalog }: Props): ReactElement {
         </> : unavailable || count === 0 ?
           <div className="student-surface mx-auto max-w-[540px] text-center">
             <div className="student-meta font-semibold">
-              {unavailable ? 'Temporarily unavailable' : 'No saved files yet'}
+              {unavailable ? 'Temporarily unavailable' : 'No bookmarks yet'}
             </div>
             <h2 className="student-section-title mt-3">
               {unavailable ? 'Could not load bookmarks' : 'Your bookmarks are empty'}
@@ -95,19 +97,15 @@ export function BookmarksClient({ catalog }: Props): ReactElement {
           </div> : <>
             <p className="student-meta mb-4">{snapshot.mode === 'local' ? 'Saved to this device' : 'Saved to your account'}</p>
             {error && <p role="alert" className="mb-4 text-sm font-semibold text-student-error">
-              Could not remove that bookmark. Try again.
+              Could not update that bookmark. Try again.
             </p>}
             <div className="student-grid">
               {matches.map(course => <Card key={course.id} {...course.cardProps}
-                cornerAction={<button type="button"
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-student-border-strong bg-student-surface text-2xl leading-none text-student-text-secondary transition-colors hover:border-student-error hover:bg-student-error-surface hover:text-student-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus"
-                  onClick={() => { void removeCourse(course) }}
-                  aria-label={`Remove ${course.code} from bookmarks`}>
-                  <span aria-hidden="true">&times;</span>
-                </button>} />)}
+                cornerAction={<BookmarkToggle pressed label={`Bookmark ${course.code}`}
+                  onClick={() => { void toggleCourse(course) }} />} />)}
             </div>
           </>}
       </div>
     </section>
-  </>
+  </div>
 }

@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 
 import '../styles/campusintel.css'
 import './globals.css'
+import '../styles/student-app.css'
 
 import { Nav } from '@/components/chrome/Nav'
 import { Footer } from '@/components/chrome/Footer'

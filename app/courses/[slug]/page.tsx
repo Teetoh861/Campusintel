@@ -10,6 +10,7 @@ import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
 import { getPublishedManagedCourse } from '@/lib/managed-content/published'
 import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
 import { projectStudentLearning } from '@/lib/managed-content/student-projection'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { ManagedTheoryQuestion } from '@/lib/managed-content/student-projection'
 import type {
   Course,
@@ -219,9 +220,9 @@ async function CourseDetail({ slug }: { slug: string }) {
         <DashedRing className="absolute right-[-60px] top-[-40px] z-0 h-[300px] w-[300px] text-ci-blue-600 opacity-50" />
         <div className={cx(WRAP, 'relative z-[1] pb-11 pt-[30px] min-[900px]:pb-[60px] min-[900px]:pt-10')}>
           <nav className="mb-[30px] flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200" aria-label="Breadcrumb">
-            <Link href="/" className="transition-colors hover:text-white">Home</Link>
+            <Link href={STUDENT_DESTINATIONS.dashboard.href} className="transition-colors hover:text-white">{STUDENT_DESTINATIONS.dashboard.label}</Link>
             <span className="text-white/35">/</span>
-            <Link href="/courses" className="transition-colors hover:text-white">Courses</Link>
+            <Link href={STUDENT_DESTINATIONS.courses.href} className="transition-colors hover:text-white">{STUDENT_DESTINATIONS.courses.label}</Link>
             <span className="text-white/35">/</span>
             <span className="text-white">{course.title}</span>
           </nav>

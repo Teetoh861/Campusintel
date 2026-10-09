@@ -73,10 +73,10 @@ test('signed-out entry points retain Auth redirects without reading the account 
 test('incomplete account reaches selection; completed account stays and offers intentional editing', async () => fixture(async f => {
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   let page = await f.selectionPage()
-  assert.equal(page.props.title, 'Profile selection')
+  assert.equal(page.props.title, 'Complete your profile')
   assert.equal(page.props.children[1].type.name, 'ProfileSelectionForm')
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
-  f.state.profile = { status: 'complete', options, selection }
+  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
   const account = await f.account()
   assert.equal(account.props.title, 'Your profile')
   const link = nodes(account).find(node => node.props?.children === 'Change selection')
@@ -90,13 +90,13 @@ test('account and profile error links use shared secondary button focus', async 
   const check = link => {
     const actual = new Set(link.props.className.split(/\s+/))
     for (const token of ['min-h-11', 'px-4', 'py-2', 'text-[14px]', 'border-student-border-strong',
-      'bg-transparent', 'focus-visible:outline', 'focus-visible:outline-2', 'focus-visible:outline-student-focus']) {
+      'bg-transparent', 'student-focus-control']) {
       assert.ok(actual.has(token), `missing action style ${token}`)
     }
     for (const token of ['border-transparent', 'px-5', 'py-2.5', 'text-[15px]']) assert.equal(actual.has(token), false)
     assert.equal(actual.has('underline'), false)
   }
-  f.state.profile = { status: 'complete', options, selection }
+  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
   check(nodes(await f.account()).find(node => node.props?.children === 'Change selection'))
   f.state.profile = { status: 'unavailable' }
   check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to account'))
@@ -106,7 +106,7 @@ test('auth and selection redirects terminate, including a completed student open
   await assert.rejects(f.signedOutGate({ children: 'login form' }), /redirect:\/dashboard/)
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
-  f.state.profile = { status: 'complete', options, selection }
+  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
   assert.equal((await f.account()).props.title, 'Your profile')
   assert.equal((await f.selectionPage()).props.title, 'Change selection')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
@@ -131,8 +131,8 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
   assert.equal(f.state.reads, reads)
 }))
 
-test('Account puts academic selection first and shows only the real email and sign out action', async () => fixture(async f => {
-  f.state.profile = { status: 'complete', options, selection }
+test('Account puts academic selection first and shows the real first name, email and sign out action', async () => fixture(async f => {
+  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
   const account = await f.account()
   const frame = account.type(account.props)
   const frameNodes = nodes(frame)
@@ -152,7 +152,8 @@ test('Account puts academic selection first and shows only the real email and si
     ['Fixture department', 'Fixture level', 'Fixture semester'])
   assert.equal(nodes(sections[0]).find(node => node.props?.children === 'Change selection')?.props.href,
     '/profile-selection')
-  assert.equal(nodes(sections[1]).find(node => node.type === 'dd')?.props.children, 'student@example.test')
+  assert.deepEqual(nodes(sections[1]).filter(node => node.type === 'dt').map(node => node.props.children), ['First name', 'Email'])
+  assert.deepEqual(nodes(sections[1]).filter(node => node.type === 'dd').map(node => node.props.children), ['Adaeze', 'student@example.test'])
   assert.ok(nodes(sections[2]).some(node => node.type?.name === 'LogoutButton'))
   assert.equal(frameNodes.find(node => node.props?.children === 'Dashboard')?.props.href, '/dashboard')
   const visibleCopy = [account.props.title, account.props.description,
@@ -163,10 +164,10 @@ test('Account puts academic selection first and shows only the real email and si
 test('Profile selection uses the student workspace for incomplete, complete and error states', async () => fixture(async f => {
   let page = await f.selectionPage()
   let frame = page.type(page.props)
-  assert.match(frame.props.className, /app-container student-page/)
-  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Profile selection')
+  assert.match(frame.props.className, /app-container student-workspace student-page/)
+  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Complete your profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.status, 'incomplete')
-  f.state.profile = { status: 'complete', options, selection }
+  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
   page = await f.selectionPage()
   assert.equal(page.props.title, 'Change selection')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.selection, selection)

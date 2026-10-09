@@ -48,6 +48,7 @@ async function fixture(run) {
     Module._load = function(name, ...args) {
       if (name === 'react') return hooks
       if (name === 'next/link') return ({ href, children, prefetch, ...props }) => React.createElement('a', { href, ...props }, children)
+      if (name === 'next/image') return props => React.createElement('img', props)
       if (name === 'next/navigation') return { usePathname: () => pathname }
       if (name === '@/lib/auth/client-events') return { onStudentChange: callback => {
         subscriptions.add(callback); return () => subscriptions.delete(callback)
