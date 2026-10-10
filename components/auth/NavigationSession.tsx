@@ -3,15 +3,15 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { onStudentChange } from '@/lib/auth/client-events'
-import { AUTH_API, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
+import { AUTH_API, AUTH_LOGOUT_CONTEXT_HEADER, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
 import type { ReactElement, ReactNode } from 'react'
 
-type NavigationSession = { signedIn: boolean; version: number }
-const SessionContext = createContext<NavigationSession>({ signedIn: false, version: 0 })
+type NavigationSession = { signedIn: boolean; version: number; continuityToken: string | null }
+const SessionContext = createContext<NavigationSession>({ signedIn: false, version: 0, continuityToken: null })
 
 /** Reuse the server-verified status endpoint; pending and failed lookups show public chrome. */
 export function NavigationSessionProvider({ children }: { children: ReactNode }): ReactElement {
-  const [state, setState] = useState<NavigationSession>({ signedIn: false, version: 0 })
+  const [state, setState] = useState<NavigationSession>({ signedIn: false, version: 0, continuityToken: null })
 
   useEffect(() => {
     let controller: AbortController | undefined
@@ -20,17 +20,21 @@ export function NavigationSessionProvider({ children }: { children: ReactNode })
       controller?.abort()
       controller = new AbortController()
       const { signal } = controller
-      setState(previous => ({ signedIn: false, version: previous.version + 1 }))
+      setState(previous => ({ signedIn: false, version: previous.version + 1, continuityToken: null }))
       try {
         const response = await fetch(AUTH_API.session, {
           cache: 'no-store', credentials: 'same-origin', signal,
+          headers: { [AUTH_LOGOUT_CONTEXT_HEADER]: 'true' },
         })
         const result: unknown = await response.json()
         if (!response.ok || !result || typeof result !== 'object' ||
             !('enabled' in result) || typeof result.enabled !== 'boolean' ||
             !('signedIn' in result) || typeof result.signedIn !== 'boolean') return
         const signedIn = result.enabled && result.signedIn
-        if (active && !signal.aborted) setState(previous => ({ ...previous, signedIn }))
+        const continuityToken = 'continuityToken' in result && typeof result.continuityToken === 'string'
+          && result.continuityToken ? result.continuityToken : null
+        if (signedIn && continuityToken === null) return
+        if (active && !signal.aborted) setState(previous => ({ ...previous, signedIn, continuityToken }))
       } catch { /* Public chrome remains visible; protected routes keep their server guards. */ }
     }
     const visible = (): void => { if (document.visibilityState === 'visible') void refresh() }

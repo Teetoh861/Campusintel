@@ -1,5 +1,6 @@
 // lib/operator/editor-client.ts — Typed browser transport for the guarded operator editor route.
 import { z } from 'zod'
+import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
 import { institutionalCourse, managedHistory, managedItem, repositoryCourse } from './editor-contract'
 import type { EditorMutation, InstitutionalCourse, ManagedHistory, ManagedItem, RepositoryCourse } from './editor-contract'
 import type { ZodType } from 'zod'
@@ -9,7 +10,7 @@ const writeResult = z.object({ itemId: z.string().uuid().optional(), repositoryC
   created: z.boolean().optional(), lockVersion: z.number().int().positive().optional() }).strict()
 
 export class EditorApiError extends Error {
-  constructor(public status: number, message: string) { super(message) }
+  constructor(public status: number, message: string, public code?: 'session-changed') { super(message) }
 }
 
 async function parseResponse<T>(response: Response, schema: ZodType<T>): Promise<T> {
@@ -17,6 +18,9 @@ async function parseResponse<T>(response: Response, schema: ZodType<T>): Promise
   try { body = await response.json() }
   catch { throw new EditorApiError(503, 'The editor could not read the server response.') }
   if (!response.ok) {
+    if (response.status === 409 && z.object({ status: z.literal('session-changed') }).safeParse(body).success) {
+      throw new EditorApiError(409, 'Your account or session changed. Reload the workspace before continuing.', 'session-changed')
+    }
     const problem = z.object({ message: z.string().optional() }).passthrough().safeParse(body)
     const fallback = response.status === 409 ? 'Another operator changed this record. Reload before continuing.'
       : response.status === 401 || response.status === 403 ? 'Operator access is no longer available.'
@@ -52,9 +56,9 @@ export async function fetchOperatorHistory(itemId: string): Promise<ManagedHisto
 }
 
 /** Submit one deliberate editor action; the route revalidates Auth and input. */
-export async function sendEditorMutation(input: EditorMutation): Promise<z.infer<typeof writeResult>> {
+export async function sendEditorMutation(input: EditorMutation, continuityToken: string): Promise<z.infer<typeof writeResult>> {
   const response = await fetch('/api/admin/editor', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: continuityToken },
     body: JSON.stringify(input), cache: 'no-store',
   })
   return parseResponse(response, writeResult)

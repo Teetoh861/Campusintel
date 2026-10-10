@@ -9,7 +9,7 @@ import { EditorApiError, fetchOperatorCourses, fetchOperatorHistory, fetchOperat
 import type { ReactElement } from 'react'
 import type { ContentMutation, InstitutionalCourse, ManagedHistory, ManagedItem, RepositoryCourse } from '@/lib/operator/editor-contract'
 
-type Props = { repositories: RepositoryCourse[]; institutional: InstitutionalCourse[] }
+type Props = { repositories: RepositoryCourse[]; institutional: InstitutionalCourse[]; continuityToken: string }
 type Notice = { tone: 'success' | 'error'; text: string }
 
 function actionMessage(action: ContentMutation['action']): string {
@@ -23,7 +23,9 @@ function actionMessage(action: ContentMutation['action']): string {
 
 /** Coordinate selection, editor requests, and explicit conflict recovery. */
 export function OperatorWorkspace(initial: Props): ReactElement {
-  const [catalogue, setCatalogue] = useState(initial)
+  const [catalogue, setCatalogue] = useState<Pick<Props, 'repositories' | 'institutional'>>({
+    repositories: initial.repositories, institutional: initial.institutional,
+  })
   const [courseId, setCourseId] = useState<string | null>(null)
   const [loadedCourseId, setLoadedCourseId] = useState<string | null>(null)
   const [items, setItems] = useState<ManagedItem[]>([])
@@ -35,6 +37,9 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [conflict, setConflict] = useState(false)
   const [denied, setDenied] = useState(false)
+  const [sessionChanged, setSessionChanged] = useState(false)
+  const pageToken = useRef(initial.continuityToken).current
+  const invalidated = useRef(false)
   const requestNumber = useRef(0)
   const activeCourse = useRef<string | null>(null)
   const courseReady = courseId !== null && loadedCourseId === courseId && !loading
@@ -44,6 +49,16 @@ export function OperatorWorkspace(initial: Props): ReactElement {
 
   function report(error: unknown): void {
     const problem = error instanceof EditorApiError ? error : new EditorApiError(503, 'The content service is unavailable.')
+    if (problem.code === 'session-changed') {
+      invalidated.current = true
+      ++requestNumber.current
+      activeCourse.current = null
+      setSessionChanged(true)
+      setItems([])
+      setHistory(null)
+      setParentHistory(null)
+      return
+    }
     if (problem.status === 401 || problem.status === 403) {
       activeCourse.current = null
       setDenied(true)
@@ -105,12 +120,12 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   }
 
   async function mutate(input: ContentMutation): Promise<void> {
-    if (busy || !courseReady || activeCourse.current !== courseId) return
+    if (invalidated.current || busy || !courseReady || activeCourse.current !== courseId) return
     setBusy(true)
     setNotice(null)
     setConflict(false)
     try {
-      const result = await sendEditorMutation(input)
+      const result = await sendEditorMutation(input, pageToken)
       const refreshed = await loadCourse(courseId, result.itemId ?? itemId)
       setNotice(refreshed ? { tone: 'success', text: actionMessage(input.action) }
         : { tone: 'error', text: 'The action was recorded, but the latest view could not load. Select the course to reload.' })
@@ -119,11 +134,11 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   }
 
   async function provision(course: InstitutionalCourse): Promise<void> {
-    if (busy || !window.confirm(`Create one permanent repository identity for ${course.course_code} · ${course.display_title}? Only this catalogue row will be linked; unresolved aliases will remain separate. The student catalogue may show this course as unavailable until a student route supports its new content key.`)) return
+    if (invalidated.current || busy || !window.confirm(`Create one permanent repository identity for ${course.course_code} · ${course.display_title}? Only this catalogue row will be linked; unresolved aliases will remain separate. The student catalogue may show this course as unavailable until a student route supports its new content key.`)) return
     setBusy(true)
     setNotice(null)
     try {
-      const result = await sendEditorMutation({ action: 'provision', institutionalCourseId: course.id })
+      const result = await sendEditorMutation({ action: 'provision', institutionalCourseId: course.id }, pageToken)
       const nextCatalogue = await fetchOperatorCourses()
       setCatalogue(nextCatalogue)
       const refreshed = result.repositoryCourseId ? await loadCourse(result.repositoryCourseId) : false
@@ -135,18 +150,18 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   }
 
   async function restore(revision: number, parentRevision?: number): Promise<void> {
-    if (busy || !courseReady || activeCourse.current !== courseId || !selectedItem) return
+    if (invalidated.current || busy || !courseReady || activeCourse.current !== courseId || !selectedItem) return
     setBusy(true)
     setNotice(null)
     let approved = false
     try {
       const result = await sendEditorMutation({ action: 'review', itemId: selectedItem.item_id,
         expectedLockVersion: selectedItem.lock_version, revision, decision: 'approved',
-        ...(parentRevision ? { parentRevision } : {}) })
+        ...(parentRevision ? { parentRevision } : {}) }, pageToken)
       approved = true
       if (!result.lockVersion) throw new EditorApiError(503, 'The new lock version is unavailable.')
       await sendEditorMutation({ action: 'publish', itemId: selectedItem.item_id,
-        expectedLockVersion: result.lockVersion, revision })
+        expectedLockVersion: result.lockVersion, revision }, pageToken)
       const refreshed = await loadCourse(courseId, selectedItem.item_id)
       setNotice(refreshed ? { tone: 'success', text: `Revision ${revision} restored. Later history remains available.` }
         : { tone: 'error', text: 'The restore was recorded, but the latest history could not load. Select the item again.' })
@@ -155,6 +170,11 @@ export function OperatorWorkspace(initial: Props): ReactElement {
       if (approved) setNotice({ tone: 'error', text: 'Approval was recorded, but publication did not complete. Reload history before continuing.' })
     } finally { setBusy(false) }
   }
+
+  if (sessionChanged) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-900">
+    Your account or session changed. Reload the workspace before continuing.
+    <button type="button" onClick={() => window.location.reload()} className="ml-3 font-semibold underline">Reload workspace</button>
+  </div>
 
   if (denied) return <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-900">
     Operator access is unavailable. Sign in with an operator account to continue.
