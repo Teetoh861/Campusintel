@@ -1,6 +1,5 @@
 // lib/operator/editor-server.ts — Server-owned reads and mutations for the operator content workspace.
 import 'server-only'
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { contentPayloadProblem, institutionalCourse, managedHistory, managedItem, parseContentPayload, repositoryCourse } from './editor-contract'
 import type { OperatorAccess } from './access'
@@ -90,11 +89,15 @@ export async function writeOperatorContent(client: OperatorClient, input: Editor
       if ((input.kind === 'model_answer' || input.kind === 'rubric') !== Boolean(input.parentItemId)) {
         return { status: 'invalid', message: 'Complete all required fields and select a theory question where needed.' }
       }
-      const { data, error } = await client.rpc('create_managed_content', {
+      if (!z.string().uuid().safeParse(input.createIntentId).success) {
+        return { status: 'invalid', message: 'The create intent is invalid. Reload the workspace.' }
+      }
+      const { data, error } = await client.rpc('create_managed_content_once', {
         p_course_id: input.courseId, p_kind: input.kind, p_payload: payload,
-        p_question_id: input.kind === 'cbt_question' ? randomUUID() : null,
-        p_source_key: null, p_parent_item_id: input.parentItemId ?? null,
+        p_create_intent_id: input.createIntentId, p_parent_item_id: input.parentItemId ?? null,
       })
+      if (error?.code === '40001') return { status: 'conflict',
+        message: 'This create intent was already used with different content. Reload the workspace before continuing.' }
       if (error) return databaseFailure(error)
       const parsed = z.string().uuid().safeParse(data)
       return parsed.success ? { status: 'ok', data: { itemId: parsed.data } } : databaseFailure(null)

@@ -52,17 +52,22 @@ set local role anon;
 select throws_ok($sql$ select * from public.read_published_managed_content(
   '70000000-0000-4000-8000-000000000007') $sql$, '42501', null,
   'signed-out callers cannot use the published read boundary');
-select throws_ok($sql$ select public.create_managed_content(
-  '70000000-0000-4000-8000-000000000007', 'note', '{"title":"x","body":"x"}'::jsonb) $sql$,
+select throws_ok($sql$ select public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000007', 'note', '{"title":"x","body":"x"}'::jsonb, gen_random_uuid()) $sql$,
   '42501', null, 'anonymous callers cannot write');
 reset role;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
+-- Owner-only import fixture: preserve a pre-intent row and its legacy identities.
+reset role;
 select set_config('test.managed_item', public.create_managed_content(
   '70000000-0000-4000-8000-000000000007', 'cbt_question',
   '{"prompt":"Original wording","options":["A","B"],"correctOption":1}'::jsonb,
   'df67ccc9-5d16-4ab5-be67-4ff195cf39c9', 'legacy-cbt-1')::text, true);
+select ok(not exists (select 1 from private.managed_content_create_intents
+  where item_id=current_setting('test.managed_item')::uuid), 'legacy item has no runtime receipt');
+set local role authenticated;
 select is((select count(*)::int from public.list_managed_content(
   '70000000-0000-4000-8000-000000000007')), 1,
   'operator can read a draft through the operator-only boundary');
@@ -71,13 +76,11 @@ select is((select count(*)::int from public.read_published_managed_content(
   'drafts do not appear in the student published read boundary');
 select throws_ok($sql$ select count(*) from public.managed_content_items $sql$,
   '42501', null, 'even operators cannot bypass validated RPCs with direct table reads');
-select throws_ok($sql$ select public.create_managed_content(
-  '90000000-0000-4000-8000-000000000001', 'note', '{"title":"x","body":"x"}'::jsonb) $sql$,
+select throws_ok($sql$ select public.create_managed_content_once(
+  '90000000-0000-4000-8000-000000000001', 'note', '{"title":"x","body":"x"}'::jsonb, gen_random_uuid()) $sql$,
   '23503', null, 'unknown repository course UUID cannot own content');
-select throws_ok($sql$ select public.create_managed_content(
-  '70000000-0000-4000-8000-000000000007', 'cbt_question',
-  '{"prompt":"Bad","options":["A","B"],"correctOption":8}'::jsonb,
-  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee') $sql$,
+select throws_ok($sql$ select public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000007', 'cbt_question', '{"prompt":"Bad","options":["A","B"],"correctOption":8}'::jsonb, gen_random_uuid()) $sql$,
   '22023', null, 'the server validates mutable CBT payloads');
 select throws_ok($sql$ select public.publish_managed_content(
   current_setting('test.managed_item')::uuid, 1, 1) $sql$,
@@ -145,17 +148,15 @@ select ok((select count(*) from public.course_applicability applicability
   join public.institutional_courses catalogue on catalogue.id = applicability.institutional_course_id
   where catalogue.repository_course_id = '40000000-0000-4000-8000-000000000001') > 1,
   'shared course has multiple institutional applicability rows');
+reset role;
 select set_config('test.theory_item', public.create_managed_content(
   '70000000-0000-4000-8000-000000000001', 'theory_question',
   '{"prompt":"Explain the idea"}'::jsonb, null, 'legacy-theory-1')::text, true);
-select set_config('test.answer_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000001', 'model_answer',
-  '{"body":"An explanatory model answer."}'::jsonb, null, null,
-  current_setting('test.theory_item')::uuid)::text, true);
-select set_config('test.rubric_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000001', 'rubric',
-  '{"body":"Award two marks for the definition."}'::jsonb, null, null,
-  current_setting('test.theory_item')::uuid)::text, true);
+set local role authenticated;
+select set_config('test.answer_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000001', 'model_answer', '{"body":"An explanatory model answer."}'::jsonb, gen_random_uuid(), current_setting('test.theory_item')::uuid)::text, true);
+select set_config('test.rubric_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000001', 'rubric', '{"body":"Award two marks for the definition."}'::jsonb, gen_random_uuid(), current_setting('test.theory_item')::uuid)::text, true);
 select is((select count(*)::int from public.list_managed_content(
   '70000000-0000-4000-8000-000000000001')), 3,
   'theory questions, model answers and rubrics are representable as separate linked items');
@@ -233,42 +234,31 @@ select is((select published_parent_revision from public.list_managed_content(
   'operator list records the rubric publication binding');
 
 -- Singular families are protected by unique indexes, including drafts.
-select set_config('test.overview_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000002', 'course_overview',
-  '{"title":"Overview","body":"Course summary"}'::jsonb)::text, true);
-select throws_ok($sql$ select public.create_managed_content(
-  '70000000-0000-4000-8000-000000000002', 'course_overview',
-  '{"title":"Competing overview","body":"Different summary"}'::jsonb) $sql$,
+select set_config('test.overview_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000002', 'course_overview', '{"title":"Overview","body":"Course summary"}'::jsonb, gen_random_uuid())::text, true);
+select throws_ok($sql$ select public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000002', 'course_overview', '{"title":"Competing overview","body":"Different summary"}'::jsonb, gen_random_uuid()) $sql$,
   '23505', null, 'a course cannot acquire a competing overview');
-select throws_ok($sql$ select public.create_managed_content(
-  '70000000-0000-4000-8000-000000000001', 'model_answer',
-  '{"body":"Competing answer"}'::jsonb, null, null,
-  current_setting('test.theory_item')::uuid) $sql$,
+select throws_ok($sql$ select public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000001', 'model_answer', '{"body":"Competing answer"}'::jsonb, gen_random_uuid(), current_setting('test.theory_item')::uuid) $sql$,
   '23505', null, 'a theory question cannot acquire a competing model answer');
-select throws_ok($sql$ select public.create_managed_content(
-  '70000000-0000-4000-8000-000000000001', 'rubric',
-  '{"body":"Competing rubric"}'::jsonb, null, null,
-  current_setting('test.theory_item')::uuid) $sql$,
+select throws_ok($sql$ select public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000001', 'rubric', '{"body":"Competing rubric"}'::jsonb, gen_random_uuid(), current_setting('test.theory_item')::uuid) $sql$,
   '23505', null, 'a theory question cannot acquire a competing rubric');
-select set_config('test.second_theory_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000001', 'theory_question',
-  '{"prompt":"Another theory question"}'::jsonb)::text, true);
+select set_config('test.second_theory_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000001', 'theory_question', '{"prompt":"Another theory question"}'::jsonb, gen_random_uuid())::text, true);
 select is((select count(*)::int from public.list_managed_content(
   '70000000-0000-4000-8000-000000000001') where kind = 'theory_question'), 2,
   'multiple theory questions remain valid');
-select set_config('test.second_cbt_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000007', 'cbt_question',
-  '{"prompt":"Another CBT question","options":["A","B"],"correctOption":0}'::jsonb,
-  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')::text, true);
+select set_config('test.second_cbt_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000007', 'cbt_question', '{"prompt":"Another CBT question","options":["A","B"],"correctOption":0}'::jsonb, gen_random_uuid())::text, true);
 select is((select count(*)::int from public.list_managed_content(
   '70000000-0000-4000-8000-000000000007') where kind = 'cbt_question'), 2,
   'multiple CBT questions remain valid');
-select set_config('test.note_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000002', 'note',
-  '{"title":"Note one","body":"Original note"}'::jsonb)::text, true);
-select set_config('test.second_note_item', public.create_managed_content(
-  '70000000-0000-4000-8000-000000000002', 'note',
-  '{"title":"Note two","body":"Another note"}'::jsonb)::text, true);
+select set_config('test.note_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000002', 'note', '{"title":"Note one","body":"Original note"}'::jsonb, gen_random_uuid())::text, true);
+select set_config('test.second_note_item', public.create_managed_content_once(
+  '70000000-0000-4000-8000-000000000002', 'note', '{"title":"Note two","body":"Another note"}'::jsonb, gen_random_uuid())::text, true);
 select is((select count(*)::int from public.list_managed_content(
   '70000000-0000-4000-8000-000000000002') where kind = 'note'), 2,
   'multiple notes remain valid');

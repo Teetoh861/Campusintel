@@ -6,7 +6,7 @@ import { initialNoteDraft, initialOverviewDraft, notePayload, overviewPayload } 
 import { NoteFields } from './NoteFields'
 import { OverviewFields } from './OverviewFields'
 import type { FormEvent, ReactElement } from 'react'
-import type { ContentKind, ContentMutation, ManagedItem } from '@/lib/operator/editor-contract'
+import type { ContentKind, ContentDraft, ManagedItem } from '@/lib/operator/editor-contract'
 import type { NoteDraft, OverviewDraft } from '@/lib/operator/structured-form'
 
 const labels: Record<ContentKind, string> = {
@@ -22,7 +22,7 @@ type Props = {
   item: ManagedItem | null
   allItems: ManagedItem[]
   busy: boolean
-  onSave: (input: ContentMutation) => Promise<void>
+  onSave: (input: ContentDraft) => Promise<void>
 }
 
 function stringField(payload: Record<string, unknown> | undefined, key: string): string {

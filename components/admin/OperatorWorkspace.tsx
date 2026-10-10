@@ -7,7 +7,7 @@ import { ContentList } from './ContentList'
 import { CoursePicker } from './CoursePicker'
 import { EditorApiError, fetchOperatorCourses, fetchOperatorHistory, fetchOperatorItems, sendEditorMutation } from '@/lib/operator/editor-client'
 import type { ReactElement } from 'react'
-import type { ContentMutation, InstitutionalCourse, ManagedHistory, ManagedItem, RepositoryCourse } from '@/lib/operator/editor-contract'
+import type { ContentDraft, ContentMutation, InstitutionalCourse, ManagedHistory, ManagedItem, RepositoryCourse } from '@/lib/operator/editor-contract'
 
 type Props = { repositories: RepositoryCourse[]; institutional: InstitutionalCourse[]; continuityToken: string }
 type Notice = { tone: 'success' | 'error'; text: string }
@@ -36,16 +36,31 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [conflict, setConflict] = useState(false)
+  const [createConflict, setCreateConflict] = useState(false)
+  const [createDraftNumber, setCreateDraftNumber] = useState(0)
   const [denied, setDenied] = useState(false)
   const [sessionChanged, setSessionChanged] = useState(false)
   const pageToken = useRef(initial.continuityToken).current
   const invalidated = useRef(false)
   const requestNumber = useRef(0)
   const activeCourse = useRef<string | null>(null)
+  // Retain an uncertain intent within this draft, never across explicit draft boundaries.
+  const createIntent = useRef<string | null>(null)
+  const activeCreateDraft = useRef(0)
+  const creating = useRef(false)
   const courseReady = courseId !== null && loadedCourseId === courseId && !loading
   const selectedItem = courseReady ? items.find(item => item.item_id === itemId) ?? null : null
   const selectedCourse = catalogue.repositories.find(course => course.id === courseId)
   const institutionalName = catalogue.institutional.find(course => course.repository_course_id === courseId)
+
+  function beginNewCreateDraft(): void {
+    // A replacement context owns its pending presentation; an abandoned create
+    // must not keep it busy or later clear a newer create's synchronous guard.
+    if (creating.current) { creating.current = false; setBusy(false) }
+    createIntent.current = null
+    setCreateDraftNumber(++activeCreateDraft.current)
+    setCreateConflict(false)
+  }
 
   function report(error: unknown): void {
     const problem = error instanceof EditorApiError ? error : new EditorApiError(503, 'The content service is unavailable.')
@@ -73,6 +88,8 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   }
 
   async function loadCourse(nextCourseId: string, nextItemId: string | null = null): Promise<boolean> {
+    // Course selection/reload replaces the form, including create-conflict recovery.
+    beginNewCreateDraft()
     const ticket = ++requestNumber.current
     activeCourse.current = nextCourseId
     setLoading(true)
@@ -101,6 +118,7 @@ export function OperatorWorkspace(initial: Props): ReactElement {
   }
 
   async function loadHistory(item: ManagedItem, ticket = ++requestNumber.current): Promise<boolean> {
+    beginNewCreateDraft()
     setItemId(item.item_id)
     setHistory(null)
     setParentHistory(null)
@@ -119,18 +137,47 @@ export function OperatorWorkspace(initial: Props): ReactElement {
     finally { if (ticket === requestNumber.current) setLoading(false) }
   }
 
-  async function mutate(input: ContentMutation): Promise<void> {
+  async function mutate(input: ContentDraft): Promise<void> {
     if (invalidated.current || busy || !courseReady || activeCourse.current !== courseId) return
+    if (input.action === 'create' && createDraftNumber !== activeCreateDraft.current) return
+    if (input.action === 'create' && creating.current) return
+    if (input.action === 'create') creating.current = true
     setBusy(true)
     setNotice(null)
     setConflict(false)
+    setCreateConflict(false)
+    let presentationTicket = requestNumber.current
     try {
-      const result = await sendEditorMutation(input, pageToken)
-      const refreshed = await loadCourse(courseId, result.itemId ?? itemId)
+      const mutation: ContentMutation = input.action === 'create'
+        ? { ...input, createIntentId: createIntent.current ?? (createIntent.current = crypto.randomUUID()) }
+        : input
+      const result = await sendEditorMutation(mutation, pageToken)
+      if (input.action === 'create') {
+        if (createDraftNumber !== activeCreateDraft.current) return
+        if (!result.itemId) throw new EditorApiError(503, 'The created item identity is unavailable. Retry this create.')
+        createIntent.current = null
+      }
+      const refresh = loadCourse(courseId, result.itemId ?? itemId)
+      // loadCourse synchronously claims a new ticket for this mutation's refresh.
+      presentationTicket = requestNumber.current
+      const refreshed = await refresh
+      if (presentationTicket !== requestNumber.current) return
       setNotice(refreshed ? { tone: 'success', text: actionMessage(input.action) }
         : { tone: 'error', text: 'The action was recorded, but the latest view could not load. Select the course to reload.' })
-    } catch (error) { report(error) }
-    finally { setBusy(false) }
+    } catch (error) {
+      const accessFailure = error instanceof EditorApiError &&
+        (error.code === 'session-changed' || error.status === 401 || error.status === 403)
+      if (input.action === 'create' && createDraftNumber !== activeCreateDraft.current && !accessFailure) return
+      setCreateConflict(input.action === 'create' && error instanceof EditorApiError &&
+        error.status === 409 && error.code !== 'session-changed')
+      report(error)
+    }
+    finally {
+      if (input.action !== 'create' || presentationTicket === requestNumber.current || invalidated.current) {
+        if (input.action === 'create') creating.current = false
+        setBusy(false)
+      }
+    }
   }
 
   async function provision(course: InstitutionalCourse): Promise<void> {
@@ -187,8 +234,8 @@ export function OperatorWorkspace(initial: Props): ReactElement {
       {notice && <div role={notice.tone === 'error' ? 'alert' : 'status'}
         className={`rounded-lg border p-4 text-sm ${notice.tone === 'error' ? 'border-red-200 bg-red-50 text-red-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
         {notice.text}
-        {conflict && courseId && <button type="button" onClick={() => { void loadCourse(courseId, itemId) }}
-          className="ml-3 font-semibold underline">Reload latest version</button>}
+        {conflict && courseId && <button type="button" onClick={() => { void loadCourse(courseId, createConflict ? null : itemId) }}
+          className="ml-3 font-semibold underline">{createConflict ? 'Reload latest content and reset draft' : 'Reload latest version'}</button>}
       </div>}
       {!courseId ? <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-700">
         Select a repository course or provision an unlinked catalogue course to begin.
@@ -209,8 +256,14 @@ export function OperatorWorkspace(initial: Props): ReactElement {
         </div>}
         {courseReady && <ContentList items={items} selectedId={itemId} busy={busy}
           onSelect={item => { if (activeCourse.current === courseId && item.course_id === courseId) void loadHistory(item) }}
-          onNew={() => { if (activeCourse.current !== courseId) return; ++requestNumber.current; setItemId(null); setHistory(null); setParentHistory(null) }} />}
-        {courseReady && <ContentForm key={selectedItem ? `${selectedItem.item_id}:${selectedItem.lock_version}` : `new:${courseId}`}
+          onNew={() => {
+            if (activeCourse.current !== courseId) return
+            beginNewCreateDraft()
+            ++requestNumber.current
+            setItemId(null); setHistory(null); setParentHistory(null)
+            setConflict(false); setNotice(null)
+          }} />}
+        {courseReady && <ContentForm key={selectedItem ? `${selectedItem.item_id}:${selectedItem.lock_version}` : `new:${courseId}:${createDraftNumber}`}
           courseId={courseId} item={selectedItem} allItems={items} busy={busy}
           onSave={mutate} />}
         {courseReady && selectedItem && history && <ContentHistory key={`${selectedItem.item_id}:${selectedItem.lock_version}`}
