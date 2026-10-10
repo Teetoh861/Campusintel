@@ -10,7 +10,10 @@ export class AuthRequestError extends Error {
 }
 
 /** Reject disabled, cross-origin and malformed POSTs before any Supabase operation. */
-export async function readAuthRequest<T>(request: Request, schema: ZodType<T>): Promise<T> {
+export async function readAuthRequest<T>(
+  request: Request, schema: ZodType<T>, options: { maxBytes?: number } = {},
+): Promise<T> {
+  const maxBytes = options.maxBytes ?? AUTH_BODY_MAX_BYTES
   if (!isStudentAuthEnabled()) throw new AuthRequestError(503, AUTH_MESSAGES.comingSoon)
   if (!isTrustedAuthOrigin(request.headers.get('origin')) ||
       ['cross-site', 'same-site'].includes(request.headers.get('sec-fetch-site') || '')) {
@@ -28,7 +31,7 @@ export async function readAuthRequest<T>(request: Request, schema: ZodType<T>): 
       const { value, done } = await reader.read()
       if (done) break
       length += value.byteLength
-      if (length > AUTH_BODY_MAX_BYTES) {
+      if (length > maxBytes) {
         await reader.cancel()
         throw new AuthRequestError(413, AUTH_MESSAGES.invalid)
       }

@@ -4,13 +4,20 @@ import { btnBase, buttonClassName, btnSm, btnWhite } from '@/components/chrome/u
 import { AUTH_API, AUTH_PATHS } from '@/lib/auth/constants'
 import { useAuthSubmit } from './useAuthSubmit'
 import { Feedback } from '@/components/chrome/Feedback'
+import { useRef } from 'react'
+import { useNavigationSession } from './NavigationSession'
 import type { ReactElement } from 'react'
 
 /** Share one pending logout operation across responsive controls. */
-export function useLogoutAction() {
+export function useLogoutAction(renderedToken?: string) {
   const { submit, pending, error } = useAuthSubmit()
-  return { pending, error, logout: async () => {
-    if (await submit(AUTH_API.logout, {})) {
+  const navigation = useNavigationSession()
+  const token = renderedToken ?? navigation.continuityToken
+  return { pending: pending || !token, error, logout: async () => {
+    if (!token) return
+    if (await submit(AUTH_API.logout, {}, failure => {
+      if (failure.status === 'session-changed') window.location.reload()
+    }, { continuityToken: token })) {
       window.location.replace(AUTH_PATHS.login)
     }
   } }
@@ -31,7 +38,8 @@ export function LogoutControl({ action, className, inNav = false }: {
 }
 
 /** Standalone account logout retains the same server operation. */
-export function LogoutButton() {
-  const action = useLogoutAction()
+export function LogoutButton({ continuityToken }: { continuityToken: string }) {
+  const pageToken = useRef(continuityToken).current
+  const action = useLogoutAction(pageToken)
   return <LogoutControl action={action} />
 }

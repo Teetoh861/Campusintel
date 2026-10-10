@@ -4,9 +4,9 @@ import { notifyStudentChange } from '@/lib/auth/client-events'
 import { useRef, useState } from 'react'
 import { safeAuthMessage } from '@/lib/auth/errors'
 import { parseAuthOutcome } from '@/lib/auth/outcomes'
-import { AUTH_API, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { AUTH_API, AUTH_CONTINUITY_HEADER, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 
-export type AuthSubmitFailure = { message: string; code?: (typeof RECOVERY_FAILURE)[keyof typeof RECOVERY_FAILURE] }
+export type AuthSubmitFailure = { message: string; code?: (typeof RECOVERY_FAILURE)[keyof typeof RECOVERY_FAILURE]; status?: 'session-changed' }
 
 type Result = { success?: true; verified?: true; code?: typeof EMAIL_CONFIRMATION_REQUIRED; next?: string; message?: string }
 
@@ -15,7 +15,9 @@ export function useAuthSubmit() {
   const lock = useRef(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
-  async function submit(endpoint: (typeof AUTH_API)[keyof typeof AUTH_API], body: object, onFailure?: (failure: AuthSubmitFailure) => void): Promise<Result | null> {
+  async function submit(endpoint: (typeof AUTH_API)[keyof typeof AUTH_API], body: object,
+    onFailure?: (failure: AuthSubmitFailure) => void, options: { continuityToken?: string } = {},
+  ): Promise<Result | null> {
     if (lock.current) return null
     lock.current = true
     setPending(true)
@@ -24,10 +26,16 @@ export function useAuthSubmit() {
       // Reject relative or external destinations before the browser resolves against the page URL.
       if (!/^\/api\/auth\/[a-z-]+$/.test(endpoint)) throw new Error('Invalid auth endpoint')
       const response = await fetch(endpoint, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        headers: { 'Content-Type': 'application/json',
+          ...(options.continuityToken ? { [AUTH_CONTINUITY_HEADER]: options.continuityToken } : {}) }, body: JSON.stringify(body) })
       const value: unknown = await response.json()
       if (!value || typeof value !== 'object') throw new Error('Invalid response')
       if (!response.ok) {
+        if (endpoint === AUTH_API.logout && response.status === 409 && 'status' in value && value.status === 'session-changed') {
+          setError(AUTH_MESSAGES.sessionChanged)
+          onFailure?.({ message: AUTH_MESSAGES.sessionChanged, status: 'session-changed' })
+          return null
+        }
         if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === STUDENT_HOME_PATH) {
           window.location.replace(STUDENT_HOME_PATH)
           return null

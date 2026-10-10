@@ -28,6 +28,7 @@ export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart:
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'
 export const AUTH_MESSAGES = {
   unavailable: 'Something went wrong. Please try again.',
+  sessionChanged: 'Your account or session changed. Reload before continuing.',
   recoveryCode: 'Invalid or expired code.',
   recoveryRestart: 'Request a new reset code to continue.',
   comingSoon: 'Student accounts are coming soon.',
@@ -46,6 +47,8 @@ export const AUTH_MESSAGES = {
 } as const
 export const AUTH_STATUS_EVENT = 'campusintell-auth-changed'
 export const AUTH_CONTINUITY_HEADER = 'x-campus-account-continuity'
+// Navigation requests this only while establishing its signed-in presentation, never on logout click.
+export const AUTH_LOGOUT_CONTEXT_HEADER = 'x-campus-logout-context'
 export const RATE_LIMIT_POLICIES = {
   LOGIN: { account: [20, 900], origin: [30, 300] },
   REGISTER: { account: [3, 3600], origin: [20, 3600] },

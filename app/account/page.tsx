@@ -78,7 +78,7 @@ export default async function AccountPage(): Promise<ReactElement> {
         </section>
         <section aria-labelledby="settings-heading" className="student-surface bg-student-surface-muted">
           <h2 id="settings-heading" className="text-base font-bold text-student-text-primary">Settings</h2>
-          <div className="mt-3"><LogoutButton /></div>
+          <div className="mt-3"><LogoutButton continuityToken={continuityToken} /></div>
         </section>
       </div>
     </div>

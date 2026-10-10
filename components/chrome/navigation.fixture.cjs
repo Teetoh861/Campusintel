@@ -73,6 +73,9 @@ async function fixture(run) {
     const sync = () => { presentation = render(NavigationSessionProvider).props.value }
     const settle = async () => { await new Promise(setImmediate); sync() }
     const respond = async (body, status = 200, request = requests.at(-1)) => {
+      if (body?.enabled === true && body.signedIn === true && !('continuityToken' in body)) {
+        body = { ...body, continuityToken: 'fixture-rendered-session' }
+      }
       request.resolve(new Response(JSON.stringify(body), { status })); await settle()
     }
     sync(); sync()

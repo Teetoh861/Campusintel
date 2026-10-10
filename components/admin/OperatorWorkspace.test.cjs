@@ -83,7 +83,7 @@ test('failed course switch hides old items and actions; retry loads only the new
     const render = () => { cursor = 0; return OperatorWorkspace({ repositories: [
       { id: COURSE_A, content_key: 'course-a', is_shared: null },
       { id: COURSE_B, content_key: 'course-b', is_shared: null },
-    ], institutional: [] }) }
+    ], institutional: [], continuityToken: 'fixture-rendered-operator' }) }
     const one = (tree, type) => findAll(tree, node => node.type === type)[0]
 
     let tree = render()
