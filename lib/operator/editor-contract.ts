@@ -88,7 +88,7 @@ export function contentPayloadProblem(kind: ContentKind, payload: unknown): stri
 
 export const editorMutation = z.discriminatedUnion('action', [
   z.object({ action: z.literal('provision'), institutionalCourseId: uuid }).strict(),
-  z.object({ action: z.literal('create'), courseId: uuid, kind: contentKind,
+  z.object({ action: z.literal('create'), createIntentId: uuid, courseId: uuid, kind: contentKind,
     parentItemId: uuid.optional(), payload: z.unknown() }).strict(),
   z.object({ action: z.literal('revise'), itemId: uuid, expectedLockVersion: z.number().int().positive(),
     payload: z.unknown() }).strict(),
@@ -101,6 +101,9 @@ export const editorMutation = z.discriminatedUnion('action', [
 ])
 export type EditorMutation = z.infer<typeof editorMutation>
 export type ContentMutation = Exclude<EditorMutation, { action: 'provision' }>
+// Forms supply content; the workspace owns the unresolved create intent's lifetime.
+export type ContentDraft = Exclude<ContentMutation, { action: 'create' }>
+  | Omit<Extract<ContentMutation, { action: 'create' }>, 'createIntentId'>
 
 export const repositoryCourse = z.object({
   id: uuid, content_key: z.string().min(1), is_shared: z.boolean().nullable(),

@@ -91,37 +91,28 @@ select throws_ok($sql$ update public.courses set content_key = 'changed-key'
   where id = current_setting('test.editor_course')::uuid $sql$, '42501', null,
   'operator browser role cannot mutate permanent content keys');
 
-select set_config('test.editor_overview', public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'course_overview',
-  '{"title":"Overview","body":"Course introduction"}'::jsonb)::text, true);
-select set_config('test.editor_note', public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'note',
-  '{"title":"First note","body":"Original note"}'::jsonb)::text, true);
-select set_config('test.editor_cbt', public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'cbt_question',
-  '{"prompt":"Choose one","options":["A","B"],"correctOption":1}'::jsonb,
-  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')::text, true);
-select set_config('test.editor_theory', public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'theory_question',
-  '{"prompt":"Explain the course"}'::jsonb)::text, true);
-select set_config('test.editor_answer', public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'model_answer',
-  '{"body":"A reasoned answer"}'::jsonb, null, null,
-  current_setting('test.editor_theory')::uuid)::text, true);
-select set_config('test.editor_rubric', public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'rubric',
-  '{"body":"Award marks for reasoning"}'::jsonb, null, null,
-  current_setting('test.editor_theory')::uuid)::text, true);
+select set_config('test.editor_overview', public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'course_overview', '{"title":"Overview","body":"Course introduction"}'::jsonb, gen_random_uuid())::text, true);
+select set_config('test.editor_note', public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'note', '{"title":"First note","body":"Original note"}'::jsonb, gen_random_uuid())::text, true);
+select set_config('test.editor_cbt', public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'cbt_question', '{"prompt":"Choose one","options":["A","B"],"correctOption":1}'::jsonb, gen_random_uuid())::text, true);
+select set_config('test.editor_question', (select question_id::text from public.list_managed_content(
+  current_setting('test.editor_course')::uuid) where item_id = current_setting('test.editor_cbt')::uuid), true);
+select set_config('test.editor_theory', public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'theory_question', '{"prompt":"Explain the course"}'::jsonb, gen_random_uuid())::text, true);
+select set_config('test.editor_answer', public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'model_answer', '{"body":"A reasoned answer"}'::jsonb, gen_random_uuid(), current_setting('test.editor_theory')::uuid)::text, true);
+select set_config('test.editor_rubric', public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'rubric', '{"body":"Award marks for reasoning"}'::jsonb, gen_random_uuid(), current_setting('test.editor_theory')::uuid)::text, true);
 select is((select count(*)::int from public.list_managed_content(
   current_setting('test.editor_course')::uuid)), 6,
   'operator creates all six supported content families');
 select is((select count(*)::int from public.read_published_managed_content(
   current_setting('test.editor_course')::uuid)), 0,
   'new drafts are invisible to published student reads');
-select throws_ok($sql$ select public.create_managed_content(
-  current_setting('test.editor_course')::uuid, 'cbt_question',
-  '{"prompt":"Invalid","options":["A"],"correctOption":0}'::jsonb,
-  'ffffffff-ffff-4fff-8fff-ffffffffffff') $sql$, '22023', null,
+select throws_ok($sql$ select public.create_managed_content_once(
+  current_setting('test.editor_course')::uuid, 'cbt_question', '{"prompt":"Invalid","options":["A"],"correctOption":0}'::jsonb, gen_random_uuid()) $sql$, '22023', null,
   'invalid content is rejected by the server payload boundary');
 
 select is(public.revise_managed_content(current_setting('test.editor_note')::uuid, 1,
@@ -225,7 +216,7 @@ select is(public.revise_managed_content(current_setting('test.editor_cbt')::uuid
   2::bigint, 'CBT wording edit appends a revision');
 select is((select question_id::text from public.list_managed_content(
   current_setting('test.editor_course')::uuid) where item_id =
-  current_setting('test.editor_cbt')::uuid), 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  current_setting('test.editor_cbt')::uuid), current_setting('test.editor_question'),
   'CBT permanent question identity survives revision');
 select ok((select count(*) from public.course_applicability applicability
   join public.institutional_courses catalogue on catalogue.id = applicability.institutional_course_id
