@@ -17,7 +17,10 @@ const storedSelectionSchema = z.object({
 
 export type SelectionIds = z.infer<typeof selectionSchema>
 
-const profileSelectionSchema = selectionSchema.extend({ first_name: firstNameSchema })
+const profileSelectionSchema = selectionSchema.extend({
+  first_name: firstNameSchema,
+  expectedRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+})
 export type ProfileSelectionInput = z.infer<typeof profileSelectionSchema>
 
 /** Accept a real first name and three catalogue IDs, never caller-owned identity fields. */
