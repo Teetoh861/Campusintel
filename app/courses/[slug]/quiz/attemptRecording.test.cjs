@@ -30,6 +30,35 @@ const deferred = () => {
   return { promise, resolve: () => resolve() }
 }
 
+test('lost START replay continues recording with the same command even after publication changes', async () => {
+  let starts = 0, publicationChanged = false
+  const f = fixture({ onPost: (command, apply) => {
+    if (command.operation === 'start' && ++starts === 1) {
+      apply(command) // Durable START committed; discard its successful response.
+      publicationChanged = true
+      throw new Error('Response lost')
+    }
+    assert.equal(publicationChanged, true)
+    return apply(command) // Existing exact snapshot outranks the changed publication.
+  } })
+  const id = f.recorder.begin('financial-accounting-1', questions)
+  await waitFor(() => f.states.at(-1) === 'recording', 'recovered Start did not enter recording')
+  assert.equal(f.calls.length, 2)
+  assert.deepEqual(f.calls[1], f.calls[0])
+  assert.equal(f.calls[1].attemptId, id)
+  assert.deepEqual(f.submittedTokens, ['opaque-test-token', 'opaque-test-token'])
+  assert.equal(f.attempts.size, 1)
+  assert.deepEqual(f.states, ['checking', 'recording'])
+})
+
+test('genuine fresh START conflict remains content-changed without automatic retry', async () => {
+  const f = fixture({ onPost: () => reply({ status: 'conflict' }, 409) })
+  f.recorder.begin('financial-accounting-1', questions)
+  await waitFor(() => f.states.at(-1) === 'content-changed', 'fresh conflict did not stop the recorder')
+  assert.equal(f.calls.length, 1)
+  assert.equal(f.attempts.size, 0)
+})
+
 function fixture(options = {}) {
   const calls = []
   const states = []
