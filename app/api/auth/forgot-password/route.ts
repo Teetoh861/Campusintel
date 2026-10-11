@@ -1,6 +1,6 @@
 // app/api/auth/forgot-password/route.ts — Enumeration-safe email initiation.
 import { rejectExistingStudent } from '@/lib/auth/student-state'
-import { clearRecoveryCookie, discardRecoveryGrant } from '@/lib/auth/recovery-grant'
+import { clearRecoveryCookie, discardRecoveryGrantForFlow } from '@/lib/auth/recovery-grant'
 import { readAuthRequest, getRequesterAddress } from '@/lib/auth/request'
 import { authJson, authError } from '@/lib/auth/response'
 import { consumeAuthLimit } from '@/lib/auth/rate-limit'
@@ -17,7 +17,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const body = await readAuthRequest(request, emailRequestSchema)
     const existing = await rejectExistingStudent()
     if (existing) return existing
-    await discardRecoveryGrant()
+    const discarded = await discardRecoveryGrantForFlow(body.email)
     const address = getRequesterAddress(request)
     await consumeAuthLimit('PASSWORD_RESET_REQUEST', body.email, address)
     const gateway = getAuthGateway(address)
@@ -25,7 +25,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       () => gateway.resetPasswordForEmail(body.email), checkRecoveryAcknowledgment)
     if (failure) return authJson({ error: failure.error }, failure.status)
     const response = authJson({ message: AUTH_MESSAGES.recovery })
-    clearRecoveryCookie(response)
+    if (discarded) clearRecoveryCookie(response)
     return response
   } catch (error) { return authError(error) }
 }

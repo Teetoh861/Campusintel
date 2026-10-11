@@ -20,7 +20,7 @@ function cookieOptions() {
   return { httpOnly: true, sameSite: 'lax' as const, secure: process.env.NODE_ENV === 'production', path: RECOVERY_GRANT_PATH }
 }
 
-/** Clear only the recovery cookie, including on failed post-verification continuation. */
+/** Clear only after a matching flow was claimed, or explicit global invalidation. */
 export function clearRecoveryCookie(response: NextResponse): void {
   response.cookies.set(RECOVERY_GRANT_COOKIE, '', { ...cookieOptions(), maxAge: 0, expires: new Date(0) })
 }
@@ -36,9 +36,16 @@ async function takeIdentity(binding: string | null): Promise<{ userId: string } 
   return { userId: z.string().uuid().parse(data) }
 }
 
-/** Invalidate prior authorization on email change, resend, re-verification and logout. */
-export async function discardRecoveryGrant(): Promise<void> {
+/** Logout owns the browser's current authorization, regardless of recovery flow. */
+export async function discardCurrentRecoveryGrant(): Promise<void> {
   await takeIdentity(null)
+}
+
+/** Discard only this email's flow; true proves a matching live credential was claimed.
+ * Null/expired/unknown results do not prove cookie ownership and must not clear it.
+ */
+export async function discardRecoveryGrantForFlow(email: string): Promise<boolean> {
+  return (await takeIdentity(recoveryDigest(email, 'flow'))) !== null
 }
 
 /** Mint only after server verification; the response receives a random opaque credential, never tokens. */

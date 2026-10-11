@@ -12,6 +12,7 @@ import { getRecoveryAuthGateway } from '@/lib/supabase/recovery-auth'
 /** Only a single-use verified recovery grant authorizes replacement, never an existing login. */
 export async function POST(request: Request) {
   let grantAttempted = false
+  let grantConsumed = false
   try {
     const body = await readAuthRequest(request, resetSchema)
     const existing = await rejectExistingStudent()
@@ -21,9 +22,9 @@ export async function POST(request: Request) {
     const grant = await consumeRecoveryGrant(body.email)
     if (!grant) {
       const failure = authJson({ error: AUTH_MESSAGES.recoveryRestart, code: RECOVERY_FAILURE.restart }, 400)
-      clearRecoveryCookie(failure)
       return failure
     }
+    grantConsumed = true
     const { error } = await gateway.replacePasswordAndRevokeSessions(grant.userId, body.password)
     const failure = error ? mapAuthFailure(error, 'reset') : null
     const response = failure
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     const response = grantAttempted
       ? authJson({ error: AUTH_MESSAGES.unavailable, code: RECOVERY_FAILURE.restart }, 503)
       : authError(error)
-    if (grantAttempted) clearRecoveryCookie(response)
+    if (grantConsumed) clearRecoveryCookie(response)
     return response
   }
 }
