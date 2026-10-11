@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
+import { resolveStudentSessionNamespace, STUDENT_SESSION_GENERATION_COOKIE } from '@/lib/auth/session-generation'
 import type { NextRequest } from 'next/server'
 
 /** Return the same response carrying cookie writes and all SSR cache-safety headers.
@@ -17,18 +18,22 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
   const response = NextResponse.next({ request: { headers: requestHeaders } })
   try {
     const { url, key } = getSupabaseConfig()
-    const client = createServerClient(url, key, { cookies: {
-      getAll: () => request.cookies.getAll(),
-      setAll(items, headers) {
-        for (const { name, value, options } of items) {
-          request.cookies.set(name, value)
-          response.cookies.set(name, value, getStudentCookieOptions(options))
-        }
-        // Keep the downstream request coherent without replacing the cookie-bearing response.
-        response.headers.set('x-middleware-request-cookie', request.cookies.toString())
-        Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value))
+    const namespace = resolveStudentSessionNamespace(request.cookies.get(STUDENT_SESSION_GENERATION_COOKIE)?.value)
+    const client = createServerClient(url, key, {
+      ...(namespace.storageName ? { cookieOptions: { name: namespace.storageName } } : {}),
+      cookies: {
+        getAll: () => namespace.mode === 'invalid' ? [] : request.cookies.getAll(),
+        setAll(items, headers) {
+          for (const { name, value, options } of items) {
+            request.cookies.set(name, value)
+            response.cookies.set(name, value, getStudentCookieOptions(options))
+          }
+          // Keep the downstream request coherent without replacing the cookie-bearing response.
+          response.headers.set('x-middleware-request-cookie', request.cookies.toString())
+          Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value))
+        },
       },
-    } })
+    })
     await client.auth.getClaims()
   } catch {
     // Matched pages remain renderable; protected endpoints authenticate independently.

@@ -9,7 +9,7 @@ import { mapAuthFailure } from '@/lib/auth/errors'
 import { initiateAuthEmail } from '@/lib/auth/email-initiation'
 import { loginSchema } from '@/lib/auth/schemas'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
-import { createClient } from '@/lib/supabase/server'
+import { createFreshStudentSessionClient } from '@/lib/supabase/server'
 import { requireVerifiedSession } from '@/lib/auth/verified-session'
 import { checkResendAcknowledgment } from '@/lib/auth/signup-result'
 import { recordSuccessfulLogin } from '@/lib/analytics/server'
@@ -38,7 +38,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
     const session = requireVerifiedSession(data, body.email)
     const response = authJson({ next: getSafeReturnPath(body.next) })
-    const client = await createClient(response)
+    const client = await createFreshStudentSessionClient(response)
     const { data: transferred, error: sessionError } = await client.auth.setSession({
       access_token: session.access_token, refresh_token: session.refresh_token,
     })

@@ -7,6 +7,7 @@ import { AUTH_CONTINUITY_HEADER, AUTH_MESSAGES } from '@/lib/auth/constants'
 import { getAuthenticatedMutationContext } from '@/lib/auth/mutation-context'
 import { finalizeMutationResponse } from '@/lib/auth/mutation-response'
 import { logoutSchema } from '@/lib/auth/schemas'
+import { advanceStudentSessionGeneration } from '@/lib/auth/session-generation'
 
 /** Revoke the current session without signing other devices out. */
 export async function POST(request: Request) {
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
       clearRecoveryCookie(response)
       const { error } = await mutation.client.auth.signOut({ scope: 'local' })
       if (error) throw new Error('Sign out failed')
+      await advanceStudentSessionGeneration(response)
       return finalizeMutationResponse(response, { success: true })
     }
     if (mutation.status === 'session-changed') return finalizeMutationResponse(response,
@@ -30,6 +32,7 @@ export async function POST(request: Request) {
     clearRecoveryCookie(response)
     const { error } = await mutation.context.client.auth.signOut({ scope: 'local' })
     if (error) throw new Error('Sign out failed')
+    await advanceStudentSessionGeneration(response)
     return finalizeMutationResponse(response, { success: true })
   } catch (error) {
     return finalizeMutationResponse(response,
