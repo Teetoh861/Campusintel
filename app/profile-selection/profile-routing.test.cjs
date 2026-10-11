@@ -27,7 +27,7 @@ async function fixture(run) {
     require.resolve('../account/page.tsx'), require.resolve('./page.tsx'),
     require.resolve('../../components/auth/SignedOutGate.tsx'),
   ]
-  const state = { enabled: true, user: { id: 'student', email: 'student@example.test' }, profile: { status: 'incomplete', options }, reads: 0 }
+  const state = { enabled: true, user: { id: 'student', email: 'student@example.test' }, profile: { status: 'incomplete', revision: 0, firstName: null, options }, reads: 0 }
   const redirect = path => { throw new Error('redirect:' + path) }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -76,7 +76,7 @@ test('incomplete account reaches selection; completed account stays and offers i
   assert.equal(page.props.title, 'Complete your profile')
   assert.equal(page.props.children[1].type.name, 'ProfileSelectionForm')
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
-  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
+  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   const account = await f.account()
   assert.equal(account.props.title, 'Your profile')
   const link = nodes(account).find(node => node.props?.children === 'Change selection')
@@ -96,7 +96,7 @@ test('account and profile error links use shared secondary button focus', async 
     for (const token of ['border-transparent', 'px-5', 'py-2.5', 'text-[15px]']) assert.equal(actual.has(token), false)
     assert.equal(actual.has('underline'), false)
   }
-  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
+  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   check(nodes(await f.account()).find(node => node.props?.children === 'Change selection'))
   f.state.profile = { status: 'unavailable' }
   check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to account'))
@@ -106,7 +106,7 @@ test('auth and selection redirects terminate, including a completed student open
   await assert.rejects(f.signedOutGate({ children: 'login form' }), /redirect:\/dashboard/)
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
-  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
+  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   assert.equal((await f.account()).props.title, 'Your profile')
   assert.equal((await f.selectionPage()).props.title, 'Change selection')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
@@ -132,7 +132,7 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
 }))
 
 test('Account puts academic selection first and shows the real first name, email and sign out action', async () => fixture(async f => {
-  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
+  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   const account = await f.account()
   const frame = account.type(account.props)
   const frameNodes = nodes(frame)
@@ -167,7 +167,7 @@ test('Profile selection uses the student workspace for incomplete, complete and 
   assert.match(frame.props.className, /app-container student-workspace student-page/)
   assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Complete your profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.status, 'incomplete')
-  f.state.profile = { status: 'complete', firstName: 'Adaeze', options, selection }
+  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   page = await f.selectionPage()
   assert.equal(page.props.title, 'Change selection')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.selection, selection)

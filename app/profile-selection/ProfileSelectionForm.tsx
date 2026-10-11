@@ -33,6 +33,7 @@ const PROFILE_API = '/api/profile-selection'
 const savedResponseSchema = z.object({
   status: z.literal('complete'),
   firstName: firstNameSchema,
+  revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   selection: z.object({
     department: z.object({ id: z.string().uuid(), label: z.string().min(1), isActive: z.literal(true) }),
     academicLevel: z.object({ id: z.string().uuid(), label: z.string().min(1), isActive: z.literal(true) }),
@@ -68,8 +69,12 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
   const [pending, setPending] = useState(false)
   const [ready, setReady] = useState(false)
   const lock = useRef(false)
+  const conflict = useRef(false)
+  const [stale, setStale] = useState(false)
   // A later RSC payload must not re-label this mounted draft as another account's.
   const pageToken = useRef(continuityToken).current
+  const expectedRevision = useRef(initial.revision).current
+  const reloadRef = useRef<HTMLButtonElement>(null)
   const departmentRef = useRef<HTMLSelectElement>(null)
   const firstNameRef = useRef<HTMLInputElement>(null)
   const academicLevelRef = useRef<HTMLSelectElement>(null)
@@ -78,6 +83,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
   const choicesAvailable = departments.length > 0 && academicLevels.length > 0 && academicPeriods.length > 0
 
   useEffect(() => { setReady(true) }, [])
+  useEffect(() => { if (stale) reloadRef.current?.focus() }, [stale])
   useEffect(() => {
     if (notice?.field === 'first_name') firstNameRef.current?.focus()
     else if (notice?.field === 'departmentId') departmentRef.current?.focus()
@@ -87,7 +93,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!ready || lock.current) return
+    if (!ready || lock.current || conflict.current) return
     const name = firstNameSchema.safeParse(draft.first_name)
     const missingField: Field | null = !name.success ? 'first_name'
       : !isSelectable(departments, draft.departmentId) ? 'departmentId'
@@ -110,7 +116,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
     try {
       const response = await fetch(PROFILE_API, {
         method: 'PUT', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken }, body: JSON.stringify(draft),
+        headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken }, body: JSON.stringify({ ...draft, expectedRevision }),
       })
       const body: unknown = await response.json()
       if (response.status === 401 && body && typeof body === 'object' && 'status' in body && body.status === 'signed-out') {
@@ -123,9 +129,15 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
         window.location.reload()
         return
       }
+      if (response.status === 409 && body && typeof body === 'object' && 'status' in body && body.status === 'conflict') {
+        conflict.current = true
+        setStale(true)
+        setNotice(null)
+        return
+      }
       if (response.ok) {
         const parsed = savedResponseSchema.safeParse(body)
-        if (parsed.success && parsed.data.selection.department.id === draft.departmentId &&
+        if (parsed.success && parsed.data.revision > expectedRevision && parsed.data.selection.department.id === draft.departmentId &&
             parsed.data.selection.academicLevel.id === draft.academicLevelId &&
             parsed.data.selection.academicPeriod.id === draft.academicPeriodId &&
             parsed.data.firstName === draft.first_name.trim()) {
@@ -217,12 +229,17 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
         </select>
       </div>
     </div>
+    {stale && <div className="space-y-1">
+      <Feedback compact tone="error" message="Your profile changed elsewhere. Reload the latest profile before saving again." />
+      <button ref={reloadRef} type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}
+        onClick={() => window.location.reload()}>Reload latest profile</button>
+    </div>}
     {notice && <div id={notice.field ? FIELD_ERRORS[notice.field].id : undefined} className="space-y-1">
       <Feedback compact tone="error" message={notice.message} />
       {notice.reload && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
     </div>}
     <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
-      <button type="submit" disabled={!ready || pending} aria-busy={pending}
+      <button type="submit" disabled={!ready || pending || stale} aria-busy={pending}
         className={buttonClassName(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', studentFocusDark)}>
         {pending ? 'Saving…' : 'Save selection'}
       </button>

@@ -13,14 +13,15 @@ import type { NextResponse } from 'next/server'
 
 type StudentClient = Awaited<ReturnType<typeof createClient>>
 type ReferenceTable = 'departments' | 'academic_levels' | 'academic_periods'
-type StoredState = (Exclude<ReturnType<typeof classifyStoredSelection>, { kind: 'invariant-failure' }> & { firstName: string | null }) |
+type StoredState = (Exclude<ReturnType<typeof classifyStoredSelection>, { kind: 'invariant-failure' }> & { firstName: string | null; revision: number }) |
   { kind: 'unavailable' } | { kind: 'missing-profile' } | { kind: 'invariant-failure' }
-const PROFILE_COLUMNS = 'department_id,academic_level_id,academic_period_id,first_name'
+const PROFILE_COLUMNS = 'department_id,academic_level_id,academic_period_id,first_name,revision'
 const storedProfileSchema = z.object({
   department_id: z.string().uuid().nullable(),
   academic_level_id: z.string().uuid().nullable(),
   academic_period_id: z.string().uuid().nullable(),
   first_name: firstNameSchema.nullable(),
+  revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 }).strict()
 
 const referenceRowSchema = z.object({
@@ -49,9 +50,9 @@ type Selection = {
 }
 
 export type StudentProfileState =
-  | { status: 'signed-out' | 'session-changed' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' }
-  | { status: 'incomplete'; options: Options; firstName: string | null; selection?: Selection }
-  | { status: 'complete'; options: Options; selection: Selection; firstName: string }
+  | { status: 'signed-out' | 'session-changed' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' | 'conflict' }
+  | { status: 'incomplete'; revision: number; options: Options; firstName: string | null; selection?: Selection }
+  | { status: 'complete'; revision: number; options: Options; selection: Selection; firstName: string }
 
 async function currentStudent(response?: NextResponse, includeSession = false): Promise<{ client: StudentClient; id: string; sessionId?: string } | null> {
   const client = await createClient(response)
@@ -70,9 +71,9 @@ async function readStoredSelection(client: StudentClient, id: string): Promise<S
   if (data === null) return { kind: 'missing-profile' }
   const parsed = storedProfileSchema.safeParse(data)
   if (!parsed.success) return { kind: 'invariant-failure' }
-  const { first_name, ...selection } = parsed.data
+  const { first_name, revision, ...selection } = parsed.data
   const stored = classifyStoredSelection(selection)
-  return stored.kind === 'invariant-failure' ? stored : { ...stored, firstName: first_name }
+  return stored.kind === 'invariant-failure' ? stored : { ...stored, firstName: first_name, revision }
 }
 
 async function readReferenceRows(client: StudentClient, table: ReferenceTable): Promise<ReferenceRow[] | null> {
@@ -108,15 +109,15 @@ function selectedOption(rows: ReferenceRow[], id: string): SelectedOption | null
   return row ? { id: row.id, label: row.display_name, isActive: row.is_active } : null
 }
 
-function completeState(ids: SelectionIds, references: References, firstName: string | null): StudentProfileState {
+function completeState(ids: SelectionIds, references: References, firstName: string | null, revision: number): StudentProfileState {
   const department = selectedOption(references.departments, ids.departmentId)
   const academicLevel = selectedOption(references.academicLevels, ids.academicLevelId)
   const academicPeriod = selectedOption(references.academicPeriods, ids.academicPeriodId)
   if (!department || !academicLevel || !academicPeriod) return { status: 'invariant-failure' }
   const selection = { department, academicLevel, academicPeriod }
-  if (firstName === null) return { status: 'incomplete', firstName, options: presentOptions(references), selection }
+  if (firstName === null) return { status: 'incomplete', firstName, revision, options: presentOptions(references), selection }
   return {
-    status: 'complete',
+    status: 'complete', revision,
     options: presentOptions(references),
     selection, firstName,
   }
@@ -130,8 +131,8 @@ async function readStudentProfile(client: StudentClient, id: string): Promise<St
   const references = await readReferences(client)
   if (references === null) return { status: 'unavailable' }
   return stored.kind === 'incomplete'
-    ? { status: 'incomplete', options: presentOptions(references), firstName: stored.firstName }
-    : completeState(stored.ids, references, stored.firstName)
+    ? { status: 'incomplete', options: presentOptions(references), firstName: stored.firstName, revision: stored.revision }
+    : completeState(stored.ids, references, stored.firstName, stored.revision)
 }
 
 /** Read labels with the page's already-validated cookie-bound RLS client. */
@@ -170,6 +171,7 @@ export async function saveCurrentStudentProfileSelection(
     if (stored.kind === 'missing-profile') return { status: 'missing-profile' }
     if (stored.kind === 'unavailable') return { status: 'unavailable' }
     if (stored.kind === 'invariant-failure') return { status: 'invariant-failure' }
+    if (stored.revision !== selection.expectedRevision) return { status: 'conflict' }
     const references = await readReferences(student.client)
     if (references === null) return { status: 'unavailable' }
     const chosen = [
@@ -180,25 +182,34 @@ export async function saveCurrentStudentProfileSelection(
     if (chosen.some(option => option === null || !option.isActive)) return { status: 'invalid-selection' }
 
     // Recheck immediately before the write; catalogue reads may have taken time.
-    const liveUser = await getStudentSessionUser(response, student.client)
-    if (liveUser === null || liveUser.id !== student.id) return { status: 'signed-out' }
+    const live = await getStudentSessionContext(response, student.client)
+    if (live === null) return { status: 'signed-out' }
+    if (live.user.id !== student.id || live.sessionId !== student.sessionId) return { status: 'session-changed' }
     const { data, error } = await student.client.from('profiles').update({
       department_id: selection.departmentId,
       academic_level_id: selection.academicLevelId,
       academic_period_id: selection.academicPeriodId,
       first_name: selection.first_name,
-    }).eq('id', student.id).select(PROFILE_COLUMNS).maybeSingle()
+    }).eq('id', student.id).eq('revision', selection.expectedRevision).select(PROFILE_COLUMNS).maybeSingle()
     if (error) return { status: 'unavailable' }
-    if (data === null) return { status: 'missing-profile' }
+    if (data === null) {
+      // The row existed at preflight. A lost CAS is never a reason to retry a write.
+      // Re-read through the same owner/live-session RLS boundary, not elevated access.
+      const current = await readStoredSelection(student.client, student.id)
+      if (current.kind === 'missing-profile') return { status: 'signed-out' }
+      if (current.kind === 'unavailable') return { status: 'unavailable' }
+      if (current.kind === 'invariant-failure') return { status: 'invariant-failure' }
+      return { status: current.revision !== selection.expectedRevision ? 'conflict' : 'unavailable' }
+    }
     const parsed = storedProfileSchema.safeParse(data)
     if (!parsed.success) return { status: 'invariant-failure' }
-    const { first_name, ...ids } = parsed.data
+    const { first_name, revision, ...ids } = parsed.data
     const updated = classifyStoredSelection(ids)
-    if (updated.kind !== 'complete' ||
+    if (revision !== selection.expectedRevision + 1 || updated.kind !== 'complete' ||
         updated.ids.departmentId !== selection.departmentId ||
         updated.ids.academicLevelId !== selection.academicLevelId ||
         updated.ids.academicPeriodId !== selection.academicPeriodId ||
         first_name !== selection.first_name) return { status: 'invariant-failure' }
-    return completeState(updated.ids, references, first_name)
+    return completeState(updated.ids, references, first_name, revision)
   } catch { return { status: 'unavailable' } }
 }

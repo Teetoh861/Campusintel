@@ -59,7 +59,7 @@ async function fixture(run, complete = false) {
     academicLevel: { id: ids.level, label: 'Stage Q', isActive: true },
     academicPeriod: { id: ids.period, label: 'Term R', isActive: true },
   }
-  const initial = complete ? { status: 'complete', options, selection, firstName: 'Adaeze' } : { status: 'incomplete', options, firstName: 'Adaeze' }
+  const initial = complete ? { status: 'complete', revision: 0, options, selection, firstName: 'Adaeze' } : { status: 'incomplete', revision: 0, options, firstName: 'Adaeze' }
   const state = [], refs = [], effectDeps = [], effects = [], requests = [], navigations = []
   let stateIndex = 0, refIndex = 0, effectIndex = 0
   let pageToken = 'page:fixture-student'
@@ -108,7 +108,7 @@ async function fixture(run, complete = false) {
     const submit = () => render().props.onSubmit({ preventDefault() {} })
     const choose = (id, value) => select(id).props.onChange({ target: { value } })
     const saved = (departmentId = ids.department, academicLevelId = ids.level, academicPeriodId = ids.period) => ({
-      status: 'complete', firstName: 'Adaeze', selection: {
+      status: 'complete', revision: 1, firstName: 'Adaeze', selection: {
         department: { id: departmentId, label: 'Persisted unit', isActive: true },
         academicLevel: { id: academicLevelId, label: 'Persisted stage', isActive: true },
         academicPeriod: { id: academicPeriodId, label: 'Persisted term', isActive: true },
@@ -153,7 +153,7 @@ test('server-returned choices keep database order and enable Department → Leve
   assert.equal(f.requests[0][1].method, 'PUT')
   assert.equal(f.requests[0][1].headers['x-campus-account-continuity'], 'page:fixture-student')
   assert.deepEqual(JSON.parse(f.requests[0][1].body), {
-    departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period, first_name: 'Adaeze',
+    departmentId: f.ids.department, academicLevelId: f.ids.level, academicPeriodId: f.ids.period, first_name: 'Adaeze', expectedRevision: 0,
   })
   assert.deepEqual(f.navigations, [['replace', '/dashboard']])
 }))
@@ -243,7 +243,7 @@ test('mismatched or malformed success cannot claim a saved profile', async () =>
   await f.submit()
   assert.deepEqual(f.navigations, [])
   assert.equal(f.notice(), 'Save could not be confirmed. Reload the page.')
-  f.respond(async () => response(200, { status: 'complete', firstName: 'Adaeze', selection: { private: 'provider detail' } }))
+  f.respond(async () => response(200, { status: 'complete', revision: 1, firstName: 'Adaeze', selection: { private: 'provider detail' } }))
   await f.submit()
   assert.deepEqual(f.navigations, [])
   assert.equal(f.requests.length, 2)
@@ -344,3 +344,65 @@ test('presentation code contains no production catalogue values or persistent pr
   for (const id of seededIds) assert.equal(source.includes(id), false)
   assert.doesNotMatch(source, /localStorage|sessionStorage|createBrowserClient|service_role/)
 })
+
+test('mounted draft freezes expectedRevision despite later incoming profile props', async () => fixture(async f => {
+  f.initial.revision = 7
+  f.initial.firstName = 'New incoming name'
+  f.render()
+  await f.submit()
+  assert.equal(JSON.parse(f.requests[0][1].body).expectedRevision, 0)
+  assert.equal(JSON.parse(f.requests[0][1].body).first_name, 'Adaeze')
+}, true))
+
+test('success requires a safe newer revision as well as matching saved fields', async () => fixture(async f => {
+  for (const revision of [undefined, -1, 0, '1', 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    f.respond(async () => response(200, { ...f.saved(), revision }))
+    await f.submit()
+    assert.deepEqual(f.navigations, [])
+    assert.equal(f.notice(), 'Save could not be confirmed. Reload the page.')
+  }
+  f.respond(async () => response(200, f.saved()))
+  await f.submit()
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
+}, true))
+
+test('conflict blocks stale saves through field edits until explicit reload', async () => fixture(async f => {
+  f.respond(async () => response(409, { status: 'conflict' }))
+  await f.submit()
+  assert.deepEqual(f.navigations, [])
+  assert.equal(f.notice(), 'Your profile changed elsewhere. Reload the latest profile before saving again.')
+  const save = () => nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit')
+  assert.equal(save().props.disabled, true)
+  assert.equal(save().props['aria-busy'], false)
+  f.setName('Amara')
+  f.choose('academic-period', f.ids.secondPeriod)
+  await f.submit()
+  assert.equal(f.requests.length, 1)
+  assert.equal(save().props.disabled, true)
+  const reload = nodes(f.render()).find(node => node.props?.children === 'Reload latest profile')
+  assert.ok(reload)
+  let focused = 0
+  reload.props.ref.current = { focus: () => { focused++ } }
+  f.flushEffects()
+  assert.equal(focused, 1, 'conflict moves focus to its explicit recovery action')
+  reload.props.onClick()
+  assert.deepEqual(f.navigations, [['reload']])
+  // A deliberate remount loads the new durable revision and permits a new save.
+  f.initial.revision = 1
+  f.remount()
+  f.respond(async () => response(200, { ...f.saved(), revision: 2 }))
+  await f.submit()
+  assert.equal(JSON.parse(f.requests[1][1].body).expectedRevision, 1)
+  assert.deepEqual(f.navigations, [['reload'], ['replace', '/dashboard']])
+}, true))
+
+test('lost response has no automatic retry and manual retry retains the draft revision', async () => fixture(async f => {
+  f.respond(async () => { throw new Error('response lost') })
+  await f.submit()
+  assert.equal(f.requests.length, 1)
+  f.respond(async () => response(409, { status: 'conflict' }))
+  await f.submit()
+  assert.equal(f.requests.length, 2)
+  assert.deepEqual(f.requests.map(request => JSON.parse(request[1].body).expectedRevision), [0, 0])
+  assert.deepEqual(f.navigations, [])
+}, true))
