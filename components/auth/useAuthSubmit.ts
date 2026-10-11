@@ -1,6 +1,7 @@
 // components/auth/useAuthSubmit.ts — Same-origin form submission without persistent client state.
 'use client'
 import { notifyStudentChange } from '@/lib/auth/client-events'
+import { isStudentAuthTransition, runAuthTransition } from '@/lib/auth/client-transition'
 import { useRef, useState } from 'react'
 import { safeAuthMessage } from '@/lib/auth/errors'
 import { parseAuthOutcome } from '@/lib/auth/outcomes'
@@ -25,34 +26,36 @@ export function useAuthSubmit() {
     try {
       // Reject relative or external destinations before the browser resolves against the page URL.
       if (!/^\/api\/auth\/[a-z-]+$/.test(endpoint)) throw new Error('Invalid auth endpoint')
-      const response = await fetch(endpoint, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json',
-          ...(options.continuityToken ? { [AUTH_CONTINUITY_HEADER]: options.continuityToken } : {}) }, body: JSON.stringify(body) })
-      const value: unknown = await response.json()
-      if (!value || typeof value !== 'object') throw new Error('Invalid response')
-      if (!response.ok) {
-        if (endpoint === AUTH_API.logout && response.status === 409 && 'status' in value && value.status === 'session-changed') {
-          setError(AUTH_MESSAGES.sessionChanged)
-          onFailure?.({ message: AUTH_MESSAGES.sessionChanged, status: 'session-changed' })
+      return await runAuthTransition(endpoint, async () => {
+        const response = await fetch(endpoint, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json',
+            ...(options.continuityToken ? { [AUTH_CONTINUITY_HEADER]: options.continuityToken } : {}) }, body: JSON.stringify(body) })
+        const value: unknown = await response.json()
+        if (!value || typeof value !== 'object') throw new Error('Invalid response')
+        if (!response.ok) {
+          if (endpoint === AUTH_API.logout && response.status === 409 && 'status' in value && value.status === 'session-changed') {
+            setError(AUTH_MESSAGES.sessionChanged)
+            onFailure?.({ message: AUTH_MESSAGES.sessionChanged, status: 'session-changed' })
+            return null
+          }
+          if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === STUDENT_HOME_PATH) {
+            window.location.replace(STUDENT_HOME_PATH)
+            return null
+          }
+          const message = safeAuthMessage('error' in value ? value.error : undefined)
+          const code = 'code' in value && (value.code === RECOVERY_FAILURE.invalidCode || value.code === RECOVERY_FAILURE.restart) ? value.code : undefined
+          setError(message)
+          onFailure?.({ message, code })
           return null
         }
-        if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === STUDENT_HOME_PATH) {
-          window.location.replace(STUDENT_HOME_PATH)
-          return null
+        const result = parseAuthOutcome(endpoint, value)
+        // Notify other tabs only after an actual session-changing success.
+        if (isStudentAuthTransition(endpoint) &&
+            !('code' in value && value.code === EMAIL_CONFIRMATION_REQUIRED)) {
+          notifyStudentChange()
         }
-        const message = safeAuthMessage('error' in value ? value.error : undefined)
-        const code = 'code' in value && (value.code === RECOVERY_FAILURE.invalidCode || value.code === RECOVERY_FAILURE.restart) ? value.code : undefined
-        setError(message)
-        onFailure?.({ message, code })
-        return null
-      }
-      const result = parseAuthOutcome(endpoint, value)
-      // Notify other tabs only after an actual session-changing success.
-      if ([AUTH_API.login, AUTH_API.confirm, AUTH_API.reset, AUTH_API.logout].some(path => path === endpoint) &&
-          !('code' in value && value.code === EMAIL_CONFIRMATION_REQUIRED)) {
-        notifyStudentChange()
-      }
-      return result
+        return result
+      })
     } catch { setError(AUTH_MESSAGES.unavailable); return null }
     finally { lock.current = false; setPending(false) }
   }
