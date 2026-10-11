@@ -59,16 +59,16 @@ export async function GET(request: Request): Promise<Response> {
 export async function POST(request: Request): Promise<Response> {
   const base = NextResponse.json({}, { headers: { 'Cache-Control': 'private, no-store',
     'Referrer-Policy': 'no-referrer' } })
-  const mutation = await getAuthenticatedMutationContext(base, request.headers.get(AUTH_CONTINUITY_HEADER))
-  if (mutation.status !== 'ready') return responseFor({ status: mutation.status,
-    ...(mutation.status === 'session-changed'
-      ? { message: 'Your account or session changed. Reload the workspace before continuing.' } : {}) },
-  mutation.status === 'signed-out' ? 401 : mutation.status === 'session-changed' ? 409 : 503, base)
-  const access = await authorizeOperatorContext(mutation.context)
-  if (access.status !== 'operator') return responseFor({ status: access.status },
-    access.status === 'signed-out' ? 401 : access.status === 'forbidden' ? 403 : 503, base)
   try {
     const input = await readEditorMutation(request)
+    const mutation = await getAuthenticatedMutationContext(base, request.headers.get(AUTH_CONTINUITY_HEADER))
+    if (mutation.status !== 'ready') return responseFor({ status: mutation.status,
+      ...(mutation.status === 'session-changed'
+        ? { message: 'Your account or session changed. Reload the workspace before continuing.' } : {}) },
+    mutation.status === 'signed-out' ? 401 : mutation.status === 'session-changed' ? 409 : 503, base)
+    const access = await authorizeOperatorContext(mutation.context)
+    if (access.status !== 'operator') return responseFor({ status: access.status },
+      access.status === 'signed-out' ? 401 : access.status === 'forbidden' ? 403 : 503, base)
     return resultResponse(await writeOperatorContent(access.client, input), base)
   } catch (error) {
     const status = error instanceof EditorRequestError ? error.status : 503
