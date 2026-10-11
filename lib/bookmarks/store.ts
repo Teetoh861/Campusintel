@@ -1,28 +1,15 @@
 // lib/bookmarks/store.ts — Shared local/account state and bounded import replay.
 
-import { claimAnonymousKeys, consumeClaimedKeys, readAnonymousKeys,
-  writeAnonymousKeys } from './local'
-import type { BookmarkAccountResult, BookmarkCourseAlias } from './contract'
+import { readAnonymousKeys, writeAnonymousKeys } from './local'
+import { reconcileBookmarkImports } from './reconcile'
+import type { AcknowledgedBookmarkImport } from './reconcile'
+import { LOADING_BOOKMARKS } from './contract'
+import type { BookmarkAccountResult, BookmarkCourseAlias, BookmarkSnapshot, BookmarkTransport, SignedOutBookmarkMode } from './contract'
+import { BookmarkDeadlineError, withBookmarkDeadline } from './deadline'
+import { BookmarkIntents } from './intents'
 
-export type BookmarkSnapshot = {
-  mode: 'loading' | 'local' | 'account' | 'unavailable'
-  keys: ReadonlyArray<string>
-}
-
-export const LOADING_BOOKMARKS: BookmarkSnapshot = { mode: 'loading', keys: [] }
-
-export type BookmarkTransport = {
-  read(): Promise<BookmarkAccountResult>
-  verify(token: string): Promise<'same' | 'changed' | 'unavailable'>
-  write(command: { action: 'merge'; reconciliationId: string; courseIds: string[] } |
-    { action: 'add' | 'remove'; contentKey: string }, token: string): Promise<BookmarkAccountResult>
-}
-
-/** How a store treats a signed-out read. `closed` serves account-gated pages:
- * losing the session there fails closed instead of starting anonymous bookmarking.
- * Legacy device keys stay readable and are still imported after a verified sign-in.
- */
-export type SignedOutBookmarkMode = 'local' | 'closed'
+export { LOADING_BOOKMARKS } from './contract'
+export type { BookmarkSnapshot, BookmarkTransport, SignedOutBookmarkMode } from './contract'
 
 /** Shared state for all bookmark controls in one document. Account state is
  * never copied into anonymous storage, and failed writes never update it.
@@ -36,7 +23,17 @@ export class BookmarkStore {
   private generation = 0
   private started = false
   private localWriteFailed = false
-  private writeQueue: Promise<unknown> = Promise.resolve()
+  private localFallback: BookmarkSnapshot = LOADING_BOOKMARKS
+  private intents = new BookmarkIntents()
+  private draining = false
+  private rawWrite: Promise<BookmarkAccountResult> | null = null
+  private quarantined = false
+  private refreshFlight: Promise<void> | null = null
+  private refreshPending = false
+  private refreshRetry = 0
+  private refreshReadOnly = false
+  private acknowledgedImport: AcknowledgedBookmarkImport | null = null
+  private checkingFailure = false
 
   constructor(
     private readonly storage: () => Storage,
@@ -71,6 +68,7 @@ export class BookmarkStore {
 
   configure(catalog: ReadonlyArray<BookmarkCourseAlias>): void {
     this.catalog = catalog
+    this.intents.configure(catalog)
   }
 
   ensureLoaded(): void {
@@ -79,83 +77,126 @@ export class BookmarkStore {
     void this.refresh()
   }
 
-  /** Clear account data before each live-session check, including focus and
-   * account-change notifications. A late result from an old check is ignored.
-   */
-  async refresh(retry = 0): Promise<void> {
-    const previous = this.snapshot
-    const generation = ++this.generation
+  private unavailable(): void {
     this.token = null
     this.owner = null
-    this.setSnapshot(LOADING_BOOKMARKS)
+    this.setSnapshot({ mode: 'unavailable', keys: [] })
+  }
+
+  private async readOnly<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController()
+    return withBookmarkDeadline(operation(controller.signal), () => controller.abort())
+  }
+
+  // All account writes, including reconciliation, cross this single lane.
+  private async write(command: Parameters<BookmarkTransport['write']>[0], token: string, owner = this.owner): Promise<BookmarkAccountResult> {
+    const raw = this.transport.write(command, token)
+    this.rawWrite = raw
+    let timedOut = false
+    const settled = (result?: BookmarkAccountResult) => {
+      if (this.rawWrite !== raw) return
+      this.rawWrite = null
+      // A late acknowledgement is not installed. Re-read before admitting writes.
+      if (timedOut) {
+        if (command.action === 'merge' && result?.status === 'ready' && result.ownerMarker === owner) {
+          this.acknowledgedImport = { ownerMarker: result.ownerMarker,
+            reconciliationId: command.reconciliationId, courseIds: [...command.courseIds] }
+        }
+        void this.requestRefresh(0, true)
+      }
+    }
+    void raw.then(settled, () => settled())
+    return withBookmarkDeadline(raw, () => {
+      timedOut = true
+      this.quarantined = true
+      ++this.generation
+      this.intents.fail()
+      this.unavailable()
+    })
+  }
+
+  /** Invalidate old-account work immediately; coalesce demand to one latest rerun.
+   * Refresh cannot overtake an active/uncertain write, including a merge.
+   */
+  refresh(retry = 0): Promise<void> {
+    return this.requestRefresh(retry, false)
+  }
+
+  private requestRefresh(retry: number, readOnly: boolean): Promise<void> {
+    if (this.snapshot.mode !== 'loading' && !this.quarantined) this.localFallback = this.snapshot
+    ++this.generation
+    this.token = null
+    this.owner = null
+    this.intents.fail()
+    if (this.quarantined) this.unavailable()
+    else this.setSnapshot(LOADING_BOOKMARKS)
+    this.refreshPending = true
+    this.refreshRetry = retry
+    this.refreshReadOnly = readOnly
+    return this.startRefresh()
+  }
+
+  private startRefresh(): Promise<void> {
+    if (this.refreshFlight) return this.refreshFlight
+    if (this.draining || this.rawWrite) return Promise.resolve()
+    this.refreshFlight = (async () => {
+      do {
+        this.refreshPending = false
+        await this.load(this.generation, this.refreshRetry, this.refreshReadOnly)
+      } while (this.refreshPending && !this.rawWrite)
+    })().finally(() => {
+      this.refreshFlight = null
+      if (this.refreshPending && !this.rawWrite && !this.draining) void this.startRefresh()
+      else if (this.intents.next()) void this.drain()
+    })
+    return this.refreshFlight
+  }
+
+  private retryChanged(retry: number, readOnly: boolean): void {
+    if (retry === 0) void this.requestRefresh(1, readOnly)
+    else this.unavailable()
+  }
+
+  private async load(generation: number, retry: number, readOnly: boolean): Promise<void> {
+    const previous = this.localFallback
     let result: BookmarkAccountResult
-    try { result = await this.transport.read() }
+    try { result = await this.readOnly(signal => this.transport.read(signal)) }
     catch { result = { status: 'unavailable' } }
     if (generation !== this.generation) return
-    if (result.status === 'signed-out' && this.signedOutMode === 'closed') {
-      this.setSnapshot({ mode: 'unavailable', keys: [] })
-      return
-    }
+    if (result.status === 'signed-out' && this.signedOutMode === 'closed') { this.unavailable(); return }
     if (result.status === 'signed-out') {
+      this.quarantined = false
       if (previous.mode !== 'local') this.localWriteFailed = false
       this.setSnapshot({ mode: 'local', keys: this.readLocal(previous.mode === 'local' ? previous.keys : []) })
       return
     }
-    if (result.status !== 'ready') {
-      this.setSnapshot({ mode: 'unavailable', keys: [] })
-      return
-    }
-    if (!result.courseIds) {
-      this.setSnapshot({ mode: 'unavailable', keys: [] })
-      return
-    }
+    if (result.status !== 'ready') { this.unavailable(); return }
+    if (!result.courseIds) { this.unavailable(); return }
     const courseIds = result.courseIds
     try {
-      const checked = await this.transport.verify(result.continuityToken)
+      const checkedToken = result.continuityToken
+      const checked = await this.readOnly(signal => this.transport.verify(checkedToken, signal))
       if (generation !== this.generation) return
-      if (checked === 'changed') {
-        if (retry === 0) await this.refresh(1)
-        else this.setSnapshot({ mode: 'unavailable', keys: [] })
-        return
-      }
-      if (checked !== 'same') {
-        this.setSnapshot({ mode: 'unavailable', keys: [] })
-        return
-      }
-      let pending = claimAnonymousKeys(this.storage(), result.ownerMarker, this.catalog, courseIds)
-      while (pending) {
-        for (const batch of pending.batches) {
-          const merge = await this.transport.write({ action: 'merge',
-            reconciliationId: batch.id, courseIds: batch.courseIds }, result.continuityToken)
-          if (generation !== this.generation) return
-          if (merge.status === 'session-changed' || merge.status === 'signed-out') {
-            void this.refresh()
-            return
-          }
-          if (merge.status !== 'ready' || merge.ownerMarker !== result.ownerMarker) {
-            this.setSnapshot({ mode: 'unavailable', keys: [] })
-            return
-          }
-          result = merge
-        }
-        consumeClaimedKeys(this.storage(), result.ownerMarker, pending.id)
-        pending = claimAnonymousKeys(this.storage(), result.ownerMarker, this.catalog, courseIds)
-      }
-      const finalCheck = await this.transport.verify(result.continuityToken)
+      if (checked === 'changed') { this.retryChanged(retry, readOnly); return }
+      if (checked !== 'same') { this.unavailable(); return }
+      const expectedOwner = result.ownerMarker
+      const merged = await reconcileBookmarkImports(this.storage(), this.catalog, courseIds, result,
+        (command, token) => this.write(command, token, expectedOwner), () => generation === this.generation,
+        this.acknowledgedImport, readOnly)
+      if (merged === null) return
+      if (merged.status === 'session-changed' || merged.status === 'signed-out') { this.retryChanged(retry, readOnly); return }
+      if (merged.status !== 'ready') { this.unavailable(); return }
+      result = merged
+      const finalToken = result.continuityToken
+      const finalCheck = await this.readOnly(signal => this.transport.verify(finalToken, signal))
       if (generation !== this.generation) return
-      if (finalCheck === 'changed') {
-        if (retry === 0) await this.refresh(1)
-        else this.setSnapshot({ mode: 'unavailable', keys: [] })
-        return
-      }
-      if (finalCheck !== 'same') {
-        this.setSnapshot({ mode: 'unavailable', keys: [] })
-        return
-      }
+      if (finalCheck === 'changed') { this.retryChanged(retry, readOnly); return }
+      if (finalCheck !== 'same') { this.unavailable(); return }
+      this.quarantined = false
       this.token = result.continuityToken
       this.owner = result.ownerMarker
       this.setSnapshot({ mode: 'account', keys: result.courseKeys })
-    } catch { if (generation === this.generation) this.setSnapshot({ mode: 'unavailable', keys: [] }) }
+    } catch { if (generation === this.generation) this.unavailable() }
   }
 
   /** Native cross-tab storage events update anonymous views without a reload. */
@@ -168,70 +209,60 @@ export class BookmarkStore {
     }
   }
 
-  private enqueue(action: 'toggle' | 'remove', course: BookmarkCourseAlias): Promise<'added' | 'removed' | null> {
-    const generation = this.generation
-    const task = async (): Promise<'added' | 'removed' | null> => {
-      if (generation !== this.generation || this.snapshot.mode !== 'account' || !this.token || !this.owner) return null
-      const token = this.token
-      const owner = this.owner
-      const operation = action === 'toggle' && this.snapshot.keys.includes(course.contentKey) ? 'remove'
-        : action === 'toggle' ? 'add' : 'remove'
-      const failedWrite = async (): Promise<null> => {
-        let checked: 'same' | 'changed' | 'unavailable'
-        try { checked = await this.transport.verify(token) }
-        catch { checked = 'unavailable' }
-        if (generation !== this.generation) return null
-        if (checked === 'changed') void this.refresh()
-        else if (checked === 'unavailable') {
-          this.token = null
-          this.owner = null
-          this.setSnapshot({ mode: 'unavailable', keys: [] })
-        }
-        return null
-      }
-      let result: BookmarkAccountResult
-      try { result = await this.transport.write({ action: operation, contentKey: course.contentKey }, token) }
-      catch { return failedWrite() }
-      if (generation !== this.generation) {
-        // A focus or account-change check raced this write. Re-read the live
-        // account after its response so a successful old request is visible.
-        void this.refresh()
-        return null
-      }
-      if (result.status === 'signed-out' || result.status === 'session-changed') {
-        void this.refresh()
-        return null
-      }
-      if (result.status !== 'ready') return failedWrite()
-      if (result.ownerMarker !== owner) {
-        this.token = null
-        this.owner = null
-        this.setSnapshot({ mode: 'unavailable', keys: [] })
-        return null
-      }
-      let verified: 'same' | 'changed' | 'unavailable'
-      try { verified = await this.transport.verify(result.continuityToken) }
-      catch { verified = 'unavailable' }
-      if (generation !== this.generation) { void this.refresh(); return null }
-      if (verified === 'changed') { void this.refresh(); return null }
-      if (verified !== 'same') {
-        this.token = null
-        this.owner = null
-        this.setSnapshot({ mode: 'unavailable', keys: [] })
-        return null
-      }
-      this.token = result.continuityToken
-      this.setSnapshot({ mode: 'account', keys: result.courseKeys })
-      this.notifyAccountChange()
-      return operation === 'add' ? 'added' : 'removed'
-    }
-    const queued = this.writeQueue.then(task, task)
-    this.writeQueue = queued.then(() => undefined, () => undefined)
-    return queued
+  private async failedWrite(token: string, generation: number): Promise<void> {
+    this.checkingFailure = true
+    try {
+      let checked: 'same' | 'changed' | 'unavailable'
+      try { checked = await this.readOnly(signal => this.transport.verify(token, signal)) }
+      catch { checked = 'unavailable' }
+      if (generation !== this.generation) return
+      if (checked === 'changed') void this.refresh()
+      else if (checked === 'unavailable') this.unavailable()
+    } finally { this.checkingFailure = false }
   }
 
-  /** Toggle with the latest settled state, so rapid clicks cannot lose intent. */
-  async toggle(course: BookmarkCourseAlias): Promise<'added' | 'removed' | null> {
+  private async drain(): Promise<void> {
+    if (this.draining || this.refreshFlight || this.refreshPending || this.rawWrite || this.quarantined) return
+    this.draining = true
+    try {
+      while (this.snapshot.mode === 'account' && this.token && this.owner && !this.quarantined) {
+        const intent = this.intents.next()
+        if (!intent) break
+        if (this.snapshot.keys.includes(intent.key) === intent.desired) {
+          this.intents.finish(intent, intent.desired ? 'added' : 'removed')
+          continue
+        }
+        const generation = this.generation, token = this.token, owner = this.owner, desired = intent.desired
+        let result: BookmarkAccountResult
+        try { result = await this.write({ action: desired ? 'add' : 'remove', contentKey: intent.key }, token) }
+        catch (error) {
+          if (!(error instanceof BookmarkDeadlineError) && generation === this.generation) await this.failedWrite(token, generation)
+          this.intents.fail()
+          break
+        }
+        if (generation !== this.generation) { this.intents.fail(); this.refreshPending = true; break }
+        if (result.status === 'signed-out' || result.status === 'session-changed') { void this.refresh(); break }
+        if (result.status !== 'ready') { await this.failedWrite(token, generation); this.intents.fail(); break }
+        if (result.ownerMarker !== owner || result.courseKeys.includes(intent.key) !== desired) { this.intents.fail(); this.unavailable(); break }
+        let verified: 'same' | 'changed' | 'unavailable'
+        try { verified = await this.readOnly(signal => this.transport.verify(result.continuityToken, signal)) }
+        catch { verified = 'unavailable' }
+        if (generation !== this.generation) { this.intents.fail(); this.refreshPending = true; break }
+        if (verified === 'changed') { void this.refresh(); break }
+        if (verified !== 'same') { this.intents.fail(); this.unavailable(); break }
+        this.token = result.continuityToken
+        this.setSnapshot({ mode: 'account', keys: result.courseKeys })
+        this.notifyAccountChange()
+      }
+    } catch { this.intents.fail(); this.unavailable() } finally {
+      this.draining = false
+      if (this.refreshPending && !this.rawWrite) void this.startRefresh()
+      else if (this.intents.next() && !this.quarantined && !this.rawWrite) void this.drain()
+    }
+  }
+
+  /** Toggle the latest desired state while rendering only confirmed durable state. */
+  toggle(course: BookmarkCourseAlias): Promise<'added' | 'removed' | null> {
     if (this.snapshot.mode === 'local' && this.signedOutMode === 'local') {
       const keys = this.readLocal()
       const had = keys.includes(course.slug) || keys.includes(course.code)
@@ -239,21 +270,28 @@ export class BookmarkStore {
         : [...keys, course.slug]
       this.writeLocal(next)
       this.setSnapshot({ mode: 'local', keys: next })
-      return had ? 'removed' : 'added'
+      return Promise.resolve(had ? 'removed' : 'added')
     }
-    if (this.snapshot.mode !== 'account') return null
-    return this.enqueue('toggle', course)
+    if (this.snapshot.mode !== 'account' || this.quarantined || this.checkingFailure) return Promise.resolve(null)
+    const intent = this.intents.request(course.contentKey, 'toggle', this.snapshot.keys.includes(course.contentKey))
+    if (!intent) return Promise.resolve(null)
+    void this.drain()
+    return intent.completion
   }
 
   /** /bookmarks removes the same durable identity as the course-page button. */
-  async remove(course: BookmarkCourseAlias): Promise<boolean> {
+  remove(course: BookmarkCourseAlias): Promise<boolean> {
     if (this.snapshot.mode === 'local' && this.signedOutMode === 'local') {
       const next = this.readLocal().filter(key =>
         key !== course.slug && key !== course.code)
       this.writeLocal(next)
       this.setSnapshot({ mode: 'local', keys: next })
-      return true
+      return Promise.resolve(true)
     }
-    return this.snapshot.mode === 'account' && await this.enqueue('remove', course) !== null
+    if (this.snapshot.mode !== 'account' || this.quarantined || this.checkingFailure) return Promise.resolve(false)
+    const intent = this.intents.request(course.contentKey, 'remove', this.snapshot.keys.includes(course.contentKey))
+    if (!intent) return Promise.resolve(false)
+    void this.drain()
+    return intent.removal
   }
 }

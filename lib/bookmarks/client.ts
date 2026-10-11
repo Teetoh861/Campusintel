@@ -40,13 +40,13 @@ async function parseResult(response: Response): Promise<BookmarkAccountResult> {
 }
 
 const transport = {
-  async read(): Promise<BookmarkAccountResult> {
-    const response = await fetch('/api/bookmarks', { cache: 'no-store', credentials: 'same-origin' })
+  async read(signal?: AbortSignal): Promise<BookmarkAccountResult> {
+    const response = await fetch('/api/bookmarks', { signal, cache: 'no-store', credentials: 'same-origin' })
     return parseResult(response)
   },
-  async verify(token: string): Promise<'same' | 'changed' | 'unavailable'> {
+  async verify(token: string, signal?: AbortSignal): Promise<'same' | 'changed' | 'unavailable'> {
     try {
-      const response = await fetch('/api/auth/session', { cache: 'no-store', credentials: 'same-origin',
+      const response = await fetch('/api/auth/session', { signal, cache: 'no-store', credentials: 'same-origin',
         headers: { [AUTH_CONTINUITY_HEADER]: token } })
       if (!response.ok) return 'unavailable'
       const body: unknown = await response.json()
