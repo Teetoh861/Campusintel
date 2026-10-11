@@ -1,16 +1,16 @@
 // app/api/auth/cancel-recovery/route.ts — Same-origin cancellation of recovery-only authorization.
 import { readAuthRequest } from '@/lib/auth/request'
 import { authJson, authError } from '@/lib/auth/response'
-import { logoutSchema } from '@/lib/auth/schemas'
-import { clearRecoveryCookie, discardRecoveryGrant } from '@/lib/auth/recovery-grant'
+import { emailRequestSchema } from '@/lib/auth/schemas'
+import { clearRecoveryCookie, discardRecoveryGrantForFlow } from '@/lib/auth/recovery-grant'
 
 /** Destroy the grant before the UI starts a different recovery flow. */
 export async function POST(request: Request) {
   try {
-    await readAuthRequest(request, logoutSchema)
-    await discardRecoveryGrant()
+    const body = await readAuthRequest(request, emailRequestSchema)
+    const discarded = await discardRecoveryGrantForFlow(body.email)
     const response = authJson({ success: true })
-    clearRecoveryCookie(response)
+    if (discarded) clearRecoveryCookie(response)
     return response
   } catch (error) { return authError(error) }
 }

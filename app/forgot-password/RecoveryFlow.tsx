@@ -68,7 +68,7 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
     <button type="button" disabled={pending} className={cx(btnBase, btnSm, btnGhost, focusRingNavy,
       'disabled:pointer-events-none disabled:opacity-60')} onClick={async () => {
       setResent(false)
-      if (await submit(AUTH_API.cancelRecovery, {})) { resetField('code'); onStartOver() }
+      if (await submit(AUTH_API.cancelRecovery, { email })) { resetField('code'); onStartOver() }
     }}>Change email</button>
       </>}
     />
