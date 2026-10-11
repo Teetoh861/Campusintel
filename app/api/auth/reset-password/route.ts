@@ -8,6 +8,7 @@ import { AUTH_MESSAGES, RECOVERY_FAILURE } from '@/lib/auth/constants'
 import { resetSchema } from '@/lib/auth/schemas'
 import { PASSWORD_RESET_DESTINATION } from '@/lib/auth/constants'
 import { getRecoveryAuthGateway } from '@/lib/supabase/recovery-auth'
+import { advanceStudentSessionGeneration } from '@/lib/auth/session-generation'
 
 /** Only a single-use verified recovery grant authorizes replacement, never an existing login. */
 export async function POST(request: Request) {
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
       ? authJson({ error: failure.error, code: RECOVERY_FAILURE.restart }, failure.status)
       : authJson({ next: PASSWORD_RESET_DESTINATION })
     clearRecoveryCookie(response)
+    if (!failure) await advanceStudentSessionGeneration(response)
     return response
   } catch (error) {
     const response = grantAttempted

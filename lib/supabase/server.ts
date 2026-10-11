@@ -4,18 +4,22 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getSupabaseConfig } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
+import { advanceStudentSessionGeneration, resolveStudentSessionNamespace,
+  STUDENT_SESSION_GENERATION_COOKIE } from '@/lib/auth/session-generation'
 import type { NextResponse } from 'next/server'
 
 /** Create a user-scoped client. Route handlers supply the exact response they return.
  * Server Components tolerate read-only cookies; the proxy persists refreshes before render.
  */
-export async function createClient(response?: NextResponse) {
+async function clientForRequest(response?: NextResponse, freshGeneration?: string) {
   const store = await cookies()
   const jar = new Map(store.getAll().map(cookie => [cookie.name, cookie.value]))
+  const namespace = resolveStudentSessionNamespace(freshGeneration ?? jar.get(STUDENT_SESSION_GENERATION_COOKIE))
   const { url, key } = getSupabaseConfig()
   return createServerClient(url, key, {
+    ...(namespace.storageName ? { cookieOptions: { name: namespace.storageName } } : {}),
     cookies: {
-      getAll: () => Array.from(jar, ([name, value]) => ({ name, value })),
+      getAll: () => namespace.mode === 'invalid' ? [] : Array.from(jar, ([name, value]) => ({ name, value })),
       setAll(items, headers) {
         for (const { name, value, options } of items) {
           jar.set(name, value)
@@ -29,4 +33,14 @@ export async function createClient(response?: NextResponse) {
       },
     },
   })
+}
+
+/** Read/write only the session namespace selected by the incoming request. */
+export async function createClient(response?: NextResponse) {
+  return clientForRequest(response)
+}
+
+/** Transfer a verified session into a fresh namespace on the same response as its selector. */
+export async function createFreshStudentSessionClient(response: NextResponse) {
+  return clientForRequest(response, await advanceStudentSessionGeneration(response))
 }
