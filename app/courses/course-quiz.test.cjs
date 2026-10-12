@@ -48,7 +48,7 @@ const quizHref = `/courses/${course.slug}/quiz`
 async function fixture(quiz, run) {
   const files = [
     './[slug]/page.tsx', './[slug]/quiz/page.tsx', './[slug]/CourseToc.tsx', './[slug]/MobileCourseNav.tsx',
-    './page.tsx', '../page.tsx', '../bookmarks/page.tsx', './[slug]/materials/page.tsx',
+    '../page.tsx', '../bookmarks/page.tsx', './[slug]/materials/page.tsx',
   ].map(file => require.resolve(file))
   const bookmarkControl = () => React.createElement('button', { type: 'button' }, 'Bookmark control')
   const restore = installLoader()
@@ -112,7 +112,6 @@ async function fixture(quiz, run) {
       if (name === './CourseAccordion') return { CourseAccordion: ({ sections }) =>
         React.createElement(React.Fragment, null, sections.map(section =>
           React.createElement('section', { key: section.id }, section.content))) }
-      if (name === './CourseDirectory') return { CourseDirectory: ({ items }) => renderCards(items) }
       if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
       if (name === '@/components/auth/PublicHomeBoundary') return { PublicHomeBoundary: ({ children }) => children }
@@ -130,10 +129,9 @@ async function fixture(quiz, run) {
       quizRoute: granted(require(files[1]).default),
       CourseToc: require(files[2]).CourseToc,
       MobileCourseNav: require(files[3]).MobileCourseNav,
-      directory: granted(require(files[4]).default),
-      home: require(files[5]).default,
-      bookmarks: require(files[6]).default,
-      materials: granted(require(files[7]).default),
+      home: require(files[4]).default,
+      bookmarks: require(files[5]).default,
+      materials: granted(require(files[6]).default),
       destinations,
       publishedState,
     })
@@ -245,11 +243,10 @@ test('published CBT edits and withdrawals affect the next quiz route read', asyn
   assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
 }))
 
-test('managed read unavailability fails closed on detail, quiz and course directory', async () => fixture(validQuiz, async f => {
+test('managed read unavailability fails closed on detail and quiz', async () => fixture(validQuiz, async f => {
   f.publishedState.available = false
   assert.match(renderToStaticMarkup(await f.detail(params)), /Learning content is temporarily unavailable/)
   assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
-  assert.match(renderToStaticMarkup(await f.directory()), /Course content is temporarily unavailable/)
 }))
 
 test('missing or unusable quiz removes all course-detail claims and the route rejects it', async () => {
@@ -298,18 +295,11 @@ test('public home and saved cards never infer quiz readiness from repository que
   // Repository data still exists, but the operator can withdraw all published CBT.
   const originalRows = f.publishedState.rows
   f.publishedState.rows = originalRows.filter(row => row.kind !== 'cbt_question')
-  const withdrawn = renderToStaticMarkup(await f.directory())
-  assert.doesNotMatch(withdrawn, new RegExp(`href="${quizHref}"`))
-  assert.doesNotMatch(withdrawn, new RegExp(`${validQuiz.questions.length} questions`))
   publicCards().forEach(assertNeutral)
 
   f.publishedState.rows = originalRows
-  const restored = renderToStaticMarkup(await f.directory())
-  assert.match(restored, new RegExp(`href="${quizHref}"`))
-  assert.match(restored, new RegExp(`${validQuiz.questions.length} questions`))
   publicCards().forEach(assertNeutral)
 
   f.publishedState.available = false
-  assert.match(renderToStaticMarkup(await f.directory()), /Course content is temporarily unavailable/)
   publicCards().forEach(assertNeutral)
 }))

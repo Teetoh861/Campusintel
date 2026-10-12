@@ -1,382 +1,107 @@
-// app/courses/CourseDirectory.tsx — Responsive directory for server-resolved published course cards.
+// Client presentation controls over institutional identity and server-rendered course results.
 'use client'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { btnGhost } from '@/components/chrome/ui'
+import { CourseRegister } from '@/components/student/CourseRow'
+import { EmptyState } from '@/components/student/EmptyState'
+import { SearchField } from '@/components/student/SearchField'
+import { FilterSelect } from '@/components/student/FilterSelect'
+import { Pagination } from '@/components/student/Pagination'
+import { studentAction, studentFocusControl } from '@/components/student/ui'
+import { COURSES_PER_PAGE } from './catalogue-presentation'
+import type { FilterOption } from '@/components/student/FilterSelect'
+import type { DirectoryItem } from './catalogue-presentation'
+import type { StudentCourseApplicability } from '@/lib/courses/read-model'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Card } from '@/components/chrome/Card'
-import { btnBase, buttonClassName, btnGhost, btnSm, cx } from '@/components/chrome/ui'
-import type { CardProps } from '@/components/chrome/Card'
-import type { Course } from '@/lib/types'
-import type { ReactElement } from 'react'
+type Filters = { department: string | null; academicLevel: string | null; academicPeriod: string | null }
+const ALL_FILTERS: Filters = { department: null, academicLevel: null, academicPeriod: null }
+const labelOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
 
-export type DirectoryItem = {
-  id: string
-  cardProps: CardProps
-  filter: {
-    code: string
-    title: string
-    level: number
-    semester: number
-    difficulty: Course['difficulty']
+function optionsFor(items: ReadonlyArray<DirectoryItem>, dimension: keyof Filters): FilterOption[] {
+  const references = new Map<string, FilterOption>()
+  for (const item of items) for (const tuple of item.applicability) {
+    const reference = tuple[dimension]
+    references.set(reference.id, { id: reference.id, label: reference.label })
   }
+  return [...references.values()].sort((a, b) =>
+    labelOrder.compare(a.label, b.label) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
-type LevelFilter = 'all' | '100' | '200'
-type SemesterFilter = 'all' | 'first' | 'second'
-type DifficultyFilter = 'all' | 'easy' | 'medium' | 'hard'
-
-type Option<T extends string> = { val: T; label: string }
-
-const LEVEL_OPTIONS: ReadonlyArray<Option<LevelFilter>> = [
-  { val: 'all', label: 'All' },
-  { val: '100', label: '100' },
-  { val: '200', label: '200' },
-]
-const SEMESTER_OPTIONS: ReadonlyArray<Option<SemesterFilter>> = [
-  { val: 'all', label: 'All' },
-  { val: 'first', label: 'First' },
-  { val: 'second', label: 'Second' },
-]
-const DIFFICULTY_OPTIONS: ReadonlyArray<Option<DifficultyFilter>> = [
-  { val: 'all', label: 'All' },
-  { val: 'easy', label: 'Easy' },
-  { val: 'medium', label: 'Medium' },
-  { val: 'hard', label: 'Hard' },
-]
-
-const WRAP = 'app-container student-workspace'
-
-type Props = {
-  items: ReadonlyArray<DirectoryItem>
-  totalCount: number
+function matchesTuple(tuple: StudentCourseApplicability, filters: Filters): boolean {
+  return (filters.department === null || tuple.department.id === filters.department) &&
+    (filters.academicLevel === null || tuple.academicLevel.id === filters.academicLevel) &&
+    (filters.academicPeriod === null || tuple.academicPeriod.id === filters.academicPeriod)
 }
 
-/** Filter and page the current catalogue with intentional tablet and desktop composition. */
-export function CourseDirectory({ items, totalCount }: Props): ReactElement {
+/** Search and filter the full institutional set before paging its already-rendered results. */
+export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem> }) {
   const [query, setQuery] = useState('')
-  const [level, setLevel] = useState<LevelFilter>('all')
-  const [semester, setSemester] = useState<SemesterFilter>('all')
-  const [difficulty, setDifficulty] = useState<DifficultyFilter>('all')
-  const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(6)
-  const directoryTopRef = useRef<HTMLDivElement>(null)
-
-  const trimmed = query.trim()
-  const activeFilterCount = [level, semester, difficulty].filter((v) => v !== 'all').length
-  const isFiltered =
-    trimmed !== '' || level !== 'all' || semester !== 'all' || difficulty !== 'all'
-
+  const [filters, setFilters] = useState<Filters>(ALL_FILTERS)
+  const [requestedPage, setPage] = useState(1)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const departmentRef = useRef<HTMLSelectElement>(null)
+  const resultsRef = useRef<HTMLElement>(null)
+  const hasFilters = Object.values(filters).some(value => value !== null)
+  const options = useMemo(() => ({
+    department: optionsFor(items, 'department'),
+    academicLevel: optionsFor(items, 'academicLevel'),
+    academicPeriod: optionsFor(items, 'academicPeriod'),
+  }), [items])
   const filtered = useMemo(() => {
-    const q = trimmed.toLowerCase()
-    return items.filter(({ filter }) => {
-      if (level !== 'all' && String(filter.level) !== level) return false
-      if (semester !== 'all') {
-        const wantSemester = semester === 'first' ? 1 : 2
-        if (filter.semester !== wantSemester) return false
-      }
-      if (difficulty !== 'all' && filter.difficulty.toLowerCase() !== difficulty)
-        return false
-      if (q) {
-        const code = filter.code.toLowerCase()
-        const title = filter.title.toLowerCase()
-        if (!code.includes(q) && !title.includes(q)) return false
-      }
-      return true
-    })
-  }, [items, trimmed, level, semester, difficulty])
-
-  useEffect(() => {
-    const desktop = window.matchMedia('(min-width: 1200px)')
-    const updatePerPage = () => setPerPage(desktop.matches ? 9 : 6)
-    updatePerPage()
-    desktop.addEventListener('change', updatePerPage)
-    return () => desktop.removeEventListener('change', updatePerPage)
-  }, [])
-
-  useEffect(() => {
-    setPage(1)
-  }, [query, level, semester, difficulty])
-
-  const totalPages = Math.ceil(filtered.length / perPage)
-  const visibleItems = filtered.slice((page - 1) * perPage, page * perPage)
-
-  useEffect(() => {
-    setPage((current) => Math.min(current, Math.max(totalPages, 1)))
-  }, [totalPages])
-
-  const changePage = (nextPage: number) => {
-    if (nextPage < 1 || nextPage > totalPages || nextPage === page) return
-    setPage(nextPage)
-    requestAnimationFrame(() => {
-      directoryTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
+    const term = query.trim().toLowerCase()
+    return items.filter(item =>
+      (!term || item.code.toLowerCase().includes(term) || item.title.toLowerCase().includes(term)) &&
+      (!hasFilters || item.applicability.some(tuple => matchesTuple(tuple, filters))))
+  }, [items, query, filters, hasFilters])
+  const totalPages = Math.ceil(filtered.length / COURSES_PER_PAGE)
+  const page = Math.min(requestedPage, Math.max(1, totalPages))
+  // Clamp before slicing as well as settling state, so data shrink never flashes an empty page.
+  useEffect(() => { if (requestedPage !== page) setPage(page) }, [page, requestedPage])
+  const visible = filtered.slice((page - 1) * COURSES_PER_PAGE, page * COURSES_PER_PAGE)
+  const changeQuery = (value: string) => { setQuery(value); setPage(1) }
+  const changeFilter = (dimension: keyof Filters, value: string | null) => {
+    setFilters(current => ({ ...current, [dimension]: value })); setPage(1)
   }
+  const resetAll = () => { setQuery(''); setFilters(ALL_FILTERS); setPage(1); searchRef.current?.focus() }
 
-  const reset = () => {
-    setQuery('')
-    setLevel('all')
-    setSemester('all')
-    setDifficulty('all')
-  }
+  if (items.length === 0) return <EmptyState title="No institutional courses available yet." actions={null}>
+    The institutional catalogue is empty. Please check back later.
+  </EmptyState>
 
-  return (
-    <>
-      {/* ===================== STICKY SEARCH + FILTERS ===================== */}
-      <div
-        ref={directoryTopRef}
-        className="scroll-mt-[var(--student-header-height)] border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px] desktop:sticky desktop:top-[var(--student-header-height)] desktop:z-40"
-        data-screen-label="Search and filter"
-      >
-        <div className={WRAP}>
-          <div className="flex flex-col gap-[14px] py-4 desktop:flex-row desktop:flex-wrap desktop:items-center desktop:gap-5 desktop:py-[18px]">
-            {/* search */}
-            <label className="flex min-h-[52px] items-center gap-3 rounded-[11px] border border-ci-border-2 bg-ci-white px-4 py-3 transition-[border-color,box-shadow] duration-150 focus-within:border-ci-navy focus-within:shadow-[0_0_0_3px_var(--ci-blue-50)] desktop:flex-[1_1_280px] desktop:min-w-[260px]">
-              <MagnifyingGlass />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search a course code or title"
-                aria-label="Search courses by code or title"
-                autoComplete="off"
-                maxLength={100}
-                className="min-w-0 flex-1 border-0 bg-transparent text-[15.5px] text-ci-ink outline-none placeholder:text-ci-gray-400"
-              />
-              {query !== '' ? (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  onClick={() => setQuery('')}
-                  className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-[6px] text-[18px] leading-none text-ci-gray-500 transition-colors hover:bg-ci-paper-2 hover:text-ci-ink"
-                >
-                  &times;
-                </button>
-              ) : null}
-            </label>
-
-            {/* filters + count */}
-            <div className="flex flex-wrap items-center gap-x-[22px] gap-y-[18px] desktop:flex-[2_1_100%] desktop:gap-y-[14px]">
-              {/* Mobile: native themed dropdowns. */}
-              <div className="order-1 w-full desktop:hidden">
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] font-bold text-ci-navy-900">Filter courses</span>
-                  {activeFilterCount > 0 ? (
-                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ci-navy px-[6px] text-[12px] font-bold leading-none text-white [font-variant-numeric:tabular-nums]">
-                      {activeFilterCount}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <FilterSelect
-                    id="mobile-level-filter"
-                    label="Level"
-                    value={level}
-                    options={LEVEL_OPTIONS}
-                    onChange={setLevel}
-                  />
-                  <FilterSelect
-                    id="mobile-semester-filter"
-                    label="Semester"
-                    value={semester}
-                    options={SEMESTER_OPTIONS}
-                    onChange={setSemester}
-                  />
-                  <FilterSelect
-                    id="mobile-difficulty-filter"
-                    label="Difficulty"
-                    value={difficulty}
-                    options={DIFFICULTY_OPTIONS}
-                    onChange={setDifficulty}
-                  />
-                </div>
-              </div>
-
-              {/* Desktop: retain the existing inline segmented controls. */}
-              <div id="course-filters-panel" className="hidden desktop:contents">
-                <Seg label="Level" value={level} options={LEVEL_OPTIONS} onChange={setLevel} />
-                <Seg label="Semester" value={semester} options={SEMESTER_OPTIONS} onChange={setSemester} />
-                <Seg label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onChange={setDifficulty} />
-              </div>
-
-              <div className="order-2 ml-auto flex items-center gap-4">
-                <span className="text-[13.5px] font-medium text-ci-gray-600">
-                  Showing <b className="font-bold text-ci-navy-900">{filtered.length}</b> of {totalCount}
-                </span>
-                {isFiltered ? (
-                  <button
-                    type="button"
-                    onClick={reset}
-                    className="text-[13.5px] font-semibold text-ci-navy transition-colors hover:text-ci-navy-700"
-                  >
-                    Reset
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
+  return <>
+    <section className="student-catalogue-controls" aria-label="Search and filter courses">
+      <div className="student-catalogue-search">
+        <SearchField id="course-search" label="Search courses by code or title"
+          placeholder="Course code or title" value={query} onChange={changeQuery} inputRef={searchRef} />
       </div>
-
-      {/* ===================== GRID / EMPTY ===================== */}
-      <section className="student-page" data-screen-label="Course grid">
-        <div className={WRAP}>
-          {filtered.length > 0 ? (
-            <>
-              <div className="student-grid">
-                {visibleItems.map((item) => (
-                  <Card key={item.id} {...item.cardProps} />
-                ))}
-              </div>
-
-              {totalPages > 1 ? (
-                <nav
-                  className="mt-8 flex flex-wrap items-center justify-center gap-2"
-                  aria-label="Course directory pages"
-                >
-                  <button
-                    type="button"
-                    disabled={page === 1}
-                    onClick={() => changePage(page - 1)}
-                    className="inline-flex min-h-11 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    Previous
-                  </button>
-                  {Array.from({ length: totalPages }, (_, index) => {
-                    const pageNumber = index + 1
-                    const isCurrent = pageNumber === page
-                    return (
-                      <button
-                        key={pageNumber}
-                        type="button"
-                        aria-current={isCurrent ? 'page' : undefined}
-                        onClick={() => changePage(pageNumber)}
-                        className={cx(
-                          'inline-flex h-11 min-w-11 items-center justify-center rounded-[9px] border px-3 text-[13.5px] font-bold transition-colors',
-                          isCurrent
-                            ? 'border-ci-navy bg-ci-navy text-white'
-                            : 'border-ci-border-2 bg-ci-white text-ci-navy hover:border-ci-blue-200 hover:bg-ci-paper-2',
-                        )}
-                      >
-                        {pageNumber}
-                      </button>
-                    )
-                  })}
-                  <button
-                    type="button"
-                    disabled={page === totalPages}
-                    onClick={() => changePage(page + 1)}
-                    className="inline-flex min-h-11 items-center justify-center rounded-[9px] border border-ci-border-2 bg-ci-white px-3 text-[13.5px] font-semibold text-ci-navy transition-colors hover:border-ci-blue-200 hover:bg-ci-paper-2 disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    Next
-                  </button>
-                </nav>
-              ) : null}
-            </>
-          ) : (
-            <div className="rounded-[20px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[56px_28px] text-center">
-              <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">No matches</div>
-              <h3 className="mt-[14px] text-[26px] font-extrabold tracking-[-0.02em] text-ci-navy-900">
-                Nothing for{' '}
-                <span className="font-bold text-ci-navy">{trimmed ? `“${trimmed}”` : 'that'}</span>
-              </h3>
-              <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-[1.55] text-ci-gray-600">
-                No course matches your search and filters. Clear them to see all {totalCount} courses, or
-                check back as coverage expands.
-              </p>
-              <div className="mt-6 inline-flex">
-                <button type="button" onClick={reset} className={buttonClassName(btnBase, btnSm, btnGhost)}>
-                  Reset filters
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-    </>
-  )
-}
-
-type SegProps<T extends string> = {
-  label: string
-  value: T
-  options: ReadonlyArray<Option<T>>
-  onChange: (val: T) => void
-}
-
-type FilterSelectProps<T extends string> = SegProps<T> & {
-  id: string
-}
-
-function FilterSelect<T extends string>({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-}: FilterSelectProps<T>) {
-  return (
-    <label htmlFor={id} className="min-w-0">
-      <span className="relative block">
-        <select
-          id={id}
-          aria-label={`Filter by ${label.toLowerCase()}`}
-          value={value}
-          onChange={(event) => {
-            const selected = options.find((option) => option.val === event.target.value)
-            if (selected) onChange(selected.val)
-          }}
-          className="min-h-[52px] w-full min-w-0 appearance-none rounded-[11px] border border-ci-border-2 bg-ci-white py-3 pl-3 pr-7 text-[13px] font-semibold text-ci-navy outline-none transition-[border-color,box-shadow] focus:border-ci-navy focus:shadow-[0_0_0_3px_var(--ci-blue-50)]"
-        >
-          {options.map((option) => (
-            <option key={option.val} value={option.val}>
-              {option.val === 'all' ? label : option.label}
-            </option>
-          ))}
-        </select>
-        <svg
-          viewBox="0 0 20 20"
-          fill="none"
-          aria-hidden="true"
-          className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ci-navy"
-        >
-          <path
-            d="m5 7.5 5 5 5-5"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
-    </label>
-  )
-}
-
-function Seg<T extends string>({ label, value, options, onChange }: SegProps<T>) {
-  return (
-    <div className="flex items-center gap-[10px]">
-      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">{label}</span>
-      <div className="inline-flex overflow-hidden rounded-[9px] border border-ci-border-2 bg-ci-white">
-        {options.map((o) => (
-          <button
-            key={o.val}
-            type="button"
-            aria-pressed={value === o.val}
-            onClick={() => onChange(o.val)}
-            className="min-h-11 border-r border-ci-border px-[14px] py-[9px] text-[13.5px] font-semibold text-ci-gray-600 transition-colors last:border-r-0 hover:bg-ci-paper-2 hover:text-ci-navy aria-pressed:bg-ci-navy aria-pressed:text-white"
-          >
-            {o.label}
-          </button>
-        ))}
+      <div className="student-catalogue-filter-fields">
+        <FilterSelect id="course-department" label="Department" value={filters.department}
+          options={options.department} onChange={value => changeFilter('department', value)} selectRef={departmentRef} />
+        <FilterSelect id="course-level" label="Level" value={filters.academicLevel}
+          options={options.academicLevel} onChange={value => changeFilter('academicLevel', value)} />
+        <FilterSelect id="course-semester" label="Semester" value={filters.academicPeriod}
+          options={options.academicPeriod} onChange={value => changeFilter('academicPeriod', value)} />
       </div>
+    </section>
+    <div className="student-catalogue-summary">
+      <p className="student-register-summary" role="status" aria-live="polite" aria-atomic="true">
+        {filtered.length} {filtered.length === 1 ? 'result' : 'results'} of {items.length} courses
+      </p>
+      <button type="button" disabled={!hasFilters} className={studentAction(btnGhost)}
+        onClick={() => { setFilters(ALL_FILTERS); setPage(1); departmentRef.current?.focus() }}>Clear filters</button>
     </div>
-  )
-}
-
-function MagnifyingGlass() {
-  return (
-    <svg className="h-[17px] w-[17px] flex-none text-ci-gray-500" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.7" />
-      <line x1="12.2" y1="12.2" x2="16" y2="16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  )
+    <section ref={resultsRef} tabIndex={-1} aria-labelledby="course-results-title"
+      className={'student-catalogue-results ' + studentFocusControl}>
+      <h2 id="course-results-title" className="sr-only">Institutional course results</h2>
+      {filtered.length > 0
+        ? <CourseRegister label="Institutional courses">
+          {visible.map(item => <Fragment key={item.institutionalCourseId}>{item.row}</Fragment>)}
+        </CourseRegister>
+        : <EmptyState title="No courses match your search and filters." actions={
+          <button type="button" onClick={resetAll} className={studentAction(btnGhost)}>Reset search and filters</button>
+        }>Try another course code or title, or reset your search and filters.</EmptyState>}
+    </section>
+    <Pagination page={page} totalPages={totalPages} onPageChange={setPage}
+      label="Course catalogue pages" scrollTarget={resultsRef} />
+  </>
 }
