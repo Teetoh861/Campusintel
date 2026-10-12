@@ -23,6 +23,24 @@ export function resolveStudentSessionNamespace(selector: unknown): StudentSessio
   return { mode: 'invalid', storageName: SESSION_COOKIE_PREFIX + 'invalid' }
 }
 
+/** Only genuine raw absence enables legacy storage; Next may drop undecodable cookie values. */
+export function resolveStudentSessionNamespaceFromCookieHeader(rawCookieHeader: string | null): StudentSessionNamespace {
+  let selector: string | undefined
+  let present = false
+  for (const rawPair of (rawCookieHeader ?? '').split(';')) {
+    const pair = rawPair.replace(/^[ \t]+|[ \t]+$/g, ''), separator = pair.indexOf('=')
+    const name = separator < 0 ? pair : pair.slice(0, separator)
+    if (name.trim() !== STUDENT_SESSION_GENERATION_COOKIE) continue
+    // Ambiguous selectors and noncanonical names/values must never become absence.
+    if (present || separator < 0 || name !== STUDENT_SESSION_GENERATION_COOKIE) {
+      return resolveStudentSessionNamespace('')
+    }
+    present = true
+    selector = pair.slice(separator + 1)
+  }
+  return resolveStudentSessionNamespace(selector)
+}
+
 /** A successful lifecycle transition owns selection; refreshes must never call this. */
 export async function advanceStudentSessionGeneration(response: NextResponse): Promise<string> {
   const generation = randomBytes(16).toString('hex')

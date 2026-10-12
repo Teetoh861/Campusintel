@@ -1,20 +1,24 @@
 // lib/supabase/server.ts — Request-scoped publishable-key HttpOnly session client.
 import 'server-only'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { getSupabaseConfig } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
 import { advanceStudentSessionGeneration, resolveStudentSessionNamespace,
-  STUDENT_SESSION_GENERATION_COOKIE } from '@/lib/auth/session-generation'
+  resolveStudentSessionNamespaceFromCookieHeader } from '@/lib/auth/session-generation'
 import type { NextResponse } from 'next/server'
 
 /** Create a user-scoped client. Route handlers supply the exact response they return.
  * Server Components tolerate read-only cookies; the proxy persists refreshes before render.
  */
 async function clientForRequest(response?: NextResponse, freshGeneration?: string) {
+  // Next's render cookie merge can normalize the shared header; capture authority first.
+  const rawCookieHeader = freshGeneration === undefined ? (await headers()).get('cookie') : null
+  const namespace = freshGeneration === undefined
+    ? resolveStudentSessionNamespaceFromCookieHeader(rawCookieHeader)
+    : resolveStudentSessionNamespace(freshGeneration)
   const store = await cookies()
   const jar = new Map(store.getAll().map(cookie => [cookie.name, cookie.value]))
-  const namespace = resolveStudentSessionNamespace(freshGeneration ?? jar.get(STUDENT_SESSION_GENERATION_COOKIE))
   const { url, key } = getSupabaseConfig()
   return createServerClient(url, key, {
     ...(namespace.storageName ? { cookieOptions: { name: namespace.storageName } } : {}),
