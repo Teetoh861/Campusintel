@@ -269,3 +269,34 @@
   [data-student-app] .student-focus-card:focus-visible,
   [data-student-app] :is(a,button,input,select,textarea):focus-visible { outline: 2px solid Highlight; outline-offset: -2px; }
 }
+
+/* Shared Student App catalogue controls and pagination. */
+.student-search-input { padding-left: 40px; }
+.student-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--student-text-muted); pointer-events: none; }
+.student-search-clear { position: absolute; right: 2px; top: 2px; width: 44px; height: 44px; padding: 0; border-color: transparent; }
+.student-filter { min-width: 0; }
+.student-filter-label { display: block; margin-bottom: 4px; color: var(--student-text-primary); font-size: 14px; font-weight: 600; }
+.student-filter-control { position: relative; }
+.student-filter-select { appearance: none; width: 100%; min-width: 0; min-height: 48px; padding: 10px 36px 10px 12px; border: 1px solid var(--student-control-border); border-radius: var(--ci-radius-btn); background: var(--student-elevated-surface); color: var(--student-text-primary); font: inherit; }
+.student-filter-control > svg { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--student-text-muted); }
+.student-catalogue-controls { display: grid; gap: 16px; }
+.student-catalogue-search { min-width: 0; }
+.student-catalogue-filter-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.student-catalogue-filter-fields > :first-child { grid-column: 1 / -1; }
+.student-catalogue-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 16px; }
+.student-catalogue-results { scroll-margin-top: calc(var(--student-header-height) + 12px); border-radius: 16px; }
+.student-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 24px; }
+.student-pagination-position { color: var(--student-text-secondary); font-size: 14px; white-space: nowrap; }
+.student-pagination-numbers { display: none; align-items: center; gap: 6px; list-style: none; padding: 0; margin: 0; }
+.student-pagination-number { min-width: 44px; padding-inline: 10px; }
+.student-pagination-gap { display: grid; place-items: center; min-width: 24px; color: var(--student-text-muted); }
+@media (min-width: 768px) {
+  .student-catalogue-filter-fields { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .student-catalogue-filter-fields > :first-child { grid-column: auto; }
+}
+@media (min-width: 1200px) {
+  .student-catalogue-controls { grid-template-columns: minmax(0,1fr) minmax(0,1.3fr); align-items: end; gap: 24px; }
+  .student-pagination { justify-content: center; gap: 12px; }
+  .student-pagination-numbers { display: flex; }
+  .student-pagination-position { display: none; }
+}

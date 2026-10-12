@@ -1,103 +1,59 @@
-// app/courses/page.tsx — Account-gated directory resolved from published managed content.
-import { TaskHeader } from '@/components/chrome/TaskHeader'
+// Account-gated full institutional catalogue, consumed through the central read model.
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
-import { Feedback } from '@/components/chrome/Feedback'
-import { courses } from '@/lib/data/courses'
-import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
-import { getPublishedManagedCourse } from '@/lib/managed-content/published'
-import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
-import { projectStudentLearning } from '@/lib/managed-content/student-projection'
-import { CourseDirectory } from './CourseDirectory'
+import { PageBand } from '@/components/student/PageBand'
+import { Notice } from '@/components/student/Notice'
+import { studentAction } from '@/components/student/ui'
+import { btnGhost } from '@/components/chrome/ui'
+import { AUTH_PATHS } from '@/lib/auth/constants'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { createClient } from '@/lib/supabase/server'
+import { getStudentCatalogueForVerifiedStudent } from '@/lib/courses/read-model'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
-import type { Course } from '@/lib/types'
-import type { CardProps } from '@/components/chrome/Card'
-import type { DifficultyLevel } from '@/components/chrome/SignalBar'
-import type { DirectoryItem } from './CourseDirectory'
+import { CourseDirectory } from './CourseDirectory'
+import { CourseResult } from './CourseResult'
+import { CATALOGUE_LEDE } from './catalogue-presentation'
+import type { StudentCatalogueResult } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
-// Account-gated per student; never prerender or share across viewers.
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'All Courses | CampusIntell', robots: { index: false, follow: false } }
 
-const toLevel = (d: Course['difficulty']): DifficultyLevel =>
-  d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
-
-async function buildItems(all: ReadonlyArray<Course>): Promise<DirectoryItem[] | null> {
-  const resolved = await Promise.all(all.map(async course => {
-    const published = await getPublishedManagedCourse(course.contentKey)
-    if (published.status !== 'ok') return null
-    const projected = projectStudentLearning(published.content)
-    if (projected.status !== 'ok') return null
-    return { course, learning: projected.learning }
-  }))
-  if (resolved.some(entry => entry === null)) return null
-  return resolved.filter((entry): entry is NonNullable<typeof entry> => entry !== null).map(({ course, learning }) => {
-    const quiz = getUsableManagedQuiz(course.slug,
-      getQuizConfigurationByCourseSlug(course.slug), learning.quizQuestions)
-    const critical = course.examCritical === true
-    const cardProps: CardProps = {
-      code: course.code,
-      title: course.title,
-      // Punchy tagline where set; otherwise the real overview (clamped in Card).
-      desc: course.tagline ?? learning.overview?.body,
-      // Exam-critical courses keep their View course action even when a quiz
-      // attempt is unavailable.
-      flag: critical
-        ? { kind: 'critical', label: 'Exam-critical' }
-        : { kind: 'tracked', label: 'Tracked' },
-      level: String(course.level),
-      credits: `${course.credits} credits`,
-      questions: quiz ? String(quiz.bankSize) : undefined,
-      timeLimit: quiz ? `${quiz.timerSeconds / 60} min` : '',
-      difficulty: toLevel(course.difficulty),
-      cta: {
-        label: 'View course',
-        href: `/courses/${course.slug}`,
-        variant: 'primary',
-        withArrow: true,
-      },
-      secondaryCta: critical && quiz
-        ? {
-            label: 'Start quiz',
-            href: quiz.href,
-            variant: 'secondary',
-            withArrow: true,
-          }
-        : undefined,
-    }
-    return {
-      id: course.id,
-      cardProps,
-      filter: {
-        code: course.code,
-        title: course.title,
-        level: course.level,
-        semester: course.semester,
-        difficulty: course.difficulty,
-      },
-    }
-  })
-}
-
-/** Cross the student account boundary before the course directory renders. */
+/** Preserve the existing live account and completed-profile boundary. */
 export default function CoursesPage(): ReactElement {
-  return <StudentAccessGate returnPath="/courses"><CourseDirectoryPage /></StudentAccessGate>
+  return <StudentAccessGate returnPath={STUDENT_DESTINATIONS.courses.href}><CourseDirectoryPage /></StudentAccessGate>
 }
 
 async function CourseDirectoryPage(): Promise<ReactElement> {
-  const items = await buildItems(courses)
-  if (items === null) return <Feedback message="Course content is temporarily unavailable." tone="error" />
-  const totalCount = courses.length
-  const countLabel = String(totalCount).padStart(2, '0')
-
-  return (
-    <div data-student-app>
-      <TaskHeader label="Index header" title={STUDENT_DESTINATIONS.courses.label}
-        crumbs={[{ label: 'Dashboard', href: STUDENT_DESTINATIONS.dashboard.href }, { label: STUDENT_DESTINATIONS.courses.label }]}
-        description="Every course we have decoded, in one place. Search a code or title, or filter by level, semester and difficulty."
-        count={`${countLabel} courses`}
-        meta="Now serving Business Administration · 200 Level · First and Second Semester" />
-
-      <CourseDirectory items={items} totalCount={totalCount} />
+  let result: StudentCatalogueResult
+  try {
+    const client = await createClient()
+    const context = await getStudentSessionContext(undefined, client)
+    result = context === null ? { status: 'signed-out' } : await getStudentCatalogueForVerifiedStudent(client)
+  } catch { result = { status: 'unavailable' } }
+  if (result.status === 'signed-out') {
+    redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(STUDENT_DESTINATIONS.courses.href))
+  }
+  return <div className="student-register-page" data-student-app>
+    <PageBand title={STUDENT_DESTINATIONS.courses.label} lede={CATALOGUE_LEDE}
+      context={<p>Institutional course catalogue</p>}
+      aside={result.status === 'ok' && <p className="student-register-summary">
+        {result.courses.length} {result.courses.length === 1 ? 'course' : 'courses'}
+      </p>} />
+    <div className="student-workspace student-register-workspace">
+      {result.status === 'ok'
+        ? <CourseDirectory items={result.courses.map(course => ({
+          institutionalCourseId: course.institutionalCourseId, code: course.code, title: course.title,
+          applicability: course.applicability, row: <CourseResult key={course.institutionalCourseId} course={course} />,
+        }))} />
+        : result.status === 'invariant-failure'
+          ? <Notice title="Course information needs attention" action={
+            <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className={studentAction(btnGhost)}>Contact support</Link>
+          }>We couldn’t load reliable course information. Please contact support.</Notice>
+          : <Notice title="Courses temporarily unavailable" action={
+            <a href={STUDENT_DESTINATIONS.courses.href} className={studentAction(btnGhost)}>Try again</a>
+          }>Content temporarily unavailable.</Notice>}
     </div>
-  )
+  </div>
 }
