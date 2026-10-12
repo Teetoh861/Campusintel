@@ -46,11 +46,10 @@ const { course, validQuiz } = (() => {
 const quizHref = `/courses/${course.slug}/quiz`
 
 async function fixture(quiz, run) {
+  // Course Detail itself is covered at the central-model boundary in [slug]/course-detail.test.cjs.
   const files = [
-    './[slug]/page.tsx', './[slug]/quiz/page.tsx', './[slug]/CourseToc.tsx', './[slug]/MobileCourseNav.tsx',
-    '../page.tsx', '../bookmarks/page.tsx', './[slug]/materials/page.tsx',
+    './[slug]/quiz/page.tsx', '../page.tsx', '../bookmarks/page.tsx', './[slug]/materials/page.tsx',
   ].map(file => require.resolve(file))
-  const bookmarkControl = () => React.createElement('button', { type: 'button' }, 'Bookmark control')
   const restore = installLoader()
   const originalLoad = Module._load
   const productNavigation = require('../../lib/product/student-navigation.ts')
@@ -106,12 +105,6 @@ async function fixture(quiz, run) {
       }
       if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
-      if (name === './BookmarkButton') return { BookmarkButton: bookmarkControl }
-      if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
-        React.createElement('span', { 'data-course-view-slug': courseSlug }) }
-      if (name === './CourseAccordion') return { CourseAccordion: ({ sections }) =>
-        React.createElement(React.Fragment, null, sections.map(section =>
-          React.createElement('section', { key: section.id }, section.content))) }
       if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
       if (name === '@/components/auth/PublicHomeBoundary') return { PublicHomeBoundary: ({ children }) => children }
@@ -125,13 +118,10 @@ async function fixture(quiz, run) {
       return content.type(content.props)
     }
     await run({
-      detail: granted(require(files[0]).default),
-      quizRoute: granted(require(files[1]).default),
-      CourseToc: require(files[2]).CourseToc,
-      MobileCourseNav: require(files[3]).MobileCourseNav,
-      home: require(files[4]).default,
-      bookmarks: require(files[5]).default,
-      materials: granted(require(files[6]).default),
+      quizRoute: granted(require(files[0]).default),
+      home: require(files[1]).default,
+      bookmarks: require(files[2]).default,
+      materials: granted(require(files[3]).default),
       destinations,
       publishedState,
     })
@@ -142,7 +132,7 @@ async function fixture(quiz, run) {
 
 const params = { params: Promise.resolve({ slug: course.slug }) }
 
-test('course and material breadcrumbs consume canonical Dashboard and All Courses destinations', async () => fixture(validQuiz, async f => {
+test('material breadcrumbs consume canonical Dashboard and All Courses destinations', async () => fixture(validQuiz, async f => {
   const breadcrumbLinks = element => {
     const html = renderToStaticMarkup(element)
     const breadcrumb = html.match(/<nav\b[^>]*aria-label="Breadcrumb"[^>]*>(.*?)<\/nav>/s)?.[1]
@@ -151,14 +141,12 @@ test('course and material breadcrumbs consume canonical Dashboard and All Course
       .map(([, href, label]) => [label, href])
   }
   const expected = [['Dashboard', '/dashboard'], ['All Courses', '/courses']]
-  assert.deepEqual(breadcrumbLinks(await f.detail(params)), expected)
   assert.deepEqual(breadcrumbLinks(await f.materials(params)), [...expected, [course.code, `/courses/${course.slug}`]])
 
   // A changed canonical contract must flow through, without local labels or hrefs.
   f.destinations.dashboard = { id: 'dashboard', href: '/home-regression', label: 'Student home' }
   f.destinations.courses = { id: 'courses', href: '/library-regression', label: 'Course library' }
   const updated = [['Student home', '/home-regression'], ['Course library', '/library-regression']]
-  assert.deepEqual(breadcrumbLinks(await f.detail(params)), updated)
   assert.deepEqual(breadcrumbLinks(await f.materials(params)), [...updated, [course.code, `/library-regression/${course.slug}`]])
 }))
 
@@ -179,14 +167,7 @@ test('fixture restores loaders and the module cache after success and failure', 
   }
 })
 
-test('usable quiz keeps both course-detail entry points and the quiz route', async () => fixture(validQuiz, async f => {
-  const html = renderToStaticMarkup(await f.detail(params))
-  assert.equal((html.match(new RegExp(`href="${quizHref}"`, 'g')) || []).length, 2)
-  assert.match(html, /Start quiz/)
-  assert.match(html, /Start practice quiz/)
-  assert.match(html, /Sit the mock/)
-  assert.match(html, new RegExp(`${Math.min(validQuiz.maxQuizQuestions, validQuiz.questions.length)} questions per attempt`))
-  assert.match(html, new RegExp(`${validQuiz.questions.length}-question bank`))
+test('usable quiz reaches the quiz route with the published bank and repository policy', async () => fixture(validQuiz, async f => {
   const route = await f.quizRoute(params)
   assert.deepEqual(route.props.questions.map(question => question.questionId),
     validQuiz.questions.map(question => question.questionId))
@@ -195,38 +176,11 @@ test('usable quiz keeps both course-detail entry points and the quiz route', asy
   assert.equal(route.props.totalInBank, validQuiz.questions.length)
 }))
 
-test('course view instrumentation is present only for a canonical detail page', async () => fixture(validQuiz, async f => {
-  const html = renderToStaticMarkup(await f.detail(params))
-  assert.match(html, new RegExp(`data-course-view-slug="${course.slug}"`))
-  await assert.rejects(f.detail({ params: Promise.resolve({ slug: 'not-a-course' }) }), /notFound/)
-}))
-
 test('displayed bank counts come from questions students can attempt', async () => {
   await fixture({ ...validQuiz, totalQuestions: validQuiz.questions.length + 50 }, async f => {
-    const html = renderToStaticMarkup(await f.detail(params))
-    assert.match(html, new RegExp(`${validQuiz.questions.length}-question bank`))
-    assert.doesNotMatch(html, new RegExp(`${validQuiz.questions.length + 50}-question bank`))
     assert.equal((await f.quizRoute(params)).props.totalInBank, validQuiz.questions.length)
   })
 })
-
-test('next student request uses managed overview and theory publication without code fallback', async () => fixture(validQuiz, async f => {
-  f.publishedState.rows[0].payload.body = 'Managed publication replaces the repository overview.'
-  let html = renderToStaticMarkup(await f.detail(params))
-  assert.match(html, /Managed publication replaces the repository overview/)
-  assert.doesNotMatch(html, new RegExp(course.overview.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-  f.publishedState.rows.push({ item_id: '33333333-3333-4333-8333-333333333333',
-    course_id: '40000000-0000-4000-8000-000000000007', kind: 'theory_question',
-    question_id: null, source_key: 'theory:1', parent_item_id: null, revision: 2,
-    payload: { prompt: 'Managed theory prompt' } })
-  html = renderToStaticMarkup(await f.detail(params))
-  assert.match(html, /Managed theory prompt/)
-  f.publishedState.rows = f.publishedState.rows.filter(row =>
-    row.kind !== 'course_overview' && row.kind !== 'theory_question')
-  html = renderToStaticMarkup(await f.detail(params))
-  assert.doesNotMatch(html, /Managed publication replaces the repository overview|Managed theory prompt/)
-  assert.doesNotMatch(html, new RegExp(course.overview.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-}))
 
 test('published CBT edits and withdrawals affect the next quiz route read', async () => fixture(validQuiz, async f => {
   const question = f.publishedState.rows.find(row => row.kind === 'cbt_question')
@@ -243,42 +197,19 @@ test('published CBT edits and withdrawals affect the next quiz route read', asyn
   assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
 }))
 
-test('managed read unavailability fails closed on detail and quiz', async () => fixture(validQuiz, async f => {
+test('managed read unavailability fails closed on the quiz route', async () => fixture(validQuiz, async f => {
   f.publishedState.available = false
-  assert.match(renderToStaticMarkup(await f.detail(params)), /Learning content is temporarily unavailable/)
   assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
 }))
 
-test('missing or unusable quiz removes all course-detail claims and the route rejects it', async () => {
+test('missing or unusable quiz configuration makes the quiz route reject the attempt', async () => {
   for (const quiz of [undefined, { ...validQuiz, maxQuizQuestions: 0 },
     { ...validQuiz, quizDurationMinutes: 0 }, { ...validQuiz, quizDurationMinutes: 1e308 }]) {
     await fixture(quiz, async f => {
-      const tree = await f.detail(params)
-      const html = renderToStaticMarkup(tree)
-      assert.doesNotMatch(html, /Start quiz|Start practice quiz|Sit the mock/)
-      assert.doesNotMatch(html, new RegExp(`href="${quizHref}"`))
-      const visibleText = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
-      assert.match(visibleText, /Practice quiz N\/A/)
-      assert.match(visibleText, /Quiz time N\/A/)
-      assert.match(html, new RegExp(`href="/courses/${course.slug}/materials"`))
-      assert.match(visibleText, /Request material privately/)
-      assert.equal((visibleText.match(/Bookmark control/g) || []).length, 1)
       assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
     })
   }
 })
-
-test('course navigation exposes a quiz action only when given a usable destination', async () => fixture(validQuiz, async f => {
-  for (const [Component, props] of [
-    [f.CourseToc, { items: [] }],
-    [f.MobileCourseNav, { items: [], materialsHref: `/courses/${course.slug}/materials` }],
-  ]) {
-    const without = renderToStaticMarkup(React.createElement(Component, props))
-    const withQuiz = renderToStaticMarkup(React.createElement(Component, { ...props, quizHref }))
-    assert.doesNotMatch(without, new RegExp(`href="${quizHref}"`))
-    assert.match(withQuiz, new RegExp(`href="${quizHref}"`))
-  }
-}))
 
 test('public home and saved cards never infer quiz readiness from repository questions', async () => fixture(validQuiz, async f => {
   const publicCards = () => [f.home(), f.bookmarks()].map(element => renderToStaticMarkup(element))

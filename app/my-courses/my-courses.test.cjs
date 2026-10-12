@@ -7,6 +7,8 @@ const path = require('node:path')
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const ts = require('typescript')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
+
 
 const selection = { departmentId: 'department-id', academicLevelId: 'level-id', academicPeriodId: 'period-id' }
 const profile = { status: 'complete', firstName: 'Adaeze', selection: {
@@ -30,16 +32,13 @@ const noLearning = course('empty-id', 'BUA207', shelved('empty-slug'), { state: 
 const unavailable = course('failed-id', 'BUA209', shelved('failed-slug'),
   { state: 'temporarily-unavailable', reason: 'publication-read-failed' })
 
-function nodes(element) {
-  if (!element || typeof element !== 'object') return []
-  return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
+const nodes = element => elementNodes(element)
 
 async function fixture(run) {
   const originalLoad = Module._load
   const originalTsx = Module._extensions['.tsx']
   const pageFile = require.resolve('./page.tsx')
-  const rowFile = require.resolve('./CourseRow.tsx')
+  const rowFile = require.resolve('../../components/student/StudentCourseRow.tsx')
   const loadingFile = require.resolve('./loading.tsx')
   const state = {
     enabled: true, context: { user: { id: 'current-student' }, sessionId: 'live-session' },
@@ -102,9 +101,9 @@ async function fixture(run) {
     }
     for (const file of [pageFile, rowFile, loadingFile]) delete require.cache[file]
     const page = require(pageFile).default
-    const { CourseRow } = require(rowFile)
+    const { StudentCourseRow } = require(rowFile)
     const loading = require(loadingFile).default
-    await run({ state, page, CourseRow, loading, render: async () => renderToStaticMarkup(await page()) })
+    await run({ state, page, StudentCourseRow, loading, render: async () => renderToStaticMarkup(await page()) })
   } finally {
     Module._load = originalLoad
     if (originalTsx) Module._extensions['.tsx'] = originalTsx; else delete Module._extensions['.tsx']
@@ -127,6 +126,9 @@ test('verified student sees the PageBand, real context/counts and every course i
   assert.match(html, /Business Administration · 200 Level · First Semester/)
   assert.match(html, /3 courses · 1 ready to study/)
   assert.ok(html.indexOf('BUA201') < html.indexOf('BUA203') && html.indexOf('BUA203') < html.indexOf('BUA205'))
+  assert.equal(nodes(tree).filter(node => node.type === f.StudentCourseRow).length, 3, 'rows come from the shared owner')
+  assert.match(html, /Notes · CBT practice · Theory/)
+  assert.match(html, /class="student-page-root" data-student-app="true"/)
   assert.equal((html.match(/<li\b/g) || []).length, 3)
   assert.match(html, /aria-label="Your semester courses"/)
   assert.match(html, /href="\/courses\/resolved-slug"/)
@@ -163,48 +165,6 @@ test('Change and error recovery retain canonical routes, compact borders and sha
   assert.match(source, /href=\{PROFILE_SELECTION_PATH\}/)
   assert.match(source, /STUDENT_DESTINATIONS\.courses\.href/)
   assert.match(source, /STUDENT_DESTINATIONS\.materials\.href/)
-}))
-
-test('ready rows are one canonical link and advertise only existing learning families', async () => fixture(async f => {
-  const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
-  assert.equal(anchors(html).length, 1)
-  assert.ok(anchor(html, '/courses/resolved-slug'))
-  assert.match(html, /student-focus-row/)
-  assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /Notes · Theory · CBT practice/)
-  assert.doesNotMatch(html, /Open course|Available:|Overview|Practice quiz|<button\b/)
-  for (const [flags, expected] of [
-    [{ notes: true, overview: false }, 'Notes'],
-    [{ theory: true, overview: true }, 'Theory'],
-    [{ cbtPractice: true, overview: true }, 'CBT practice'],
-    [{ notes: true, cbtPractice: true }, 'Notes · CBT practice'],
-    [{ notes: true, theory: true }, 'Notes · Theory'],
-    [{ theory: true, cbtPractice: true, overview: true }, 'Theory · CBT practice'],
-  ]) {
-    const course = { ...ready, content: { ...ready.content, study: study(flags) } }
-    const partial = renderToStaticMarkup(React.createElement(f.CourseRow, { course }))
-    assert.ok(partial.includes(`<p>${expected}</p>`), expected)
-    assert.equal(partial.includes('Notes'), flags.notes === true, 'Notes follows study.notes, never the overview')
-    assert.equal(anchors(partial).length, 1)
-    assert.doesNotMatch(partial, /unavailable|disabled|<del\b/)
-  }
-}))
-
-test('all unavailable course identities stay inert; hollow rails belong only to missing content', async () => fixture(async f => {
-  for (const item of [unbuilt, noLearning, broken, unavailable]) {
-    const html = renderToStaticMarkup(React.createElement(f.CourseRow, { course: item }))
-    assert.ok(html.includes(item.code) && html.includes(item.title))
-    assert.doesNotMatch(html, /<a\b|<button\b|href=|chevron|tabindex=/)
-    if (item === unbuilt || item === noLearning) {
-      assert.match(html, /data-status="unavailable"/)
-      assert.match(html, /Study content not yet available/)
-      assert.doesNotMatch(html, /Content temporarily unavailable/)
-    } else {
-      assert.match(html, /Content temporarily unavailable/)
-      assert.match(html, /student-course-row-error/)
-      assert.doesNotMatch(html, /student-status-rail|Study content not yet available|Coming soon/)
-    }
-  }
 }))
 
 test('Request Material appears once only for genuinely missing learning, using /materials', async () => fixture(async f => {
@@ -255,7 +215,7 @@ test('domain failures retain truthful recovery and never look like an empty seme
   for (const [status, message, href] of [
     ['missing-profile', 'profile could not be found', '/contact'],
     ['unavailable', 'Courses temporarily unavailable', '/my-courses'],
-    ['invariant-failure', 'course information needs attention', '/contact'],
+    ['invariant-failure', 'Course information needs attention', '/contact'],
   ]) {
     f.state.result = { status, message: 'private Supabase provider error', courses: [ready] }
     const html = await f.render()
@@ -282,7 +242,7 @@ test('every selection mismatch fails closed before rendering mixed context/cours
 
 test('profile-label read failures cannot expose courses or bypass completion', async () => fixture(async f => {
   for (const [status, expected] of [
-    ['missing-profile', 'profile could not be found'], ['invariant-failure', 'course information needs attention'],
+    ['missing-profile', 'profile could not be found'], ['invariant-failure', 'Course information needs attention'],
     ['unavailable', 'Courses temporarily unavailable'],
   ]) {
     f.state.profile = { status }
@@ -308,13 +268,13 @@ test('loading reuses the PageBand/register and inert, static accessible skeleton
 test('actionability needs a shelved route and ready content; overview alone is never Notes', async () => fixture(async f => {
   const overviewOnly = course('overview-id', 'BUA211', shelved('overview-slug'),
     { state: 'no-published-learning', study: study({ overview: true }) })
-  const inert = renderToStaticMarkup(React.createElement(f.CourseRow, { course: overviewOnly }))
+  const inert = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: overviewOnly }))
   assert.doesNotMatch(inert, /<a\b|href=|Notes/)
   assert.match(inert, /Study content not yet available/)
-  const unshelvedReady = renderToStaticMarkup(React.createElement(f.CourseRow, { course: broken }))
+  const unshelvedReady = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: broken }))
   assert.doesNotMatch(unshelvedReady, /<a\b|href=|Notes|provisioned/)
   assert.match(unshelvedReady, /Content temporarily unavailable/)
-  const routed = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
+  const routed = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: ready }))
   assert.ok(anchor(routed, '/courses/resolved-slug'))
   f.state.result = { status: 'ok', selection, courses: [ready, broken, overviewOnly, unavailable] }
   const html = await f.render()

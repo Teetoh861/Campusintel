@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { ChevronRight, CircleAlert } from 'lucide-react'
 import { StatusRail } from './StatusRail'
+import { STUDY_COPY } from './study-families'
 import { studentFocusRow } from './ui'
 import type { CSSProperties, ReactElement } from 'react'
 
@@ -18,10 +19,10 @@ export function CourseRow(props: CourseRowProps): ReactElement {
     <div className="student-course-row-meta">
       {props.href !== undefined ? <p>{props.learningTypes.join(' · ')}</p>
         : props.unavailable === 'missing'
-          ? <StatusRail status="unavailable">Study content not yet available.</StatusRail>
+          ? <StatusRail status="unavailable">{STUDY_COPY.notYetAvailable}</StatusRail>
           : <p className="student-course-row-error">
             <CircleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
-            <span>Content temporarily unavailable.</span>
+            <span>{STUDY_COPY.temporarilyUnavailable}</span>
           </p>}
     </div>
   </div>

@@ -84,7 +84,7 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
       </div>
     </section>
     <div className="student-catalogue-summary">
-      <p className="student-register-summary" role="status" aria-live="polite" aria-atomic="true">
+      <p className="student-summary" role="status" aria-live="polite" aria-atomic="true">
         {filtered.length} {filtered.length === 1 ? 'result' : 'results'} of {items.length} courses
       </p>
       <button type="button" disabled={!hasFilters} className={studentAction(btnGhost)}

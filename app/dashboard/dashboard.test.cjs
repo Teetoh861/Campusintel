@@ -88,17 +88,19 @@ test('Practice includes current course CBT and nonfunctional Coming soon AI uplo
 
 test('academic identity owns a full-width band outside the bounded course/action workspace', async () => fixture(async f => {
   const tree = await f.page(), shell = tree.props.children[1]
-  assert.equal(shell.props['data-student-app'], true)
-  assert.equal(shell.props.className, 'dashboard-page', 'the band is not enclosed by a bounded page card')
-  const [identity, workspace] = shell.props.children
+  assert.equal(shell.type.name, 'StudentPage', 'the shared Student App root owns the page')
+  const identity = shell.props.band
   const band = identity.type(identity.props)
-  assert.equal(band.type, 'header')
+  assert.equal(band.type, 'header', 'the identity header is the band, not enclosed by the workspace')
   assert.equal(band.props.className, 'dashboard-identity student-enter')
   const inner = band.props.children[1]
   assert.ok(inner.props.className.split(' ').includes('student-workspace'), 'only the inner academic content is constrained')
-  assert.equal(workspace.props.className, 'student-workspace dashboard-workspace')
-  assert.equal(workspace.props.children[0].type.name, 'PrimaryCards')
-  assert.equal(workspace.props.children[1].type.name, 'SupportingActions')
+  assert.equal(shell.props.workspaceClassName, 'dashboard-workspace')
+  assert.equal(shell.props.children[0].type.name, 'PrimaryCards')
+  assert.equal(shell.props.children[1].type.name, 'SupportingActions')
+  const html = await f.html()
+  assert.match(html, /class="student-page-root" data-student-app="true"><header class="dashboard-identity/)
+  assert.match(html, /class="student-workspace student-page-workspace dashboard-workspace"/)
 }))
 
 test('Courses and material retains personal Bookmarks first and quiet icon-led help/account destinations', async () => fixture(async f => {

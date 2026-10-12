@@ -1,3 +1,4 @@
+import { INACTIVE_SELECTION_COPY } from '@/components/student/selection-copy'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
 type Selection = Extract<StudentProfileState, { status: 'complete' }>['selection']
@@ -13,7 +14,7 @@ export function SelectionSummary({ selection }: { selection: Selection }) {
     {rows.map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-x-3 py-2 text-sm">
       <dt className="font-semibold text-student-text-secondary">{label}</dt>
       <dd className="text-right text-student-text-primary">{value.label}{!value.isActive &&
-        <span className="ml-1 text-student-text-secondary">(no longer available)</span>}</dd>
+        <span className="ml-1 text-student-text-secondary">({INACTIVE_SELECTION_COPY.marker})</span>}</dd>
     </div>)}
   </dl>
 }

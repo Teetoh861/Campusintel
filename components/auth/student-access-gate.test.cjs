@@ -10,6 +10,8 @@ const ts = require('typescript')
 const root = path.join(__dirname, '../..')
 const realCourses = require(path.join(root, 'lib/data/courses.ts'))
 const realQuizzes = require(path.join(root, 'lib/data/quizzes.ts'))
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
+
 const course = realCourses.getCourseBySlug('financial-accounting-1')
 
 const PROTECTED = [
@@ -75,6 +77,21 @@ async function fixture(run) {
               correctOption: question.correctAnswer, section: question.section } },
         ] }
       } }
+      if (name === '@/lib/supabase/server') return { createClient: async () => ({ fixture: 'request-scoped client' }) }
+      if (name === '@/lib/courses/read-model') return {
+        ...originalLoad.call(this, path.join(root, 'lib/courses/read-model.ts'), ...args),
+        getStudentCourseBySlugForVerifiedStudent: async (_client, slug) => {
+          state.contentReads++
+          if (slug !== course.slug) return { status: 'not-found' }
+          return { status: 'ok', learning: null, practice: null, course: {
+            institutionalCourseId: 'fixture-institutional', code: 'ACC-CM201', title: 'Financial Accounting I',
+            isFree: false, applicability: [], content: { state: 'no-published-learning',
+              study: { notes: false, cbtPractice: false, theory: false, overview: false } },
+            repository: { state: 'shelved', repositoryCourseId: 'fixture-repository', contentKey: course.contentKey,
+              isShared: null, route: { slug: course.slug, href: `/courses/${course.slug}`, course } },
+          } }
+        },
+      }
       if (name === '@/lib/managed-content/student-quiz') return { getStudentManagedQuiz: async () => {
         state.contentReads++
         return { status: 'ready', quiz: { questions: [], sections: [], maxQuestions: 50,
@@ -83,7 +100,7 @@ async function fixture(run) {
       if (name === '@/components/auth/AuthShell') return named('AuthUnavailable')
       if (name === '@/components/chrome/Feedback') return named('Feedback')
       if (name === './AuthFlowSync') return named('AuthFlowSync')
-      for (const client of ['QuizClient', 'BookmarkButton', 'CourseViewTracker', 'CourseAccordion',
+      for (const client of ['QuizClient', 'BookmarkButton', 'CourseViewTracker',
         'CourseDirectory', 'BookmarksClient', 'MaterialsClient']) {
         if (name === './' + client) return named(client)
       }
@@ -162,8 +179,7 @@ test('completed students reach every existing surface with page account continui
   }
   const detail = await f.visit(PROTECTED[1][0], PROTECTED[1][1]())
   const child = detail.result.props.children[1]
-  const nodes = element => !element || typeof element !== 'object' ? []
-    : [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
+  const nodes = element => elementNodes(element, { expand: true, skip: ['BookmarkButton', 'CourseViewTracker'] })
   assert.ok(nodes(await child.type(child.props)).some(node => node.type?.name === 'BookmarkButton'))
   const quiz = await f.visit(PROTECTED[2][0], PROTECTED[2][1]())
   const quizChild = quiz.result.props.children[1]

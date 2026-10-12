@@ -4,11 +4,10 @@ const fs = require('node:fs')
 const ts = require('typescript')
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
 
-function nodes(element) {
-  if (!element || typeof element !== 'object') return []
-  return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
+
+const nodes = element => elementNodes(element)
 
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = new Map(Object.entries(require.cache))
@@ -33,6 +32,10 @@ async function fixture(run) {
     useMemo(factory, deps) {
       if (!active) return React.useMemo(factory, deps)
       active.index++; return factory()
+    },
+    useCallback(callback, deps) {
+      if (!active) return React.useCallback(callback, deps)
+      active.index++; return callback
     },
     useEffect(effect, deps) {
       if (!active) return React.useEffect(effect, deps)

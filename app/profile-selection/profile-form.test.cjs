@@ -5,6 +5,8 @@ const fs = require('node:fs')
 const Module = require('node:module')
 const ts = require('typescript')
 const React = require('react')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
+
 
 test('first name is labelled, validated, focusable and included in the secure save', async () => fixture(async f => {
   assert.equal(f.input().props.name, 'first_name')
@@ -32,10 +34,7 @@ test('one-time name completion pre-fills persisted academic choices and never in
   assert.equal(f.select('academic-period').props.value, f.ids.period)
 }, true))
 
-function nodes(element) {
-  if (!element || typeof element !== 'object') return []
-  return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
+const nodes = element => elementNodes(element)
 
 function response(status, body) {
   return { status, ok: status >= 200 && status < 300, json: async () => body }
@@ -203,7 +202,7 @@ test('complete selection restores; inactive history is shown but cannot be resub
   const historical = f.render()
   const summary = nodes(historical).find(node => node.type?.name === 'SelectionSummary')
   assert.equal(summary.props.selection.department.label, 'Former unit')
-  assert.match(JSON.stringify(summary.type(summary.props)), /no longer available/)
+  assert.match(JSON.stringify(summary.type(summary.props)), /no longer selectable/)
   assert.equal(f.select('department').props.value, '')
   assert.equal(nodes(f.select('department')).filter(node => node.type === 'option').some(node => node.props.value === f.ids.inactive), false)
   await f.submit()

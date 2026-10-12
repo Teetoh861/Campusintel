@@ -1,6 +1,26 @@
 // scripts/dev-workflow/verify.cjs — Run project checks and report required or skipped gates.
+const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { base, branch, changed, git, lines0, sha } = require('./repo.cjs')
+
+const TEST_RUNNER = path.join(__dirname, 'run-tests.cjs')
+const APPLICATION_TEST_LOADER = './lib/auth/test-loader.cjs'
+
+/** Build the one node:test invocation shape: literal file paths through the runner, never CLI globs. */
+function testCommand(files, { loader } = {}) {
+  return { program: process.execPath,
+    args: [...(loader ? ['--require', loader] : []), TEST_RUNNER, ...files] }
+}
+
+/** Collect application and workflow test files exactly as Git tracks them. */
+function collectTestFiles(root) {
+  const files = lines0(git(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']).stdout)
+    .filter(file => /\.test\.(?:cjs|ts)$/.test(file))
+  return {
+    application: files.filter(file => !file.startsWith('scripts/dev-workflow/')),
+    workflow: files.filter(file => file.startsWith('scripts/dev-workflow/') && file.endsWith('.test.cjs')),
+  }
+}
 
 const DB_PREFIXES = [
   'supabase/', 'lib/supabase/', 'lib/auth/', 'lib/managed-content/',
@@ -39,20 +59,23 @@ function runVerification(repo, options = {}) {
   const environment = { ...process.env, DO_NOT_TRACK: '1' }
   const pnpm = pnpmCommand()
 
-  function check(name, program, args, detail) {
+  function check(name, program, args, detail, { expectTests = false } = {}) {
     const result = execute(program, args, {
       cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: environment,
     })
     const output = `${result.stdout || ''}\n${result.stderr || ''}`
-    const counts = ['pass', 'fail', 'skipped'].map(key =>
+    const counts = ['pass', 'fail', 'skipped', 'tests'].map(key =>
       new RegExp(`^# ${key} (\\d+)$`, 'm').exec(output)?.[1])
-    const testSummary = counts[0] === undefined ? null
-      : `${counts[0]} passed, ${counts[1] || '0'} failed, ${counts[2] || '0'} skipped`
+    // A test batch with input files that executed nothing is a discovery failure, not a pass.
+    const nothingRan = expectTests && (counts[3] === undefined || counts[3] === '0')
+    const testSummary = nothingRan ? 'no tests executed for the supplied files'
+      : counts[0] === undefined ? null
+        : `${counts[0]} passed, ${counts[1] || '0'} failed, ${counts[2] || '0'} skipped`
     const blockedBuild = name === 'Production build' && result.status !== 0 &&
       /binding to a port[\s\S]*Operation not permitted/.test(output)
     const blockedDb = name === 'Database tests' && result.status !== 0 &&
       /(?:connection refused|cannot connect to (?:the )?docker|docker daemon|database is not running)/i.test(output)
-    const status = result.error || result.status !== 0
+    const status = result.error || result.status !== 0 || nothingRan
       ? blockedBuild || blockedDb ? 'BLOCKED' : 'FAIL'
       : 'PASS'
     rows.push({ name, status, detail: result.error ? 'command unavailable'
@@ -61,20 +84,16 @@ function runVerification(repo, options = {}) {
           : testSummary || (result.status === 0 ? detail : `exit ${result.status}`) })
   }
 
-  const tests = lines0(git(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']).stdout)
-    .filter(file => /\.test\.(?:cjs|ts)$/.test(file) && !file.startsWith('scripts/dev-workflow/'))
+  const { application: tests, workflow: toolingTests } = collectTestFiles(root)
   if (tests.length === 0) {
     rows.push({ name: 'Application tests', status: 'FAIL', detail: 'no test files found' })
   } else {
-    check('Application tests', process.execPath,
-      ['--require', './lib/auth/test-loader.cjs', '--test', '--test-reporter=tap', ...tests],
-      `${tests.length} test files`)
+    const command = testCommand(tests, { loader: APPLICATION_TEST_LOADER })
+    check('Application tests', command.program, command.args, `${tests.length} test files`, { expectTests: true })
   }
-  const toolingTests = lines0(git(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']).stdout)
-    .filter(file => file.startsWith('scripts/dev-workflow/') && file.endsWith('.test.cjs'))
   if (toolingTests.length) {
-    check('Workflow tests', process.execPath, ['--test', '--test-reporter=tap', ...toolingTests],
-      `${toolingTests.length} test file(s)`)
+    const command = testCommand(toolingTests)
+    check('Workflow tests', command.program, command.args, `${toolingTests.length} test file(s)`, { expectTests: true })
   } else {
     rows.push({ name: 'Workflow tests', status: 'SKIP', detail: 'no workflow tests present' })
   }
@@ -134,4 +153,4 @@ function runVerification(repo, options = {}) {
   return { output, exitCode, rows, scope: needed }
 }
 
-module.exports = { runVerification, scope }
+module.exports = { collectTestFiles, runVerification, scope, testCommand }
