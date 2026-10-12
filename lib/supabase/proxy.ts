@@ -3,7 +3,8 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
-import { resolveStudentSessionNamespaceFromCookieHeader } from '@/lib/auth/session-generation'
+import { canonicalizeStudentSessionCookieHeaderForDownstream,
+  resolveStudentSessionNamespaceFromCookieHeader } from '@/lib/auth/session-generation'
 import type { NextRequest } from 'next/server'
 
 /** Return the same response carrying cookie writes and all SSR cache-safety headers.
@@ -15,10 +16,12 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
   }
   const requestHeaders = new Headers(request.headers)
   const rawCookieHeader = request.headers.get('cookie')
+  const namespace = resolveStudentSessionNamespaceFromCookieHeader(rawCookieHeader)
+  const downstreamCookieHeader = canonicalizeStudentSessionCookieHeaderForDownstream(rawCookieHeader, namespace)
+  if (namespace.mode === 'invalid' && downstreamCookieHeader !== null) requestHeaders.set('cookie', downstreamCookieHeader)
   const response = NextResponse.next({ request: { headers: requestHeaders } })
   try {
     const { url, key } = getSupabaseConfig()
-    const namespace = resolveStudentSessionNamespaceFromCookieHeader(rawCookieHeader)
     const client = createServerClient(url, key, {
       ...(namespace.storageName ? { cookieOptions: { name: namespace.storageName } } : {}),
       cookies: {
@@ -30,7 +33,7 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
           }
           // Keep the downstream request coherent without replacing the cookie-bearing response.
           response.headers.set('x-middleware-request-cookie', namespace.mode === 'invalid'
-            ? rawCookieHeader ?? '' : request.cookies.toString())
+            ? downstreamCookieHeader ?? '' : request.cookies.toString())
           Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value))
         },
       },

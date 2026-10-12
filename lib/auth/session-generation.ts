@@ -9,6 +9,7 @@ export const STUDENT_SESSION_GENERATION_LIFETIME_SECONDS = 60 * 60 * 24 * 400
 const SESSION_COOKIE_PREFIX = 'ci-student-auth-'
 const GENERATION_FORMAT = /^[a-f0-9]{32}$/
 const OBSOLETE_SESSION_COOKIE = /^ci-student-auth-[a-f0-9]{32}(?:\.(0|[1-9][0-9]*))?$/
+const INVALID_DOWNSTREAM_SELECTOR = 'invalid'
 
 export type StudentSessionNamespace =
   | { mode: 'legacy'; storageName?: undefined }
@@ -39,6 +40,21 @@ export function resolveStudentSessionNamespaceFromCookieHeader(rawCookieHeader: 
     selector = pair.slice(separator + 1)
   }
   return resolveStudentSessionNamespace(selector)
+}
+
+/** Keep invalid authority stable through Next cookie normalization without changing browser cookies.
+ * Preserve unrelated raw pairs; only the reserved selector pairs are replaced.
+ */
+export function canonicalizeStudentSessionCookieHeaderForDownstream(
+  rawCookieHeader: string | null, namespace: StudentSessionNamespace,
+): string | null {
+  if (namespace.mode !== 'invalid') return rawCookieHeader
+  const unrelated = (rawCookieHeader ?? '').split(';').filter(pair => {
+    const separator = pair.indexOf('=')
+    const name = (separator < 0 ? pair : pair.slice(0, separator)).trim()
+    return name !== STUDENT_SESSION_GENERATION_COOKIE && pair.trim() !== ''
+  })
+  return [`${STUDENT_SESSION_GENERATION_COOKIE}=${INVALID_DOWNSTREAM_SELECTOR}`, ...unrelated].join(';')
 }
 
 /** A successful lifecycle transition owns selection; refreshes must never call this. */
