@@ -12,7 +12,7 @@ import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_MESSAGES, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/dashboard/current-student-courses'
+import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -54,7 +54,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
   if (current.status === 'signed-out') redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(STUDENT_HOME_PATH))
   if (current.status === 'incomplete') redirect(PROFILE_SELECTION_PATH)
   // A selection changed during this request must not produce mismatched statistics.
-  const courses = current.status === 'complete' &&
+  const courses = current.status === 'ok' &&
     current.selection.departmentId === profile.selection.department.id &&
     current.selection.academicLevelId === profile.selection.academicLevel.id &&
     current.selection.academicPeriodId === profile.selection.academicPeriod.id
