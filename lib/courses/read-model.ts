@@ -10,7 +10,8 @@ import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
 import { projectStudentLearning } from '@/lib/managed-content/student-projection'
 import { classifyStoredSelection } from '@/lib/profile/selection'
 import type { User } from '@supabase/supabase-js'
-import type { StudentLearning } from '@/lib/managed-content/student-projection'
+import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion, StudentLearning }
+  from '@/lib/managed-content/student-projection'
 import type { SelectionIds } from '@/lib/profile/selection'
 import type { createClient } from '@/lib/supabase/server'
 import type { Course } from '@/lib/types'
@@ -75,9 +76,27 @@ export type CurrentStudentCoursesResult =
   | { status: 'ok'; selection: SelectionIds; courses: StudentCourse[] }
   | { status: 'signed-out' | 'missing-profile' | 'incomplete' | 'unavailable' | 'invariant-failure' }
 
+/** Course Detail payload: the validated managed bodies behind the one-course availability flags. */
+export type StudentCourseDetailLearning = {
+  overview: ManagedOverview | null
+  notes: ManagedNote[]
+  theoryQuestions: ManagedTheoryQuestion[]
+}
+
+/** Course Detail practice summary from the same usable-quiz result that set `cbtPractice`. */
+export type StudentCoursePractice = { href: string; bankSize: number; attemptSize: number; timerSeconds: number }
+
+type StudentCourseDetail = {
+  learning: StudentCourseDetailLearning | null
+  practice: StudentCoursePractice | null
+}
+
+/** A one-course `ok` result always resolved through the static shelf, so its route is guaranteed. */
+export type RoutedStudentCourse = StudentCourse & { repository: Extract<StudentCourseRepository, { state: 'shelved' }> }
+
 export type StudentCourseLookupResult =
-  | { status: 'ok'; course: StudentCourse }
-  | { status: 'repository-only'; course: RepositoryOnlyCourse }
+  | ({ status: 'ok'; course: RoutedStudentCourse } & StudentCourseDetail)
+  | ({ status: 'repository-only'; course: RepositoryOnlyCourse } & StudentCourseDetail)
   | { status: 'signed-out' | 'not-found' | 'unavailable' | 'invariant-failure' }
 
 // ---------------------------------------------------------------------------
@@ -197,35 +216,57 @@ function deriveStructure(identity: IdentityRow, rows: ReadonlyArray<Applicabilit
 // Published study availability (shared by every reader)
 // ---------------------------------------------------------------------------
 
-function deriveStudy(learning: StudentLearning, repository: LinkedRepository): StudyAvailability {
+/** One usable-quiz calculation yields both the CBT flag and the Detail practice summary. */
+function deriveStudy(learning: StudentLearning, repository: LinkedRepository): {
+  study: StudyAvailability; practice: StudentCoursePractice | null
+} {
   const { overview } = learning
   const route = repository.state === 'shelved' ? repository.route : null
-  return {
+  // The quiz keeps its repository policy, so an unshelved repository can never offer CBT.
+  const quiz = route === null ? null : getUsableManagedQuiz(route.slug,
+    getQuizConfigurationByCourseSlug(route.slug), learning.quizQuestions)
+  const practice = quiz === null ? null
+    : { href: quiz.href, bankSize: quiz.bankSize, attemptSize: quiz.attemptSize, timerSeconds: quiz.timerSeconds }
+  return { practice, study: {
     notes: learning.notes.length > 0,
-    // The quiz keeps its repository policy, so an unshelved repository can never offer CBT.
-    cbtPractice: route !== null && getUsableManagedQuiz(route.slug,
-      getQuizConfigurationByCourseSlug(route.slug), learning.quizQuestions) !== null,
+    cbtPractice: practice !== null,
     theory: learning.theoryQuestions.length > 0,
     overview: Boolean(overview && (
       overview.body.trim() || overview.topics?.length || overview.examFocus?.length ||
       overview.keyTakeaways?.length || overview.formulaSheet?.length
     )),
-  }
+  } }
 }
 
+type ResolvedPublication = { content: LinkedContent } & StudentCourseDetail
+
 /** Read one linked repository's publication on the caller's verified client. */
+async function resolvePublication(
+  client: StudentClient, repository: LinkedRepository,
+): Promise<ResolvedPublication | 'signed-out'> {
+  const published = await getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId)
+  if (published.status === 'signed-out') return 'signed-out'
+  if (published.status !== 'ok') {
+    return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
+  }
+  const projected = projectStudentLearning(published.content)
+  if (projected.status !== 'ok') {
+    return { content: { state: 'temporarily-unavailable', reason: 'projection-failed' }, learning: null, practice: null }
+  }
+  const { study, practice } = deriveStudy(projected.learning, repository)
+  const { overview, notes, theoryQuestions } = projected.learning
+  // Overview is context only; it never makes a course ready to study.
+  const content: LinkedContent = study.notes || study.cbtPractice || study.theory
+    ? { state: 'ready', study } : { state: 'no-published-learning', study }
+  return { content, learning: { overview, notes, theoryQuestions }, practice }
+}
+
+/** Catalogue readers keep only availability; payload bodies never reach catalogue rows. */
 async function resolvePublishedContent(
   client: StudentClient, repository: LinkedRepository,
 ): Promise<LinkedContent | 'signed-out'> {
-  const published = await getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId)
-  if (published.status === 'signed-out') return 'signed-out'
-  if (published.status !== 'ok') return { state: 'temporarily-unavailable', reason: 'publication-read-failed' }
-  const projected = projectStudentLearning(published.content)
-  if (projected.status !== 'ok') return { state: 'temporarily-unavailable', reason: 'projection-failed' }
-  const study = deriveStudy(projected.learning, repository)
-  // Overview is context only; it never makes a course ready to study.
-  return study.notes || study.cbtPractice || study.theory
-    ? { state: 'ready', study } : { state: 'no-published-learning', study }
+  const resolved = await resolvePublication(client, repository)
+  return resolved === 'signed-out' ? resolved : resolved.content
 }
 
 function resolveContent(
@@ -368,9 +409,9 @@ export async function getStudentCourseBySlugForVerifiedStudent(
         isShared: repositoryParsed.data.is_shared,
         route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course },
       }
-      const content = await resolvePublishedContent(client, repository)
-      return content === 'signed-out' ? { status: 'signed-out' }
-        : { status: 'repository-only', course: { repository, content } }
+      const resolved = await resolvePublication(client, repository)
+      return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'repository-only',
+        course: { repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
     }
     const ownerParsed = catalogueRow.safeParse(owner.data)
     if (!ownerParsed.success) return { status: 'invariant-failure' }
@@ -380,9 +421,10 @@ export async function getStudentCourseBySlugForVerifiedStudent(
         structure.repository.route.slug !== course.slug) {
       return { status: 'invariant-failure' }
     }
-    const content = await resolveContent(client, structure.repository)
-    return content === 'signed-out' ? { status: 'signed-out' }
-      : { status: 'ok', course: { ...structure, content } }
+    const repository = structure.repository
+    const resolved = await resolvePublication(client, repository)
+    return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok',
+      course: { ...structure, repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
   } catch {
     return { status: 'unavailable' }
   }

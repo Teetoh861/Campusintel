@@ -2,10 +2,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
 import { Card } from '@/components/chrome/Card'
 import { TaskHeader } from '@/components/chrome/TaskHeader'
 import { Skeleton } from '@/components/ui/skeleton'
+import { BookmarkFeedback, useBookmarkFeedback } from '@/components/student/BookmarkFeedback'
 import { BookmarkToggle } from '@/components/student/BookmarkToggle'
 import { btnAccent, btnBase, cx } from '@/components/chrome/ui'
 import { useBookmarks } from '@/lib/bookmarks/client'
@@ -32,11 +32,10 @@ const pad2 = (n: number) => String(n).padStart(2, '0')
 /** Present saved courses honestly while account-backed bookmarks load. */
 export function BookmarksClient({ catalog }: Props): ReactElement {
   const { snapshot, toggle, refresh } = useBookmarks(catalog)
-  const [error, setError] = useState(false)
+  const [feedback, showFeedback] = useBookmarkFeedback()
 
   const toggleCourse = async (course: BookmarkableCourse) => {
-    setError(false)
-    if (await toggle(course) === null) setError(true)
+    showFeedback((await toggle(course)) ?? 'error')
   }
 
   const byKey = new Map<string, BookmarkableCourse>()
@@ -96,9 +95,7 @@ export function BookmarksClient({ catalog }: Props): ReactElement {
             </div>
           </div> : <>
             <p className="student-meta mb-4">{snapshot.mode === 'local' ? 'Saved to this device' : 'Saved to your account'}</p>
-            {error && <p role="alert" className="mb-4 text-sm font-semibold text-student-error">
-              Could not update that bookmark. Try again.
-            </p>}
+            <BookmarkFeedback state={feedback} onDismiss={() => showFeedback(null)} />
             <div className="student-grid">
               {matches.map(course => <Card key={course.id} {...course.cardProps}
                 cornerAction={<BookmarkToggle pressed label={`Bookmark ${course.code}`}

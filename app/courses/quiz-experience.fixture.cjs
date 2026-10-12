@@ -3,10 +3,11 @@ const fs = require('node:fs')
 const Module = require('node:module')
 const React = require('react')
 const ts = require('typescript')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
+
 require('react/jsx-runtime')
 
-const nodes = element => !element || typeof element !== 'object' ? []
-  : [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
+const nodes = element => elementNodes(element)
 const deferred = () => {
   let resolve
   const promise = new Promise(done => { resolve = done })

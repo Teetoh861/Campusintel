@@ -7,6 +7,8 @@ const path = require('node:path')
 const ts = require('typescript')
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
+
 
 const ref = (id, label) => ({ id, label, isActive: true })
 const applicability = [{ department: ref('department', 'Department'), academicLevel: ref('level', '300 Level'),
@@ -17,10 +19,7 @@ const study = flags => ({ notes: false, cbtPractice: false, theory: false, overv
 const course = (id, code, repository = shelved, content = { state: 'ready', study: study({ notes: true }) }) => ({
   institutionalCourseId: id, code, title: code + ' institutional title', isFree: false, applicability, repository, content,
 })
-function nodes(element) {
-  if (!element || typeof element !== 'object') return []
-  return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
+const nodes = element => elementNodes(element)
 
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = new Map(Object.entries(require.cache))
@@ -59,9 +58,10 @@ async function fixture(run) {
     assert.equal(gated.type, StudentAccessGate); assert.equal(gated.props.returnPath, '/courses')
     assert.deepEqual(calls, [], 'the account gate is crossed before any catalogue work')
     const granted = () => gated.props.children.type(gated.props.children.props)
-    const { CourseDirectory } = require('./CourseDirectory.tsx'), { CourseResult } = require('./CourseResult.tsx')
+    const { CourseDirectory } = require('./CourseDirectory.tsx')
+    const { StudentCourseRow } = require('../../components/student/StudentCourseRow.tsx')
     const { Notice } = require('../../components/student/Notice.tsx')
-    await run({ state, calls, granted, nodes, CourseDirectory, CourseResult, Notice,
+    await run({ state, calls, granted, nodes, CourseDirectory, StudentCourseRow, Notice,
       html: renderToStaticMarkup })
   } finally {
     Module._load = load
@@ -82,6 +82,7 @@ test('gated server page reads the full central catalogue once on its verified cl
   assert.equal(directory.props.items[0].applicability.length, 2)
   assert.deepEqual(Object.keys(directory.props.items[0]).sort(), ['applicability','code','institutionalCourseId','row','title'])
   assert.equal(directory.props.items[0].row.props.course, shared)
+  assert.equal(directory.props.items[0].row.type, f.StudentCourseRow, 'rows come from the shared owner')
   const html = f.html(tree)
   assert.match(html, /Institutional course catalogue/)
   assert.match(html, /2 courses/)
@@ -90,23 +91,7 @@ test('gated server page reads the full central catalogue once on its verified cl
   assert.doesNotMatch(html, /Business Administration|Difficulty|credits|Exam-critical|15 courses|Business Mathematics/)
 }))
 
-test('central actionable rows use only the central href and Notes/CBT/Theory flags', async () => fixture(async f => {
-  for (const [flags, labels] of [
-    [{ notes: true }, 'Notes'], [{ cbtPractice: true }, 'CBT practice'], [{ theory: true }, 'Theory'],
-    [{ cbtPractice: true, theory: true }, 'CBT practice · Theory'],
-    [{ notes: true, cbtPractice: true, theory: true }, 'Notes · CBT practice · Theory'],
-  ]) {
-    const input = course('ready', 'OFFICIAL', shelved, { state: 'ready', study: study(flags) })
-    const html = f.html(React.createElement(f.CourseResult, { course: input }))
-    assert.match(html, /href="\/courses\/central-route"/)
-    assert.ok(html.includes(labels))
-    assert.equal((html.match(/<a\b/g) || []).length, 1)
-    assert.equal(html.includes('Notes'), flags.notes === true, 'overview is never Notes')
-    assert.doesNotMatch(html, /Start quiz|questions|minutes|\/courses\/OFFICIAL/)
-  }
-}))
-
-test('no published learning, unlinked, unshelved-ready and publication failure keep honest inert rows', async () => fixture(async f => {
+test('no published learning, unlinked, unshelved-ready and publication failure keep every identity in the register', async () => fixture(async f => {
   const inputs = [
     [course('empty', 'EMPTY', shelved, { state: 'no-published-learning', study: study({}) }), 'Study content not yet available.'],
     [course('unlinked', 'UNLINKED', { state: 'unlinked' }, { state: 'not-built', reason: 'unlinked' }), 'Study content not yet available.'],
@@ -114,11 +99,6 @@ test('no published learning, unlinked, unshelved-ready and publication failure k
       { state: 'ready', study: study({ notes: true, theory: true }) }), 'Content temporarily unavailable.'],
     [course('failed', 'FAILED', shelved, { state: 'temporarily-unavailable', reason: 'publication-read-failed' }), 'Content temporarily unavailable.'],
   ]
-  for (const [input, message] of inputs) {
-    const html = f.html(React.createElement(f.CourseResult, { course: input }))
-    assert.ok(html.includes(input.title)); assert.ok(html.includes(message))
-    assert.doesNotMatch(html, /<a\b|href=|tabindex=|role="link"|<button\b/)
-  }
   f.state.result = { status: 'ok', courses: [course('ready','READY'), ...inputs.map(([input]) => input)] }
   const html = f.html(await f.granted())
   assert.equal((html.match(/<li\b/g) || []).length, 5, 'one individual failure never hides other identities')

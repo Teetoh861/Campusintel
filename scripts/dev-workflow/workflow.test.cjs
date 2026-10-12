@@ -7,9 +7,16 @@ const { spawnSync } = require('node:child_process')
 const { test } = require('node:test')
 const { repository } = require('./repo.cjs')
 const { packageReview } = require('./review.cjs')
-const { runVerification, scope } = require('./verify.cjs')
+const { collectTestFiles, runVerification, scope, testCommand } = require('./verify.cjs')
 
 const CLI = path.join(__dirname, 'cli.cjs')
+const RUNNER = path.join(__dirname, 'run-tests.cjs')
+const TAP_PASS = '# tests 1\n# pass 1\n# fail 0\n'
+/** Mocked commands answer test batches with a real TAP summary so discovery guards see executed tests. */
+const mockExecute = fn => (program, args, options) => {
+  const result = fn(program, args, options)
+  return args.includes(RUNNER) && !result.stdout ? { ...result, stdout: TAP_PASS } : result
+}
 const ORIGIN = 'https://github.com/Teetoh861/Campusintel.git'
 
 test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
@@ -146,22 +153,23 @@ test('review refuses sensitive paths and credential-looking content', t => {
 
 test('verification propagates a failed required check and explains skipped checks', t => {
   const f = fixture(t)
-  const execute = (program, args) => ({ status: args.includes('tsc') ? 1 : 0,
-    stdout: '', stderr: '' })
+  const execute = mockExecute((program, args) => ({ status: args.includes('tsc') ? 1 : 0,
+    stdout: '', stderr: '' }))
   const report = runVerification(repository(f.root), { execute })
   assert.equal(report.exitCode, 1)
   assert.match(report.output, /FAIL\s+TypeScript/)
+  assert.match(report.output, /PASS\s+Application tests/)
   assert.match(report.output, /SKIP\s+Database tests/)
   assert.match(report.output, /Result: FAIL/)
 })
 
 test('verification reports a build environment block without claiming a build pass', t => {
   const f = fixture(t)
-  const report = runVerification(repository(f.root), { execute: (program, args) => ({
+  const report = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
     status: args.includes('build') ? 1 : 0,
     stdout: '',
     stderr: args.includes('build') ? 'binding to a port\nOperation not permitted' : '',
-  }) })
+  })) })
   assert.equal(report.rows.find(row => row.name === 'Production build').status, 'BLOCKED')
   assert.equal(report.exitCode, 1)
 })
@@ -169,9 +177,9 @@ test('verification reports a build environment block without claiming a build pa
 test('verification checks whitespace in untracked files without treating a normal diff as failure', t => {
   const f = fixture(t)
   const file = path.join(f.root, 'new.ts')
-  const execute = (program, args, options) => program === 'git'
+  const execute = mockExecute((program, args, options) => program === 'git'
     ? spawnSync(program, args, options)
-    : { status: 0, stdout: '', stderr: '' }
+    : { status: 0, stdout: '', stderr: '' })
   fs.writeFileSync(file, 'export const clean = true\n')
   const cleanReport = runVerification(repository(f.root), { execute })
   assert.equal(cleanReport.rows.find(row => row.name === 'Diff whitespace').status, 'PASS')
@@ -192,26 +200,26 @@ test('verification distinguishes an unavailable DB service from failed SQL tests
   fs.mkdirSync(path.join(f.root, 'supabase', 'tests'), { recursive: true })
   fs.writeFileSync(path.join(f.root, 'supabase', 'tests', 'new.test.sql'), '-- fixture\n')
   let testRan = false
-  const blocked = runVerification(repository(f.root), { execute: (program, args) => {
+  const blocked = runVerification(repository(f.root), { execute: mockExecute((program, args) => {
     if (program === 'supabase' && args[0] === 'status') return { status: 1 }
     if (program === 'supabase' && args[0] === 'test') testRan = true
     return { status: 0 }
-  } })
+  }) })
   assert.equal(blocked.rows.find(row => row.name === 'Database tests').status, 'BLOCKED')
   assert.match(blocked.output, /local Supabase service unavailable; run supabase start/)
   assert.doesNotMatch(blocked.output, /supabase db start/)
   assert.equal(blocked.exitCode, 1)
   assert.equal(testRan, false)
 
-  const failed = runVerification(repository(f.root), { execute: (program, args) =>
-    ({ status: program === 'supabase' && args[0] === 'test' ? 1 : 0 }) })
+  const failed = runVerification(repository(f.root), { execute: mockExecute((program, args) =>
+    ({ status: program === 'supabase' && args[0] === 'test' ? 1 : 0 })) })
   assert.equal(failed.rows.find(row => row.name === 'Database tests').status, 'FAIL')
   assert.equal(failed.exitCode, 1)
 
-  const interrupted = runVerification(repository(f.root), { execute: (program, args) => ({
+  const interrupted = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
     status: program === 'supabase' && args[0] === 'test' ? 1 : 0,
     stderr: program === 'supabase' && args[0] === 'test' ? 'connection refused' : '',
-  }) })
+  })) })
   assert.equal(interrupted.rows.find(row => row.name === 'Database tests').status, 'BLOCKED')
 })
 
@@ -400,4 +408,57 @@ test('cleanup advances local develop when the caller is on another local branch'
   assert.equal(git(f.root, 'branch', '--list', 'feature/remote-merged'), '')
   assert.equal(git(f.root, 'branch', '--show-current'), 'chore/unrelated')
   assert.ok(!fs.existsSync(target))
+})
+
+test('test batches pass literal paths through the runner so bracketed route suites execute', t => {
+  const f = fixture(t)
+  const body = "const { test } = require('node:test')\ntest('runs', () => {})\n"
+  fs.mkdirSync(path.join(f.root, 'app', '[param]'), { recursive: true })
+  fs.writeFileSync(path.join(f.root, 'normal.test.cjs'), body)
+  fs.writeFileSync(path.join(f.root, 'app', '[param]', 'inner.test.cjs'), body)
+  fs.writeFileSync(path.join(f.root, 'empty.test.cjs'), 'module.exports = {}\n')
+  const bracket = 'app/[param]/inner.test.cjs'
+  const command = testCommand([bracket, 'normal.test.cjs'], { loader: './loader.cjs' })
+  assert.equal(command.program, process.execPath)
+  assert.deepEqual(command.args, ['--require', './loader.cjs', RUNNER, bracket, 'normal.test.cjs'],
+    'paths are passed byte for byte in one pass; nothing is escaped or rewritten')
+  assert.deepEqual(testCommand(['a[b]*?{c}.test.cjs']).args, [RUNNER, 'a[b]*?{c}.test.cjs'])
+  const execute = files => spawnSync(process.execPath, testCommand(files).args, { cwd: f.root, encoding: 'utf8' })
+  const normal = execute(['normal.test.cjs'])
+  assert.equal(normal.status, 0); assert.match(normal.stdout, /^# tests 1$/m)
+  const inner = execute([bracket])
+  assert.equal(inner.status, 0); assert.match(inner.stdout, /^# tests 1$/m)
+  const both = execute([bracket, 'normal.test.cjs'])
+  assert.equal(both.status, 0); assert.match(both.stdout, /^# tests 2$/m); assert.match(both.stdout, /^# pass 2$/m)
+  const nothing = execute(['empty.test.cjs'])
+  assert.equal(nothing.status, 1)
+  assert.match(nothing.stderr, /1 file\(s\) supplied but no tests executed/)
+  assert.equal(spawnSync(process.execPath, [RUNNER], { cwd: f.root, encoding: 'utf8' }).status, 1)
+  const collected = collectTestFiles(f.root)
+  assert.deepEqual(collected.application.sort(), [bracket, 'empty.test.cjs', 'lib/auth/sample.test.cjs', 'normal.test.cjs'])
+  assert.deepEqual(collected.workflow, [])
+})
+
+test('the production collection reaches the bracketed Course Detail, tracker and API suites', () => {
+  const { application, workflow } = collectTestFiles(path.join(__dirname, '../..'))
+  for (const file of ['app/courses/[slug]/course-detail.test.cjs', 'app/courses/[slug]/CourseViewTracker.test.cjs',
+    'app/courses/[slug]/quiz/liveBank.test.cjs', 'app/api/courses/[slug]/quiz-bank/route.test.cjs']) {
+    assert.ok(application.includes(file), file)
+  }
+  assert.equal(application.some(file => file.startsWith('scripts/dev-workflow/')), false)
+  assert.ok(workflow.includes('scripts/dev-workflow/workflow.test.cjs'))
+})
+
+test('a test batch with input files that executes nothing fails the verifier instead of reporting green', t => {
+  const f = fixture(t)
+  const report = runVerification(repository(f.root), { execute: (program, args) => ({
+    status: 0, stderr: '',
+    stdout: args.includes(RUNNER) ? '# tests 0\n# pass 0\n# fail 0\n' : '',
+  }) })
+  const row = report.rows.find(row => row.name === 'Application tests')
+  assert.equal(row.status, 'FAIL')
+  assert.equal(row.detail, 'no tests executed for the supplied files')
+  assert.equal(report.exitCode, 1)
+  const silent = runVerification(repository(f.root), { execute: () => ({ status: 0, stdout: '', stderr: '' }) })
+  assert.equal(silent.rows.find(row => row.name === 'Application tests').status, 'FAIL')
 })

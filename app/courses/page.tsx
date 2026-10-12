@@ -1,19 +1,16 @@
 // Account-gated full institutional catalogue, consumed through the central read model.
-import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { PageBand } from '@/components/student/PageBand'
-import { Notice } from '@/components/student/Notice'
-import { studentAction } from '@/components/student/ui'
-import { btnGhost } from '@/components/chrome/ui'
-import { AUTH_PATHS } from '@/lib/auth/constants'
+import { ResultNotice } from '@/components/student/ResultNotice'
+import { StudentCourseRow } from '@/components/student/StudentCourseRow'
+import { StudentPage } from '@/components/student/StudentPage'
+import { redirectForStudentState } from '@/components/student/result-state'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { getStudentCatalogueForVerifiedStudent } from '@/lib/courses/read-model'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { CourseDirectory } from './CourseDirectory'
-import { CourseResult } from './CourseResult'
-import { CATALOGUE_LEDE } from './catalogue-presentation'
+import { CATALOGUE_CONTEXT, CATALOGUE_LEDE } from './catalogue-presentation'
 import type { StudentCatalogueResult } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
@@ -32,28 +29,18 @@ async function CourseDirectoryPage(): Promise<ReactElement> {
     const context = await getStudentSessionContext(undefined, client)
     result = context === null ? { status: 'signed-out' } : await getStudentCatalogueForVerifiedStudent(client)
   } catch { result = { status: 'unavailable' } }
-  if (result.status === 'signed-out') {
-    redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(STUDENT_DESTINATIONS.courses.href))
-  }
-  return <div className="student-register-page" data-student-app>
-    <PageBand title={STUDENT_DESTINATIONS.courses.label} lede={CATALOGUE_LEDE}
-      context={<p>Institutional course catalogue</p>}
-      aside={result.status === 'ok' && <p className="student-register-summary">
-        {result.courses.length} {result.courses.length === 1 ? 'course' : 'courses'}
-      </p>} />
-    <div className="student-workspace student-register-workspace">
-      {result.status === 'ok'
-        ? <CourseDirectory items={result.courses.map(course => ({
-          institutionalCourseId: course.institutionalCourseId, code: course.code, title: course.title,
-          applicability: course.applicability, row: <CourseResult key={course.institutionalCourseId} course={course} />,
-        }))} />
-        : result.status === 'invariant-failure'
-          ? <Notice title="Course information needs attention" action={
-            <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className={studentAction(btnGhost)}>Contact support</Link>
-          }>We couldn’t load reliable course information. Please contact support.</Notice>
-          : <Notice title="Courses temporarily unavailable" action={
-            <a href={STUDENT_DESTINATIONS.courses.href} className={studentAction(btnGhost)}>Try again</a>
-          }>Content temporarily unavailable.</Notice>}
-    </div>
-  </div>
+  if (result.status === 'signed-out') redirectForStudentState('signed-out', STUDENT_DESTINATIONS.courses.href)
+  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.courses.label} lede={CATALOGUE_LEDE}
+    context={<p>{CATALOGUE_CONTEXT}</p>}
+    aside={result.status === 'ok' && <p className="student-summary">
+      {result.courses.length} {result.courses.length === 1 ? 'course' : 'courses'}
+    </p>} />}>
+    {result.status === 'ok'
+      ? <CourseDirectory items={result.courses.map(course => ({
+        institutionalCourseId: course.institutionalCourseId, code: course.code, title: course.title,
+        applicability: course.applicability, row: <StudentCourseRow key={course.institutionalCourseId} course={course} />,
+      }))} />
+      : <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'courses-unavailable'}
+        retryHref={STUDENT_DESTINATIONS.courses.href} />}
+  </StudentPage>
 }

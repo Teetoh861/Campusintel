@@ -3,11 +3,10 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const Module = require('node:module')
 const ts = require('typescript')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
 
-function nodes(element) {
-  if (!element || typeof element !== 'object') return []
-  return [element, ...[element.props?.children].flat(Infinity).flatMap(nodes)]
-}
+
+const nodes = element => elementNodes(element)
 
 const options = {
   departments: [{ id: 'dept', label: 'Fixture department' }],

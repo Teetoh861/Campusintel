@@ -5,6 +5,7 @@ import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
 import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
 import { isActionableStudentCourse } from '@/lib/courses/read-model'
+import { STUDY_FAMILIES } from '@/components/student/study-families'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { StudentCourse } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
@@ -29,7 +30,7 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
           <h2>{STUDENT_DESTINATIONS.myCourses.label}</h2>
           <p className="dashboard-primary-copy">Your semester, in one place.</p>
           <div className="dashboard-file-index" aria-hidden="true">
-            {['Overview', 'Notes', 'Theory', 'CBT practice'].map((label, index) =>
+            {['Overview', ...STUDY_FAMILIES.map(family => family.label)].map((label, index) =>
               <span key={label}><span>{String(index + 1).padStart(2, '0')}</span>{label}</span>)}
           </div>
           <p className="dashboard-file-note">Published resources vary by course.</p>

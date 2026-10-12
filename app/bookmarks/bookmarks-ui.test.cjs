@@ -7,6 +7,8 @@ const Module = require('node:module')
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const ts = require('typescript')
+const { elementNodes } = require('../../lib/test/element-walker.cjs')
+
 
 let snapshot = { mode: 'loading', keys: [] }
 const toggled = []
@@ -28,6 +30,9 @@ Module._load = function (name, ...args) {
       snapshot = { ...snapshot, keys: pressed ? snapshot.keys.filter(key => key !== course.contentKey) : [...snapshot.keys, course.contentKey] }
       return pressed ? 'removed' : 'added'
     }, remove: async () => { throw Error('Use the reversible toggle') }, refresh: async () => {} }) }
+  // The shared feedback owner is covered in components/student; this suite calls the client as a plain function.
+  if (name === '@/components/student/BookmarkFeedback') return {
+    useBookmarkFeedback: () => [null, () => {}], BookmarkFeedback: () => null }
   if (name === '@/components/chrome/Card') return { Card: ({ code, cornerAction }) =>
     React.createElement('article', null, code, cornerAction) }
   if (name === '@/components/chrome/ui') return {
@@ -150,9 +155,7 @@ test('a selected Bookmarks card uses the same toggle boundary and disappears aft
   try {
     React.useState = initial => [initial, () => {}]
     snapshot = { mode: 'account', keys: ['first-content'] }
-    const nodes = tree => !tree || typeof tree !== 'object' ? [] :
-      [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)]
-    const card = nodes(BookmarksClient({ catalog: [course] })).find(node => node.props?.cornerAction)
+    const card = elementNodes(BookmarksClient({ catalog: [course] })).find(node => node.props?.cornerAction)
     assert.ok(card)
     assert.equal(card.props.cornerAction.props.pressed, true)
     assert.equal(card.props.cornerAction.props.label, 'Bookmark FIRST101')

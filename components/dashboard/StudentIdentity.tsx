@@ -1,6 +1,7 @@
 // components/dashboard/StudentIdentity.tsx — Real student and persisted academic identity.
 import Link from 'next/link'
 import { CBrandTexture } from '@/components/student/CBrandTexture'
+import { INACTIVE_SELECTION_COPY } from '@/components/student/selection-copy'
 import { studentAction } from '@/components/student/ui'
 import { btnGhost } from '@/components/chrome/ui'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
@@ -30,7 +31,7 @@ export function StudentIdentity({ profile }: { profile: Profile }): ReactElement
           Change<span className="sr-only"> first name and academic selection</span>
         </Link>
       </section>
-      {inactive && <p className="mt-2 text-sm text-student-text-secondary">A saved academic choice is no longer selectable.</p>}
+      {inactive && <p className="mt-2 text-sm text-student-text-secondary">{INACTIVE_SELECTION_COPY.sentence}</p>}
     </div>
   </header>
 }
