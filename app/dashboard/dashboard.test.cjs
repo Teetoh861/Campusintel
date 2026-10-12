@@ -14,7 +14,7 @@ async function fixture(run) {
       department: { id: 'dept', label: 'Business Administration', isActive: true },
       academicLevel: { id: 'level', label: '200 Level', isActive: true },
       academicPeriod: { id: 'period', label: 'First Semester', isActive: true },
-    } }, profileReads: 0, courseReads: 0, current: { status: 'complete',
+    } }, profileReads: 0, courseReads: 0, current: { status: 'ok',
       selection: { departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period' },
       courses: [] } }
   try {
@@ -35,10 +35,14 @@ async function fixture(run) {
         state.profileReads++; return state.profile
       } }
       if (name === '@/components/auth/AuthFlowSync') return { AuthFlowSync: () => null }
-      if (name === '@/lib/dashboard/current-student-courses') return { getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
-        assert.equal(client, state.client); assert.equal(user, state.context.user)
-        state.courseReads++; return state.current
-      } }
+      if (name === '@/lib/courses/read-model') return {
+        // Real central predicates; only the verified-student read is replaced by fixture state.
+        ...load.call(this, path.join(__dirname, '../../lib/courses/read-model.ts'), ...args),
+        getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
+          assert.equal(client, state.client); assert.equal(user, state.context.user)
+          state.courseReads++; return state.current
+        },
+      }
       return load.call(this, name, ...args)
     }
     const page = require('./page.tsx').default
@@ -131,15 +135,23 @@ test('server guards redirect absent sessions or incomplete names and keep failur
   assert.doesNotMatch(html, /private provider details|Welcome back/)
 }))
 
+const shelved = { state: 'shelved', repositoryCourseId: 'mapped-repository', contentKey: 'mapped-course', isShared: false,
+  route: { slug: 'mapped-course', href: '/courses/mapped-course', course: { slug: 'mapped-course' } } }
+const unshelved = { state: 'unshelved-repository', repositoryCourseId: 'provisioned-repository',
+  contentKey: 'provisioned-key', isShared: null }
+const study = flags => ({ notes: false, theory: false, cbtPractice: false, overview: true, ...flags })
+// `unshelved` carries ready study content with no route; `overview-only` has a route with nothing to study.
 const mappedCourse = (index, state) => ({ institutionalCourseId: `course-${index}`, code: `COURSE${index}`,
-  title: 'Mapped course', isFree: false, content: state === 'ready'
-    ? { state, courseSlug: 'mapped-course', courseHref: '/courses/mapped-course',
-      availability: { overview: true, theory: false, quiz: false } }
-    : { state } })
+  title: 'Mapped course', isFree: false, applicability: [],
+  repository: state === 'not-built' ? { state: 'unlinked' } : state === 'unshelved' ? unshelved : shelved,
+  content: state === 'ready' || state === 'unshelved' ? { state: 'ready', study: study({ notes: true }) }
+    : state === 'not-built' ? { state, reason: 'unlinked' }
+      : state === 'overview-only' ? { state: 'no-published-learning', study: study({}) }
+        : { state: 'temporarily-unavailable', reason: 'publication-read-failed' } })
 const courseCard = html => html.match(/<a\b[^>]*class="dashboard-course-file[^>]*>(.*?)<\/a>/s)?.[1]
 
 test('course summary uses the mapped collection and existing ready state, without repeating academic metadata', async () => fixture(async f => {
-  const states = ['ready', 'ready', 'ready', 'ready', 'ready', 'not-built', 'no-learning', 'unavailable']
+  const states = ['ready', 'ready', 'ready', 'ready', 'ready', 'not-built', 'overview-only', 'unavailable']
   f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
   const html = await f.html(), card = courseCard(html)
   assert.ok(card)
@@ -150,8 +162,8 @@ test('course summary uses the mapped collection and existing ready state, withou
   assert.equal(f.state.profileReads, 1)
   assert.equal(f.state.courseReads, 1)
   const source = fs.readFileSync(path.join(__dirname, '../../components/dashboard/PrimaryCards.tsx'), 'utf8')
-  assert.match(source, /course\.content\.state === 'ready'/)
-  assert.doesNotMatch(source, /availability\.(?:overview|theory|quiz)|getCourseBy|supabase/)
+  assert.match(source, /filter\(isActionableStudentCourse\)/)
+  assert.doesNotMatch(source, /content\.state|study\.(?:notes|overview|theory|cbtPractice)|getCourseBy|supabase/)
 }))
 
 test('course summary handles singular, plural and zero-ready collections honestly', async () => fixture(async f => {
@@ -159,7 +171,8 @@ test('course summary handles singular, plural and zero-ready collections honestl
     [['ready'], '1 course · 1 ready to study'],
     [['ready', 'not-built'], '2 courses · 1 ready to study'],
     [['not-built'], '1 course · Study content coming gradually'],
-    [['not-built', 'broken-link', 'unavailable', 'no-learning'], '4 courses · Study content coming gradually'],
+    [['not-built', 'unshelved', 'unavailable', 'overview-only'], '4 courses · Study content coming gradually'],
+    [['unshelved', 'ready'], '2 courses · 1 ready to study'],
   ]) {
     f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
     const card = courseCard(await f.html())
@@ -177,7 +190,7 @@ test('empty, unavailable and changed selections do not invent course statistics'
     assert.doesNotMatch(courseCard(await f.html()), /\d+ courses?|ready to study/)
   }
   for (const field of ['departmentId', 'academicLevelId', 'academicPeriodId']) {
-    f.state.current = { status: 'complete', selection: {
+    f.state.current = { status: 'ok', selection: {
       departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period', [field]: 'changed',
     }, courses: [mappedCourse(1, 'ready')] }
     assert.match(courseCard(await f.html()), /Course information is temporarily unavailable/)

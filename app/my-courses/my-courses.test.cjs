@@ -14,15 +14,21 @@ const profile = { status: 'complete', firstName: 'Adaeze', selection: {
   academicLevel: { id: selection.academicLevelId, label: '200 Level', isActive: true },
   academicPeriod: { id: selection.academicPeriodId, label: 'First Semester', isActive: true },
 } }
-const course = (id, code, content) => ({ institutionalCourseId: id, code, title: `${code} institutional title`, isFree: false, content })
-const ready = course('ready-id', 'BUA201', {
-  state: 'ready', courseSlug: 'resolved-slug', courseHref: '/courses/resolved-slug',
-  availability: { overview: true, theory: true, quiz: true },
-})
-const unbuilt = course('unbuilt-id', 'BUA203', { state: 'not-built' })
-const broken = course('broken-id', 'BUA205', { state: 'broken-link' })
-const noLearning = course('empty-id', 'BUA207', { state: 'no-learning' })
-const unavailable = course('failed-id', 'BUA209', { state: 'unavailable' })
+const course = (id, code, repository, content) => ({ institutionalCourseId: id, code,
+  title: `${code} institutional title`, isFree: false, applicability: [], repository, content })
+const shelved = slug => ({ state: 'shelved', repositoryCourseId: `${slug}-repository`, contentKey: `${slug}-key`,
+  isShared: false, route: { slug, href: `/courses/${slug}`, course: { slug } } })
+const study = flags => ({ notes: false, theory: false, cbtPractice: false, overview: true, ...flags })
+const ready = course('ready-id', 'BUA201', shelved('resolved-slug'),
+  { state: 'ready', study: study({ notes: true, theory: true, cbtPractice: true }) })
+const unbuilt = course('unbuilt-id', 'BUA203', { state: 'unlinked' }, { state: 'not-built', reason: 'unlinked' })
+// A provisioned repository with published notes but no static route: real content, nowhere to go yet.
+const broken = course('broken-id', 'BUA205', { state: 'unshelved-repository',
+  repositoryCourseId: 'provisioned-repository', contentKey: 'provisioned-key', isShared: null },
+{ state: 'ready', study: study({ notes: true }) })
+const noLearning = course('empty-id', 'BUA207', shelved('empty-slug'), { state: 'no-published-learning', study: study({}) })
+const unavailable = course('failed-id', 'BUA209', shelved('failed-slug'),
+  { state: 'temporarily-unavailable', reason: 'publication-read-failed' })
 
 function nodes(element) {
   if (!element || typeof element !== 'object') return []
@@ -37,7 +43,7 @@ async function fixture(run) {
   const loadingFile = require.resolve('./loading.tsx')
   const state = {
     enabled: true, context: { user: { id: 'current-student' }, sessionId: 'live-session' },
-    contextError: null, tokenError: null, result: { status: 'complete', selection, courses: [ready, unbuilt, broken] },
+    contextError: null, tokenError: null, result: { status: 'ok', selection, courses: [ready, unbuilt, broken] },
     profile, domainCalls: [], profileReads: 0, clientReads: 0, contextReads: 0,
     client: { source: 'request-scoped RLS client' },
   }
@@ -66,7 +72,9 @@ async function fixture(run) {
           return `page:${id}:${sessionId}`
         },
       }
-      if (name === '@/lib/dashboard/current-student-courses') return {
+      if (name === '@/lib/courses/read-model') return {
+        // Real central predicates; only the verified-student read is replaced by fixture state.
+        ...originalLoad.call(this, local('lib/courses/read-model.ts'), ...args),
         getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
           assert.equal(client, state.client)
           assert.equal(user, state.context.user)
@@ -131,7 +139,7 @@ test('summary derives total/readiness and singular grammar from the actual cours
     [[unbuilt, noLearning], '2 courses · 0 ready to study'],
     [[ready, unbuilt, broken, noLearning, unavailable], '5 courses · 1 ready to study'],
   ]) {
-    f.state.result = { status: 'complete', selection, courses }
+    f.state.result = { status: 'ok', selection, courses }
     const html = await f.render()
     assert.ok(html.includes(expected))
     assert.equal((html.match(/<li\b/g) || []).length, courses.length)
@@ -165,17 +173,18 @@ test('ready rows are one canonical link and advertise only existing learning fam
   assert.match(html, /BUA201 institutional title/)
   assert.match(html, /Notes · Theory · CBT practice/)
   assert.doesNotMatch(html, /Open course|Available:|Overview|Practice quiz|<button\b/)
-  for (const [availability, expected] of [
-    [{ overview: true, theory: false, quiz: false }, 'Notes'],
-    [{ overview: false, theory: true, quiz: false }, 'Theory'],
-    [{ overview: false, theory: false, quiz: true }, 'CBT practice'],
-    [{ overview: true, theory: false, quiz: true }, 'Notes · CBT practice'],
-    [{ overview: true, theory: true, quiz: false }, 'Notes · Theory'],
-    [{ overview: false, theory: true, quiz: true }, 'Theory · CBT practice'],
+  for (const [flags, expected] of [
+    [{ notes: true, overview: false }, 'Notes'],
+    [{ theory: true, overview: true }, 'Theory'],
+    [{ cbtPractice: true, overview: true }, 'CBT practice'],
+    [{ notes: true, cbtPractice: true }, 'Notes · CBT practice'],
+    [{ notes: true, theory: true }, 'Notes · Theory'],
+    [{ theory: true, cbtPractice: true, overview: true }, 'Theory · CBT practice'],
   ]) {
-    const course = { ...ready, content: { ...ready.content, availability } }
+    const course = { ...ready, content: { ...ready.content, study: study(flags) } }
     const partial = renderToStaticMarkup(React.createElement(f.CourseRow, { course }))
     assert.ok(partial.includes(`<p>${expected}</p>`), expected)
+    assert.equal(partial.includes('Notes'), flags.notes === true, 'Notes follows study.notes, never the overview')
     assert.equal(anchors(partial).length, 1)
     assert.doesNotMatch(partial, /unavailable|disabled|<del\b/)
   }
@@ -203,7 +212,7 @@ test('Request Material appears once only for genuinely missing learning, using /
     [[ready, unbuilt], true], [[noLearning], true], [[unbuilt, noLearning], true],
     [[ready], false], [[broken, unavailable], false], [[ready, broken, unavailable], false],
   ]) {
-    f.state.result = { status: 'complete', selection, courses }
+    f.state.result = { status: 'ok', selection, courses }
     const html = await f.render()
     assert.equal(anchors(html).filter(link => link.includes('href="/materials"')).length, show ? 1 : 0)
     assert.equal(html.includes('Missing material for one of your courses?'), show)
@@ -212,7 +221,7 @@ test('Request Material appears once only for genuinely missing learning, using /
 }))
 
 test('empty semester is distinct and offers Change selection plus Browse All Courses only', async () => fixture(async f => {
-  f.state.result = { status: 'complete', selection, courses: [] }
+  f.state.result = { status: 'ok', selection, courses: [] }
   const html = await f.render()
   assert.match(html, /Business Administration · 200 Level · First Semester/)
   assert.match(html, /No confirmed courses for this selection yet\./)
@@ -294,4 +303,24 @@ test('loading reuses the PageBand/register and inert, static accessible skeleton
   assert.match(html, /aria-hidden="true"/)
   assert.match(html, /animate-none/)
   assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b|animate-pulse|Business Administration|BUA201|\d+%/)
+}))
+
+test('actionability needs a shelved route and ready content; overview alone is never Notes', async () => fixture(async f => {
+  const overviewOnly = course('overview-id', 'BUA211', shelved('overview-slug'),
+    { state: 'no-published-learning', study: study({ overview: true }) })
+  const inert = renderToStaticMarkup(React.createElement(f.CourseRow, { course: overviewOnly }))
+  assert.doesNotMatch(inert, /<a\b|href=|Notes/)
+  assert.match(inert, /Study content not yet available/)
+  const unshelvedReady = renderToStaticMarkup(React.createElement(f.CourseRow, { course: broken }))
+  assert.doesNotMatch(unshelvedReady, /<a\b|href=|Notes|provisioned/)
+  assert.match(unshelvedReady, /Content temporarily unavailable/)
+  const routed = renderToStaticMarkup(React.createElement(f.CourseRow, { course: ready }))
+  assert.ok(anchor(routed, '/courses/resolved-slug'))
+  f.state.result = { status: 'ok', selection, courses: [ready, broken, overviewOnly, unavailable] }
+  const html = await f.render()
+  assert.match(html, /4 courses · 1 ready to study/)
+  assert.equal(anchors(html).filter(link => link.includes('href="/courses/')).length, 1)
+  assert.equal(anchors(html).filter(link => link.includes('href="/materials"')).length, 1, 'overview-only is missing content')
+  f.state.result = { status: 'ok', selection, courses: [broken, unavailable] }
+  assert.equal(anchors(await f.render()).filter(link => link.includes('href="/materials"')).length, 0, 'temporary states do not request material')
 }))

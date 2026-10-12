@@ -4,20 +4,21 @@ import { ArrowRight } from 'lucide-react'
 import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
 import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
+import { isActionableStudentCourse } from '@/lib/courses/read-model'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
-import type { DashboardCourse } from '@/lib/dashboard/current-student-courses'
+import type { StudentCourse } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
-function courseSummary(courses: ReadonlyArray<DashboardCourse> | null): string {
+function courseSummary(courses: ReadonlyArray<StudentCourse> | null): string {
   if (courses === null) return 'Course information is temporarily unavailable.'
   if (courses.length === 0) return 'No confirmed courses for this selection yet.'
   const total = `${courses.length} ${courses.length === 1 ? 'course' : 'courses'}`
-  const ready = courses.filter(course => course.content.state === 'ready').length
+  const ready = courses.filter(isActionableStudentCourse).length
   return `${total} · ${ready > 0 ? `${ready} ready to study` : 'Study content coming gradually'}`
 }
 
 /** Two primary surfaces: current semester study and current/future personal practice. */
-export function PrimaryCards({ courses }: { courses: ReadonlyArray<DashboardCourse> | null }): ReactElement {
+export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
   return <section aria-label="Study and practice" className="dashboard-primary-grid">
     <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
       className={`dashboard-course-file student-interactive-card student-enter student-enter-1 ${studentFocusCard}`}>

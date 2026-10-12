@@ -92,6 +92,10 @@ metadata, and assessment settings remain outside managed learning content.
 Student course overview, theory, and CBT question reads now use published
 managed revisions. The quiz timer, maximum attempt size, and section-order
 policy remain repository/config-backed; the question bank does not. Managed
-notes still have no new dedicated student product surface. Entitlement checks
+notes project into `StudentLearning.notes` through the same editor contract,
+and the central Student Course read model in `lib/courses/read-model.ts`
+treats at least one validated published note as Notes availability; an
+overview alone is context, not Notes. Notes still have no dedicated student
+page. Entitlement checks
 remain a separate future boundary. Content payloads are plain text/structured
 data and render through React without injected HTML.

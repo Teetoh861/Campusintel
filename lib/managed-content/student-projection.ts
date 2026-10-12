@@ -1,6 +1,7 @@
 // lib/managed-content/student-projection.ts — Validate published learning payloads for existing student views.
 import { z } from 'zod'
-import { parseContentPayload } from '@/lib/operator/editor-contract'
+import { noteContent, parseContentPayload } from '@/lib/operator/editor-contract'
+import type { NotePayload } from '@/lib/operator/editor-contract'
 import type { PublishedManagedContent } from './published'
 
 const text = z.string()
@@ -18,6 +19,8 @@ const cbtShape = z.object({ prompt: text, options: z.array(text),
 
 export type ManagedOverview = z.infer<typeof overviewShape>
 export type ManagedTheoryQuestion = { itemId: string; prompt: string; displayNumber?: number; examTip?: string }
+/** A published note keeps the exact editor-contract payload beside its managed identity. */
+export type ManagedNote = { itemId: string; publishedRevision: number } & NotePayload
 export type ManagedQuizQuestion = {
   id: number
   questionId: string
@@ -30,6 +33,7 @@ export type ManagedQuizQuestion = {
 }
 export type StudentLearning = {
   overview: ManagedOverview | null
+  notes: ManagedNote[]
   theoryQuestions: ManagedTheoryQuestion[]
   quizQuestions: ManagedQuizQuestion[]
 }
@@ -40,9 +44,11 @@ export type StudentLearningResult =
 /** Preserve only validated published revisions; missing families stay absent. */
 export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedContent>): StudentLearningResult {
   let overview: ManagedOverview | null = null
+  const notes: ManagedNote[] = []
   const theoryQuestions: ManagedTheoryQuestion[] = []
   const quizQuestions: ManagedQuizQuestion[] = []
   const questionIds = new Set<string>()
+  const noteIds = new Set<string>()
   const theoryIds = new Set<string>()
   for (const row of rows) {
     if (parseContentPayload(row.kind, row.payload) === null) return { status: 'unavailable' }
@@ -50,6 +56,12 @@ export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedConte
       const parsed = overviewShape.safeParse(row.payload)
       if (!parsed.success || overview !== null) return { status: 'unavailable' }
       overview = parsed.data
+    } else if (row.kind === 'note') {
+      // The editor contract is the single note validator; its parsed payload is kept verbatim.
+      const parsed = noteContent.safeParse(row.payload)
+      if (!parsed.success || noteIds.has(row.item_id)) return { status: 'unavailable' }
+      noteIds.add(row.item_id)
+      notes.push({ itemId: row.item_id, publishedRevision: row.revision, ...parsed.data })
     } else if (row.kind === 'theory_question') {
       const parsed = theoryShape.safeParse(row.payload)
       if (!parsed.success || theoryIds.has(row.item_id)) return { status: 'unavailable' }
@@ -80,5 +92,5 @@ export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedConte
   }
   theoryQuestions.sort((a, b) => (a.displayNumber ?? Number.MAX_SAFE_INTEGER) -
     (b.displayNumber ?? Number.MAX_SAFE_INTEGER))
-  return { status: 'ok', learning: { overview, theoryQuestions, quizQuestions } }
+  return { status: 'ok', learning: { overview, notes, theoryQuestions, quizQuestions } }
 }

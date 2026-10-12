@@ -13,7 +13,8 @@ import { AUTH_MESSAGES, AUTH_PATHS } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/dashboard/current-student-courses'
+import { getCurrentStudentCoursesForVerifiedStudent, getStudentCourseUnavailability,
+  isActionableStudentCourse } from '@/lib/courses/read-model'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -101,7 +102,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
   if (result.status === 'signed-out') redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(MY_COURSES_PATH))
   if (result.status === 'incomplete') redirect(PROFILE_SELECTION_PATH)
   const continuity = <AuthFlowSync signedIn continuityToken={continuityToken} />
-  if (result.status !== 'complete') return <>{continuity}<MyCoursesError state={result.status} /></>
+  if (result.status !== 'ok') return <>{continuity}<MyCoursesError state={result.status} /></>
 
   const profile = await getCurrentStudentProfileForVerifiedStudent(client, context.user)
   if (profile.status === 'signed-out') redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(MY_COURSES_PATH))
@@ -118,7 +119,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
 
   return <>{continuity}<MyCoursesFrame>
     <SemesterContext selection={profile.selection} total={result.courses.length}
-      ready={result.courses.filter(course => course.content.state === 'ready').length} />
+      ready={result.courses.filter(isActionableStudentCourse).length} />
     <div className="student-workspace student-register-workspace">
       {result.courses.length === 0
         ? <EmptyState title="No confirmed courses for this selection yet." actions={<>
@@ -132,7 +133,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
           <CourseRegister label="Your semester courses">
             {result.courses.map(course => <CourseRow key={course.institutionalCourseId} course={course} />)}
           </CourseRegister>
-          {result.courses.some(course => course.content.state === 'not-built' || course.content.state === 'no-learning') &&
+          {result.courses.some(course => getStudentCourseUnavailability(course) === 'missing') &&
             <div className="student-register-request">
               <p>Missing material for one of your courses?</p>
               <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false} className={studentAction('student-register-request-link')}>

@@ -30,17 +30,21 @@ export type PublishedCourseResult =
   | { status: 'ok'; courseId: string; content: PublishedManagedContent[] }
   | { status: 'signed-out' | 'invalid-course' | 'unavailable' }
 
+// private.require_live_account() raises this code when the cookie-bound session is no longer live.
+const LIVE_SESSION_REQUIRED_CODE = '42501'
+
 async function readRows(client: AccountClient, courseId: string): Promise<PublishedContentResult> {
   const { data, error } = await client.rpc('read_published_managed_content', { p_course_id: courseId })
-  if (error) return { status: 'unavailable' }
+  if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
   const parsed = publishedRow.array().safeParse(data)
   if (!parsed.success || parsed.data.some(row => row.course_id !== courseId)) return { status: 'unavailable' }
   return { status: 'ok', content: parsed.data }
 }
 
 /** Read through the published-only RPC after a live student check on this exact
- * cookie-bound client. The RPC requires a live account session; invalid results
- * and read failures stay unavailable. Do not pass a service-role client here.
+ * cookie-bound client. The RPC requires a live account session: its 42501 refusal
+ * is signed-out, while invalid results and other read failures stay unavailable.
+ * Do not pass a service-role client here.
  */
 export async function getPublishedManagedContentWithVerifiedClient(
   client: AccountClient, courseId: string,
