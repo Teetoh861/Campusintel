@@ -23,6 +23,15 @@ Text is stored as plain text without interpreting HTML or Markdown.
 
 The request requires the existing same-origin JSON protections, live cookie
 session and `x-campus-account-continuity` header from the server-rendered page.
+The shared reader runs with the report contract's own byte budget
+(`REPORT_REQUEST_MAX_BYTES` in `lib/question-reports/input.ts`). The body travels
+as JSON, so the budget is derived from the widest JSON form of a valid note (1000
+code points at six bytes each, the `\uXXXX` escape JSON.stringify writes for a
+control character or lone surrogate; emoji take four, quotes and backslashes two)
+plus a fixed allowance that exceeds the compact envelope computed from the
+schema's own selector bounds. A valid note of any content, however it serializes,
+reaches the schema, and the first code point over the limit is rejected by
+validation, not by transport. Other Auth routes keep the 4 KiB default.
 It accepts no reporter ID, status, kind or other unknown properties. The
 database derives the reporter from `auth.uid()` and validates every selector.
 There must be a publication event for that exact item/revision; replacement

@@ -9,7 +9,7 @@ async function fixture(run) {
   const state = { profile: 'complete', quiz: { status: 'ready', quiz: {
     href: '/courses/financial-accounting-1/quiz', bankSize: 1, attemptSize: 1,
     timerSeconds: 1800, maxQuestions: 50, sections: ['A'], questions: [{
-      id: 1, questionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', question: 'Published',
+      id: 1, questionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', itemId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', question: 'Published',
       options: ['A', 'B'], correctAnswer: 1, section: 'A', publishedRevision: 2,
     }],
   } }, reads: 0 }

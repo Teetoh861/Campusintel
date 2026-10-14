@@ -44,7 +44,11 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+      {/* A 44px interactive box centred where the 16px icon already sits (24px from the top-right corner).
+          Keyboard focus draws a 2px outline in the shared student-focus token (defined on :root in app/globals.css);
+          the shadcn ring tokens have no definition in the loaded stylesheets and rendered nothing. The outline sits
+          inside the box, so consumers that clip overflow (CommandDialog) still show the whole indicator. */}
+      <DialogPrimitive.Close className="absolute right-0.5 top-0.5 inline-flex h-11 w-11 items-center justify-center rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-student-focus disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>

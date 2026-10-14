@@ -1,11 +1,13 @@
-// app/courses/[slug]/quiz/AssessmentConfirmation.tsx — Confirm submission or leaving with accessible focus.
+// app/courses/[slug]/quiz/AssessmentConfirmation.tsx — Confirm submitting or leaving with contained focus and truthful counts.
 'use client'
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { PRACTICE_COPY, plural } from './practice-presentation'
 import type { ReactElement } from 'react'
 
 type Props = {
@@ -15,40 +17,42 @@ type Props = {
   onRestoreFocus: (event: Event) => void
 } & ({ kind: 'leave' } | { kind: 'submit'; answered: number; unanswered: number; flagged: number })
 
-/** Confirm a final decision with contained focus and a safe initial cancel action. */
+/** Confirm a final decision; the safe action always receives initial focus. */
 export function AssessmentConfirmation(props: Props): ReactElement {
   const submitting = props.kind === 'submit'
   return <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
-    <AlertDialogContent
-      className="z-[70] w-[calc(100%-2rem)] max-w-[440px] rounded-[16px] border-ci-border bg-ci-white p-6 shadow-ci-card motion-reduce:!animate-none"
-      onCloseAutoFocus={props.onRestoreFocus}>
+    <AlertDialogContent className="student-practice-dialog z-[70] motion-reduce:!animate-none" onCloseAutoFocus={props.onRestoreFocus}>
       <AlertDialogHeader>
-        <AlertDialogTitle className="text-left text-[20px] text-ci-navy-900">
-          {submitting ? 'Submit assessment?' : 'Leave assessment?'}
+        <AlertDialogTitle className="text-left text-[20px] font-bold text-student-primary">
+          {submitting ? PRACTICE_COPY.submitTitle : PRACTICE_COPY.leaveTitle}
         </AlertDialogTitle>
-        <AlertDialogDescription className="text-left text-[14px] text-ci-gray-600">
-          {submitting ? 'Review your answers before final submission. Unanswered questions receive no credit.'
-            : 'Your current local attempt cannot be resumed. You can start a new assessment from the course page.'}
+        <AlertDialogDescription className="text-left text-[15px] leading-[1.5] text-student-text-secondary">
+          {submitting ? PRACTICE_COPY.submitBody : PRACTICE_COPY.leaveBody}
         </AlertDialogDescription>
       </AlertDialogHeader>
-      {props.kind === 'submit' ? <dl className="grid grid-cols-3 gap-2 rounded-[10px] bg-ci-paper-2 p-3 text-center">
-        <SummaryCount label="Answered" value={props.answered} />
-        <SummaryCount label="Unanswered" value={props.unanswered} />
-        <SummaryCount label="Flagged" value={props.flagged} />
-      </dl> : null}
-      <AlertDialogFooter className="mt-3 gap-2 sm:space-x-0">
-        <AlertDialogCancel className={cx(btnBase, btnSm, btnGhost, 'mt-0')}>
-          {submitting ? 'Return to questions' : 'Stay in assessment'}
-        </AlertDialogCancel>
-        <AlertDialogAction className={cx(btnBase, btnSm, btnAccent)} onClick={props.onConfirm}>
-          {submitting ? 'Submit assessment' : 'Leave assessment'}
-        </AlertDialogAction>
+      {props.kind === 'submit' ? <>
+        <dl className="student-practice-summary">
+          <SummaryCount label="Answered" value={props.answered} />
+          <SummaryCount label="Unanswered" value={props.unanswered} />
+          <SummaryCount label="Flagged" value={props.flagged} />
+        </dl>
+        {props.unanswered > 0 ? <p className="m-0 text-[14px] leading-[1.5] text-student-text-secondary">
+          {plural(props.unanswered, 'question is', 'questions are')} unanswered. You can still submit; unanswered questions count as missed.
+        </p> : null}
+      </> : null}
+      <AlertDialogFooter className="student-practice-foot sm:space-x-0">
+        {submitting ? <>
+          <AlertDialogCancel className={studentAction(btnGhost, 'mt-0')}>Keep working</AlertDialogCancel>
+          <AlertDialogAction className={studentAction(btnNavy, studentFocusDark)} onClick={props.onConfirm}>Submit practice</AlertDialogAction>
+        </> : <>
+          <AlertDialogAction className={studentAction(btnGhost, 'student-practice-destructive')} onClick={props.onConfirm}>Leave practice</AlertDialogAction>
+          <AlertDialogCancel className={studentAction(btnNavy, studentFocusDark, 'mt-0')}>Stay and continue</AlertDialogCancel>
+        </>}
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
 }
 
 function SummaryCount({ label, value }: { label: string; value: number }) {
-  return <div><dt className="text-[12px] text-ci-gray-600">{label}</dt>
-    <dd className="text-[22px] font-bold text-ci-navy-900">{value}</dd></div>
+  return <div><dt>{label}</dt><dd>{value}</dd></div>
 }

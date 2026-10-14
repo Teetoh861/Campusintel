@@ -1,13 +1,23 @@
-// Quiz route (/courses/[slug]/quiz). Server entry: loads the course +
-// matching quiz, then hands the full bank to the client orchestrator. The
-// attempt is sampled only when the student starts. quiz.css is scoped to this
-// route segment so other pages don't pay for it.
+// app/courses/[slug]/quiz/page.tsx — Practice entry: central course truth decides whether the managed bank may launch.
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
-import { Feedback } from '@/components/chrome/Feedback'
-import { getCourseBySlug } from '@/lib/data/courses'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { Notice } from '@/components/student/Notice'
+import { PageBand } from '@/components/student/PageBand'
+import { ResultNotice } from '@/components/student/ResultNotice'
+import { StudentPage } from '@/components/student/StudentPage'
+import { redirectForStudentState } from '@/components/student/result-state'
+import { STUDY_COPY } from '@/components/student/study-families'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { getStudentManagedQuiz } from '@/lib/managed-content/student-quiz'
+import { createClient } from '@/lib/supabase/server'
 import { QuizClient } from './QuizClient'
+import { PRACTICE_COPY, practiceContext } from './practice-presentation'
+import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
+import type { ReactElement } from 'react'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -15,32 +25,74 @@ type PageProps = { params: Promise<{ slug: string }> }
 export const dynamic = 'force-dynamic'
 
 /** Cross the student account boundary before the quiz bank is read. */
-export default async function QuizPage({ params }: PageProps): Promise<React.JSX.Element> {
+export default async function QuizPage({ params }: PageProps): Promise<ReactElement> {
   const { slug } = await params
   return <StudentAccessGate returnPath={`/courses/${slug}/quiz`}>
     {continuityToken => <Quiz slug={slug} continuityToken={continuityToken} />}
   </StudentAccessGate>
 }
 
-async function Quiz({ slug, continuityToken }: { slug: string; continuityToken: string }) {
-  const course = getCourseBySlug(slug)
-  if (!course) notFound()
-  const result = await getStudentManagedQuiz(slug)
-  if (result.status !== 'ready') return <Feedback message="The quiz is temporarily unavailable." tone="error" />
-  const usableQuiz = result.quiz
+/** Resolve the one-course truth on a fresh request-scoped client, then the usable managed bank. */
+async function Quiz({ slug, continuityToken }: { slug: string; continuityToken: string }): Promise<ReactElement> {
+  const returnPath = `/courses/${slug}/quiz`
+  let result: StudentCourseLookupResult
+  try {
+    const client = await createClient()
+    const context = await getStudentSessionContext(undefined, client)
+    result = context === null ? { status: 'signed-out' } : await getStudentCourseBySlugForVerifiedStudent(client, slug)
+  } catch { result = { status: 'unavailable' } }
+  if (result.status === 'not-found') return notFound()
+  if (result.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
+  if (result.status !== 'ok' && result.status !== 'repository-only') {
+    return <StudentPage band={<PageBand title={PRACTICE_COPY.title} lede={PRACTICE_COPY.lede} />}>
+      <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
+        retryHref={`/courses/${encodeURIComponent(slug)}/quiz`} />
+    </StudentPage>
+  }
 
-  return (
-    <QuizClient
-      continuityToken={continuityToken}
-      courseCode={course.code}
-      courseTitle={course.title}
-      courseSlug={course.slug}
-      courseContentKey={course.contentKey}
-      sections={usableQuiz.sections}
-      questions={usableQuiz.questions}
-      timerSeconds={usableQuiz.timerSeconds}
-      maxQuestions={usableQuiz.maxQuestions}
-      totalInBank={usableQuiz.bankSize}
-    />
-  )
+  const { course, practice } = result
+  const { route } = course.repository
+  const context = practiceContext(result)
+  const band = <PageBand title={PRACTICE_COPY.title} lede={context.lede} context={<p>{context.context}</p>} />
+  const backToCourse = <Link href={route.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
+    {PRACTICE_COPY.backToCourse}
+  </Link>
+  if (course.content.state === 'temporarily-unavailable') {
+    return <StudentPage band={band}>
+      <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
+        <a href={`${route.href}/quiz`} className={studentAction(btnNavy, studentFocusDark)}>Try again</a>{backToCourse}
+      </>}>{PRACTICE_COPY.temporaryBody}</Notice>
+    </StudentPage>
+  }
+  if (course.content.state !== 'ready' || !course.content.study.cbtPractice || practice === null) {
+    return <StudentPage band={band}>
+      <Notice tone="info" title={PRACTICE_COPY.notBuiltTitle} action={backToCourse}>{PRACTICE_COPY.notBuiltBody}</Notice>
+    </StudentPage>
+  }
+
+  // The managed quiz loader owns the actual usable live bank and its attempt policy.
+  const bank = await getStudentManagedQuiz(route.slug)
+  if (bank.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
+  if (bank.status !== 'ready') {
+    return <StudentPage band={band}>
+      <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
+        <a href={`${route.href}/quiz`} className={studentAction(btnNavy, studentFocusDark)}>Try again</a>{backToCourse}
+      </>}>{PRACTICE_COPY.temporaryBody}</Notice>
+    </StudentPage>
+  }
+  return <QuizClient
+    continuityToken={continuityToken}
+    courseCode={context.code}
+    courseTitle={context.title}
+    courseSlug={route.slug}
+    courseHref={route.href}
+    courseContentKey={course.repository.contentKey}
+    repositoryCourseId={course.repository.repositoryCourseId}
+    repositoryOnly={result.status === 'repository-only'}
+    sections={bank.quiz.sections}
+    questions={bank.quiz.questions}
+    timerSeconds={bank.quiz.timerSeconds}
+    maxQuestions={bank.quiz.maxQuestions}
+    totalInBank={bank.quiz.bankSize}
+  />
 }

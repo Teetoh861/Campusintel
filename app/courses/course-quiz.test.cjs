@@ -95,12 +95,38 @@ async function fixture(quiz, run) {
           if (!publishedState.available) return { status: 'unavailable' }
           const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
           const questions = publishedState.rows.filter(row => row.kind === 'cbt_question').map((row, index) => ({
-            id: index + 1, questionId: row.question_id, question: row.payload.prompt,
+            id: index + 1, questionId: row.question_id, itemId: row.item_id, question: row.payload.prompt,
             options: row.payload.options, correctAnswer: row.payload.correctOption,
             section: row.payload.section, publishedRevision: row.revision,
           }))
           const usable = getUsableManagedQuiz(slug, quiz, questions)
           return usable ? { status: 'ready', quiz: usable } : { status: 'unavailable' }
+        },
+      }
+      // The quiz route reads central one-course truth on a request-scoped client before any bank read.
+      if (name === '@/lib/supabase/server') return { createClient: async () => ({ fixture: 'request-scoped client' }) }
+      if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () =>
+        ({ user: { id: 'verified-student' }, sessionId: 'live-session' }) }
+      if (name === '@/lib/courses/read-model') return {
+        getStudentCourseBySlugForVerifiedStudent: async (_client, slug) => {
+          if (slug !== course.slug) return { status: 'not-found' }
+          const repository = { state: 'shelved', repositoryCourseId: courseId, contentKey: course.contentKey, isShared: null,
+            route: { slug: course.slug, href: `/courses/${course.slug}`, course } }
+          const base = { institutionalCourseId: 'fixture-institutional', code: course.code, title: course.title,
+            isFree: false, applicability: [], repository }
+          if (!publishedState.available) return { status: 'ok', learning: null, practice: null,
+            course: { ...base, content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' } } }
+          const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
+          const questions = publishedState.rows.filter(row => row.kind === 'cbt_question').map((row, index) => ({
+            id: index + 1, questionId: row.question_id, itemId: row.item_id, question: row.payload.prompt,
+            options: row.payload.options, correctAnswer: row.payload.correctOption,
+            section: row.payload.section, publishedRevision: row.revision,
+          }))
+          const usable = getUsableManagedQuiz(course.slug, quiz, questions)
+          const study = { notes: false, cbtPractice: Boolean(usable), theory: false, overview: true }
+          return { status: 'ok', learning: null, course: { ...base, content: { state: 'ready', study } },
+            practice: usable ? { href: usable.href, bankSize: usable.bankSize, attemptSize: usable.attemptSize,
+              timerSeconds: usable.timerSeconds } : null }
         },
       }
       if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
@@ -194,19 +220,27 @@ test('published CBT edits and withdrawals affect the next quiz route read', asyn
   assert.equal(route.props.totalInBank, validQuiz.questions.length - 1)
   assert.ok(route.props.questions.every(item => item.questionId !== question.question_id))
   f.publishedState.rows = f.publishedState.rows.filter(row => row.kind !== 'cbt_question')
-  assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
+  const html = renderToStaticMarkup(await f.quizRoute(params))
+  assert.match(html, /CBT practice is not available for this course yet/)
+  assert.doesNotMatch(html, /temporarily unavailable|Try again/i, 'a bank that was never built is not a temporary failure')
 }))
 
 test('managed read unavailability fails closed on the quiz route', async () => fixture(validQuiz, async f => {
   f.publishedState.available = false
-  assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
+  const html = renderToStaticMarkup(await f.quizRoute(params))
+  assert.match(html, /temporarily unavailable/i)
+  assert.match(html, /couldn’t load the published question bank just now/)
+  assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
+  assert.doesNotMatch(html, /not available for this course yet/)
 }))
 
 test('missing or unusable quiz configuration makes the quiz route reject the attempt', async () => {
   for (const quiz of [undefined, { ...validQuiz, maxQuizQuestions: 0 },
     { ...validQuiz, quizDurationMinutes: 0 }, { ...validQuiz, quizDurationMinutes: 1e308 }]) {
     await fixture(quiz, async f => {
-      assert.match(renderToStaticMarkup(await f.quizRoute(params)), /quiz is temporarily unavailable/i)
+      const html = renderToStaticMarkup(await f.quizRoute(params))
+      assert.match(html, /CBT practice is not available for this course yet/)
+      assert.doesNotMatch(html, /QuizClient|Start practice/)
     })
   }
 })

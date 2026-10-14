@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { ManagedQuiz } from '@/lib/managed-content/quiz'
 
 const question = z.object({
-  id: z.number().int().positive(), questionId: z.string().uuid(),
+  id: z.number().int().positive(), questionId: z.string().uuid(), itemId: z.string().uuid(),
   question: z.string().min(1), options: z.array(z.string()).min(2),
   correctAnswer: z.number().int().nonnegative(), section: z.string().min(1),
   explanation: z.string().optional(), publishedRevision: z.number().int().positive(),
