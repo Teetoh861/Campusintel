@@ -3,7 +3,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { loadFreshQuiz } = require('./liveBank.ts')
 
-const question = revision => ({ id: 1, questionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+const question = revision => ({ id: 1, questionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', itemId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   question: `Published revision ${revision}`, options: ['A', 'B'], correctAnswer: 1,
   section: 'Section A', publishedRevision: revision })
 const bank = revision => ({ status: 'ready', quiz: {

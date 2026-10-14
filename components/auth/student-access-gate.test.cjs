@@ -83,13 +83,14 @@ async function fixture(run) {
         getStudentCourseBySlugForVerifiedStudent: async (_client, slug) => {
           state.contentReads++
           if (slug !== course.slug) return { status: 'not-found' }
-          return { status: 'ok', learning: null, practice: null, course: {
+          // Practice-ready central truth: the quiz route only launches when the one-course model says it may.
+          return { status: 'ok', learning: null, course: {
             institutionalCourseId: 'fixture-institutional', code: 'ACC-CM201', title: 'Financial Accounting I',
-            isFree: false, applicability: [], content: { state: 'no-published-learning',
-              study: { notes: false, cbtPractice: false, theory: false, overview: false } },
+            isFree: false, applicability: [], content: { state: 'ready',
+              study: { notes: false, cbtPractice: true, theory: false, overview: false } },
             repository: { state: 'shelved', repositoryCourseId: 'fixture-repository', contentKey: course.contentKey,
               isShared: null, route: { slug: course.slug, href: `/courses/${course.slug}`, course } },
-          } }
+          }, practice: { href: `/courses/${course.slug}/quiz`, bankSize: 1, attemptSize: 1, timerSeconds: 3600 } }
         },
       }
       if (name === '@/lib/managed-content/student-quiz') return { getStudentManagedQuiz: async () => {

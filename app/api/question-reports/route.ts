@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
 import { AuthRequestError, readAuthRequest } from '@/lib/auth/request'
-import { questionReportInput } from '@/lib/question-reports/input'
+import { REPORT_REQUEST_MAX_BYTES, questionReportInput } from '@/lib/question-reports/input'
 import { submitCurrentStudentReport } from '@/lib/question-reports/server'
 
 export const dynamic = 'force-dynamic'
@@ -13,10 +13,10 @@ function privateJson(body: Record<string, unknown>, status: number): NextRespons
   } })
 }
 
-/** Accept only bounded same-origin JSON; never accept an account ID or return content payloads. */
+/** Accept only same-origin JSON within the report contract's own byte budget; never accept an account ID or return content payloads. */
 export async function POST(request: Request): Promise<Response> {
   let input: unknown
-  try { input = await readAuthRequest(request, questionReportInput) }
+  try { input = await readAuthRequest(request, questionReportInput, { maxBytes: REPORT_REQUEST_MAX_BYTES }) }
   catch (error) {
     const status = error instanceof AuthRequestError ? error.status : 503
     return privateJson({ status: status === 503 ? 'unavailable' : 'invalid-request' }, status)

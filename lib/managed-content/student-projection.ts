@@ -24,6 +24,8 @@ export type ManagedNote = { itemId: string; publishedRevision: number } & NotePa
 export type ManagedQuizQuestion = {
   id: number
   questionId: string
+  // Opaque managed item identity, carried only so a completed attempt can report the exact item/revision.
+  itemId: string
   question: string
   options: string[]
   correctAnswer: number
@@ -77,7 +79,7 @@ export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedConte
         return { status: 'unavailable' }
       }
       questionIds.add(row.question_id)
-      quizQuestions.push({ id: quizQuestions.length + 1, questionId: row.question_id,
+      quizQuestions.push({ id: quizQuestions.length + 1, questionId: row.question_id, itemId: row.item_id,
         question: parsed.data.prompt, options: parsed.data.options,
         correctAnswer: parsed.data.correctOption, section: parsed.data.section ?? 'General',
         ...(parsed.data.explanation === undefined ? {} : { explanation: parsed.data.explanation }),

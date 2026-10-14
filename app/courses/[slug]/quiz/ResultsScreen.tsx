@@ -1,244 +1,93 @@
-// app/courses/[slug]/quiz/ResultsScreen.tsx — Present practice results and review the sampled attempt.
+// app/courses/[slug]/quiz/ResultsScreen.tsx — This attempt's score, its feedback band, save state and the next actions.
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { btnAccent, btnBase, btnGhost, cx } from '@/components/chrome/ui'
-import { ReviewCard } from './ReviewCard'
+import { useEffect, useRef } from 'react'
+import { Check, Minus, X } from 'lucide-react'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { Notice } from '@/components/student/Notice'
+import { PageBand } from '@/components/student/PageBand'
+import { StudentLoadingState } from '@/components/student/StudentLoadingState'
+import { StudentPage } from '@/components/student/StudentPage'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PRACTICE_COPY, minutesOf, plural, practiceBand, practiceIdentity } from './practice-presentation'
+import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
+import type { AnswersMap, SaveState } from './types'
 import type { ReactElement } from 'react'
-import type { QuizQuestion } from '@/lib/types'
-import type { AnswersMap, ReviewFilter, SectionStat } from './types'
-
-// Verdict thresholds (percent). Match the comp.
-const STRONG_PCT = 70
-const PRACTICE_TARGET_PCT = 50
-// Section tag thresholds. >=80% mastered, <70% revisit, neutral between.
-const MASTERED_PCT = 80
-const REVISIT_PCT = 70
-
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
-
-type ResultsFilter = 'all' | 'incorrect' | 'correct'
 
 type Props = {
   courseCode: string
-  courseSlug: string
-  questions: ReadonlyArray<QuizQuestion>
+  courseTitle: string
+  courseHref: string
+  repositoryOnly: boolean
+  questions: ReadonlyArray<ManagedQuizQuestion>
   answers: AnswersMap
   correctCount: number
-  sections: ReadonlyArray<SectionStat>
-  tickLimit: number
-  reviewFilter: ReviewFilter
+  finishReason: 'submitted' | 'timed_out'
+  minutesUsed: number
+  attemptSeconds: number
+  saveState: SaveState
   preparing: boolean
-  onReviewFilterChange: (f: ReviewFilter) => void
+  error: string | null
+  onReview: () => void
   onRetakeWithNewQuestions: () => void
   onRedoQuestions: () => void
 }
 
-/** Show the completed attempt's score, section breakdown and answer review. */
-export function ResultsScreen({
-  courseCode,
-  courseSlug,
-  questions,
-  answers,
-  correctCount,
-  sections,
-  tickLimit,
-  reviewFilter,
-  preparing,
-  onReviewFilterChange,
-  onRetakeWithNewQuestions,
-  onRedoQuestions,
-}: Props): ReactElement {
-  const [resultsFilter, setResultsFilter] = useState<ResultsFilter>('all')
+/** Score this attempt only; no cross-attempt history, mastery or section judgement. */
+export function ResultsScreen(props: Props): ReactElement {
+  const { questions, answers, correctCount, finishReason, saveState, preparing, error } = props
   const total = questions.length
-  const pct = total === 0 ? 0 : Math.round((correctCount / total) * 100)
-  const missedCount = total - correctCount
-  const verdict =
-    pct >= STRONG_PCT
-      ? 'Strong practice result'
-      : pct >= PRACTICE_TARGET_PCT
-      ? 'Practice target met · close the gaps'
-      : 'Below practice target · regroup'
+  const unanswered = questions.filter((_, index) => answers[index] === undefined).length
+  const incorrect = total - correctCount - unanswered
+  const percent = total === 0 ? 0 : Math.round((correctCount / total) * 100)
+  const toReview = incorrect + unanswered
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
+  const timeLine = `${props.minutesUsed} of ${minutesOf(props.attemptSeconds)} minutes used`
+  const lede = finishReason === 'timed_out' ? `Submitted automatically when time ran out · ${timeLine}` : `Submitted · ${timeLine}`
+  // Results is entered by transition (submit, timeout, back from review); the control that caused it has unmounted,
+  // so the screen itself hands focus to its heading exactly once when it mounts.
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { heading.current?.focus() }, [])
 
-  // The weakest section drives the prose hook above the breakdown.
-  const weakest = [...sections].sort(
-    (a, b) => a.correct / a.total - b.correct / b.total,
-  )[0]
-
-  const reviewItems = questions
-    .map((q, i) => ({ q, i, ok: answers[i] === q.correctAnswer }))
-    .filter(({ ok }) =>
-      resultsFilter === 'all' ? true : resultsFilter === 'correct' ? ok : !ok,
-    )
-
-  const emptyMessage =
-    resultsFilter === 'correct'
-      ? 'No correct answers in this attempt.'
-      : resultsFilter === 'incorrect'
-      ? 'No incorrect answers in this attempt.'
-      : 'No questions to review.'
-
-  return (
-    <section className="bg-ci-paper pb-20 pt-12 min-[900px]:pt-16">
-      {/* score hero */}
-      <div className={WRAP}>
-        <div className="inline-flex items-center gap-[9px] text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
-          <span className="h-[7px] w-[7px] rounded-full bg-ci-accent" />
-          Assessment Debrief · {courseCode}
+  return <StudentPage band={<PageBand title="Practice result" lede={lede} context={<p>{identity.context}</p>} titleRef={heading} />}>
+    {finishReason === 'timed_out' ? <div className="mb-6 max-w-[720px]">
+      <Notice tone="info" title={PRACTICE_COPY.timedOutTitle}>{PRACTICE_COPY.timedOutBody}</Notice>
+    </div> : null}
+    {error ? <div className="mb-6 max-w-[720px]"><Notice title={error}>Nothing has started; this result stays on the page.</Notice></div> : null}
+    {preparing ? <p role="status" className="student-practice-help mb-6">Checking the latest published questions. The timer has not started.</p> : null}
+    <div className="student-practice-results">
+      <section aria-labelledby="student-practice-score-heading">
+        <h2 id="student-practice-score-heading" className="sr-only">Score for this attempt</h2>
+        <div className="student-practice-score">
+          <span className="student-practice-score-pct">{percent}%</span>
+          <span className="student-practice-score-of">{correctCount} of {total} correct</span>
         </div>
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <div className="text-[clamp(56px,12vw,88px)] font-extrabold leading-none tracking-[-0.03em] text-ci-navy-900 [font-variant-numeric:tabular-nums]">
-            {correctCount}
-            <span className="text-ci-gray-400"> / {total}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-[clamp(20px,4vw,26px)] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{pct}%</div>
-            <span className="h-[18px] w-px bg-ci-border-2" />
-            <div className="text-[15px] font-medium text-ci-gray-600">{verdict}</div>
-          </div>
-        </div>
-        {weakest ? (
-          <p className="mt-4 max-w-[60ch] text-[16px] leading-[1.55] text-ci-gray-600">
-            Your weakest section is {weakest.name}. Start your revision there.
-          </p>
-        ) : null}
-        <div className="mt-6 flex flex-wrap gap-[13px]">
-          <button type="button" className={cx(btnBase, btnAccent, 'disabled:opacity-50')} disabled={preparing} onClick={onRetakeWithNewQuestions}>
-            {preparing ? 'Preparing assessment…' : 'Retake with new questions'}
-          </button>
-          <button type="button" className={cx(btnBase, btnGhost, 'disabled:opacity-50')} disabled={preparing} onClick={onRedoQuestions}>
-            Redo these questions
-          </button>
-        </div>
-      </div>
+        <p className="student-practice-band"><b>{practiceBand(percent)}</b><span>{PRACTICE_COPY.bandNote}</span></p>
+        <dl className="student-practice-break">
+          <div><dt><Check aria-hidden="true" size={16} strokeWidth={2.25} />Correct</dt><dd>{correctCount}</dd></div>
+          <div><dt><X aria-hidden="true" size={16} strokeWidth={2.25} />Incorrect</dt><dd>{incorrect}</dd></div>
+          <div><dt><Minus aria-hidden="true" size={16} strokeWidth={2.25} />Unanswered</dt><dd>{unanswered}</dd></div>
+        </dl>
+        {saveState === 'saved' ? <p className="student-practice-meta"><Check aria-hidden="true" size={16} strokeWidth={2.25} />{PRACTICE_COPY.saved}</p> : null}
+        {saveState === 'pending' ? <div className="mt-4 max-w-[320px]">
+          <StudentLoadingState message={PRACTICE_COPY.saving}><Skeleton className="h-4 w-full" /></StudentLoadingState>
+        </div> : null}
+        {saveState === 'failed' ? <div className="mt-5 max-w-[720px]">
+          <Notice title={PRACTICE_COPY.saveFailedTitle}>{PRACTICE_COPY.saveFailedBody}</Notice>
+        </div> : null}
+      </section>
 
-      <div className={cx(WRAP, 'mt-12')}>
-        <div className="mx-auto max-w-[760px]">
-          {/* section breakdown */}
-          <div>
-            <div className="mb-4 text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
-              <span className="text-ci-accent-600">01 /</span> Section intelligence
-            </div>
-            <div className="flex flex-col gap-5">
-              {sections.map((s) => (
-                <BreakdownRow key={s.name} stat={s} tickLimit={tickLimit} />
-              ))}
-            </div>
-          </div>
-
-          {/* review */}
-          <div className="mt-12">
-            <div className="mb-4 text-[12.5px] font-bold uppercase tracking-[0.14em] text-ci-gray-500">
-              <span className="text-ci-accent-600">02 /</span> Review
-            </div>
-            <div className="mb-5 inline-flex overflow-hidden rounded-[9px] border border-ci-border-2 bg-ci-white">
-              {([
-                ['all', 'All', total],
-                ['incorrect', 'Incorrect', missedCount],
-                ['correct', 'Correct', correctCount],
-              ] as const).map(([value, label, count], index) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={cx(
-                    'min-h-11 px-[14px] py-[9px] text-[13.5px] font-semibold transition-colors',
-                    index > 0 && 'border-l border-ci-border',
-                    resultsFilter === value
-                      ? 'bg-ci-navy text-white'
-                      : 'text-ci-gray-600 hover:text-ci-navy',
-                  )}
-                  onClick={() => setResultsFilter(value)}
-                >
-                  {label} ({count})
-                </button>
-              ))}
-            </div>
-
-            {reviewItems.length === 0 ? (
-              <div className="rounded-[16px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[40px_24px] text-center">
-                <p className="text-[14.5px] text-ci-gray-600">{emptyMessage}</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {reviewItems.map(({ q, i, ok }) => (
-                  <ReviewCard key={i} q={q} n={i + 1} your={answers[i]} ok={ok} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* actions */}
-          <div className="mt-12 flex flex-wrap gap-[13px]">
-            <button type="button" className={cx(btnBase, btnAccent, 'disabled:opacity-50')} disabled={preparing} onClick={onRetakeWithNewQuestions}>
-              {preparing ? 'Preparing assessment…' : 'Retake with new questions'}
-            </button>
-            <button type="button" className={cx(btnBase, btnGhost, 'disabled:opacity-50')} disabled={preparing} onClick={onRedoQuestions}>
-              Redo these questions
-            </button>
-            <Link className={cx(btnBase, btnGhost)} href={`/courses/${courseSlug}`}>
-              Back to course
-            </Link>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function BreakdownRow({
-  stat,
-  tickLimit,
-}: {
-  stat: SectionStat
-  tickLimit: number
-}) {
-  const pct = stat.total === 0 ? 0 : Math.round((stat.correct / stat.total) * 100)
-  const mastered = pct >= MASTERED_PCT
-  const revisit = pct < REVISIT_PCT
-  const missed = stat.total - stat.correct
-  const ariaLabel = `${stat.correct} of ${stat.total} correct, ${missed} missed`
-
-  return (
-    <div className="rounded-[14px] border border-ci-border bg-ci-white p-[18px_20px] shadow-ci-card">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-[12.5px] font-bold uppercase tracking-[0.08em] text-ci-navy">
-          Section {stat.letter} · {stat.name.toUpperCase()}
-        </span>
-        {mastered ? (
-          <span className="rounded-full bg-g-50 px-[10px] py-[3px] text-[11px] font-bold uppercase tracking-[0.06em] text-g-700">Mastered</span>
-        ) : null}
-        {!mastered && revisit ? (
-          <span className="rounded-full bg-r-50 px-[10px] py-[3px] text-[11px] font-bold uppercase tracking-[0.06em] text-r-700">Revisit</span>
-        ) : null}
-        <span className="ml-auto text-[13.5px] font-medium text-ci-gray-600 [font-variant-numeric:tabular-nums]">
-          {stat.correct} / {stat.total}
-          {missed > 0 ? (
-            <span className="text-r-600"> · {missed} missed</span>
-          ) : (
-            <span className="text-ci-gray-500"> · {pct}%</span>
-          )}
-        </span>
-      </div>
-
-      {stat.total <= tickLimit ? (
-        // Discrete ticks — each one is the REAL result at that position in the
-        // attempt order. No left-fill of greens followed by reds.
-        <div className="mt-3 flex flex-wrap gap-[3px]" role="img" aria-label={ariaLabel}>
-          {stat.marks.map((m) => (
-            <span
-              key={m.qIdx}
-              className={cx('h-[10px] w-[10px] rounded-[2px]', m.ok ? 'bg-g-600' : 'bg-r-300')}
-              title={`Q${m.qIdx + 1} · ${m.ok ? 'correct' : 'missed'}`}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="mt-3 flex h-[10px] w-full overflow-hidden rounded-full" role="img" aria-label={ariaLabel}>
-          <span className="block h-full bg-g-600" style={{ width: `${pct}%` }} />
-          <span className="block h-full bg-r-300" style={{ width: `${100 - pct}%` }} />
-        </div>
-      )}
+      <section className="student-practice-next" aria-labelledby="student-practice-next-heading">
+        <h2 id="student-practice-next-heading">{plural(toReview, 'question')} to review</h2>
+        <p>See the correct answer for every question in this attempt.</p>
+        <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={props.onReview}>Review answers</button>
+        <button type="button" className={studentAction(btnGhost)} disabled={preparing} onClick={props.onRetakeWithNewQuestions}>Retake with new questions</button>
+        <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={preparing} onClick={props.onRedoQuestions}>Redo these questions</button>
+        <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent')}>{PRACTICE_COPY.backToCourse}</Link>
+        <p className="student-practice-help !mt-0">Retake draws a fresh set of questions. Redo runs this same set again.</p>
+      </section>
     </div>
-  )
+  </StudentPage>
 }

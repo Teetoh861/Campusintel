@@ -8,7 +8,9 @@ semantics remain separate.
   origin and exact trusted Vercel Preview origin. It rejects cross-site/same-site
   Fetch Metadata, requires `application/json`, reads bounded bytes, decodes UTF-8
   fatally, parses JSON, and applies the supplied schema. Auth defaults to 4 KiB;
-  quiz writes retain 16 KiB and editor writes retain 280 KiB. The editor wrapper
+  quiz writes retain 16 KiB, editor writes retain 280 KiB, and question reports
+  pass the budget their own contract derives from the note limit and the widest
+  JSON escape of one code point, so transport never rejects a valid note. The editor wrapper
   retains its sanitized error type without implementing a second parser.
 - `getLiveSessionContext(response?)` creates the cookie-bound client and uses
   the existing authoritative user validation followed by session claims. Render
