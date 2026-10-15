@@ -63,3 +63,24 @@ test('a retry that fails again shows the current failure, and clears as soon as 
   assert.equal(f.feedback(), 'idle')
   assert.equal(f.control().props.pressed, true, 'the local alias snapshot is reflected after recovery')
 }))
+
+test('the course control keeps a stable name and truthful pressed state across account, legacy device and unavailable snapshots', async () => withStore(async f => {
+  f.store.snapshot = { mode: 'account', keys: ['central-key'] }
+  let html = f.html()
+  assert.match(html, /aria-label="Bookmark BUA204" aria-pressed="true"/)
+  assert.match(html, /fill="currentColor"/)
+  assert.doesNotMatch(html, /Remove bookmark|&times;|student-error|text-red|rounded-full|this device/)
+  f.store.snapshot = { mode: 'account', keys: [] }
+  html = f.html()
+  assert.match(html, /aria-pressed="false"/)
+  assert.match(html, /fill="none"/)
+  f.store.snapshot = { mode: 'local', keys: ['BUA204'] }
+  assert.match(f.html(), /aria-pressed="true"/, 'a legacy course-code key still reads as saved')
+  f.store.snapshot = { mode: 'local', keys: ['central-route'] }
+  assert.match(f.html(), /aria-pressed="true"/, 'a legacy slug key still reads as saved')
+  f.store.snapshot = { mode: 'unavailable', keys: [] }
+  html = f.html()
+  assert.match(html, /aria-pressed="false"/)
+  assert.match(html, /Retry bookmarks/)
+  assert.doesNotMatch(html, /Bookmarked|this device/, 'a lost session never claims a device fallback')
+}))

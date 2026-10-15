@@ -12,10 +12,14 @@ function testCommand(files, { loader } = {}) {
     args: [...(loader ? ['--require', loader] : []), TEST_RUNNER, ...files] }
 }
 
-/** Collect application and workflow test files exactly as Git tracks them. */
+/** Collect application and workflow test files exactly as Git tracks them.
+ * The review flow never stages, so a suite deleted in the working tree is still in the index;
+ * it is excluded here rather than reported as a failed test file.
+ */
 function collectTestFiles(root) {
+  const deleted = new Set(lines0(git(root, ['ls-files', '--deleted', '-z']).stdout))
   const files = lines0(git(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']).stdout)
-    .filter(file => /\.test\.(?:cjs|ts)$/.test(file))
+    .filter(file => /\.test\.(?:cjs|ts)$/.test(file) && !deleted.has(file))
   return {
     application: files.filter(file => !file.startsWith('scripts/dev-workflow/')),
     workflow: files.filter(file => file.startsWith('scripts/dev-workflow/') && file.endsWith('.test.cjs')),

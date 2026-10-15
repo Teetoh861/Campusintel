@@ -289,18 +289,29 @@ async function resolveCourses(
   return courses.sort(compareCodeThenId)
 }
 
-/** A course a student can open now: a canonical route plus currently published study content. */
-export type ActionableStudentCourse = StudentCourse & {
+/** Every identity the Student App presents as a course row: institutional, or repository-only. */
+export type PresentableStudentCourse = StudentCourse | RepositoryOnlyCourse
+
+type ActionableCourseState = {
   repository: Extract<StudentCourseRepository, { state: 'shelved' }>
   content: Extract<StudentCourseContent, { state: 'ready' }>
 }
 
-export function isActionableStudentCourse(course: StudentCourse): course is ActionableStudentCourse {
+/** A course a student can open now: a canonical route plus currently published study content. */
+export type ActionableStudentCourse = StudentCourse & ActionableCourseState
+
+/** Institutional identity is the only presentable shape that carries a confirmed code and title. */
+export function isInstitutionalStudentCourse(course: PresentableStudentCourse): course is StudentCourse {
+  return 'institutionalCourseId' in course
+}
+
+/** Shelved AND ready is the one actionability rule, for institutional and repository-only identities alike. */
+export function isActionableStudentCourse<T extends PresentableStudentCourse>(course: T): course is T & ActionableCourseState {
   return course.repository.state === 'shelved' && course.content.state === 'ready'
 }
 
 /** Why a course cannot be opened: an honest content gap, or a temporary route/publication problem. */
-export function getStudentCourseUnavailability(course: StudentCourse): 'missing' | 'temporary' | null {
+export function getStudentCourseUnavailability(course: PresentableStudentCourse): 'missing' | 'temporary' | null {
   if (isActionableStudentCourse(course)) return null
   if (course.repository.state === 'unlinked') return 'missing'
   if (course.repository.state === 'unshelved-repository') return 'temporary'

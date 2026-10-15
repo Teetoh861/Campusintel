@@ -94,3 +94,31 @@ test('BookmarkToggle keeps pressed state, label, size and interaction on the lib
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'BookmarkToggle.tsx'), 'utf8'), /<svg|<path/)
   assert.equal(clicks, 0)
 })
+
+test('a busy BookmarkToggle keeps pressed state, reports aria-busy, blocks activation and shows the library spinner', async () => {
+  const { BookmarkToggle } = await withTsx(() => require('./BookmarkToggle.tsx'))
+  const ref = { current: null }
+  const element = React.createElement(BookmarkToggle, { pressed: true, busy: true, label: 'Bookmark BUA201', onClick: () => {}, ref })
+  const html = renderToStaticMarkup(element)
+  assert.match(html, /aria-pressed="true"/)
+  assert.match(html, /aria-busy="true"/)
+  assert.match(html, /aria-disabled="true"/)
+  assert.doesNotMatch(html, /disabled=""/, 'a busy control stays focusable')
+  assert.match(html, /lucide-loader-circle[^"]*animate-spin/)
+  assert.doesNotMatch(html, /lucide-bookmark/)
+  assert.equal(element.props.ref, ref, 'the ref reaches the shared control')
+  const rendered = BookmarkToggle({ pressed: true, busy: true, onClick: () => { throw new Error('must not run') } })
+  assert.equal(rendered.props.onClick, undefined, 'repeated activation is ignored while busy')
+  assert.equal(rendered.props.ref, undefined)
+  const idle = renderToStaticMarkup(React.createElement(BookmarkToggle, { pressed: true, onClick: () => {} }))
+  assert.doesNotMatch(idle, /aria-busy|aria-disabled|loader/)
+})
+
+test('EmptyState makes its heading a programmatic focus target only when a heading ref is requested', async () => {
+  const { EmptyState } = await withTsx(() => require('./EmptyState.tsx'))
+  const plain = renderToStaticMarkup(React.createElement(EmptyState, { title: 'Nothing', actions: null }, 'body'))
+  assert.doesNotMatch(plain, /tabindex/)
+  const focusable = renderToStaticMarkup(React.createElement(EmptyState, { title: 'Nothing', actions: null,
+    headingRef: { current: null } }, 'body'))
+  assert.match(focusable, /<h2 id="[^"]+" class="student-empty-title" tabindex="-1">Nothing<\/h2>/)
+})

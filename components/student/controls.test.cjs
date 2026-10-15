@@ -87,6 +87,9 @@ test('shared controls keep 44px targets and mobile/desktop presentation in Stude
   assert.match(css, /\.student-pagination-numbers \{ display: none/)
   assert.match(css, /\.student-pagination-position \{ display: none/)
   assert.match(css, /\.student-course-row-body[^}]*overflow-wrap: anywhere/)
+  assert.match(css, /\.student-course-row-shell > \.student-course-row \{ flex: 1 1 0; min-width: 0; \}/)
+  assert.match(css, /\.student-course-row-action \{ display: flex; flex: none; align-items: center;/)
+  assert.match(css, /\.student-bookmark-toggle \{[^}]*min-width: 44px; min-height: 44px/)
   assert.match(css, /forced-colors: active/)
 })
 

@@ -75,3 +75,46 @@ test('unavailable identities stay inert: missing content gets the rail, lost rou
   const overviewOnlyReady = { ...ready, content: { state: 'ready', study: study({ overview: true }) } }
   assert.match(await render(overviewOnlyReady), /<p><\/p>/, 'the adapter never invents a label the model did not grant')
 })
+
+const repositoryOnly = (slug, content) => ({ repository: shelved(slug), content })
+const repositoryTitle = course => ({ ...course, repository: { ...course.repository,
+  route: { ...course.repository.route, course: { slug: course.repository.route.slug, title: 'Shelved repository title' } } } })
+
+test('the serializable presentation adapter is the one derivation every consumer composes', async () => {
+  const { presentStudentCourseRow } = await subject()
+  assert.deepEqual(presentStudentCourseRow(ready), { code: 'BUA201', title: 'BUA201 institutional title',
+    href: '/courses/resolved-slug', learningTypes: ['Notes', 'CBT practice', 'Theory'] })
+  assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'BUA203', title: 'BUA203 institutional title', unavailable: 'missing' })
+  assert.deepEqual(presentStudentCourseRow(unshelved), { code: 'BUA205', title: 'BUA205 institutional title', unavailable: 'temporary' })
+  assert.deepEqual(presentStudentCourseRow(noLearning), { code: 'BUA207', title: 'BUA207 institutional title', unavailable: 'missing' })
+  assert.deepEqual(presentStudentCourseRow(unavailable), { code: 'BUA209', title: 'BUA209 institutional title', unavailable: 'temporary' })
+})
+
+test('repository-only courses present honestly: shelved AND ready links, otherwise inert, never an invented code', async () => {
+  const { presentStudentCourseRow } = await subject()
+  const readyRepo = repositoryTitle(repositoryOnly('repo-slug', { state: 'ready', study: study({ cbtPractice: true }) }))
+  assert.deepEqual(presentStudentCourseRow(readyRepo), { repositoryOnly: true, title: 'Shelved repository title',
+    href: '/courses/repo-slug', learningTypes: ['CBT practice'] })
+  const html = await render(readyRepo)
+  assert.equal(anchors(html).length, 1)
+  assert.match(html, /data-identity="repository">Repository course</)
+  assert.match(html, /Shelved repository title/)
+  assert.doesNotMatch(html, /BUA|undefined/)
+  const missing = repositoryTitle(repositoryOnly('repo-empty', { state: 'no-published-learning', study: study({}) }))
+  assert.deepEqual(presentStudentCourseRow(missing), { repositoryOnly: true, title: 'Shelved repository title', unavailable: 'missing' })
+  assert.match(await render(missing), /Study content not yet available\./)
+  const temporary = repositoryTitle(repositoryOnly('repo-failed', { state: 'temporarily-unavailable', reason: 'projection-failed' }))
+  assert.deepEqual(presentStudentCourseRow(temporary), { repositoryOnly: true, title: 'Shelved repository title', unavailable: 'temporary' })
+  const inert = await render(temporary)
+  assert.match(inert, /Content temporarily unavailable\./)
+  assert.doesNotMatch(inert, /<a\b|Try again/)
+})
+
+test('StudentCourseRow forwards a trailing action beside the row target without nesting it', async () => {
+  const { StudentCourseRow } = await subject()
+  const html = renderToStaticMarkup(React.createElement(StudentCourseRow, { course: ready,
+    trailingAction: React.createElement('button', { type: 'button' }, 'Bookmark') }))
+  assert.equal(anchors(html).length, 1)
+  assert.doesNotMatch(anchors(html)[0], /<button/)
+  assert.match(html, /student-course-row-action"><button/)
+})

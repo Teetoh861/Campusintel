@@ -41,6 +41,11 @@ test('CourseRegisterSkeleton renders inert rows in the shared register with no i
   assert.equal((html.match(/<li\b/g) || []).length, 4)
   assert.equal((html.match(/class="student-course-row"/g) || []).length, 4)
   assert.doesNotMatch(html, /<a\b|<button\b|animate-pulse|BUA|href=/)
+  assert.match(html, /data-columns="responsive"/)
+  const single = renderToStaticMarkup(React.createElement(CourseRegisterSkeleton, { rows: 10, columns: 'single' }))
+  assert.match(single, /data-columns="single"/)
+  assert.equal((single.match(/<li\b/g) || []).length, 10)
+  assert.equal((single.match(/data-column="1"/g) || []).length, 10, 'single-column skeleton geometry matches the live register')
 })
 
 test('PageBand wraps unbroken titles and ledes inside the band at the shared owner', async () => {
@@ -62,13 +67,14 @@ test('every migrated loading boundary uses the shared owners and stays inert', a
     ['app/courses/loading.tsx', 'Loading institutional courses.'],
     ['app/courses/[slug]/loading.tsx', 'Loading course.'],
     ['app/dashboard/loading.tsx', 'Loading your Dashboard.'],
+    ['app/bookmarks/loading.tsx', 'Loading your bookmarks.'],
   ]) {
     const html = await withTsx(() => renderToStaticMarkup(React.createElement(require(path.join(__dirname, '../..', file)).default)))
     assert.equal((html.match(/role="status"/g) || []).length, 1, file)
     assert.equal((html.match(/aria-live="polite"/g) || []).length, 1, file)
     assert.equal((html.match(new RegExp(message.replace('.', '\\.'), 'g')) || []).length, 1, file)
     assert.match(html, /class="student-page-root" data-student-app="true"/, file)
-    assert.doesNotMatch(html, /<a\b|<button\b|animate-pulse|Bookmark|Practice|BUA|INST/, file)
+    assert.doesNotMatch(html, /<a\b|<button\b|animate-pulse|aria-pressed|lucide-bookmark|Practice|BUA|INST/, file)
     const source = fs.readFileSync(path.join(__dirname, '../..', file), 'utf8')
     assert.match(source, /StudentLoadingState/, file)
     assert.doesNotMatch(source, /role="status"|aria-busy|sr-only/, `${file} must not hand-write loading semantics`)
