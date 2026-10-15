@@ -439,6 +439,16 @@ test('test batches pass literal paths through the runner so bracketed route suit
   assert.deepEqual(collected.workflow, [])
 })
 
+test('a suite deleted in the working tree but still in the index is not collected', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'normal.test.cjs'), 'test fixture\n')
+  assert.deepEqual(collectTestFiles(f.root).application.sort(), ['lib/auth/sample.test.cjs', 'normal.test.cjs'])
+  fs.rmSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'))
+  assert.equal(git(f.root, 'diff', '--cached', '--name-only'), '', 'nothing is staged')
+  assert.deepEqual(git(f.root, 'ls-files', '--deleted'), 'lib/auth/sample.test.cjs')
+  assert.deepEqual(collectTestFiles(f.root).application, ['normal.test.cjs'])
+})
+
 test('the production collection reaches the bracketed Course Detail, tracker and API suites', () => {
   const { application, workflow } = collectTestFiles(path.join(__dirname, '../..'))
   for (const file of ['app/courses/[slug]/course-detail.test.cjs', 'app/courses/[slug]/CourseViewTracker.test.cjs',

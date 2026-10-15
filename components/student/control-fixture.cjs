@@ -52,13 +52,15 @@ async function fixture(run) {
     Module._load = function(name, ...args) {
       return name === 'react' ? { ...React, ...hooks } : load.call(this, name, ...args)
     }
-    const mount = (Component, props) => {
+    // `onCommit` sees the tree before effects run, where React would attach refs: suites bind stand-in nodes there.
+    const mount = (Component, props, { onCommit } = {}) => {
       const instance = { slots: [], props, index: 0, effects: [] }
       instance.render = () => {
         const previous = active
         active = instance; instance.index = 0; instance.effects = []
         let result
         try { result = Component(instance.props) } finally { active = previous }
+        if (onCommit) onCommit(result)
         for (const effect of instance.effects) effect()
         return result
       }

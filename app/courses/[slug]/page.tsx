@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
+import { REPOSITORY_COURSE_LABEL } from '@/components/student/CourseRow'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentPage } from '@/components/student/StudentPage'
@@ -88,7 +89,7 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
   return <StudentPage workspaceClassName="student-detail-workspace" band={<>
     <CourseViewTracker courseSlug={route.slug} />
     <PageBand title={title} lede={COURSE_LEDE}
-      context={<p>{institutional ? <>{code}{institutional.isFree && ' · Free'}</> : <>Repository course · {code}</>}</p>}
+      context={<p>{institutional ? <>{code}{institutional.isFree && ' · Free'}</> : <>{REPOSITORY_COURSE_LABEL} · {code}</>}</p>}
       aside={<div className="student-band-actions">
         {content.state === 'ready' ? <RequestMaterialLink href={materialsHref} /> : <span />}
         <BookmarkButton slug={route.slug} code={route.course.code} contentKey={repository.contentKey} catalog={BOOKMARK_CATALOG} />
@@ -101,7 +102,7 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
           <h2 id="applicability-title" className="student-section-title">Confirmed for</h2>
           <ApplicabilityList applicability={institutional.applicability} />
         </section>
-        : <Notice tone="info" title="Repository course">
+        : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Institutional applicability has not been confirmed for this course. The study content below is published repository material.
         </Notice>}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>

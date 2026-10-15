@@ -106,14 +106,14 @@ async function studentNavigation({ evaluate, send, waitFor, click }) {
 }
 
 async function savedTitleClearance({ evaluate }) {
-  const collisions = await evaluate(`(() => [...document.querySelectorAll('main article')].map(card => {
-    const title = card.querySelector('h3'), remove = card.querySelector('button');
+  const collisions = await evaluate(`(() => [...document.querySelectorAll('main .student-course-register > li')].map(row => {
+    const title = row.querySelector('h3'), remove = row.querySelector('.student-course-row-action button');
     if (!title || !remove) return false;
     const range = document.createRange(); range.selectNodeContents(title);
     const button = remove.getBoundingClientRect();
     return [...range.getClientRects()].some(line => line.x < button.right && line.right > button.x && line.y < button.bottom && line.bottom > button.y);
   }))()`)
-  assert.ok(collisions.length > 0, 'populated Saved cards are required')
+  assert.ok(collisions.length > 0, 'a populated bookmark register is required')
   assert.ok(collisions.every(collision => !collision), 'no rendered title may intersect a remove control')
 }
 

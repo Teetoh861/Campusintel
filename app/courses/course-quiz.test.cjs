@@ -47,8 +47,9 @@ const quizHref = `/courses/${course.slug}/quiz`
 
 async function fixture(quiz, run) {
   // Course Detail itself is covered at the central-model boundary in [slug]/course-detail.test.cjs.
+  // Bookmarks is covered at the central-model boundary in app/bookmarks; it no longer renders static cards.
   const files = [
-    './[slug]/quiz/page.tsx', '../page.tsx', '../bookmarks/page.tsx', './[slug]/materials/page.tsx',
+    './[slug]/quiz/page.tsx', '../page.tsx', './[slug]/materials/page.tsx',
   ].map(file => require.resolve(file))
   const restore = installLoader()
   const originalLoad = Module._load
@@ -68,9 +69,6 @@ async function fixture(quiz, run) {
   }))]
   const publishedState = { rows, available: true }
   try {
-    const { Card } = require('../../components/chrome/Card.tsx')
-    const renderCards = (entries) => React.createElement(React.Fragment, null,
-      entries.map(({ id, cardProps }) => React.createElement(Card, { ...cardProps, key: id })))
     Module._load = function(name, ...args) {
       if (name === 'server-only') return {}
       if (name === '@/lib/product/student-navigation') return { ...productNavigation, STUDENT_DESTINATIONS: destinations }
@@ -131,7 +129,6 @@ async function fixture(quiz, run) {
       }
       if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
-      if (name === './BookmarksClient') return { BookmarksClient: ({ catalog }) => renderCards(catalog) }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
       if (name === '@/components/auth/PublicHomeBoundary') return { PublicHomeBoundary: ({ children }) => children }
       if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
@@ -146,8 +143,7 @@ async function fixture(quiz, run) {
     await run({
       quizRoute: granted(require(files[0]).default),
       home: require(files[1]).default,
-      bookmarks: require(files[2]).default,
-      materials: granted(require(files[3]).default),
+      materials: granted(require(files[2]).default),
       destinations,
       publishedState,
     })
@@ -245,8 +241,8 @@ test('missing or unusable quiz configuration makes the quiz route reject the att
   }
 })
 
-test('public home and saved cards never infer quiz readiness from repository questions', async () => fixture(validQuiz, async f => {
-  const publicCards = () => [f.home(), f.bookmarks()].map(element => renderToStaticMarkup(element))
+test('public home cards never infer quiz readiness from repository questions', async () => fixture(validQuiz, async f => {
+  const publicCards = () => [f.home()].map(element => renderToStaticMarkup(element))
   const assertNeutral = html => {
     assert.match(html, new RegExp(`href="/courses/${course.slug}"`))
     assert.match(html, /View course/)

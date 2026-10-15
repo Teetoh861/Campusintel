@@ -1,12 +1,11 @@
-// Shared course card. Compact on phone; the exam-critical flag adds an accent
-// wash. The homepage grid, course directory and bookmarks list share this
-// component. The 3-bar difficulty indicator lives in <SignalBar>.
+// Public-home course card. Compact on phone; the exam-critical flag adds an
+// accent wash. The 3-bar difficulty indicator lives in <SignalBar>.
 // (component-spec.md → Card)
 import Link from 'next/link'
 import { SignalBar } from './SignalBar'
 import { cx } from './ui'
 import type { DifficultyLevel } from './SignalBar'
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 
 export type CardFlag = {
   // 'critical' is the lone amber accent for an exam-critical course;
@@ -43,21 +42,13 @@ export type CardProps = {
   // exam-critical treatment where "View course" stays primary and "Start
   // quiz" is offered as an additional amber action.
   secondaryCta?: CardCta
-  updated?: string
   ticks?: boolean
-  // Optional interactive node appended to the right of the card footer. Only
-  // the bookmarks list sets this (a Remove control); when absent the footer
-  // renders exactly as before.
-  footerAction?: ReactNode
-  // Optional control pinned to the card's top-right corner (the bookmarks
-  // Remove ×). Absolutely positioned over the card; the header padding leaves
-  // room so it never collides with the exam-critical tag.
-  cornerAction?: ReactNode
+
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-/** Render a course card with separate space for an optional remove control. */
+/** Render a course card for the public home. */
 export function Card({
   code,
   title,
@@ -71,9 +62,6 @@ export function Card({
   difficultyLabel,
   cta,
   secondaryCta,
-  updated,
-  footerAction,
-  cornerAction,
 }: CardProps): ReactElement {
   const critical = flag?.kind === 'critical'
   const diffLabel = difficultyLabel ?? titleCase(difficulty)
@@ -93,8 +81,7 @@ export function Card({
         aria-label={`View ${code}: ${title}`}
         className="absolute inset-0 z-[1] rounded-ci-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-student-focus focus-visible:ring-offset-2"
       />
-      {cornerAction ? <div className="absolute right-3 top-3 z-10">{cornerAction}</div> : null}
-      <div className={cx('mb-3 flex items-start justify-between gap-3', Boolean(cornerAction) && 'pr-12')}>
+      <div className="mb-3 flex items-start justify-between gap-3">
         <span className="text-[13px] font-bold tracking-[0.08em] text-student-primary">{code}</span>
         {critical && flag ? (
           <span className="inline-flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.09em] text-student-accent-strong">
@@ -104,7 +91,7 @@ export function Card({
         ) : null}
       </div>
 
-      <h3 className={cx('text-[19px] font-bold leading-[1.2] tracking-[-0.02em] text-student-text-primary tablet:text-[21px]', Boolean(cornerAction) && 'pr-12')}>
+      <h3 className="text-[19px] font-bold leading-[1.2] tracking-[-0.02em] text-student-text-primary tablet:text-[21px]">
         {title}
       </h3>
 
@@ -147,12 +134,6 @@ export function Card({
               {diffLabel}
             </span>
           </span>
-          {footerAction ? (
-            <span className="relative z-10 inline-flex items-center gap-3 whitespace-nowrap">
-              {updated ? <span className="text-[12.5px] text-student-text-muted">{updated}</span> : null}
-              {footerAction}
-            </span>
-          ) : null}
         </div>
 
         <div className="mt-2 flex min-h-11 flex-nowrap items-center gap-2">

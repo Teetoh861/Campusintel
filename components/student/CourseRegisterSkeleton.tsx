@@ -3,9 +3,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { CourseRegister } from './CourseRow'
 import type { ReactElement } from 'react'
 
-/** Inert course rows for register loading states; no identity, no actions. */
-export function CourseRegisterSkeleton({ rows }: { rows: number }): ReactElement {
-  return <CourseRegister label="Course placeholders">
+/** Inert course rows for register loading states; no identity, no actions; same geometry as the live register. */
+export function CourseRegisterSkeleton({ rows, columns }: {
+  rows: number
+  columns?: 'responsive' | 'single'
+}): ReactElement {
+  return <CourseRegister label="Course placeholders" columns={columns}>
     {Array.from({ length: rows }, (_, index) => <div key={index} className="student-course-row">
       <div className="student-course-row-body">
         <Skeleton className="h-3 w-16 animate-none" />

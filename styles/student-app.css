@@ -50,6 +50,11 @@
 .student-register-request { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 16px; padding-inline: 8px; }
 .student-register-request > p { color: var(--student-text-muted); font-size: 14px; line-height: 1.4; }
 .student-register-request-link { padding-inline: 4px; color: var(--student-link); text-decoration: none; }
+.student-course-row-code[data-identity='repository'] { color: var(--student-text-secondary); }
+/* Optional sibling action beside the row target; the control is never inside the link. */
+.student-course-row-shell { display: flex; align-items: stretch; min-width: 0; }
+.student-course-row-shell > .student-course-row { flex: 1 1 0; min-width: 0; }
+.student-course-row-action { display: flex; flex: none; align-items: center; padding: 0 2px 0 8px; }
 .student-notice { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border: 1px solid var(--student-border); border-radius: 16px; background: var(--student-brand-surface); }
 .student-notice > svg { flex: none; margin-top: 1px; color: var(--student-link); }
 .student-notice-body { min-width: 0; overflow-wrap: anywhere; }
@@ -73,6 +78,9 @@
   .student-course-register > li[data-column='1'] { padding-right: 8px; }
   .student-course-register > li[data-column='2'] { padding-left: 8px; border-left: 1px solid var(--student-border); }
   .student-course-register > li[data-column-end='true'] { border-bottom: 0; }
+  .student-course-register[data-columns='single'] { display: block; }
+  .student-course-register[data-columns='single'] > li { padding-inline: 0; border-left: 0; border-bottom: 1px solid var(--student-border); }
+  .student-course-register[data-columns='single'] > li:last-child { border-bottom: 0; }
 }
 @media (min-width: 1200px) {
   .student-page-band-inner { padding-block: 28px; }
@@ -126,6 +134,7 @@
 .student-bookmark-toggle[data-tone='dark'] { background: transparent; border-color: var(--student-navigation-outline); color: var(--student-navigation-text); }
 .student-bookmark-toggle[aria-pressed='true'] { background: var(--student-brand-surface); border-color: var(--student-border-hover); color: var(--ci-brand-blue); }
 .student-bookmark-toggle:disabled { opacity: .65; cursor: wait; }
+.student-bookmark-toggle[aria-busy='true'] { cursor: progress; }
 .student-bookmark-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; overflow-wrap: anywhere; color: var(--student-text-secondary); font-size: 14px; font-weight: 600; line-height: 1.3; }
 .student-bookmark-feedback[data-state='error'] { color: var(--student-error); }
 .student-bookmark-feedback[data-state='idle'] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -283,6 +292,12 @@
   .student-pagination-numbers { display: flex; }
   .student-pagination-position { display: none; }
 }
+
+/* Bookmarks: one bounded single-column register; the count line is the pager's focus and scroll target. */
+.student-bookmarks { max-width: 760px; }
+.student-bookmarks-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; min-width: 0; border-radius: 8px; scroll-margin-top: calc(var(--student-header-height) + 12px); }
+.student-bookmarks-head[data-populated='true'] { min-height: 24px; margin-bottom: 12px; }
+.student-bookmarks-count { color: var(--student-text-secondary); font-size: 13px; font-weight: 600; line-height: 1.3; }
 
 /* Course Detail study hub. */
 .student-detail-workspace { display: grid; gap: 24px; align-items: start; }
