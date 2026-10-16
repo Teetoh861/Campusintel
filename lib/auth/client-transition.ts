@@ -2,7 +2,8 @@
 import { AUTH_API } from './constants'
 
 export const STUDENT_AUTH_TRANSITION_LOCK = 'campusintell:student-auth-transition:v1'
-const transitionEndpoints = new Set<string>([AUTH_API.login, AUTH_API.confirm, AUTH_API.reset, AUTH_API.logout])
+const transitionEndpoints = new Set<string>([AUTH_API.login, AUTH_API.confirm, AUTH_API.reset, AUTH_API.logout,
+  AUTH_API.scheduleDeletion, AUTH_API.cancelDeletion])
 const recoveryCookieEndpoints = new Set<string>([AUTH_API.forgot, AUTH_API.verifyRecovery, AUTH_API.cancelRecovery])
 
 /** Successful student session changes notify other documents. Recovery-only work does not. */

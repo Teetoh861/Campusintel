@@ -17,11 +17,11 @@ export type MutationContextResult = SessionResult | { status: 'session-changed' 
  * A render may omit response; route callers must pass the response they finalize.
  * This establishes identity, not permission to perform a domain operation.
  */
-export async function getLiveSessionContext(response?: NextResponse): Promise<SessionResult> {
+export async function getLiveSessionContext(response?: NextResponse, allowRestricted = false): Promise<SessionResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
     const client = await createClient(response)
-    const session = await getStudentSessionContext(response, client)
+    const session = await getStudentSessionContext(response, client, { allowRestricted })
     // Retain the request-scoped client so logout can clean conclusively invalid
     // residual credentials. Unexpected validation errors never reach this state.
     return session === null ? { status: 'signed-out', client } : { status: 'ready', context: { ...session, client } }
@@ -30,9 +30,9 @@ export async function getLiveSessionContext(response?: NextResponse): Promise<Se
 
 /** Require the exact session that rendered the action; never infer the actor from client data. */
 export async function getAuthenticatedMutationContext(
-  response: NextResponse, renderedToken: string | null,
+  response: NextResponse, renderedToken: string | null, options: { allowRestricted?: boolean } = {},
 ): Promise<MutationContextResult> {
-  const live = await getLiveSessionContext(response)
+  const live = await getLiveSessionContext(response, options.allowRestricted)
   if (live.status !== 'ready') return live
   try {
     if (!renderedToken || !matchesAccountContinuityToken(renderedToken, live.context.user.id, live.context.sessionId)) {

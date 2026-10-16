@@ -6,6 +6,8 @@ import { getStudentCookieOptions } from '@/lib/auth/cookies'
 import { canonicalizeStudentSessionCookieHeaderForDownstream,
   resolveStudentSessionNamespaceFromCookieHeader } from '@/lib/auth/session-generation'
 import type { NextRequest } from 'next/server'
+import { readAccountLifecycle } from '@/lib/account/lifecycle'
+import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
 
 /** Return the same response carrying cookie writes and all SSR cache-safety headers.
  * Claims are refresh plumbing only; callers authenticate through getStudentSessionUser.
@@ -38,7 +40,18 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
         },
       },
     })
-    await client.auth.getClaims()
+    const { data, error } = await client.auth.getClaims()
+    if (!error && typeof data?.claims?.sub === 'string' && data.claims.sub &&
+        request.method === 'GET' && !request.nextUrl.pathname.startsWith('/api/') &&
+        request.nextUrl.pathname !== ACCOUNT_DELETION_PATH) {
+      const lifecycle = await readAccountLifecycle(client)
+      if (lifecycle.status === 'scheduled' || lifecycle.status === 'expired') {
+        const target = NextResponse.redirect(new URL(ACCOUNT_DELETION_PATH, request.url))
+        response.cookies.getAll().forEach(cookie => target.cookies.set(cookie))
+        target.headers.set('Cache-Control', 'private, no-store')
+        return target
+      }
+    }
   } catch {
     // Matched pages remain renderable; protected endpoints authenticate independently.
     if (!response.headers.has('Cache-Control')) response.headers.set('Cache-Control', 'private, no-store')

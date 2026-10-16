@@ -13,6 +13,10 @@ import { createFreshStudentSessionClient } from '@/lib/supabase/server'
 import { requireVerifiedSession } from '@/lib/auth/verified-session'
 import { checkResendAcknowledgment } from '@/lib/auth/signup-result'
 import { recordSuccessfulLogin } from '@/lib/analytics/server'
+import { readAccountLifecycle } from '@/lib/account/lifecycle'
+import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
+import { AUTH_MESSAGES } from '@/lib/auth/constants'
+import { finalizeMutationResponse } from '@/lib/auth/mutation-response'
 import type { NextResponse } from 'next/server'
 
 /** Verify credentials server-side; serialize only a validated destination. */
@@ -44,7 +48,17 @@ export async function POST(request: Request): Promise<NextResponse> {
     })
     if (sessionError) throw new Error('Session transfer failed')
     if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw new Error('Session transfer identity mismatch')
+    // The Auth trigger denies a login already expired at session creation with a
+    // generic provider failure. This read still catches expiry during transfer;
+    // never bypass that trigger or look up an unauthenticated account for copy.
+    const lifecycle = await readAccountLifecycle(client)
+    if (lifecycle.status === 'signed-out' || lifecycle.status === 'expired') {
+      await client.auth.signOut({ scope: 'local' })
+      return authJson({ error: lifecycle.status === 'expired'
+        ? AUTH_MESSAGES.deletionExpired : AUTH_MESSAGES.sessionChanged }, lifecycle.status === 'expired' ? 403 : 409)
+    }
     await recordSuccessfulLogin()
-    return response
+    return finalizeMutationResponse(response, { next: lifecycle.status === 'scheduled'
+      ? ACCOUNT_DELETION_PATH : getSafeReturnPath(body.next) })
   } catch (error) { return authError(error) }
 }

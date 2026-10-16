@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { AUTH_API, AUTH_MESSAGES, EMAIL_CONFIRMATION_REQUIRED, PASSWORD_RESET_DESTINATION } from './constants'
 import { getSafeReturnPath } from './redirect'
+import { ACCOUNT_DELETION_SCHEDULED_PATH } from '@/lib/account/constants'
 
 const destination = z.string().refine(value => value === getSafeReturnPath(value))
 const signedIn = z.object({ next: destination }).strict()
@@ -22,6 +23,8 @@ export function parseAuthOutcome(endpoint: string, value: unknown) {
     case AUTH_API.verifyRecovery: return verified.parse(value)
     case AUTH_API.reset: return reset.parse(value)
     case AUTH_API.logout: case AUTH_API.cancelRecovery: return completed.parse(value)
+    case AUTH_API.scheduleDeletion: return z.object({ next: z.literal(ACCOUNT_DELETION_SCHEDULED_PATH) }).strict().parse(value)
+    case AUTH_API.cancelDeletion: return signedIn.parse(value)
     default: throw new Error('Invalid auth operation')
   }
 }

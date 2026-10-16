@@ -1,86 +1,91 @@
-// app/account/page.tsx — Server-authorized student account and profile entry point.
+// Server-authorized Student App account workspace.
 import Link from 'next/link'
-import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { redirect } from 'next/navigation'
 import { AuthUnavailable } from '@/components/auth/AuthShell'
+import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { LogoutButton } from '@/components/auth/LogoutButton'
+import { DeleteAccountForm } from '@/components/account/DeleteAccountForm'
+import { Feedback } from '@/components/chrome/Feedback'
+import { btnGhost } from '@/components/chrome/ui'
+import { StudentPage } from '@/components/student/StudentPage'
+import { PageBand } from '@/components/student/PageBand'
+import { studentAction } from '@/components/student/ui'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_PATHS, AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
-import { Feedback } from '@/components/chrome/Feedback'
-import { btnBase, buttonClassName, btnGhost, btnSm } from '@/components/chrome/ui'
-import { studentFocusControl } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
-import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
+import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
-import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
+import { createClient } from '@/lib/supabase/server'
+import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Account | CampusIntell', robots: { index: false, follow: false } }
 
-/** Keep Auth and Profile independently validated at this protected student entry point. */
+/** Read identity, academic details and deletion eligibility from the live server session. */
 export default async function AccountPage(): Promise<ReactElement> {
-  if (!isStudentAuthEnabled()) return <ProfilePageFrame title="Your profile" narrow>
-    <AuthUnavailable />
-  </ProfilePageFrame>
-  let email: string | undefined
-  let continuityToken: string | undefined
+  if (!isStudentAuthEnabled()) return <StudentPage><AuthUnavailable /></StudentPage>
+  let verified: {
+    client: Awaited<ReturnType<typeof createClient>>
+    context: NonNullable<Awaited<ReturnType<typeof getStudentSessionContext>>>
+    continuityToken: string
+    deletionAllowed: boolean
+  } | null
   try {
-    const context = await getStudentSessionContext()
-    const user = context?.user ?? null
-    email = user?.email
-    if (user !== null && (typeof email !== 'string' || !email)) throw new Error('Student identity missing')
-    if (context !== null) continuityToken = issueAccountContinuityToken(context.user.id, context.sessionId)
-  } catch { return <ProfilePageFrame title="Your profile" narrow>
-    <Feedback message={AUTH_MESSAGES.unavailable} tone="error" />
-  </ProfilePageFrame> }
-  if (!email || !continuityToken) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
-  const profile = await getCurrentStudentProfile()
-  if (profile.status === 'signed-out') redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
+    const client = await createClient()
+    const context = await getStudentSessionContext(undefined, client)
+    const lifecycle = context ? await readAccountLifecycle(client) : null
+    if (context && !context.user.email) throw new Error('Student identity missing')
+    verified = context && lifecycle?.status === 'active' ? { client, context,
+      continuityToken: issueAccountContinuityToken(context.user.id, context.sessionId),
+      deletionAllowed: lifecycle?.status === 'active' && lifecycle.deletionAllowed } : null
+  } catch { return <StudentPage><Feedback message={AUTH_MESSAGES.unavailable} tone="error" /></StudentPage> }
+  if (!verified) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
+  const { client, context, continuityToken, deletionAllowed } = verified
+  const profile = await getCurrentStudentProfileForVerifiedStudent(client, context.user)
+  if (profile.status === 'signed-out') redirect(AUTH_PATHS.login)
   if (profile.status === 'incomplete') redirect(PROFILE_SELECTION_PATH)
-  return <ProfilePageFrame title="Your profile" back={{ href: STUDENT_HOME_PATH, label: 'Dashboard' }}>
-    <AuthFlowSync signedIn continuityToken={continuityToken} />
-    <div className="grid min-w-0 gap-3 tablet:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.9fr)] tablet:items-start tablet:gap-4 desktop:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] desktop:gap-6">
-      <section aria-labelledby="academic-profile-heading"
-        className="student-surface student-surface-raised border-student-border-strong bg-student-brand-surface">
-        <div className="grid min-w-0 gap-3 tablet:grid-cols-[minmax(0,1fr)_auto] tablet:items-center">
-          <h2 id="academic-profile-heading" className="student-section-title">Academic profile</h2>
-          {profile.status === 'complete' ? <>
-            <div className="min-w-0 tablet:col-span-2 tablet:row-start-2">
-              <SelectionSummary selection={profile.selection} />
-            </div>
-            <Link href={PROFILE_SELECTION_PATH} prefetch={false}
-              className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl, 'w-full tablet:col-start-2 tablet:row-start-1 tablet:w-auto tablet:justify-self-end')}>
-              Change selection
-            </Link>
-          </> : <div className="tablet:col-span-2">
-            <Feedback tone="error" message={profile.status === 'missing-profile'
-              ? 'Your profile could not be found. Please contact support.'
-              : profile.status === 'invariant-failure'
-                ? 'Your profile needs attention. Please contact support.'
-                : AUTH_MESSAGES.unavailable} />
-          </div>}
+  return <><AuthFlowSync signedIn continuityToken={continuityToken} />
+    <StudentPage band={<PageBand title="Account" lede="Your profile, academic details and account settings."
+      aside={<Link href={STUDENT_HOME_PATH} className={studentAction(btnGhost)}>Dashboard</Link>} />}>
+      <div className="grid min-w-0 gap-4 tablet:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.9fr)] desktop:gap-6">
+        <div className="grid min-w-0 content-start gap-4">
+          <section aria-labelledby="personal-details-heading" className="student-surface student-surface-raised">
+            <h2 id="personal-details-heading" className="student-section-title">Personal details</h2>
+            <dl className="mt-4 min-w-0">
+              {profile.status === 'complete' && <>
+                <dt className="student-meta">First name</dt>
+                <dd className="mb-4 mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{profile.firstName}</dd>
+              </>}
+              <dt className="student-meta">Email</dt>
+              <dd className="mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{context.user.email}</dd>
+            </dl>
+            <p className="mt-3 text-sm text-student-text-secondary">Your confirmed email is used to sign in.</p>
+          </section>
+          <section aria-labelledby="academic-profile-heading" className="student-surface bg-student-brand-surface">
+            <h2 id="academic-profile-heading" className="student-section-title">Academic profile</h2>
+            {profile.status === 'complete' ? <>
+              <div className="mt-4 min-w-0"><SelectionSummary selection={profile.selection} /></div>
+              <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit profile and selection</Link>
+            </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile'
+              ? 'Your profile could not be found. Please contact support.' : profile.status === 'invariant-failure'
+                ? 'Your profile needs attention. Please contact support.' : AUTH_MESSAGES.unavailable} /></div>}
+          </section>
         </div>
-      </section>
-      <div className="grid min-w-0 gap-3 tablet:content-start">
-        <section aria-labelledby="account-heading" className="student-surface">
-          <h2 id="account-heading" className="text-base font-bold text-student-text-primary">Account</h2>
-          <dl className="mt-3 min-w-0">
-            {profile.status === 'complete' && <>
-              <dt className="student-meta">First name</dt>
-              <dd className="mb-3 mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{profile.firstName}</dd>
-            </>}
-            <dt className="student-meta">Email</dt>
-            <dd className="mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{email}</dd>
-          </dl>
-        </section>
-        <section aria-labelledby="settings-heading" className="student-surface bg-student-surface-muted">
-          <h2 id="settings-heading" className="text-base font-bold text-student-text-primary">Settings</h2>
-          <div className="mt-3"><LogoutButton continuityToken={continuityToken} /></div>
-        </section>
+        <div className="grid min-w-0 content-start gap-4">
+          <section aria-labelledby="security-heading" className="student-surface">
+            <h2 id="security-heading" className="student-section-title">Security</h2>
+            <p className="mb-4 mt-2 text-sm text-student-text-secondary">Sign out of this device when you finish using a shared computer.</p>
+            <LogoutButton continuityToken={continuityToken} />
+          </section>
+          {deletionAllowed ? <DeleteAccountForm continuityToken={continuityToken} /> : <section className="student-surface">
+            <h2 className="student-section-title">Account management</h2>
+            <p className="mt-2 text-sm text-student-text-secondary">Operator account changes require an operations review.</p>
+          </section>}
+        </div>
       </div>
-    </div>
-  </ProfilePageFrame>
+    </StudentPage>
+  </>
 }

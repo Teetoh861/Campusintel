@@ -1,5 +1,6 @@
 // lib/auth/constants.ts — Shared non-secret auth rules and destinations.
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { ACCOUNT_MESSAGES } from '@/lib/account/constants'
 
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 128
@@ -19,6 +20,7 @@ export const AUTH_API = {
   resend: '/api/auth/resend-confirmation', forgot: '/api/auth/forgot-password',
   verifyRecovery: '/api/auth/verify-recovery', cancelRecovery: '/api/auth/cancel-recovery',
   reset: '/api/auth/reset-password', logout: '/api/auth/logout', session: '/api/auth/session',
+  scheduleDeletion: '/api/auth/schedule-deletion', cancelDeletion: '/api/auth/cancel-deletion',
 } as const satisfies Record<string, `/api/auth/${string}`>
 export const STUDENT_HOME_PATH = STUDENT_DESTINATIONS.dashboard.href
 export const OPERATOR_HOME_PATH = '/admin'
@@ -42,6 +44,9 @@ export const AUTH_MESSAGES = {
   credentials: 'Incorrect email or password.',
   code: 'Invalid or expired code.',
   limited: 'Too many attempts. Please try again later.',
+  deletionPassword: ACCOUNT_MESSAGES.passwordInvalid,
+  deletionExcluded: ACCOUNT_MESSAGES.excluded,
+  deletionExpired: ACCOUNT_MESSAGES.expired,
   email: 'If this address can receive a confirmation email, instructions will arrive shortly.',
   recovery: 'If an account can receive a password reset email, instructions will arrive shortly.',
 } as const
@@ -56,6 +61,7 @@ export const RATE_LIMIT_POLICIES = {
   PASSWORD_RESET_REQUEST: { account: [3, 3600], origin: [20, 3600] },
   PASSWORD_RESET_SUBMIT: { account: [5, 900], origin: [20, 900] },
   CONFIRM_EMAIL: { account: [5, 900], origin: [20, 900] },
+  ACCOUNT_DELETION: { account: [5, 900], origin: [20, 900] },
 } as const
 export type AuthAction = keyof typeof RATE_LIMIT_POLICIES
 

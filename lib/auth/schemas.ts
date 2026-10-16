@@ -13,3 +13,7 @@ export const confirmSchema = emailRequestSchema.extend({ code: codeSchema, next:
 export const recoveryVerificationSchema = emailRequestSchema.extend({ code: codeSchema })
 export const resetSchema = emailRequestSchema.extend({ password: passwordSchema })
 export const logoutSchema = z.object({}).strict()
+export const scheduleDeletionSchema = z.object({
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH), confirmed: z.literal(true),
+}).strict()
+export const cancelDeletionSchema = z.object({ requestId: z.string().uuid() }).strict()
