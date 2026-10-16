@@ -1,6 +1,8 @@
 // components/student/StudentCourseRow.tsx — The one adapter from central course truth to the shared course row.
 import { getStudentCourseUnavailability, isActionableStudentCourse, isInstitutionalStudentCourse }
   from '@/lib/courses/read-model'
+import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
+import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { CourseRow } from './CourseRow'
 import { getStudyFamilyLabels } from './study-families'
 import type { CourseRowIdentity, CourseRowPresentation } from './CourseRow'
@@ -14,7 +16,11 @@ export function presentStudentCourseRow(course: PresentableStudentCourse): Cours
     ? { code: course.code, title: course.title }
     : { repositoryOnly: true, title: course.repository.route.course.title }
   if (!isActionableStudentCourse(course)) {
-    return { ...identity, unavailable: getStudentCourseUnavailability(course) ?? 'temporary' }
+    const unavailable = getStudentCourseUnavailability(course) ?? 'temporary'
+    // PRD 4.3: an institutional course with no built content offers the secondary, personal AI path.
+    const aiPracticeHref = unavailable === 'missing' && isInstitutionalStudentCourse(course) && isAiPracticeAvailable()
+      ? aiPracticePath(course.institutionalCourseId) : undefined
+    return { ...identity, unavailable, ...(aiPracticeHref ? { aiPracticeHref } : {}) }
   }
   return { ...identity, href: course.repository.route.href, learningTypes: getStudyFamilyLabels(course.content.study) }
 }

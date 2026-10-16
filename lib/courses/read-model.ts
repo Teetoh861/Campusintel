@@ -346,6 +346,34 @@ export async function getStudentCatalogueForVerifiedStudent(client: StudentClien
   }
 }
 
+export type StudentCourseByIdResult =
+  | { status: 'ok'; course: StudentCourse }
+  | { status: 'signed-out' | 'not-found' | 'unavailable' | 'invariant-failure' }
+
+/** Read one institutional course by its stable id, with the same structure and availability as the catalogue. */
+export async function getStudentCourseByIdForVerifiedStudent(
+  client: StudentClient, institutionalCourseId: string,
+): Promise<StudentCourseByIdResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  if (!uuid.safeParse(institutionalCourseId).success) return { status: 'not-found' }
+  try {
+    const result = await client.from('institutional_courses').select(CATALOGUE_COLUMNS)
+      .eq('id', institutionalCourseId).maybeSingle()
+    if (result.error) return { status: 'unavailable' }
+    if (result.data === null) return { status: 'not-found' }
+    const parsed = catalogueRow.safeParse(result.data)
+    if (!parsed.success || parsed.data.id !== institutionalCourseId) return { status: 'invariant-failure' }
+    const structure = deriveStructure(parsed.data, parsed.data.applicability)
+    if (structure === null) return { status: 'invariant-failure' }
+    const courses = await resolveCourses(client, [structure])
+    if (courses === 'signed-out') return { status: 'signed-out' }
+    const [course] = courses
+    return course ? { status: 'ok', course } : { status: 'invariant-failure' }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
 /** Read the verified student's saved selection and its institutional courses on the same client. */
 export async function getCurrentStudentCoursesForVerifiedStudent(
   client: StudentClient, user: User,

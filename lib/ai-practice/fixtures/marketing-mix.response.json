@@ -1,0 +1,65 @@
+{
+  "assessment": {
+    "sufficientMaterial": true,
+    "relatedToCourse": true,
+    "appropriate": true,
+    "confidence": "high",
+    "assessmentNote": "Clear lecture notes on the 4Ps and the extended services mix."
+  },
+  "questions": [
+    {
+      "prompt": "According to the notes, which element of the marketing mix is the only one that produces revenue?",
+      "options": ["Product", "Price", "Place", "Promotion"],
+      "correctOptionIndex": 1,
+      "explanation": "The notes state that price is the only element of the mix that produces revenue, while the other elements represent costs.",
+      "section": "The Marketing Mix",
+      "sourcePassageId": "P1",
+      "sourceQuote": "It is the only element of the mix that produces revenue; the other elements represent costs."
+    },
+    {
+      "prompt": "In the notes' power bank example, what is the customer really buying?",
+      "options": ["The battery's physical casing", "A recognised brand name", "Uninterrupted phone use during a power outage", "A discount on a future purchase"],
+      "correctOptionIndex": 2,
+      "explanation": "The example illustrates that customers buy the benefits a product delivers, here uninterrupted phone use during an outage.",
+      "section": "Product",
+      "sourcePassageId": "P1",
+      "sourceQuote": "a buyer of a power bank is really buying uninterrupted phone use during a power outage"
+    },
+    {
+      "prompt": "Which pricing method do the notes recommend for luxury fashion brands?",
+      "options": ["Penetration pricing", "Skimming", "Psychological pricing", "Loss leader pricing"],
+      "correctOptionIndex": 1,
+      "explanation": "Luxury brands commonly use skimming.",
+      "section": "Price",
+      "sourcePassageId": "P1",
+      "sourceQuote": "Luxury brands should always use price skimming to signal exclusivity."
+    },
+    {
+      "prompt": "How do the notes describe a short distribution channel?",
+      "options": ["It passes through wholesalers and retailers", "It moves goods directly from producer to consumer", "It relies only on online advertising", "It stores inventory in several regional warehouses"],
+      "correctOptionIndex": 1,
+      "explanation": "A short channel moves goods directly from producer to consumer, while a long channel passes through wholesalers and retailers.",
+      "section": "Place",
+      "sourcePassageId": "P2",
+      "sourceQuote": "A short channel moves goods directly from producer to consumer"
+    },
+    {
+      "prompt": "Which three elements does the services marketing mix add to the 4Ps?",
+      "options": ["People, process and physical evidence", "Packaging, positioning and profit", "Partnerships, publicity and planning", "Production, purchasing and payment"],
+      "correctOptionIndex": 0,
+      "explanation": "Because services are intangible and perishable, the extended mix adds people, process and physical evidence, giving 7Ps.",
+      "section": "Extending the Mix for Services",
+      "sourcePassageId": "P2",
+      "sourceQuote": "the services marketing mix adds three further elements: people, process and physical evidence"
+    },
+    {
+      "prompt": "According to the notes, what happens when one element of the mix contradicts the others?",
+      "options": ["Sales promotion costs fall", "The product becomes a service", "Customers receive a confused message and positioning fails", "Distribution automatically switches to a long channel"],
+      "correctOptionIndex": 2,
+      "explanation": "The notes stress that the elements must support one another; contradictions confuse customers and the positioning strategy fails.",
+      "section": "Using the Mix Consistently",
+      "sourcePassageId": "P3",
+      "sourceQuote": "customers receive a confused message and the positioning strategy fails"
+    }
+  ]
+}
