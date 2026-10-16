@@ -160,9 +160,13 @@ deployment exposing the deletion form.
 ## Worker, monitoring and escalation
 
 `node scripts/account-deletion/worker.cjs --status` is read-only monitoring.
-`--run` requires the separate `ACCOUNT_DELETION_WORKER_ENABLED=true` setting and
-invokes only `run_account_deletion_jobs`, with a batch of 25. The database accepts
-at most 100 per call. Supply configuration through the scheduler's secret store,
+`--run` requires the separate `ACCOUNT_DELETION_WORKER_ENABLED=true` setting. It
+first removes AI practice uploads owned by deletion-scheduled accounts
+(`list_ai_practice_purge_blockers`, then the Storage API, at most 20 × 100 objects
+per run), then invokes `run_account_deletion_jobs` with a batch of 25. The
+database accepts at most 100 per call. The purge runs even when that AI step fails:
+it still refuses (`P0002`) any account that owns an object. The output adds
+`aiStorage: { ok, removed, remaining }`, counts only, never paths. Supply configuration through the scheduler's secret store,
 not CLI arguments or committed files. No HTTP worker route is exposed.
 
 Configure a worker invocation every 15 minutes and an independently scheduled
@@ -174,10 +178,10 @@ in the hosted app until this monitoring and the procedure below are verified.
 | Signal | Required founder/operations action |
 | --- | --- |
 | Exit 0 | Record successful invocation, heartbeat, pending/due counts. |
-| Exit 1 | Investigate failed invocation, invalid configuration/response, failed jobs or stale worker heartbeat. |
+| Exit 1 | Investigate failed invocation, invalid configuration/response, failed jobs, stale worker heartbeat, or an AI upload sweep that failed or left objects (`aiStorage.ok` false or `remaining` above 0). |
 | Exit 2 | **Escalate immediately**: a job is still pending at least 24 hours past its deadline, or this run first discovered an overdue job, including one it completed late. |
 | `P0001` job error | Governed operator/history discovered, or another raised database exception. Inspect only restricted diagnostics; preserve audit history. |
-| `P0002` job error | Owned provider Storage needs operations handling. |
+| `P0002` job error | Owned provider Storage remains. AI practice uploads are removed by the next `--run`; if `P0002` persists with `aiStorage.remaining` 0, the object is in another bucket and needs operations handling. |
 | Other SQLSTATE | Investigate schema, FK, permission, availability or transaction failures. |
 
 Record the actual alert destination, primary owner, backup contact and a staging

@@ -1,0 +1,30 @@
+/* styles/ai-practice.css — Personal AI practice: visibly secondary and unverified (PRD 4.3). */
+/* Warning tones and dashed edges keep this surface distinct from the verified navy study library. */
+.student-ai-practice-link { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; color: var(--student-text-secondary); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; border-radius: 6px; }
+.student-ai-practice-link:hover { color: var(--student-text-primary); }
+.student-ai-practice-tag, .ai-practice-disclaimer b { display: inline-block; padding: 1px 7px; border: 1px dashed var(--student-warning); border-radius: 999px; background: var(--student-warning-surface); color: var(--student-warning); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-decoration: none; }
+.ai-practice-context { margin: 0; color: var(--student-text-secondary); font-size: 14px; }
+.ai-practice-workspace { display: grid; gap: 20px; max-width: 760px; }
+.ai-practice-disclaimer { margin: 0; padding: 12px 14px; border: 1px dashed var(--student-warning); border-radius: 12px; background: var(--student-warning-surface); color: var(--student-warning); font-size: 14px; line-height: 1.5; }
+.ai-practice-disclaimer b { margin-right: 6px; }
+.ai-practice-upload, .ai-practice-history, .ai-practice-run { display: grid; gap: 12px; padding: 20px; border: 1px dashed var(--student-border-strong); border-radius: 16px; background: var(--student-surface); }
+.ai-practice-upload > label { justify-self: start; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.ai-practice-upload-title, .ai-practice-run-title { margin: 0; color: var(--student-text-primary); font-size: 17px; font-weight: 700; }
+.ai-practice-upload-help, .ai-practice-allowance, .ai-practice-run-meta, .ai-practice-section { margin: 0; color: var(--student-text-secondary); font-size: 14px; line-height: 1.5; }
+.ai-practice-allowance { font-weight: 600; color: var(--student-text-primary); }
+.ai-practice-progress { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--student-surface-muted); }
+.ai-practice-progress-title { margin: 0; font-weight: 650; color: var(--student-text-primary); }
+.ai-practice-progress-detail { margin: 2px 0 0; color: var(--student-text-secondary); font-size: 14px; }
+.ai-practice-history-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ai-practice-history-date { color: var(--student-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.ai-practice-run-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.student-practice-option[data-result='correct'] { border-color: var(--student-success); box-shadow: inset 0 0 0 1px var(--student-success); }
+.student-practice-option[data-result='incorrect'] { border-color: var(--student-warning); box-shadow: inset 0 0 0 1px var(--student-warning); }
+.ai-practice-mark-correct { flex: none; margin-top: 5px; color: var(--student-success); }
+.ai-practice-mark-incorrect { flex: none; margin-top: 5px; color: var(--student-warning); }
+.ai-practice-feedback { display: grid; gap: 8px; padding: 14px; border-radius: 12px; background: var(--student-surface-muted); color: var(--student-text-primary); font-size: 15px; line-height: 1.5; }
+.ai-practice-feedback p { margin: 0; }
+.ai-practice-feedback-verdict { font-weight: 700; }
+.ai-practice-quote { margin: 0; padding-left: 12px; border-left: 3px dashed var(--student-warning); color: var(--student-text-secondary); font-size: 14px; }
+.ai-practice-quote span { display: block; font-weight: 650; color: var(--student-text-primary); }
+.ai-practice-summary { margin: 0; font-weight: 650; color: var(--student-text-primary); }

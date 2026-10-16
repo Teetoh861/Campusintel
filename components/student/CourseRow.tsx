@@ -18,7 +18,9 @@ export type CourseRowIdentity = { title: string } & (
 /** Serializable row presentation: what the central adapter derives and any page may compose. */
 export type CourseRowPresentation = CourseRowIdentity & (
   | { href: string; learningTypes: ReadonlyArray<string>; unavailable?: never }
-  | { href?: never; learningTypes?: never; unavailable: 'missing' | 'temporary' }
+  | { href?: never; learningTypes?: never; unavailable: 'missing' | 'temporary'
+      /** Personal AI practice for a course with no built content; always presented as secondary. */
+      aiPracticeHref?: string }
 )
 
 type CourseRowProps = CourseRowPresentation & {
@@ -36,7 +38,13 @@ export function CourseRow(props: CourseRowProps): ReactElement {
     <div className="student-course-row-meta">
       {props.href !== undefined ? <p>{props.learningTypes.join(' · ')}</p>
         : props.unavailable === 'missing'
-          ? <StatusRail status="unavailable">{STUDY_COPY.notYetAvailable}</StatusRail>
+          ? <>
+            <StatusRail status="unavailable">{STUDY_COPY.notYetAvailable}</StatusRail>
+            {props.aiPracticeHref !== undefined && <Link href={props.aiPracticeHref} prefetch={false}
+              className={'student-ai-practice-link ' + studentFocusRow}>
+              Practise from your own notes <span className="student-ai-practice-tag">AI · Unverified</span>
+            </Link>}
+          </>
           : <p className="student-course-row-error">
             <CircleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
             <span>{STUDY_COPY.temporarilyUnavailable}</span>

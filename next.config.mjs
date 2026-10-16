@@ -3,6 +3,18 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // AI practice parses uploads in a separate Node process (lib/ai-practice/parser-process.ts) that loads these files
+  // at run time, outside the bundle, so the upload route's function must ship them.
+  outputFileTracingIncludes: {
+    '/api/ai-practice': [
+      './lib/ai-practice/extract-parser.cjs',
+      './lib/ai-practice/word-xml.cjs',
+      './node_modules/unpdf/package.json',
+      './node_modules/unpdf/dist/pdfjs.mjs',
+      './node_modules/fflate/package.json',
+      './node_modules/fflate/lib/node.cjs',
+    ],
+  },
   async redirects() {
     return [
       {
@@ -13,13 +25,17 @@ const nextConfig = {
     ]
   },
   async headers() {
+    // Students upload AI practice files straight to private Supabase Storage with a signed URL,
+    // because hosted functions cap request bodies below the 5 MB file limit.
+    let supabaseOrigin = ''
+    try { supabaseOrigin = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL || '').origin } catch { supabaseOrigin = '' }
     const csp = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
-      "connect-src 'self' https://va.vercel-scripts.com",
+      `connect-src 'self' https://va.vercel-scripts.com${supabaseOrigin ? ` ${supabaseOrigin}` : ''}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
