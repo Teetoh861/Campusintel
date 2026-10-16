@@ -3,6 +3,8 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { authJson } from './response'
 import { EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from './constants'
+import { readAccountLifecycle } from '@/lib/account/lifecycle'
+import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
 import type { User } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
 
@@ -12,6 +14,7 @@ const TERMINAL_SESSION_ERRORS = new Set([
   'refresh_token_not_found',
   'refresh_token_already_used',
   'session_expired',
+  'session_not_found',
   'user_not_found',
 ])
 
@@ -19,22 +22,26 @@ const TERMINAL_SESSION_ERRORS = new Set([
  * A caller doing protected data work may pass its request-scoped client so a refreshed
  * session is used for both the live check and the subsequent RLS queries.
  */
-export async function getStudentSessionUser(response?: NextResponse, sessionClient?: StudentClient): Promise<User | null> {
+export async function getStudentSessionUser(
+  response?: NextResponse, sessionClient?: StudentClient, options: { allowRestricted?: boolean } = {},
+): Promise<User | null> {
   const client = sessionClient ?? await createClient(response)
   const { data, error } = await client.auth.getUser()
   const user = data?.user
   if (user === null && (!error || error.name === 'AuthSessionMissingError' ||
       (typeof error.code === 'string' && TERMINAL_SESSION_ERRORS.has(error.code)))) return null
   if (error || !user || typeof user.id !== 'string' || !user.id) throw new Error('Session validation failed')
+  const lifecycle = await readAccountLifecycle(client)
+  if (lifecycle.status === 'signed-out' || (!options.allowRestricted && lifecycle.status !== 'active')) return null
   return user
 }
 
 /** Read session identity only after the authoritative remote user check succeeds. */
 export async function getStudentSessionContext(
-  response?: NextResponse, sessionClient?: StudentClient,
+  response?: NextResponse, sessionClient?: StudentClient, options: { allowRestricted?: boolean } = {},
 ): Promise<{ user: User; sessionId: string } | null> {
   const client = sessionClient ?? await createClient(response)
-  const user = await getStudentSessionUser(response, client)
+  const user = await getStudentSessionUser(response, client, options)
   if (user === null) return null
   const { data, error } = await client.auth.getClaims()
   const claims = data?.claims
@@ -45,13 +52,16 @@ export async function getStudentSessionContext(
 }
 
 /** Validate the cookie-bound identity; unexpected validation failures fail closed. */
-export async function hasStudentSession(): Promise<boolean> {
-  return (await getStudentSessionUser()) !== null
+export async function hasStudentSession(options: { allowRestricted?: boolean } = {}): Promise<boolean> {
+  return (await getStudentSessionUser(undefined, undefined, options)) !== null
 }
 
 /** Reject identity-changing requests before any gateway or rate-limit operation. */
 export async function rejectExistingStudent() {
-  return await hasStudentSession()
-    ? authJson({ code: EXISTING_STUDENT_SESSION, next: STUDENT_HOME_PATH }, 409)
-    : null
+  const client = await createClient()
+  const user = await getStudentSessionUser(undefined, client, { allowRestricted: true })
+  if (!user) return null
+  const lifecycle = await readAccountLifecycle(client)
+  return authJson({ code: EXISTING_STUDENT_SESSION,
+    next: lifecycle.status === 'active' ? STUDENT_HOME_PATH : ACCOUNT_DELETION_PATH }, 409)
 }

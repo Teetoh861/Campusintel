@@ -17,13 +17,13 @@ export async function GET(request: Request) {
     let status: { enabled: true; signedIn: boolean; sameAccount?: boolean; continuityToken?: string }
     if (logoutContext) {
       // Establish chrome's rendered logout identity, never rebind a submitted action on click.
-      const context = await getStudentSessionContext(response)
+      const context = await getStudentSessionContext(response, undefined, { allowRestricted: true })
       status = { enabled: true, signedIn: context !== null,
         ...(context ? { continuityToken: issueAccountContinuityToken(context.user.id, context.sessionId) } : {}) }
     } else if (token === null) {
-      status = { enabled: true, signedIn: (await getStudentSessionUser(response)) !== null }
+      status = { enabled: true, signedIn: (await getStudentSessionUser(response, undefined, { allowRestricted: true })) !== null }
     } else {
-      const context = await getStudentSessionContext(response)
+      const context = await getStudentSessionContext(response, undefined, { allowRestricted: true })
       status = { enabled: true, signedIn: context !== null,
         sameAccount: context !== null && matchesAccountContinuityToken(token, context.user.id, context.sessionId) }
     }

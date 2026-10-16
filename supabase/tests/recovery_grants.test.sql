@@ -1,6 +1,11 @@
 -- supabase/tests/recovery_grants.test.sql — Recovery grant isolation, expiry, replacement and one-time consumption.
 begin;
 select no_plan();
+-- Recovery identities must now correspond to existing Auth users.
+insert into auth.users(id, email_confirmed_at) values
+  ('11111111-1111-4111-8111-111111111111', now()),
+  ('33333333-3333-4333-8333-333333333333', now()),
+  ('44444444-4444-4444-8444-444444444444', now());
 select ok((select relrowsecurity from pg_class where oid='public.auth_recovery_grants'::regclass), 'recovery RLS enabled');
 set local role anon;
 select throws_ok($$select * from public.auth_recovery_grants$$, '42501', null, 'anon cannot read');

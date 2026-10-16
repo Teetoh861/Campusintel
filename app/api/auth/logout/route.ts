@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const response = authJson({ success: true })
   try {
     await readAuthRequest(request, logoutSchema)
-    const mutation = await getAuthenticatedMutationContext(response, request.headers.get(AUTH_CONTINUITY_HEADER))
+    const mutation = await getAuthenticatedMutationContext(response, request.headers.get(AUTH_CONTINUITY_HEADER), { allowRestricted: true })
     // Live validation found no valid user; SDK cleanup also removes dead cookie
     // credentials that the lookup may have retained (for example user_not_found).
     if (mutation.status === 'signed-out') {

@@ -6,6 +6,7 @@ import { useRef, useState } from 'react'
 import { safeAuthMessage } from '@/lib/auth/errors'
 import { parseAuthOutcome } from '@/lib/auth/outcomes'
 import { AUTH_API, AUTH_CONTINUITY_HEADER, AUTH_MESSAGES, RECOVERY_FAILURE, EMAIL_CONFIRMATION_REQUIRED, EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
 
 export type AuthSubmitFailure = { message: string; code?: (typeof RECOVERY_FAILURE)[keyof typeof RECOVERY_FAILURE]; status?: 'session-changed' }
 
@@ -33,13 +34,14 @@ export function useAuthSubmit() {
         const value: unknown = await response.json()
         if (!value || typeof value !== 'object') throw new Error('Invalid response')
         if (!response.ok) {
-          if (endpoint === AUTH_API.logout && response.status === 409 && 'status' in value && value.status === 'session-changed') {
+          if (response.status === 409 && 'status' in value && value.status === 'session-changed') {
             setError(AUTH_MESSAGES.sessionChanged)
             onFailure?.({ message: AUTH_MESSAGES.sessionChanged, status: 'session-changed' })
             return null
           }
-          if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value && value.next === STUDENT_HOME_PATH) {
-            window.location.replace(STUDENT_HOME_PATH)
+          if (response.status === 409 && 'code' in value && value.code === EXISTING_STUDENT_SESSION && 'next' in value &&
+            (value.next === STUDENT_HOME_PATH || value.next === ACCOUNT_DELETION_PATH)) {
+            window.location.replace(value.next)
             return null
           }
           const message = safeAuthMessage('error' in value ? value.error : undefined)

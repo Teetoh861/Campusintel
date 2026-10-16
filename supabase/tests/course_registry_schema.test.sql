@@ -598,7 +598,7 @@ select is(
       and tablename in (
         'courses', 'institutional_courses', 'course_applicability'
       )
-      and cmd = 'SELECT'
+      and cmd = 'SELECT' and permissive = 'PERMISSIVE'
   ),
   3,
   'all course ownership tables have authenticated read policies only'

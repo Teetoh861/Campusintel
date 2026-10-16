@@ -26,7 +26,7 @@ async function fixture(run) {
     require.resolve('../account/page.tsx'), require.resolve('./page.tsx'),
     require.resolve('../../components/auth/SignedOutGate.tsx'),
   ]
-  const state = { enabled: true, user: { id: 'student', email: 'student@example.test' }, profile: { status: 'incomplete', revision: 0, firstName: null, options }, reads: 0 }
+  const state = { enabled: true, user: { id: 'student', email: 'student@example.test' }, deletionAllowed: true, profile: { status: 'incomplete', revision: 0, firstName: null, options }, reads: 0 }
   const redirect = path => { throw new Error('redirect:' + path) }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -43,10 +43,12 @@ async function fixture(run) {
         getStudentSessionContext: async () => state.user === null ? null : { user: state.user, sessionId: 'fixture-session' },
         hasStudentSession: async () => state.user !== null,
       }
-      if (name === '@/lib/profile/student-profile') return { getCurrentStudentProfile: async () => {
-        state.reads++
-        return state.profile
-      } }
+      if (name === '@/lib/supabase/server') return { createClient: async () => ({ fixture: 'verified client' }) }
+      if (name === '@/lib/account/lifecycle') return { readAccountLifecycle: async () => ({ status: 'active', deletionAllowed: state.deletionAllowed }) }
+      if (name === '@/lib/profile/student-profile') {
+        const read = async () => { state.reads++; return state.profile }
+        return { getCurrentStudentProfile: read, getCurrentStudentProfileForVerifiedStudent: read }
+      }
       return originalLoad.call(this, name, ...args)
     }
     for (const file of files) delete require.cache[file]
@@ -77,8 +79,8 @@ test('incomplete account reaches selection; completed account stays and offers i
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   const account = await f.account()
-  assert.equal(account.props.title, 'Your profile')
-  const link = nodes(account).find(node => node.props?.children === 'Change selection')
+  assert.equal(nodes(account).find(node => node.type?.name === 'StudentPage').props.band.props.title, 'Account')
+  const link = nodes(account).find(node => node.props?.children === 'Edit profile and selection')
   assert.equal(link.props.href, '/profile-selection')
   page = await f.selectionPage()
   assert.equal(page.props.title, 'Change selection')
@@ -96,7 +98,7 @@ test('account and profile error links use shared secondary button focus', async 
     assert.equal(actual.has('underline'), false)
   }
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
-  check(nodes(await f.account()).find(node => node.props?.children === 'Change selection'))
+  check(nodes(await f.account()).find(node => node.props?.children === 'Edit profile and selection'))
   f.state.profile = { status: 'unavailable' }
   check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to account'))
 }))
@@ -106,7 +108,7 @@ test('auth and selection redirects terminate, including a completed student open
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
-  assert.equal((await f.account()).props.title, 'Your profile')
+  assert.equal(nodes(await f.account()).find(node => node.type?.name === 'StudentPage').props.band.props.title, 'Account')
   assert.equal((await f.selectionPage()).props.title, 'Change selection')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
   assert.equal(getSafeReturnPath('/profile-selection'), '/profile-selection')
@@ -130,34 +132,34 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
   assert.equal(f.state.reads, reads)
 }))
 
-test('Account puts academic selection first and shows the real first name, email and sign out action', async () => fixture(async f => {
+test('Account uses the Student App band and shows real personal/academic details, logout and student deletion', async () => fixture(async f => {
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   const account = await f.account()
-  const frame = account.type(account.props)
-  const frameNodes = nodes(frame)
-  assert.equal(frameNodes.find(node => node.type === 'h1')?.props.children, 'Your profile')
+  const workspace = nodes(account).find(node => node.type?.name === 'StudentPage')
+  const frame = workspace.type(workspace.props), frameNodes = nodes(frame)
+  assert.equal(frame.props['data-student-app'], true)
+  const band = workspace.props.band
+  const bandNodes = nodes(band.type(band.props))
+  assert.equal(bandNodes.find(node => node.type === 'h1')?.props.children, 'Account')
+  assert.equal(bandNodes.find(node => node.props?.children === 'Dashboard')?.props.href, '/dashboard')
   const sections = frameNodes.filter(node => node.type === 'section')
   assert.deepEqual(sections.map(section => nodes(section).find(node => node.type === 'h2')?.props.children),
-    ['Academic profile', 'Account', 'Settings'])
-  assert.match(sections[0].props.className, /student-surface/)
+    ['Personal details', 'Academic profile', 'Security'])
+  assert.ok(frameNodes.some(node => node.type?.name === 'DeleteAccountForm'))
   assert.match(nodes(account).find(node => node.props?.className?.includes('tablet:grid-cols-['))?.props.className,
-    /desktop:grid-cols-\[/)
-  const summary = nodes(sections[0]).find(node => node.type?.name === 'SelectionSummary')
+    /desktop:gap-6/)
+  assert.deepEqual(nodes(sections[0]).filter(node => node.type === 'dt').map(node => node.props.children), ['First name', 'Email'])
+  assert.deepEqual(nodes(sections[0]).filter(node => node.type === 'dd').map(node => node.props.children), ['Adaeze', 'student@example.test'])
+  const summary = nodes(sections[1]).find(node => node.type?.name === 'SelectionSummary')
   assert.equal(summary?.props.selection, selection)
   const summaryRows = nodes(summary.type(summary.props))
-  assert.deepEqual(summaryRows.filter(node => node.type === 'dt').map(node => node.props.children),
-    ['Department', 'Level', 'Semester'])
+  assert.deepEqual(summaryRows.filter(node => node.type === 'dt').map(node => node.props.children), ['Department', 'Level', 'Semester'])
   assert.deepEqual(summaryRows.filter(node => node.type === 'dd').map(node => node.props.children[0]),
     ['Fixture department', 'Fixture level', 'Fixture semester'])
-  assert.equal(nodes(sections[0]).find(node => node.props?.children === 'Change selection')?.props.href,
-    '/profile-selection')
-  assert.deepEqual(nodes(sections[1]).filter(node => node.type === 'dt').map(node => node.props.children), ['First name', 'Email'])
-  assert.deepEqual(nodes(sections[1]).filter(node => node.type === 'dd').map(node => node.props.children), ['Adaeze', 'student@example.test'])
+  assert.equal(nodes(sections[1]).find(node => node.props?.children === 'Edit profile and selection')?.props.href, '/profile-selection')
   assert.ok(nodes(sections[2]).some(node => node.type?.name === 'LogoutButton'))
-  assert.equal(frameNodes.find(node => node.props?.children === 'Dashboard')?.props.href, '/dashboard')
-  const visibleCopy = [account.props.title, account.props.description,
-    ...frameNodes.map(node => node.props?.children).filter(value => typeof value === 'string')].join(' ')
-  assert.doesNotMatch(visibleCopy, /trial|subscription|early access|upgrade|billing|allowance/i)
+  f.state.deletionAllowed = false
+  assert.equal(nodes(await f.account()).some(node => node.type?.name === 'DeleteAccountForm'), false, 'operator presentation offers no ordinary deletion')
 }))
 
 test('Profile selection uses the student workspace for incomplete, complete and error states', async () => fixture(async f => {

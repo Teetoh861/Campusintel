@@ -5,6 +5,7 @@ import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { PASSWORD_RESET_STATE, AUTH_MESSAGES } from '@/lib/auth/constants'
 import { LoginForm } from './LoginForm'
+import { ACCOUNT_DELETION_SCHEDULED_STATE, ACCOUNT_MESSAGES } from '@/lib/account/constants'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Sign in | CampusIntell', robots: { index: false, follow: false } }
@@ -15,7 +16,8 @@ async function Content({ searchParams }: { searchParams: Promise<{ next?: string
   const next = getSafeReturnPath(params.next)
   return <AuthShell title="Sign in">
     {isStudentAuthEnabled() ? <>
-      <LoginForm next={next} initialFeedback={params.state === PASSWORD_RESET_STATE ? AUTH_MESSAGES.resetSuccess : undefined} />
+      <LoginForm next={next} initialFeedback={params.state === PASSWORD_RESET_STATE ? AUTH_MESSAGES.resetSuccess
+        : params.state === ACCOUNT_DELETION_SCHEDULED_STATE ? ACCOUNT_MESSAGES.scheduled : undefined} />
     </> : <AuthUnavailable />}
   </AuthShell>
 }

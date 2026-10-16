@@ -185,7 +185,7 @@ select is(
     from pg_policies
     where schemaname = 'public'
       and tablename in ('departments', 'academic_levels', 'academic_periods')
-      and cmd = 'SELECT'
+      and cmd = 'SELECT' and permissive = 'PERMISSIVE'
   ),
   3,
   'each reference table has one authenticated read policy'
