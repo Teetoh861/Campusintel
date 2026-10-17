@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
+import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
 import type { StudyFamilyId } from '@/components/student/study-families'
 import type { StudentCourseApplicability, StudentCoursePractice, StudentCourseDetailLearning, StudyAvailability }
   from '@/lib/courses/read-model'
@@ -127,13 +128,20 @@ export function PracticeSection({ practice, number }: { practice: StudentCourseP
   </StudySection>
 }
 
-/** Reading and revision only; numbering follows the published display numbers where supplied. */
-export function TheorySection({ items, number }: { items: ReadonlyArray<ManagedTheoryQuestion>; number: number }): ReactElement {
-  let nextDisplayNumber = Math.max(0, ...items.map(item => item.displayNumber ?? 0)) + 1
+/** Published prompts plus the self-assessed practice entry when a usable model answer is published.
+ * Numbering is shared with Theory practice and preserves authored display numbers.
+ */
+export function TheorySection({ items, number, practiceHref }: {
+  items: ReadonlyArray<ManagedTheoryQuestion>; number: number; practiceHref: string | null
+}): ReactElement {
+  const labels = theoryDisplayNumbers(items)
   return <StudySection id="theory" number={number} lede="Likely written questions to read and revise.">
+    {practiceHref !== null && <div><Link href={practiceHref} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
+      Start theory practice<ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+    </Link></div>}
     <ol className="student-detail-numbered student-surface">
-      {items.map(question => <li key={question.itemId}>
-        <span>Q{question.displayNumber ?? nextDisplayNumber++}</span>
+      {items.map((question, index) => <li key={question.itemId}>
+        <span>Q{labels[index]}</span>
         <div>
           <p className="student-detail-prose">{question.prompt}</p>
           {question.examTip !== undefined && <Aside kicker="Exam tip">{question.examTip}</Aside>}

@@ -9,6 +9,7 @@ import { getPublishedManagedContentWithVerifiedClient } from '@/lib/managed-cont
 import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
 import { projectStudentLearning } from '@/lib/managed-content/student-projection'
 import { classifyStoredSelection } from '@/lib/profile/selection'
+import { projectTheoryPractice } from '@/lib/theory-practice/projection'
 import type { User } from '@supabase/supabase-js'
 import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion, StudentLearning }
   from '@/lib/managed-content/student-projection'
@@ -81,6 +82,8 @@ export type StudentCourseDetailLearning = {
   overview: ManagedOverview | null
   notes: ManagedNote[]
   theoryQuestions: ManagedTheoryQuestion[]
+  // At least one theory question has a usable published model answer for self-assessed practice.
+  theoryPractice: boolean
 }
 
 /** Course Detail practice summary from the same usable-quiz result that set `cbtPractice`. */
@@ -258,7 +261,8 @@ async function resolvePublication(
   // Overview is context only; it never makes a course ready to study.
   const content: LinkedContent = study.notes || study.cbtPractice || study.theory
     ? { state: 'ready', study } : { state: 'no-published-learning', study }
-  return { content, learning: { overview, notes, theoryQuestions }, practice }
+  const theoryPractice = projectTheoryPractice(published.content)?.some(material => material.feedback !== null) ?? false
+  return { content, learning: { overview, notes, theoryQuestions, theoryPractice }, practice }
 }
 
 /** Catalogue readers keep only availability; payload bodies never reach catalogue rows. */

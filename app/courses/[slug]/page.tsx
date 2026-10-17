@@ -115,7 +115,8 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
       </Notice>}
       {sections.includes('notes') && learning && <NotesSection notes={learning.notes} number={number('notes')} />}
       {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} number={number('cbtPractice')} />}
-      {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')} />}
+      {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
+        practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}
       {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview} number={number('overview')} />}
       {sections.includes('reading') && <ReadingList textbooks={route.course.textbooks} number={number('reading')} />}
     </div>

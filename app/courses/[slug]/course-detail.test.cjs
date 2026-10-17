@@ -35,6 +35,7 @@ const learning = {
   ],
   theoryQuestions: [{ itemId: 't1', prompt: 'Explain the concept', displayNumber: 1, examTip: 'Define first' },
     { itemId: 't2', prompt: 'Second prompt' }],
+  theoryPractice: true,
 }
 const practice = { href: '/courses/central-route/quiz', bankSize: 111, attemptSize: 50, timerSeconds: 1800 }
 const ready = flags => ({ state: 'ready', study: study(flags) })
@@ -118,6 +119,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, 1, 'exactly one Practice entry')
   assert.match(text(html), /Question bank 111 Per attempt 50 Time 30 min/)
   assert.match(html, /Start CBT practice/)
+  assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/theory"') && link.includes('Start theory practice')))
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/materials"') && link.includes('Request material')))
   assert.ok(html.indexOf('id="notes"') < html.indexOf('id="cbtPractice"') && html.indexOf('id="cbtPractice"') < html.indexOf('id="theory"') &&
     html.indexOf('id="theory"') < html.indexOf('id="overview"') && html.indexOf('id="overview"') < html.indexOf('id="reading"'))
@@ -159,15 +161,35 @@ test('study families appear only from central flags, and Notes never comes from 
       assert.equal(html.includes(`id="${id}"`), present.includes(id), `${JSON.stringify(flags)} → ${id}`)
     }
     assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, flags.cbtPractice ? 1 : 0)
+    assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/theory"')).length, flags.theory ? 1 : 0)
     assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   }
   f.state.result = { status: 'ok', course: institutional(ready({ cbtPractice: true })), learning, practice: null }
   assert.doesNotMatch(await f.html(), /id="cbtPractice"|\/quiz"/, 'the page never builds practice without central metadata')
 }))
 
+test('theory practice is offered only with a usable model answer, and numbering matches Theory practice', async () => fixture(async f => {
+  const { theoryDisplayNumbers } = require('../../../lib/theory-practice/numbering.ts')
+  const theoryQuestions = [{ itemId: 't1', prompt: 'Unnumbered without answer' }, { itemId: 't2', prompt: 'Authored four', displayNumber: 4 },
+    { itemId: 't3', prompt: 'Unnumbered with answer' }]
+  f.state.result = { status: 'ok', course: institutional(ready({ theory: true })),
+    learning: { ...learning, theoryQuestions, theoryPractice: false }, practice: null }
+  const reading = await f.html()
+  assert.match(reading, /id="theory"/)
+  assert.match(reading, /Unnumbered without answer/, 'questions stay readable without practice')
+  assert.equal(anchors(reading).filter(link => link.includes('/theory"')).length, 0)
+  assert.doesNotMatch(reading, /Start theory practice/)
+  f.state.result.learning = { ...f.state.result.learning, theoryPractice: true }
+  const practicable = await f.html()
+  assert.equal(anchors(practicable).filter(link => link.includes('href="/courses/central-route/theory"')).length, 1)
+  const labels = [...practicable.matchAll(/<span>Q(\d+)<\/span>/g)].map(match => Number(match[1]))
+  assert.deepEqual(labels, [5, 4, 6])
+  assert.deepEqual(labels, theoryDisplayNumbers(theoryQuestions), 'Course Detail uses the shared numbering')
+}))
+
 test('overview-only stays no-published-learning: identity, context and prominent Request Material, no Practice', async () => fixture(async f => {
   f.state.result = { status: 'ok', course: institutional({ state: 'no-published-learning', study: study({}) }),
-    learning: { overview: learning.overview, notes: [], theoryQuestions: [] }, practice: null }
+    learning: { overview: learning.overview, notes: [], theoryQuestions: [], theoryPractice: false }, practice: null }
   const html = await f.html()
   assert.match(html, /Institutional title/)
   assert.match(html, /Study content not yet available\./)
@@ -208,7 +230,7 @@ test('repository-only renders repository identity and content without any fabric
   assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, 1)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'no-published-learning', study: study({}) }),
-    learning: { overview: learning.overview, notes: [], theoryQuestions: [] }, practice: null }
+    learning: { overview: learning.overview, notes: [], theoryQuestions: [], theoryPractice: false }, practice: null }
   const empty = await f.html()
   assert.match(empty, /Study content not yet available\./)
   assert.doesNotMatch(empty, /\/quiz"|INST101/)
