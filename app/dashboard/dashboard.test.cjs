@@ -118,9 +118,33 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
   assert.deepEqual([...utilities.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
     ['/tutors', '/contact', '/account'])
   assert.equal((utilities.match(/class="[^"]*dashboard-utility-icon"/g) || []).length, 3)
-  assert.equal((utilities.match(/class="[^"]*dashboard-utility-arrow"/g) || []).length, 3)
+  assert.doesNotMatch(utilities, /dashboard-utility-arrow|lucide-arrow-right/)
   assert.match(utilities, /data-status="waitlist">Waitlist/)
   assert.doesNotMatch(utilities, /Log out|Logout|<button/)
+}))
+
+test('Dashboard actions stay arrow-free with their labels, destinations and keyboard focus families intact', async () => fixture(async f => {
+  const html = await f.html()
+  const actions = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
+    .filter(([, attributes]) => /class="[^"]*\bdashboard-(?:course-file|practice-action|material-card|utility-row)\b/.test(attributes))
+  const expected = [
+    ['/my-courses', 'View my courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
+    ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse the library', 'card'],
+    ['/materials', 'Request course material', 'card'], ['/tutors', 'Tutors', 'row'],
+    ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Account', 'row'],
+  ]
+  assert.equal(actions.length, expected.length)
+  for (const [index, [href, label, focus]] of expected.entries()) {
+    const [, attributes, body] = actions[index]
+    assert.ok(attributes.includes(`href="${href}"`), href)
+    assert.ok(attributes.includes(`student-focus-${focus}`), `${label}: keyboard focus`)
+    assert.ok(body.includes(label), label)
+    assert.doesNotMatch(body, /lucide-[\w-]*(?:arrow|chevron|move)[\w-]*right|[→⇒➜⟶➡›»]/i)
+    if (focus === 'row') {
+      assert.equal((body.match(/<svg\b/g) || []).length, 1, `${label}: retain the meaningful leading icon only`)
+      assert.match(body, /dashboard-utility-icon/)
+    }
+  }
 }))
 
 test('server guards redirect absent sessions or incomplete names and keep failures private', async () => fixture(async f => {

@@ -1,7 +1,6 @@
 // app/courses/[slug]/page.tsx — Account-gated Course Detail study hub composed from central one-course truth.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowRight } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
@@ -67,7 +66,7 @@ function CourseUnavailable({ status, slug }: { status: 'unavailable' | 'invarian
 function RequestMaterialLink({ href, prominent = false }: { href: string; prominent?: boolean }): ReactElement {
   return <Link href={href} prefetch={false}
     className={prominent ? studentAction(btnNavy, studentFocusDark) : studentAction(btnGhost, 'bg-student-surface')}>
-    Request material{prominent && <ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />}
+    Request material
   </Link>
 }
 

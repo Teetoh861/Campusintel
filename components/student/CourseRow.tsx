@@ -1,6 +1,6 @@
 // components/student/CourseRow.tsx — Compact course identity and an ordered responsive register.
 import Link from 'next/link'
-import { ChevronRight, CircleAlert } from 'lucide-react'
+import { CircleAlert } from 'lucide-react'
 import { StatusRail } from './StatusRail'
 import { STUDY_COPY } from './study-families'
 import { studentFocusRow } from './ui'
@@ -54,7 +54,7 @@ export function CourseRow(props: CourseRowProps): ReactElement {
 
   const target = props.href !== undefined
     ? <Link href={props.href} prefetch={false} className={'student-course-row student-course-row-link ' + studentFocusRow}>
-      {body}<ChevronRight aria-hidden="true" size={20} strokeWidth={1.75} className="student-course-row-chevron" />
+      {body}
     </Link>
     : <div className="student-course-row">{body}</div>
 

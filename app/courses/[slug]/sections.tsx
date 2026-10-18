@@ -1,6 +1,5 @@
 // app/courses/[slug]/sections.tsx — Study-hub renderers for central Course Detail payloads; no truth derivation here.
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
@@ -122,7 +121,7 @@ export function PracticeSection({ practice, number }: { practice: StudentCourseP
         <div><dt>Time</dt><dd>{practice.timerSeconds / 60} min</dd></div>
       </dl>
       <Link href={practice.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
-        Start CBT practice<ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+        Start CBT practice
       </Link>
     </div>
   </StudySection>
@@ -137,7 +136,7 @@ export function TheorySection({ items, number, practiceHref }: {
   const labels = theoryDisplayNumbers(items)
   return <StudySection id="theory" number={number} lede="Likely written questions to read and revise.">
     {practiceHref !== null && <div><Link href={practiceHref} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
-      Start theory practice<ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+      Start theory practice
     </Link></div>}
     <ol className="student-detail-numbered student-surface">
       {items.map((question, index) => <li key={question.itemId}>
