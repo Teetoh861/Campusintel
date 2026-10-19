@@ -38,7 +38,7 @@ export const attemptResultSchema = z.discriminatedUnion('status', [
     questionCount: z.number().int().positive(),
   }).strict() }).strict(),
   z.object({ status: z.enum(['signed-out', 'session-changed', 'invalid-request',
-    'not-found', 'conflict', 'finalized', 'unavailable']) }).strict(),
+    'not-found', 'conflict', 'finalized', 'locked', 'unavailable']) }).strict(),
 ])
 
 export type AttemptWriteResult = z.infer<typeof attemptResultSchema>

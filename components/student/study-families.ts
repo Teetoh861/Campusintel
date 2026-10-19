@@ -19,4 +19,5 @@ export function getStudyFamilyLabels(study: Pick<StudyAvailability, StudyFamilyI
 export const STUDY_COPY = {
   notYetAvailable: 'Study content not yet available.',
   temporarilyUnavailable: 'Content temporarily unavailable.',
+  locked: 'Included with full access.',
 } as const

@@ -65,7 +65,7 @@ test('cross-origin, wrong content type, oversized and malformed requests never r
 }))
 
 test('all service outcomes map to explicit private HTTP responses', async () => fixture(async f => {
-  for (const [status, code] of Object.entries({ 'signed-out': 401, incomplete: 403, 'not-found': 404,
+  for (const [status, code] of Object.entries({ 'signed-out': 401, incomplete: 403, locked: 403, 'not-found': 404,
     'invalid-request': 400, 'session-changed': 409, 'content-changed': 409, unavailable: 503 })) {
     f.state.result = { status }
     const response = await f.post()

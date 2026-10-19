@@ -20,6 +20,7 @@ function finish(response: NextResponse, state: { status: string }): Response {
   const status = state.status === 'signed-out' ? 401
     : state.status === 'invalid-request' ? 400
     : state.status === 'not-found' ? 404
+    : state.status === 'locked' ? 403
     : ['session-changed', 'conflict', 'finalized'].includes(state.status) ? 409
     : state.status === 'unavailable' ? 503 : 200
   return new Response(JSON.stringify(state), { status, headers: response.headers })

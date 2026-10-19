@@ -96,8 +96,9 @@ test('academic identity owns a full-width band outside the bounded course/action
   const inner = band.props.children[1]
   assert.ok(inner.props.className.split(' ').includes('student-workspace'), 'only the inner academic content is constrained')
   assert.equal(shell.props.workspaceClassName, 'dashboard-workspace')
-  assert.equal(shell.props.children[0].type.name, 'PrimaryCards')
-  assert.equal(shell.props.children[1].type.name, 'SupportingActions')
+  assert.equal(shell.props.children[0].type.name, 'AccessNotice', 'the plan notice leads the workspace')
+  assert.equal(shell.props.children[1].type.name, 'PrimaryCards')
+  assert.equal(shell.props.children[2].type.name, 'SupportingActions')
   const html = await f.html()
   assert.match(html, /class="student-page-root" data-student-app="true"><header class="dashboard-identity/)
   assert.match(html, /class="student-workspace student-page-workspace dashboard-workspace"/)

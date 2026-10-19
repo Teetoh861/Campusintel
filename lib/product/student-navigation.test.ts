@@ -17,9 +17,10 @@ test('current destinations have unique semantic IDs and independent canonical hr
     contact: { id: 'contact', href: '/contact', label: 'Help & Support' },
     account: { id: 'account', href: '/account', label: 'Account' },
     materials: { id: 'materials', href: '/materials', label: 'Request Material' },
+    access: { id: 'access', href: '/access', label: 'Plan & Access' },
   })
   const ids = Object.values(STUDENT_DESTINATIONS).map(destination => destination.id)
-  assert.equal(new Set(ids).size, 8)
+  assert.equal(new Set(ids).size, 9)
   assert.equal(STUDENT_DESTINATIONS.bookmarks.label, 'Bookmarks')
 })
 

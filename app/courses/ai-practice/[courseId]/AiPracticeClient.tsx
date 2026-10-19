@@ -23,6 +23,7 @@ const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
 export function allowanceLine(allowance: AllowanceSummary | null): string | null {
   if (!allowance || allowance.state === 'not-entitled') return null
   if (allowance.state === 'expired') return `Your ${grantName(allowance)} has ended.`
+  if (allowance.total === null) return 'Your AI access includes question sets without a set limit while it lasts.'
   const left = Math.max(0, allowance.total - allowance.used)
   return `${left} of ${allowance.total} AI question sets left in your ${grantName(allowance)}.`
 }

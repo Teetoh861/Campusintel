@@ -5,6 +5,7 @@ export const PRODUCT_EVENTS = {
   courseViewed: 'course_viewed',
   theoryAnswerSubmitted: 'theory_answer_submitted',
   theorySelfAssessmentCompleted: 'theory_self_assessment_completed',
+  trialActivated: 'trial_activated',
 } as const
 
 /** A course view carries only the canonical, public course slug. */

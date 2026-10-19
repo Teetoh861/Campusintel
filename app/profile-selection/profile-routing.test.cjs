@@ -144,7 +144,7 @@ test('Account uses the Student App band and shows real personal/academic details
   assert.equal(bandNodes.find(node => node.props?.children === 'Dashboard')?.props.href, '/dashboard')
   const sections = frameNodes.filter(node => node.type === 'section')
   assert.deepEqual(sections.map(section => nodes(section).find(node => node.type === 'h2')?.props.children),
-    ['Personal details', 'Academic profile', 'Security'])
+    ['Personal details', 'Academic profile', 'Plan & Access', 'Security'])
   assert.ok(frameNodes.some(node => node.type?.name === 'DeleteAccountForm'))
   assert.match(nodes(account).find(node => node.props?.className?.includes('tablet:grid-cols-['))?.props.className,
     /desktop:gap-6/)
@@ -157,7 +157,8 @@ test('Account uses the Student App band and shows real personal/academic details
   assert.deepEqual(summaryRows.filter(node => node.type === 'dd').map(node => node.props.children[0]),
     ['Fixture department', 'Fixture level', 'Fixture semester'])
   assert.equal(nodes(sections[1]).find(node => node.props?.children === 'Edit profile and selection')?.props.href, '/profile-selection')
-  assert.ok(nodes(sections[2]).some(node => node.type?.name === 'LogoutButton'))
+  assert.equal(nodes(sections[2]).find(node => node.props?.children === 'View your plan')?.props.href, '/access')
+  assert.ok(nodes(sections[3]).some(node => node.type?.name === 'LogoutButton'))
   f.state.deletionAllowed = false
   assert.equal(nodes(await f.account()).some(node => node.type?.name === 'DeleteAccountForm'), false, 'operator presentation offers no ordinary deletion')
 }))

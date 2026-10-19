@@ -1,6 +1,6 @@
 // components/student/CourseRow.tsx — Compact course identity and an ordered responsive register.
 import Link from 'next/link'
-import { ChevronRight, CircleAlert } from 'lucide-react'
+import { ChevronRight, CircleAlert, Lock } from 'lucide-react'
 import { StatusRail } from './StatusRail'
 import { STUDY_COPY } from './study-families'
 import { studentFocusRow } from './ui'
@@ -17,8 +17,10 @@ export type CourseRowIdentity = { title: string } & (
 
 /** Serializable row presentation: what the central adapter derives and any page may compose. */
 export type CourseRowPresentation = CourseRowIdentity & (
-  | { href: string; learningTypes: ReadonlyArray<string>; unavailable?: never }
-  | { href?: never; learningTypes?: never; unavailable: 'missing' | 'temporary'
+  | { href: string; learningTypes: ReadonlyArray<string>; unavailable?: never; locked?: never }
+  /** A built course the student's plan does not include: it opens the course page, which explains how to unlock. */
+  | { href: string; locked: true; learningTypes?: never; unavailable?: never }
+  | { href?: never; learningTypes?: never; locked?: never; unavailable: 'missing' | 'temporary'
       /** Personal AI practice for a course with no built content; always presented as secondary. */
       aiPracticeHref?: string }
 )
@@ -36,7 +38,10 @@ export function CourseRow(props: CourseRowProps): ReactElement {
       : <p className="student-course-row-code">{props.code}</p>}
     <h3 className="student-course-row-title">{props.title}</h3>
     <div className="student-course-row-meta">
-      {props.href !== undefined ? <p>{props.learningTypes.join(' · ')}</p>
+      {props.locked ? <p className="student-course-row-locked">
+        <Lock aria-hidden="true" size={14} strokeWidth={1.75} /><span>{STUDY_COPY.locked}</span>
+      </p>
+        : props.href !== undefined ? <p>{props.learningTypes.join(' · ')}</p>
         : props.unavailable === 'missing'
           ? <>
             <StatusRail status="unavailable">{STUDY_COPY.notYetAvailable}</StatusRail>

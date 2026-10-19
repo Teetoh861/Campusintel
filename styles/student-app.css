@@ -42,6 +42,8 @@
 .student-course-row-meta .student-status-rail::before { margin-top: 1px; }
 .student-course-row-error { display: flex; align-items: flex-start; gap: 7px; color: var(--student-error); }
 .student-course-row-error > svg { flex: none; margin-top: 2px; }
+.student-course-row-locked { display: flex; align-items: flex-start; gap: 7px; color: var(--student-text-secondary); }
+.student-course-row-locked > svg { flex: none; margin-top: 2px; }
 .student-course-row-chevron { align-self: center; flex: none; color: var(--student-text-muted); }
 .student-course-row-link { transition: background-color 140ms ease; }
 .student-course-row-link:hover { background: var(--student-surface-muted); }

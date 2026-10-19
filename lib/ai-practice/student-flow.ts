@@ -96,7 +96,7 @@ function allowanceBlock(allowance: AllowanceSummary | null): AiPracticeResult | 
   // No accepted grant: nothing could ever be generated, so no upload slot is reserved either.
   if (allowance?.state === 'not-entitled') return { status: 'not-entitled' }
   if (allowance?.state === 'expired') return { status: 'allowance-expired', allowance }
-  if (allowance && allowance.state === 'active' && allowance.used >= allowance.total) {
+  if (allowance && allowance.state === 'active' && allowance.total !== null && allowance.used >= allowance.total) {
     return { status: 'allowance-exhausted', allowance }
   }
   return null

@@ -1,6 +1,7 @@
 // lib/product/student-navigation.ts — Current shared product destinations and chrome groups; not authorization.
 
-export type StudentDestinationId = 'dashboard' | 'myCourses' | 'courses' | 'bookmarks' | 'tutors' | 'contact' | 'account' | 'materials'
+export type StudentDestinationId = 'dashboard' | 'myCourses' | 'courses' | 'bookmarks' | 'tutors' | 'contact' | 'account' |
+  'materials' | 'access'
 
 export const STUDENT_DESTINATIONS = {
   dashboard: { id: 'dashboard', href: '/dashboard', label: 'Dashboard' },
@@ -11,6 +12,8 @@ export const STUDENT_DESTINATIONS = {
   contact: { id: 'contact', href: '/contact', label: 'Help & Support' },
   account: { id: 'account', href: '/account', label: 'Account' },
   materials: { id: 'materials', href: '/materials', label: 'Request Material' },
+  // Contextual only (Account, Dashboard, locked courses); the locked navigation groups do not list it.
+  access: { id: 'access', href: '/access', label: 'Plan & Access' },
 } as const satisfies {
   [Id in StudentDestinationId]: { readonly id: Id; readonly href: `/${string}`; readonly label: string }
 }

@@ -48,7 +48,9 @@ export async function writeCurrentStudentAttempt(
       recovered = await recoverExistingStart(client, context.user.id, row.data.id, command)
       if (recovered === null) {
         const published = await getPublishedManagedCourse(course.contentKey, response)
-        if (published.status !== 'ok') return { status: published.status === 'signed-out' ? 'signed-out' : 'unavailable' }
+        if (published.status !== 'ok') {
+          return { status: published.status === 'signed-out' || published.status === 'locked' ? published.status : 'unavailable' }
+        }
         if (published.courseId !== row.data.id) return { status: 'unavailable' }
         const projected = projectStudentLearning(published.content)
         if (projected.status !== 'ok') return { status: 'unavailable' }

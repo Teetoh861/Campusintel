@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { ArrowRight } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
 import { Notice } from '@/components/student/Notice'
 import { REPOSITORY_COURSE_LABEL } from '@/components/student/CourseRow'
 import { PageBand } from '@/components/student/PageBand'
@@ -80,7 +81,8 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
   const code = institutional?.code ?? route.course.code
   const title = institutional?.title ?? route.course.title
   const materialsHref = `${route.href}/materials`
-  const sections = studySections({
+  const locked = content.state === 'locked'
+  const sections = locked ? [] : studySections({
     study: content.state === 'ready' ? content.study : null,
     learning, practice, textbooks: route.course.textbooks.length,
   })
@@ -105,6 +107,7 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
         : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Institutional applicability has not been confirmed for this course. The study content below is published repository material.
         </Notice>}
+      {locked && <LockedCourseNotice />}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />

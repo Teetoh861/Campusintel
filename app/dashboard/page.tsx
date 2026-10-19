@@ -6,6 +6,7 @@ import { PrimaryCards } from '@/components/dashboard/PrimaryCards'
 import { SupportingActions } from '@/components/dashboard/SupportingActions'
 import { Feedback } from '@/components/chrome/Feedback'
 import { btnGhost } from '@/components/chrome/ui'
+import { AccessNotice } from '@/components/student/AccessNotice'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
@@ -15,6 +16,7 @@ import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
+import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -51,7 +53,8 @@ export default async function DashboardPage(): Promise<ReactElement> {
         <Link href={STUDENT_DESTINATIONS.contact.href} className={studentAction(btnGhost, 'mt-3')}>Contact support</Link>
       </>}
   </StudentPage></>
-  const current = await getCurrentStudentCoursesForVerifiedStudent(client, context.user)
+  const [current, entitlement] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
+    readEntitlementForVerifiedStudent(client)])
   if (current.status === 'signed-out' || current.status === 'incomplete') redirectForStudentState(current.status, STUDENT_HOME_PATH)
   // A selection changed during this request must not produce mismatched statistics.
   const courses = current.status === 'ok' &&
@@ -60,6 +63,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
     current.selection.academicPeriodId === profile.selection.academicPeriod.id
     ? current.courses : null
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">
+    <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
     <PrimaryCards courses={courses} />
     <SupportingActions />
   </StudentPage></>

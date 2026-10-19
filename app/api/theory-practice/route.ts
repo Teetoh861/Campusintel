@@ -24,7 +24,7 @@ export async function POST(request: Request): Promise<Response> {
   const response = privateJson({ status: 'unavailable' })
   const result = await submitTheoryAnswer(input, response, request.headers.get(AUTH_CONTINUITY_HEADER))
   const status = result.status === 'ready' ? 200 : result.status === 'signed-out' ? 401
-    : result.status === 'incomplete' ? 403 : result.status === 'not-found' ? 404
+    : result.status === 'incomplete' || result.status === 'locked' ? 403 : result.status === 'not-found' ? 404
     : result.status === 'invalid-request' ? 400
     : ['session-changed', 'content-changed'].includes(result.status) ? 409 : 503
   return new Response(JSON.stringify(result), { status, headers: response.headers })

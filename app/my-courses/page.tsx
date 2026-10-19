@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { AccessNotice } from '@/components/student/AccessNotice'
 import { CourseRegister } from '@/components/student/CourseRow'
 import { EmptyState } from '@/components/student/EmptyState'
 import { Notice } from '@/components/student/Notice'
@@ -17,6 +18,7 @@ import { AUTH_MESSAGES } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { getCurrentStudentCoursesForVerifiedStudent, getStudentCourseUnavailability,
   isActionableStudentCourse } from '@/lib/courses/read-model'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
@@ -92,7 +94,8 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
   if (verified === null) redirectForStudentState('signed-out', MY_COURSES_PATH)
   const { client, context, continuityToken } = verified
 
-  const result = await getCurrentStudentCoursesForVerifiedStudent(client, context.user)
+  const [result, entitlement] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
+    readEntitlementForVerifiedStudent(client)])
   if (result.status === 'signed-out' || result.status === 'incomplete') redirectForStudentState(result.status, MY_COURSES_PATH)
   const continuity = <AuthFlowSync signedIn continuityToken={continuityToken} />
   if (result.status !== 'ok') return <>{continuity}<MyCoursesError state={result.status} /></>
@@ -118,7 +121,8 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
       </>}>
         CampusIntell hasn’t confirmed the course list for this academic selection yet. Check your selection, or look through the full library.
       </EmptyState>
-      : <section aria-labelledby="my-courses-list-title">
+      : <section aria-labelledby="my-courses-list-title" className="student-stack">
+        <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
         <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
         <CourseRegister label="Your semester courses">
           {result.courses.map(course => <StudentCourseRow key={course.institutionalCourseId} course={course} />)}

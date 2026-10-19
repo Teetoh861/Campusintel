@@ -219,6 +219,19 @@ test('temporary publication failure keeps confirmed identity and offers retry pl
   assert.match(html, /student-detail-workspace"><div class="student-detail-reading">/)
 }))
 
+test('a locked course keeps its identity, renders no study content or reading list, and points to Plan & Access', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  const html = await f.html()
+  assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
+  assert.match(html, /Confirmed for/)
+  assert.match(html, /Included with full access/)
+  assert.match(html, /GST courses stay free/)
+  assert.ok(anchors(html).some(link => link.includes('href="/access"')))
+  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|id="overview"|id="reading"|Core reading|\/quiz"|\/theory"|\/materials"/)
+  assert.doesNotMatch(html, /student-detail-rail|role="alert"/)
+  assert.equal((html.match(/Bookmark control/g) || []).length, 1, 'a locked course can still be bookmarked')
+}))
+
 test('repository-only renders repository identity and content without any fabricated institutional ownership', async () => fixture(async f => {
   f.state.result = { status: 'repository-only', course: repositoryOnly(ready({ notes: true, cbtPractice: true })), learning, practice }
   const html = await f.html()

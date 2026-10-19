@@ -41,6 +41,35 @@ function sql(statement) {
   return result.stdout.trim()
 }
 
+/** A genuine minimal WordprocessingML package: content types, package relationships and one namespaced
+ * w:document/w:body root, one paragraph per line. The hardened parser rejects anything less, and it must. */
+function validDocx(text) {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+  const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const paragraphs = text.split('\n').map(line => `<w:p><w:r><w:t xml:space="preserve">${escape(line)}</w:t></w:r></w:p>`)
+  return zipSync({
+    '[Content_Types].xml': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ' +
+      'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'),
+    '_rels/.rels': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" ' +
+      'Target="word/document.xml"/></Relationships>'),
+    'word/document.xml': strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      `<w:document xmlns:w="${W}"><w:body>${paragraphs.join('')}<w:sectPr/></w:body></w:document>`),
+  })
+}
+
+/** The grant verify_trial_otp() creates. Production trial AI exists only as an entitlement grant
+ * (20261017100000_trial_entitlements.sql); it can no longer be issued directly. */
+function issueTrial(userId) {
+  sql(`insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
+    values ('${userId}', 'trial', now(), now() + interval '7 days', 'capped', 10, 'storage-integration')`)
+}
+
 async function student(label) {
   const email = `ai-it-${label}-${randomUUID()}@example.test`
   const password = randomUUID()
@@ -87,9 +116,7 @@ async function main() {
   const course = await a.client.from('institutional_courses').select('id').limit(1).single()
   if (course.error) throw course.error
   const courseId = course.data.id
-  const docx = zipSync({ '[Content_Types].xml': strToU8('<Types/>'), 'word/document.xml': strToU8(
-    fixtureText('marketing-mix-notes.txt').split('\n').map(line => `<w:p><w:r><w:t xml:space="preserve">${line
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;')}</w:t></w:r></w:p>`).join('')) })
+  const docx = validDocx(fixtureText('marketing-mix-notes.txt'))
   let doc
 
   await check('a student holding their own JWT cannot reserve, claim, settle, account or grant directly', async () => {
@@ -120,7 +147,7 @@ async function main() {
     assert.equal((await rpc(a.client, 'get_my_ai_allowance')).state, 'not-entitled')
   })
   await check('with a grant, the server reserves a slot at a session-derived path', async () => {
-    assert.equal((await rpc(admin, 'issue_ai_allowance_grant', { p_user_id: a.id, p_source: 'trial' })).state, 'issued')
+    issueTrial(a.id)
     doc = await reserve(a, courseId, 'week-3.docx', DOCX, docx.length)
     assert.equal(doc.status, 'created')
     assert.equal(doc.storage_path, `${a.id}/${doc.document_id}`)
@@ -213,7 +240,7 @@ async function main() {
 
   // Account lifecycle, driven through the real Account deletion worker (scripts/account-deletion/worker.cjs).
   const c = await student('c')
-  await rpc(admin, 'issue_ai_allowance_grant', { p_user_id: c.id, p_source: 'trial' })
+  issueTrial(c.id)
   const workerEnv = { NEXT_PUBLIC_SUPABASE_URL: url, SUPABASE_SECRET_KEY: secret, ACCOUNT_DELETION_WORKER_ENABLED: 'true' }
   let ready
   await check('a student with AI files schedules deletion; an already-signed URL still uploads afterwards', async () => {
@@ -251,7 +278,7 @@ async function main() {
     assert.equal(data.failedThisRun, 1, JSON.stringify(data))
     assert.equal(exitCode, 1, 'operations monitoring sees the failure')
     assert.equal(sql(`select last_error_code from private.account_deletion_jobs where user_id = '${c.id}'`), 'P0002')
-    assert.equal(sql(`select count(*) from public.ai_allowance_windows where user_id = '${c.id}'`), '1', 'purge rolled back')
+    assert.equal(sql(`select count(*) from public.entitlement_grants where user_id = '${c.id}'`), '1', 'purge rolled back')
     assert.equal((await folder(c.id)).length, 3)
   })
   await check('on retry the worker removes the late file and orphan through Storage, then the purge completes', async () => {
@@ -264,7 +291,7 @@ async function main() {
     assert.deepEqual(await folder(c.id), [], 'no object of the purged account remains')
     assert.equal(sql(`select (select count(*) from public.ai_practice_documents where user_id = '${c.id}')
       + (select count(*) from public.ai_usage_events where user_id = '${c.id}')
-      + (select count(*) from public.ai_allowance_windows where user_id = '${c.id}')
+      + (select count(*) from public.entitlement_grants where user_id = '${c.id}')
       + (select count(*) from auth.users where id = '${c.id}')`), '0')
     assert.ok((await folder(a.id)).length >= 1, 'another student\'s files are untouched')
     const again = await runWorker(['--run'], workerEnv)
