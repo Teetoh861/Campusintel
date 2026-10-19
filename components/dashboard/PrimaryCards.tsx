@@ -1,6 +1,5 @@
 // components/dashboard/PrimaryCards.tsx — Course-file navigation and the complete Practice proposition.
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
 import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
 import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
@@ -34,7 +33,7 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
               <span key={label}><span>{String(index + 1).padStart(2, '0')}</span>{label}</span>)}
           </div>
           <p className="dashboard-file-note">Published resources vary by course.</p>
-          <span className="dashboard-primary-action">View my courses <ArrowRight aria-hidden="true" size={18} /></span>
+          <span className="dashboard-primary-action">View my courses</span>
         </div>
       </div>
     </Link>
@@ -58,7 +57,7 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
       </section>
       <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
         className={`dashboard-practice-action ${studentFocusControl}`}>
-        Choose a course <ArrowRight aria-hidden="true" size={18} />
+        Choose a course
       </Link>
     </article>
   </section>

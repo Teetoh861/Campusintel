@@ -1,6 +1,5 @@
 // app/my-courses/page.tsx — Request-scoped semester register with verified academic context.
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { CourseRegister } from '@/components/student/CourseRow'
@@ -127,7 +126,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
           <div className="student-register-request">
             <p>Missing material for one of your courses?</p>
             <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false} className={studentAction('student-register-request-link')}>
-              {STUDENT_DESTINATIONS.materials.label}<ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+              {STUDENT_DESTINATIONS.materials.label}
             </Link>
           </div>}
       </section>}

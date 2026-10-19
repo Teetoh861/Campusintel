@@ -18,7 +18,6 @@ export type CardCta = {
   label: string
   href: string
   variant?: 'primary' | 'secondary'
-  withArrow?: boolean
 }
 
 export type CardProps = {

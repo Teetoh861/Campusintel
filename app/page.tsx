@@ -44,7 +44,6 @@ function cardPropsFor(course: Course, index: number): CardProps {
       label: 'View course',
       href: `/courses/${course.slug}`,
       variant: 'primary',
-      withArrow: true,
     },
   }
 }
