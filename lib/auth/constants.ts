@@ -30,10 +30,10 @@ export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart:
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'
 export const AUTH_MESSAGES = {
   unavailable: 'Something went wrong. Please try again.',
-  sessionChanged: 'Your account or session changed. Reload before continuing.',
+  sessionChanged: 'Your sign-in has changed. Reload this page before continuing.',
   recoveryCode: 'Invalid or expired code.',
   recoveryRestart: 'Request a new reset code to continue.',
-  comingSoon: 'Student accounts are coming soon.',
+  comingSoon: 'Student accounts are currently unavailable. Please try again later.',
   confirmationRequired: 'Email confirmation is required before signing in.',
   confirmationSignIn: 'Your email is confirmed. Sign in to continue.',
   signupPassword: 'Choose a stronger password and try again.',

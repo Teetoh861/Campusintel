@@ -99,8 +99,8 @@ test('a trailing action is a sibling of the course target, never nested inside t
 test('repository-only identity shows the shared label instead of a code and never fabricates one', () => {
   const html = renderToStaticMarkup(React.createElement(CourseRow, { repositoryOnly: true, title: 'Business Statistics',
     href: '/courses/business-statistics', learningTypes: ['CBT practice'] }))
-  assert.match(html, /<p class="student-course-row-code" data-identity="repository">Repository course<\/p>/)
+  assert.match(html, /<p class="student-course-row-code" data-identity="repository">Additional study material<\/p>/)
   assert.match(html, /Business Statistics/)
   assert.doesNotMatch(html, /undefined|null/)
-  assert.equal(require('./CourseRow.tsx').REPOSITORY_COURSE_LABEL, 'Repository course')
+  assert.equal(require('./CourseRow.tsx').REPOSITORY_COURSE_LABEL, 'Additional study material')
 })

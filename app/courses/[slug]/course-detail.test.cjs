@@ -117,7 +117,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   assert.match(html, /data-bookmark="central-key"/)
   assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, 1, 'exactly one Practice entry')
-  assert.match(text(html), /Question bank 111 Per attempt 50 Time 30 min/)
+  assert.match(text(html), /Questions available 111 Per attempt 50 Time 30 min/)
   assert.match(html, /Start CBT practice/)
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/theory"') && link.includes('Start theory practice')))
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/materials"') && link.includes('Request material')))
@@ -192,7 +192,7 @@ test('overview-only stays no-published-learning: identity, context and prominent
     learning: { overview: learning.overview, notes: [], theoryQuestions: [], theoryPractice: false }, practice: null }
   const html = await f.html()
   assert.match(html, /Institutional title/)
-  assert.match(html, /Study content not yet available\./)
+  assert.match(html, /Study materials are not available\./)
   assert.match(html, /role="status"/)
   assert.match(html, /id="overview"/)
   assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|\/quiz"/)
@@ -208,7 +208,7 @@ test('temporary publication failure keeps confirmed identity and offers retry pl
   const html = await f.html()
   assert.match(html, /Institutional title/)
   assert.match(html, /Confirmed for/)
-  assert.match(html, /Content temporarily unavailable\./)
+  assert.match(html, /Study materials are temporarily unavailable\./)
   assert.match(html, /role="alert"/)
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route"') && link.includes('Try again')))
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/materials"')))
@@ -223,8 +223,8 @@ test('repository-only renders repository identity and content without any fabric
   f.state.result = { status: 'repository-only', course: repositoryOnly(ready({ notes: true, cbtPractice: true })), learning, practice }
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Static repository title<\/h1>/)
-  assert.match(html, /Repository course · STATIC 999/)
-  assert.match(html, /Institutional applicability has not been confirmed/)
+  assert.match(html, /Additional study material · STATIC 999/)
+  assert.match(html, /Check that these materials match your course and syllabus/)
   assert.doesNotMatch(html, /INST101|Institutional title|Confirmed for|Business Administration|Insurance|200 Level|Semester|Free/)
   assert.match(html, /id="notes"/)
   assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, 1)
@@ -232,13 +232,13 @@ test('repository-only renders repository identity and content without any fabric
   f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'no-published-learning', study: study({}) }),
     learning: { overview: learning.overview, notes: [], theoryQuestions: [], theoryPractice: false }, practice: null }
   const empty = await f.html()
-  assert.match(empty, /Study content not yet available\./)
+  assert.match(empty, /Study materials are not available\./)
   assert.doesNotMatch(empty, /\/quiz"|INST101/)
   f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'temporarily-unavailable', reason: 'projection-failed' }),
     learning: null, practice: null }
   const failed = await f.html()
-  assert.match(failed, /Content temporarily unavailable\./)
-  assert.match(failed, /Repository course · STATIC 999/)
+  assert.match(failed, /Study materials are temporarily unavailable\./)
+  assert.match(failed, /Additional study material · STATIC 999/)
   assert.doesNotMatch(failed, /id="overview"|\/quiz"/)
 }))
 
@@ -253,7 +253,7 @@ test('signed-out, not-found, unavailable and invariant failures never fall back 
   await assert.rejects(f.granted('not-a-course'), /notFound/)
   for (const [status, expectedTitle, href] of [
     ['unavailable', 'Course temporarily unavailable', '/courses/central-route'],
-    ['invariant-failure', 'Course information needs attention', '/contact'],
+    ['invariant-failure', 'Course details unavailable', '/contact'],
   ]) {
     f.state.result = { status }
     const html = await f.html()
@@ -289,7 +289,7 @@ test('long identity and large applicability stay complete and the page never re-
     assert.doesNotMatch(source, /<svg|getCourseBySlug|getPublishedManagedCourse|projectStudentLearning|getUsableManagedQuiz|getQuizConfigurationByCourseSlug|DashedRing/, file)
   }
   const page = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8')
-  assert.doesNotMatch(page, /'use client'|\/quiz`|\/quiz'|student-register|data-student-app|Course information needs attention|redirect\(/)
+  assert.doesNotMatch(page, /'use client'|\/quiz`|\/quiz'|student-register|data-student-app|Course details unavailable|redirect\(/)
   assert.match(page, /StudentPage|ResultNotice|redirectForStudentState|STUDY_COPY/)
 }))
 

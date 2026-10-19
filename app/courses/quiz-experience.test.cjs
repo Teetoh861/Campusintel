@@ -66,7 +66,7 @@ test('a fresh bank with fewer questions updates the briefing and resets readines
   await f.start()
   const intro = f.child('IntroScreen').props
   assert.equal(intro.questionCount, 20)
-  assert.match(intro.error, /published question bank changed.*review the updated conditions/i)
+  assert.match(intro.error, /practice details have changed.*review them/i)
   const tree = nodes(f.briefing())
   assert.equal(tree.find(node => node.type?.name === 'Fact' && node.props.label === 'Questions').props.value, '20 questions')
   assert.equal(f.readiness().props.checked, false)
@@ -147,7 +147,7 @@ test('a fresh 45-minute duration replaces the 60-minute briefing before any atte
   const intro = f.child('IntroScreen').props
   assert.equal(intro.timerSeconds, 2700)
   assert.equal(intro.briefingVersion, 1)
-  assert.match(intro.error, /published question bank changed.*review the updated conditions/i)
+  assert.match(intro.error, /practice details have changed.*review them/i)
   const tree = nodes(f.briefing())
   assert.equal(tree.find(node => node.type?.name === 'Fact' && node.props.label === 'Time').props.value, '45 minutes')
   assert.equal(f.readiness().props.checked, false)
@@ -361,7 +361,7 @@ test('delayed or failed fresh bank reads never start time or duplicate Start or 
   assert.deepEqual(f.writes, [])
   gate.resolve(null)
   await f.settle()
-  assert.match(f.child('IntroScreen').props.error, /unavailable/)
+  assert.match(f.child('IntroScreen').props.error, /couldn’t load your practice questions/)
   assert.equal(f.intervals.size, 0)
   f.respond(() => f.fresh)
   await f.start()

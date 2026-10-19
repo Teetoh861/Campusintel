@@ -31,9 +31,9 @@ export default function ContactPage(): ReactElement {
     <>
       <BlueCover
         crumbs={[{ label: 'Home', href: '/' }, { label: 'Contact' }]}
-        kicker="Direct line · We read everything"
+        kicker="Student support"
         title="Get in touch"
-        lede="Questions, a course you want decoded, or a correction on the intel: reach us on whichever line suits you. WhatsApp is fastest."
+        lede="Need study materials, have a question or spotted an error? Contact us by WhatsApp, phone or email. WhatsApp is usually fastest."
       />
 
       <section className="bg-ci-paper student-page" data-screen-label="Contact methods">

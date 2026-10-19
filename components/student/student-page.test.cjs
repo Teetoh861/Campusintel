@@ -64,7 +64,7 @@ test('PageBand wraps unbroken titles and ledes inside the band at the shared own
 test('every migrated loading boundary uses the shared owners and stays inert', async () => {
   for (const [file, message] of [
     ['app/my-courses/loading.tsx', 'Loading your semester courses.'],
-    ['app/courses/loading.tsx', 'Loading institutional courses.'],
+    ['app/courses/loading.tsx', 'Loading courses.'],
     ['app/courses/[slug]/loading.tsx', 'Loading course.'],
     ['app/dashboard/loading.tsx', 'Loading your Dashboard.'],
     ['app/bookmarks/loading.tsx', 'Loading your bookmarks.'],

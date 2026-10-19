@@ -217,7 +217,7 @@ test('published CBT edits and withdrawals affect the next quiz route read', asyn
   assert.ok(route.props.questions.every(item => item.questionId !== question.question_id))
   f.publishedState.rows = f.publishedState.rows.filter(row => row.kind !== 'cbt_question')
   const html = renderToStaticMarkup(await f.quizRoute(params))
-  assert.match(html, /CBT practice is not available for this course yet/)
+  assert.match(html, /CBT practice is not available for this course/)
   assert.doesNotMatch(html, /temporarily unavailable|Try again/i, 'a bank that was never built is not a temporary failure')
 }))
 
@@ -225,9 +225,9 @@ test('managed read unavailability fails closed on the quiz route', async () => f
   f.publishedState.available = false
   const html = renderToStaticMarkup(await f.quizRoute(params))
   assert.match(html, /temporarily unavailable/i)
-  assert.match(html, /couldn’t load the published question bank just now/)
+  assert.match(html, /couldn’t load the practice questions just now/)
   assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
-  assert.doesNotMatch(html, /not available for this course yet/)
+  assert.doesNotMatch(html, /not available for this course/)
 }))
 
 test('missing or unusable quiz configuration makes the quiz route reject the attempt', async () => {
@@ -235,7 +235,7 @@ test('missing or unusable quiz configuration makes the quiz route reject the att
     { ...validQuiz, quizDurationMinutes: 0 }, { ...validQuiz, quizDurationMinutes: 1e308 }]) {
     await fixture(quiz, async f => {
       const html = renderToStaticMarkup(await f.quizRoute(params))
-      assert.match(html, /CBT practice is not available for this course yet/)
+      assert.match(html, /CBT practice is not available for this course/)
       assert.doesNotMatch(html, /QuizClient|Start practice/)
     })
   }

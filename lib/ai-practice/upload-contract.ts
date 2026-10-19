@@ -88,7 +88,7 @@ export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
   'unsupported-type': 'Upload a PDF, Word (.docx) or plain text (.txt) file. Older .doc files are not supported.',
   'corrupt': 'We could not read this file. It may be damaged, or a scanned image without selectable text.',
   'encrypted': 'This file is password-protected. Remove the password and upload it again.',
-  'empty': 'We could not find any text in this file. Scanned images are not supported yet.',
+  'empty': 'We could not find any text in this file. Upload a file with selectable text; scanned images are not supported.',
   'too-short': 'There is not enough text here to write fair questions. Upload fuller notes (at least about 150 words).',
   'too-much-text': 'This file has more text than we can use at once. Upload one topic or chapter at a time.',
 }

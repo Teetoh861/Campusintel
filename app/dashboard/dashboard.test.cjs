@@ -9,7 +9,7 @@ const { renderToStaticMarkup } = require('react-dom/server')
 
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = { ...require.cache }
-  const state = { enabled: true, context: { user: { id: 'student', email: 'not-a-name@example.test' }, sessionId: 'session' },
+  const state = { enabled: true, aiAvailable: false, context: { user: { id: 'student', email: 'not-a-name@example.test' }, sessionId: 'session' },
     failure: false, client: {}, profile: { status: 'complete', firstName: 'Ọlá', selection: {
       department: { id: 'dept', label: 'Business Administration', isActive: true },
       academicLevel: { id: 'level', label: '200 Level', isActive: true },
@@ -24,6 +24,7 @@ async function fixture(run) {
     Module._load = function(name, ...args) {
       if (name === 'next/navigation') return { redirect: target => { throw Error('redirect:' + target) } }
       if (name === '@/lib/auth/config') return { isStudentAuthEnabled: () => state.enabled }
+      if (name === '@/lib/ai-practice/config') return { isAiPracticeAvailable: () => state.aiAvailable }
       if (name === '@/lib/supabase/server') return { createClient: async () => state.client }
       if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () => {
         if (state.failure) throw Error('private provider details')
@@ -65,13 +66,13 @@ test('Dashboard is a real personalized command centre, without semester rows or 
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8'), /CourseRow|use client/)
 }))
 
-test('Practice includes current course CBT and nonfunctional Coming soon AI upload, separate from material requests', async () => fixture(async f => {
+test('Practice describes personal AI practice according to its availability, separate from material requests', async () => fixture(async f => {
   const html = await f.html()
   assert.match(html, /Verified CBT practice/)
   assert.match(html, /href="\/my-courses"/)
-  assert.match(html, /Upload to Practice/)
-  assert.match(html, /Coming soon/)
-  assert.match(html, /personal AI-assisted practice/)
+  assert.match(html, /Practise from your notes/)
+  assert.match(html, /Currently unavailable/)
+  assert.match(html, /Personal AI practice from your own notes is currently unavailable/)
   const upload = html.match(/<section aria-labelledby="upload-practice-title"[\s\S]*?<\/section>/)?.[0]
   assert.ok(upload)
   assert.doesNotMatch(upload, /<a |<button|type="file"|href=/)
@@ -82,8 +83,13 @@ test('Practice includes current course CBT and nonfunctional Coming soon AI uplo
   assert.ok(practice.indexOf(upload) < practice.indexOf('dashboard-practice-action'), 'quiet upload note precedes the live practice action')
   assert.match(html, /id="practice-title">Practice<\/h2>/)
   assert.doesNotMatch(html, /Practice quizzes|dashboard-status/)
-  assert.match(upload, /class="student-status-rail" data-status="soon">Coming soon/)
+  assert.match(upload, /class="student-status-rail" data-status="unavailable">Currently unavailable/)
   assert.match(html, /class="student-status-rail" data-status="waitlist">Waitlist/)
+  f.state.aiAvailable = true
+  const enabled = await f.html()
+  assert.doesNotMatch(enabled, /Currently unavailable|Coming soon/)
+  assert.match(enabled, /With AI access on your account, upload notes for courses without CampusIntell study materials/)
+  assert.match(enabled, /AI questions are for personal study and are not verified by CampusIntell/)
 }))
 
 test('academic identity owns a full-width band outside the bounded course/action workspace', async () => fixture(async f => {
@@ -196,8 +202,8 @@ test('course summary handles singular, plural and zero-ready collections honestl
   for (const [states, expected] of [
     [['ready'], '1 course · 1 ready to study'],
     [['ready', 'not-built'], '2 courses · 1 ready to study'],
-    [['not-built'], '1 course · Study content coming gradually'],
-    [['not-built', 'unshelved', 'unavailable', 'overview-only'], '4 courses · Study content coming gradually'],
+    [['not-built'], '1 course · Study materials are not available'],
+    [['not-built', 'unshelved', 'unavailable', 'overview-only'], '4 courses · Study materials are not available'],
     [['unshelved', 'ready'], '2 courses · 1 ready to study'],
   ]) {
     f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
@@ -208,7 +214,7 @@ test('course summary handles singular, plural and zero-ready collections honestl
 }))
 
 test('empty, unavailable and changed selections do not invent course statistics', async () => fixture(async f => {
-  assert.match(courseCard(await f.html()), /No confirmed courses for this selection yet/)
+  assert.match(courseCard(await f.html()), /No courses are listed for your academic details/)
   assert.doesNotMatch(courseCard(await f.html()), /0 courses|ready to study/)
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }

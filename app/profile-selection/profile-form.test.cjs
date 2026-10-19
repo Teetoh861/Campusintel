@@ -202,7 +202,7 @@ test('complete selection restores; inactive history is shown but cannot be resub
   const historical = f.render()
   const summary = nodes(historical).find(node => node.type?.name === 'SelectionSummary')
   assert.equal(summary.props.selection.department.label, 'Former unit')
-  assert.match(JSON.stringify(summary.type(summary.props)), /no longer selectable/)
+  assert.match(JSON.stringify(summary.type(summary.props)), /no longer available/)
   assert.equal(f.select('department').props.value, '')
   assert.equal(nodes(f.select('department')).filter(node => node.type === 'option').some(node => node.props.value === f.ids.inactive), false)
   await f.submit()
@@ -226,7 +226,7 @@ test('a catalogue with no selectable row has a controlled non-submittable state'
   const tree = f.render()
   assert.equal(nodes(tree).some(node => node.type === 'form'), false)
   assert.equal(nodes(tree).find(node => node.type?.name === 'Feedback').props.message,
-    'Selection is unavailable. Please try again later.')
+    'We couldn’t load your academic details. Please try again later.')
 }))
 
 test('completed student can change one value and return only after the persisted response confirms it', async () => fixture(async f => {
@@ -241,7 +241,7 @@ test('mismatched or malformed success cannot claim a saved profile', async () =>
   f.respond(async () => response(200, f.saved(f.ids.secondDepartment)))
   await f.submit()
   assert.deepEqual(f.navigations, [])
-  assert.equal(f.notice(), 'Save could not be confirmed. Reload the page.')
+  assert.equal(f.notice(), 'We couldn’t confirm your changes were saved. Reload the page to check.')
   f.respond(async () => response(200, { status: 'complete', revision: 1, firstName: 'Adaeze', selection: { private: 'provider detail' } }))
   await f.submit()
   assert.deepEqual(f.navigations, [])
@@ -284,11 +284,11 @@ test('selection form stays compact and uses the student surface at phone and tab
 
 test('failed, unavailable, invalid and revoked saves have controlled outcomes', async () => fixture(async f => {
   const cases = [
-    [503, { status: 'unavailable', details: 'private SQL error' }, 'Save failed. Please try again.'],
+    [503, { status: 'unavailable', details: 'private SQL error' }, 'We couldn’t save your changes. Please try again.'],
     [400, { status: 'invalid-selection' }, 'Review your first name and choices, or reload if a choice is no longer available.'],
     [409, { status: 'missing-profile' }, 'Your profile could not be found. Please contact support.'],
     [409, { status: 'invariant-failure' }, 'Your profile needs attention. Please contact support.'],
-    [400, { status: 'invalid-request' }, 'Save failed. Please try again.'],
+    [400, { status: 'invalid-request' }, 'We couldn’t save your changes. Please try again.'],
   ]
   for (const [status, body, message] of cases) {
     f.respond(async () => response(status, body))
@@ -299,7 +299,7 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
   }
   f.respond(async () => { throw new Error('private network detail') })
   await f.submit()
-  assert.equal(f.notice(), 'Save failed. Please try again.')
+  assert.equal(f.notice(), 'We couldn’t save your changes. Please try again.')
   f.respond(async () => response(401, { status: 'signed-out' }))
   await f.submit()
   assert.deepEqual(f.navigations, [['replace', '/login?next=%2Fprofile-selection']])
@@ -358,7 +358,7 @@ test('success requires a safe newer revision as well as matching saved fields', 
     f.respond(async () => response(200, { ...f.saved(), revision }))
     await f.submit()
     assert.deepEqual(f.navigations, [])
-    assert.equal(f.notice(), 'Save could not be confirmed. Reload the page.')
+    assert.equal(f.notice(), 'We couldn’t confirm your changes were saved. Reload the page to check.')
   }
   f.respond(async () => response(200, f.saved()))
   await f.submit()
