@@ -9,8 +9,8 @@ import { STUDY_COPY } from './study-families'
 /** Exact copy for the result states more than one course surface reports. */
 export const RESULT_COPY = {
   'course-invariant': {
-    title: 'Course information needs attention',
-    body: 'We couldn’t load reliable course information. Please contact support.',
+    title: 'Course details unavailable',
+    body: 'We couldn’t show the course details. Please contact support.',
   },
   'courses-unavailable': { title: 'Courses temporarily unavailable', body: STUDY_COPY.temporarilyUnavailable },
   'course-unavailable': { title: 'Course temporarily unavailable', body: STUDY_COPY.temporarilyUnavailable },

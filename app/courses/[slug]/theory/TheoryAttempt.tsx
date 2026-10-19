@@ -12,13 +12,13 @@ import type { TheoryFeedback, TheoryQuestion, TheorySubmitResult } from '@/lib/t
 
 function refusalMessage(status: Exclude<TheorySubmitResult['status'], 'ready'>): string {
   if (status === 'signed-out' || status === 'session-changed') {
-    return 'Your session changed. Your answer is still here; copy it before signing in again.'
+    return 'Your sign-in has changed. Your answer is still here; copy it before reloading the page.'
   }
   if (status === 'incomplete') return 'Complete your student profile before practising. Copy your answer before leaving this page.'
   if (status === 'content-changed' || status === 'not-found') {
-    return 'The published question or model answer changed. Your answer is still here; copy it, then refresh the questions.'
+    return 'This question or its model answer has changed or is no longer available. Your answer is still here; copy it before reloading the page.'
   }
-  return 'We couldn’t load the published model answer. Your answer is still here. Try submitting again.'
+  return 'We couldn’t load the model answer. Your answer is still here. Try submitting again.'
 }
 
 /** Keep each question's draft in page memory only and reveal no feedback until submission succeeds. */
@@ -75,7 +75,7 @@ export function TheoryAttempt({ question, courseSlug, continuityToken }: {
       <div><button type="submit" disabled={busy} className={studentAction(btnNavy, studentFocusDark)}>
         {busy ? 'Loading model answer…' : 'Submit and compare'}
       </button></div>
-      {busy && <p role="status" className="student-meta">Loading the published answer for self-assessment.</p>}
+      {busy && <p role="status" className="student-meta">Loading the model answer so you can compare.</p>}
     </form> : <SelfAssessment feedback={feedback} answer={answer} courseSlug={courseSlug} onRetry={retry} />}
   </div>
 }

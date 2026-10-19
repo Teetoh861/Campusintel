@@ -64,7 +64,7 @@ export function StudyNav({ sections }: { sections: ReadonlyArray<StudySectionId>
 export function ApplicabilityList({ applicability }: {
   applicability: ReadonlyArray<StudentCourseApplicability>
 }): ReactElement {
-  if (applicability.length === 0) return <p className="student-meta">No confirmed department or semester yet.</p>
+  if (applicability.length === 0) return <p className="student-meta">Check your course requirements. The department and semester for this material have not been confirmed.</p>
   return <ul className="student-detail-applicability">
     {applicability.map(row => <li key={`${row.department.id}/${row.academicLevel.id}/${row.academicPeriod.id}`}>
       <span>{row.department.label}</span><span>{row.academicLevel.label}</span><span>{row.academicPeriod.label}</span>
@@ -113,10 +113,10 @@ export function NotesSection({ notes, number }: { notes: ReadonlyArray<ManagedNo
 
 /** The one Practice entry, from the central usable-quiz summary. */
 export function PracticeSection({ practice, number }: { practice: StudentCoursePractice; number: number }): ReactElement {
-  return <StudySection id="cbtPractice" number={number} lede="Timed practice sampled from the published question bank.">
+  return <StudySection id="cbtPractice" number={number} lede="Test your knowledge with timed multiple-choice questions.">
     <div className="student-surface student-detail-practice">
       <dl>
-        <div><dt>Question bank</dt><dd>{practice.bankSize}</dd></div>
+        <div><dt>Questions available</dt><dd>{practice.bankSize}</dd></div>
         <div><dt>Per attempt</dt><dd>{practice.attemptSize}</dd></div>
         <div><dt>Time</dt><dd>{practice.timerSeconds / 60} min</dd></div>
       </dl>
@@ -154,7 +154,7 @@ export function TheorySection({ items, number, practiceHref }: {
 export function OverviewSection({ overview, number }: { overview: ManagedOverview; number: number }): ReactElement {
   const topics = overview.topics ?? [], examFocus = overview.examFocus ?? []
   const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
-  return <StudySection id="overview" number={number} lede="Context from the published course overview.">
+  return <StudySection id="overview" number={number} lede="Explore the topics and key ideas for this course.">
     {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
     {keyTakeaways.length > 0 && <div className="student-detail-group">
       <h3>Key takeaways</h3>
@@ -193,7 +193,7 @@ export function OverviewSection({ overview, number }: { overview: ManagedOvervie
 
 /** Repository-owned textbook metadata; secondary to the study families. */
 export function ReadingList({ textbooks, number }: { textbooks: ReadonlyArray<Textbook>; number: number }): ReactElement {
-  return <StudySection id="reading" number={number} lede="Textbooks the repository course is built on.">
+  return <StudySection id="reading" number={number} lede="Use these textbooks to deepen your understanding of the course.">
     <ol className="student-detail-numbered student-surface">
       {textbooks.map((book, index) => <li key={index}>
         <span>{index === 0 ? 'Core' : 'Ref'}</span>

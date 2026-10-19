@@ -16,7 +16,7 @@ export default function BecomeTutorPage(): ReactElement {
         crumbs={[{ label: 'Tutors', href: '/tutors' }, { label: 'Apply' }]}
         kicker="Recruitment · 300L and above"
         title="Apply to tutor"
-        lede="Know a course cold? Help juniors decode it, and get paid for the sessions you run. Tell us what you can teach."
+        lede="Help other students understand courses you know well. Tell us what you can teach."
       />
 
       <section className="bg-ci-paper student-page" data-screen-label="Application form">

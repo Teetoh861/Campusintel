@@ -121,8 +121,8 @@ test('a busy reply keeps the request id until the running generation is recorded
   const server = ledger()
   const replies = [{ running: true }, { running: true }, {}]
   const { deps, requests } = harness(body => server.generate(body.requestId, replies.shift()))
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Already working on it')
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Already working on it')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Your questions are still being prepared')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Your questions are still being prepared')
   assert.equal((await generateFromDocument(DOC, deps)).kind, 'generated')
   assert.deepEqual(requests.map(request => request.body.requestId), ['r1', 'r1', 'r1'])
   assert.deepEqual(server.state, { providerCalls: 1, charged: 1 })
@@ -164,7 +164,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
   }
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
-  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['AI practice needs an active trial', 'none', 'info'])
+  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['AI practice is not included in your account', 'none', 'info'])
   // Only a trial grant is called a trial; Early Access copy stays neutral.
   const allowance = source => ({ state: 'expired', source, total: 10, used: 10, endsAt: null })
   assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('trial') }).message, /AI trial has ended/)

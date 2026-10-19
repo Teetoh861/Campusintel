@@ -133,7 +133,7 @@ test('data shrink clamps before rendering and settles the page before later grow
 
 test('genuine empty catalogue differs from no matches and has no search, filters or pagination', async () =>
   directory(async f => {
-    assert.match(f.html(f.view.render()), /No institutional courses available yet\./)
+    assert.match(f.html(f.view.render()), /No courses are available to browse\./)
     assert.equal(f.find(f.SearchField), undefined); assert.equal(f.find(f.FilterSelect), undefined)
     assert.equal(f.find(f.Pagination), undefined)
   }, () => []))

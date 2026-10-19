@@ -26,7 +26,7 @@ type PageProps = { params: Promise<{ courseId: string }> }
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Practise from your notes | CampusIntell', robots: { index: false, follow: false } }
 
-const LEDE = 'No verified CampusIntell content exists for this course yet. Upload your own notes to get personal practice questions.'
+const LEDE = 'With AI access on your account, use your own notes to create personal practice questions. AI questions are not verified by CampusIntell.'
 
 export default async function AiPracticePage({ params }: PageProps): Promise<ReactElement> {
   const { courseId } = await params
@@ -45,7 +45,7 @@ function Unavailable({ title, message }: { title: string; message: string }): Re
 async function AiPracticeCourse({ courseId, continuityToken }: { courseId: string; continuityToken: string }):
   Promise<ReactElement> {
   if (!isAiPracticeAvailable()) {
-    return <Unavailable title="AI practice is not available yet" message="Check back soon." />
+    return <Unavailable title="AI practice is currently unavailable" message="You can still browse your courses for available study materials." />
   }
   const client = await createClient()
   const context = await getStudentSessionContext(undefined, client)

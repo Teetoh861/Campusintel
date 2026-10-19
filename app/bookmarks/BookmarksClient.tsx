@@ -137,7 +137,7 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
     </StudentLoadingState>}
     {unavailable && <Notice title="Bookmarks temporarily unavailable" action={
       <button type="button" className={studentAction(btnGhost, 'bg-student-surface')} onClick={retry}>Try again</button>
-    }>We couldn’t load your bookmarks just now. Nothing has been changed.</Notice>}
+    }>We couldn’t load your bookmarks just now. Try again to see your latest bookmarks.</Notice>}
     {ready && total === 0 && <EmptyState headingRef={emptyHeading} title="You haven’t bookmarked any courses yet."
       icon={<Bookmark aria-hidden="true" size={22} strokeWidth={1.75} />} actions={<>
         <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>

@@ -27,7 +27,7 @@ type Props = {
 }
 
 /** Readiness is tied to the briefing version, so changed conditions always ask again. */
-export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, questionCount, bankSize,
+export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, questionCount,
   timerSeconds, briefingVersion, preparing, error, onStart }: Props): ReactElement {
   const [readyVersion, setReadyVersion] = useState<number | null>(null)
   const id = useId()
@@ -39,7 +39,7 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
     <h2 className="student-section-title">This attempt</h2>
     <dl className="student-practice-facts">
       <Fact label="Questions" value={plural(questionCount, 'question')}>
-        Selected at random for this attempt from {plural(bankSize, 'published question')}.
+        Each practice session gives you a fresh set of questions.
       </Fact>
       <Fact label="Time" value={plural(minutes, 'minute')}>
         The timer starts when you press Start practice. It keeps running if you switch tabs or lock your phone.
@@ -67,8 +67,8 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
     <p id={`${id}-help`} className="student-practice-help">
       {ready ? 'The timer starts as soon as you press Start practice.' : 'Confirm you’re ready to start.'}
     </p>
-    {preparing ? <p role="status" className="student-practice-help">Checking the latest published questions. The timer has not started.</p> : null}
-    {error ? <div className="mt-5"><Notice title={error}>Nothing has started. Review the conditions above before trying again.</Notice></div> : null}
+    {preparing ? <p role="status" className="student-practice-help">Getting your practice ready. The timer has not started.</p> : null}
+    {error ? <div className="mt-5"><Notice title={error}>Your attempt has not started. Review the details above before trying again.</Notice></div> : null}
   </StudentPage>
 }
 

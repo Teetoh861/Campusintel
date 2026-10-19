@@ -7,7 +7,7 @@ import { studentFocusRow } from './ui'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 
 /** Exact identity line for a shelved repository course no institutional course has confirmed. */
-export const REPOSITORY_COURSE_LABEL = 'Repository course'
+export const REPOSITORY_COURSE_LABEL = 'Additional study material'
 
 /** Confirmed institutional code, or the honest repository-only mark; never a fabricated code. */
 export type CourseRowIdentity = { title: string } & (

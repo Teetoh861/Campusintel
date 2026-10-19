@@ -19,9 +19,9 @@ export default function TutorsPage(): ReactElement {
     <>
       <BlueCover
         crumbs={[{ label: 'Home', href: '/' }, { label: 'Tutors' }]}
-        kicker="Status · Incoming"
+        kicker="Tutoring waitlist"
         title="Peer tutoring"
-        lede="The human layer on top of the intel: one-on-one help from students who have already aced the paper."
+        lede="Interested in one-to-one course support? Join the waitlist to hear when peer tutoring is available."
       />
 
       <section className="bg-ci-paper student-page" data-screen-label="Coming soon">
@@ -29,22 +29,21 @@ export default function TutorsPage(): ReactElement {
           <div className="rounded-[24px] border border-ci-border bg-ci-white p-[36px_24px] shadow-ci-card desktop:p-[48px_44px]">
             <span className="inline-flex items-center gap-2 rounded-full border border-ci-blue-200 bg-ci-blue-50 px-[15px] py-[7px] text-[12.5px] font-bold uppercase tracking-[0.12em] text-ci-navy">
               <span className="h-[6px] w-[6px] rounded-full bg-ci-navy" />
-              Coming soon
+              Not currently available
             </span>
             <h2 className="mt-5 max-w-[22ch] text-[clamp(24px,3.6vw,32px)] font-extrabold leading-[1.1] tracking-[-0.03em] text-ci-navy-900">
-              We are lining up tutors who decoded these courses first.
+              Join the peer tutoring waitlist.
             </h2>
             <p className="mt-4 max-w-[60ch] text-[16.5px] leading-[1.6] text-ci-gray-600">
-              Self-serve intelligence already covers most of what you need. Peer tutoring adds a person for the
-              parts that do not click: pair with a senior who has sat the exact paper and knows where the marks
-              hide.
+              Tutoring sessions are not available to book. You can join the waitlist on WhatsApp
+              and tell us which courses or topics you would like help with.
             </p>
 
             <div className="mt-8 flex flex-col gap-0 border-t border-ci-border">
-              <CmRow k="Who" v="300-level and above students who scored well in the course." />
-              <CmRow k="Format" v="Short, focused sessions around the exam-critical topics." />
-              <CmRow k="Where" v="Booked and run through WhatsApp, no new app to learn." />
-              <CmRow k="When" v="Rolling out next semester. Join the waitlist to be first." />
+              <CmRow k="For students" v="Tell us which courses or topics you need help with." />
+              <CmRow k="For tutors" v="Apply if you are in 300 Level or above and have strong course results." />
+              <CmRow k="Contact" v="Join the waitlist or send a tutor application through WhatsApp." />
+              <CmRow k="Availability" v="Sessions are not available to book. Join the waitlist for updates." />
             </div>
 
             <div className="mt-8 flex flex-wrap gap-[13px]">

@@ -145,7 +145,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
           window.location.replace(STUDENT_HOME_PATH)
           return
         }
-        setNotice({ message: 'Save could not be confirmed. Reload the page.', reload: true })
+        setNotice({ message: 'We couldn’t confirm your changes were saved. Reload the page to check.', reload: true })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invalid-selection') {
         setNotice({ message: 'Review your first name and choices, or reload if a choice is no longer available.', reload: true })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'missing-profile') {
@@ -153,10 +153,10 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invariant-failure') {
         setNotice({ message: 'Your profile needs attention. Please contact support.' })
       } else {
-        setNotice({ message: 'Save failed. Please try again.' })
+        setNotice({ message: 'We couldn’t save your changes. Please try again.' })
       }
     } catch {
-      setNotice({ message: 'Save failed. Please try again.' })
+      setNotice({ message: 'We couldn’t save your changes. Please try again.' })
     } finally {
       if (!navigating) { lock.current = false; setPending(false) }
     }
@@ -167,7 +167,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
       <h2 className="font-semibold text-student-text-primary">Current selection</h2>
       <SelectionSummary selection={initial.selection} />
     </div>}
-    <Feedback tone="error" message="Selection is unavailable. Please try again later." />
+    <Feedback tone="error" message="We couldn’t load your academic details. Please try again later." />
     {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
   </div>
 

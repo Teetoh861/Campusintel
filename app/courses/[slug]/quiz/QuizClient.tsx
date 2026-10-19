@@ -22,8 +22,8 @@ import type { RecordingStatus } from './attemptRecording'
 
 const TICK_INTERVAL_MS = 1000
 const HISTORY_GUARD_KEY = '__campusintelQuizGuard'
-const BANK_CHANGED_NOTICE = 'The published question bank changed. Review the updated conditions and confirm readiness again.'
-const BANK_UNAVAILABLE_NOTICE = 'The current question bank is unavailable. Try again.'
+const BANK_CHANGED_NOTICE = 'Your practice details have changed. Review them and confirm you’re ready to start.'
+const BANK_UNAVAILABLE_NOTICE = 'We couldn’t load your practice questions. Please try again.'
 const QUESTIONS_CHANGED_NOTICE = 'These questions have changed. Retake with new questions instead.'
 type Completion = 'submitted' | 'timed_out'
 type Finish = { reason: Completion; secondsLeft: number }
@@ -129,7 +129,7 @@ export function QuizClient(props: QuizCoreProps): ReactElement {
     clock.stop()
     disarmHistoryGuard.current()
     setScreen('intro')
-    setBankError('The question bank changed while this attempt was starting. Try again.')
+    setBankError('These practice questions have changed. Please try starting again.')
   }, [recordingStatus, clock])
 
   // Guard against accidentally losing an in-progress attempt. Only while the

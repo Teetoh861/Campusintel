@@ -10,7 +10,7 @@ import { CATALOGUE_CONTEXT, CATALOGUE_LEDE, COURSES_PER_PAGE } from './catalogue
 export default function Loading() {
   return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.courses.label} lede={CATALOGUE_LEDE}
     context={<p>{CATALOGUE_CONTEXT}</p>} />}>
-    <StudentLoadingState message="Loading institutional courses.">
+    <StudentLoadingState message="Loading courses.">
       <CourseRegisterSkeleton rows={COURSES_PER_PAGE} />
     </StudentLoadingState>
   </StudentPage>

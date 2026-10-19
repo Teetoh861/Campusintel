@@ -53,20 +53,20 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
         <p className={theoryProse}>{answer || 'You submitted an empty answer.'}</p>
       </section>
       <section aria-labelledby={`${id}-model`} className="min-w-0">
-        <h3 id={`${id}-model`} className="mb-3 font-semibold text-student-primary">Official model answer</h3>
+        <h3 id={`${id}-model`} className="mb-3 font-semibold text-student-primary">Model answer</h3>
         <p className={theoryProse}>{feedback.modelAnswer.body}</p>
       </section>
     </div>
     {feedback.rubric && <section aria-labelledby={`${id}-rubric`}>
-      <h3 id={`${id}-rubric`} className="mb-3 font-semibold text-student-primary">Authored rubric</h3>
+      <h3 id={`${id}-rubric`} className="mb-3 font-semibold text-student-primary">Marking guide</h3>
       <p className={theoryProse}>{feedback.rubric.body}</p>
     </section>}
     <form onSubmit={finish} className="student-stack">
       {feedback.rubric ? <>
-        <p className="student-meta">Assess each authored point below. These coverage counts are your self-score; they do not calculate the rubric’s marks.</p>
+        <p className="student-meta">For each point, choose how well your answer covered it. The totals summarise your assessment; they do not calculate a mark.</p>
         {points.map((point, index) => <fieldset key={index} disabled={complete} className="min-w-0 rounded-ci-btn-sm border border-student-border p-3">
           <legend className="max-w-full px-1 font-medium text-student-text-primary whitespace-pre-wrap [overflow-wrap:anywhere]">{point}</legend>
-          <label htmlFor={`${id}-point-${index}`} className="mb-2 block text-sm text-student-text-primary">Your self-score for point {index + 1}</label>
+          <label htmlFor={`${id}-point-${index}`} className="mb-2 block text-sm text-student-text-primary">Your assessment of point {index + 1}</label>
           <select id={`${id}-point-${index}`} required className="student-filter-select" value={ratings[index] ?? ''}
             onChange={event => {
               const value = event.currentTarget.value
@@ -82,7 +82,7 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
           Student self-assessment: {counts.covered} covered · {counts.partly} partly covered · {counts['not-yet']} to revisit.
           {' '}{counts.reviewed} of {counts.total} points assessed.
         </p>
-      </> : <p className="student-meta">No authored rubric is published for this question. Compare your answer with the model answer and note what you would improve. No official marking points or score are supplied.</p>}
+      </> : <p className="student-meta">A marking guide is not available for this question. Compare your answer with the model answer and note what you would improve. No official marking points or score are provided.</p>}
       <div>
         <label htmlFor={`${id}-reflection`} className="mb-2 block font-semibold text-student-text-primary">What would you improve? (optional)</label>
         <textarea id={`${id}-reflection`} className={theoryTextarea} rows={4} maxLength={THEORY_REFLECTION_MAX_LENGTH}

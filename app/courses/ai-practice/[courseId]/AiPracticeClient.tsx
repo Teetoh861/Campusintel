@@ -14,9 +14,9 @@ import { PersonalDisclaimer, PersonalPractice } from './PersonalPractice'
 import type { ReactElement } from 'react'
 
 const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
-  uploading: { title: 'Uploading your file', detail: 'Sending it to your private storage.' },
-  reading: { title: 'Reading your notes', detail: 'Checking the file and extracting its text.' },
-  generating: { title: 'Writing five questions', detail: 'This usually takes under a minute. Keep this page open.' },
+  uploading: { title: 'Uploading your file', detail: 'Keep this page open while your file uploads.' },
+  reading: { title: 'Reading your notes', detail: 'Preparing your notes for practice questions.' },
+  generating: { title: 'Writing five questions', detail: 'This may take a moment. Keep this page open.' },
 }
 
 /** One honest sentence about the student's AI grant; nothing when there is none or it cannot be read. */

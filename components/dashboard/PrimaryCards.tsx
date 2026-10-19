@@ -4,6 +4,7 @@ import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
 import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
 import { isActionableStudentCourse } from '@/lib/courses/read-model'
+import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { StudentCourse } from '@/lib/courses/read-model'
@@ -11,14 +12,15 @@ import type { ReactElement } from 'react'
 
 function courseSummary(courses: ReadonlyArray<StudentCourse> | null): string {
   if (courses === null) return 'Course information is temporarily unavailable.'
-  if (courses.length === 0) return 'No confirmed courses for this selection yet.'
+  if (courses.length === 0) return 'No courses are listed for your academic details.'
   const total = `${courses.length} ${courses.length === 1 ? 'course' : 'courses'}`
   const ready = courses.filter(isActionableStudentCourse).length
-  return `${total} · ${ready > 0 ? `${ready} ready to study` : 'Study content coming gradually'}`
+  return `${total} · ${ready > 0 ? `${ready} ready to study` : 'Study materials are not available'}`
 }
 
 /** Two primary surfaces: current semester study and current/future personal practice. */
 export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
+  const aiAvailable = isAiPracticeAvailable()
   return <section aria-label="Study and practice" className="dashboard-primary-grid">
     <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
       className={`dashboard-course-file student-interactive-card student-enter student-enter-1 ${studentFocusCard}`}>
@@ -32,7 +34,7 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
             {['Overview', ...STUDY_FAMILIES.map(family => family.label)].map((label, index) =>
               <span key={label}><span>{String(index + 1).padStart(2, '0')}</span>{label}</span>)}
           </div>
-          <p className="dashboard-file-note">Published resources vary by course.</p>
+          <p className="dashboard-file-note">Available study materials vary by course.</p>
           <span className="dashboard-primary-action">View my courses</span>
         </div>
       </div>
@@ -50,10 +52,12 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
       </div>
       <section aria-labelledby="upload-practice-title" className="dashboard-upload">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 id="upload-practice-title">Upload to Practice</h3>
-          <StatusRail>Coming soon</StatusRail>
+          <h3 id="upload-practice-title">Practise from your notes</h3>
+          {!aiAvailable && <StatusRail status="unavailable">Currently unavailable</StatusRail>}
         </div>
-        <p>Turn your own material into personal AI-assisted practice. Not verified by CampusIntell.</p>
+        <p>{aiAvailable
+          ? 'With AI access on your account, upload notes for courses without CampusIntell study materials. AI questions are for personal study and are not verified by CampusIntell.'
+          : 'Personal AI practice from your own notes is currently unavailable. AI questions are not verified by CampusIntell.'}</p>
       </section>
       <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
         className={`dashboard-practice-action ${studentFocusControl}`}>

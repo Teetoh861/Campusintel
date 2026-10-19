@@ -263,8 +263,8 @@ test('each row is a course link and a sibling toggle: two independent targets, n
 test('inert rows keep the shared status copy, stay removable, and offer no row-level recovery actions', async () =>
   bookmarks(async f => {
     const html = f.html()
-    assert.match(html, /Content temporarily unavailable\./)
-    assert.match(html, /Study content not yet available\./)
+    assert.match(html, /Study materials are temporarily unavailable\./)
+    assert.match(html, /Study materials are not available\./)
     assert.doesNotMatch(html, /Try again|Request Material|\/materials/)
     assert.equal((html.match(/<a\b/g) || []).length, 1, 'only the ready row links')
     assert.equal(f.toggles().length, 3)
@@ -277,7 +277,7 @@ test('inert rows keep the shared status copy, stay removable, and offer no row-l
 test('repository-only rows present the shared label, never a code, and name the toggle by title', async () =>
   bookmarks(async f => {
     const html = f.html()
-    assert.match(html, /data-identity="repository">Repository course</)
+    assert.match(html, /data-identity="repository">Additional study material</)
     assert.match(html, /aria-label="Bookmark Business Statistics" aria-pressed="true"/)
     assert.doesNotMatch(html, /REPO1|undefined/)
     assert.ok(html.includes(LONG_TITLE), 'long titles stay complete')
@@ -297,7 +297,7 @@ test('loading, unavailable and empty states come from the shared owners with rea
   await bookmarks(async f => {
     const html = f.html()
     assert.match(html, /role="alert"[\s\S]*Bookmarks temporarily unavailable/)
-    assert.match(html, /We couldn’t load your bookmarks just now\. Nothing has been changed\./)
+    assert.match(html, /We couldn’t load your bookmarks just now\. Try again to see your latest bookmarks\./)
     assert.doesNotMatch(html, /aria-pressed|student-bookmarks-count|haven’t bookmarked/)
     f.nodes(f.tree()).find(element => element.type === 'button' && element.props.children === 'Try again').props.onClick()
     assert.equal(f.store.refreshes, 1)

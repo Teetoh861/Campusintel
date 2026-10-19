@@ -55,8 +55,8 @@ export function ResultsScreen(props: Props): ReactElement {
     {finishReason === 'timed_out' ? <div className="mb-6 max-w-[720px]">
       <Notice tone="info" title={PRACTICE_COPY.timedOutTitle}>{PRACTICE_COPY.timedOutBody}</Notice>
     </div> : null}
-    {error ? <div className="mb-6 max-w-[720px]"><Notice title={error}>Nothing has started; this result stays on the page.</Notice></div> : null}
-    {preparing ? <p role="status" className="student-practice-help mb-6">Checking the latest published questions. The timer has not started.</p> : null}
+    {error ? <div className="mb-6 max-w-[720px]"><Notice title={error}>Your next attempt has not started. You can still review this result until you leave the page.</Notice></div> : null}
+    {preparing ? <p role="status" className="student-practice-help mb-6">Getting your practice ready. The timer has not started.</p> : null}
     <div className="student-practice-results">
       <section aria-labelledby="student-practice-score-heading">
         <h2 id="student-practice-score-heading" className="sr-only">Score for this attempt</h2>
@@ -86,7 +86,7 @@ export function ResultsScreen(props: Props): ReactElement {
         <button type="button" className={studentAction(btnGhost)} disabled={preparing} onClick={props.onRetakeWithNewQuestions}>Retake with new questions</button>
         <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={preparing} onClick={props.onRedoQuestions}>Redo these questions</button>
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent')}>{PRACTICE_COPY.backToCourse}</Link>
-        <p className="student-practice-help !mt-0">Retake draws a fresh set of questions. Redo runs this same set again.</p>
+        <p className="student-practice-help !mt-0">Retake gives you a fresh set of questions. Redo lets you practise these questions again.</p>
       </section>
     </div>
   </StudentPage>
