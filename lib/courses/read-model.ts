@@ -363,7 +363,13 @@ export function getStudentCourseUnavailability(course: PresentableStudentCourse)
 // Readers
 // ---------------------------------------------------------------------------
 
-/** Read the whole institutional catalogue in one structural query on the verified client. */
+/** Whether the institutional course is still offered in any active academic context. */
+export function hasActiveCourseOffering(course: Pick<StudentCourse, 'applicability'>): boolean {
+  return course.applicability.some(({ department, academicLevel, academicPeriod }) =>
+    department.isActive && academicLevel.isActive && academicPeriod.isActive)
+}
+
+/** Read the offered institutional catalogue in one structural query on the verified client. */
 export async function getStudentCatalogueForVerifiedStudent(client: StudentClient): Promise<StudentCatalogueResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
@@ -378,7 +384,7 @@ export async function getStudentCatalogueForVerifiedStudent(client: StudentClien
       seen.add(row.id)
       const structure = deriveStructure(row, row.applicability)
       if (structure === null) return { status: 'invariant-failure' }
-      structures.push(structure)
+      if (hasActiveCourseOffering(structure)) structures.push(structure)
     }
     const courses = await resolveCourses(client, structures)
     return courses === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', courses }
