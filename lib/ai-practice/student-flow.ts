@@ -1,7 +1,7 @@
 // lib/ai-practice/student-flow.ts — The upload-to-practice journey over an injected, already-authorized environment.
 // Callers verify the session first; everything here acts only for env.userId and never trusts client identity.
 import 'server-only'
-import { getStudentCourseUnavailability } from '@/lib/courses/read-model'
+import { getStudentCourseUnavailability, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import type { StudentCourse, StudentCourseByIdResult } from '@/lib/courses/read-model'
 import { AI_PRACTICE_LIMITS } from './contract'
 import type { GenerationOutcome } from './contract'
@@ -78,9 +78,9 @@ export type AiPracticeEnv = {
   reportProviderProblem(code: ProviderErrorCode, diagnostic: ProviderDiagnostic): void
 }
 
-/** PRD 4.3: AI practice is the route for an institutional course whose content is honestly not built. */
+/** PRD 4.3: AI practice requires an active offering whose content is honestly not built. */
 export function isAiPracticeEligible(course: StudentCourse): boolean {
-  return getStudentCourseUnavailability(course) === 'missing'
+  return hasActiveCourseOffering(course) && getStudentCourseUnavailability(course) === 'missing'
 }
 
 type CourseCheck = { status: 'ok'; course: StudentCourse } | { status: 'signed-out' | 'not-found' | 'unavailable' | 'not-eligible' }
@@ -164,10 +164,10 @@ async function processUpload(env: AiPracticeEnv, documentId: string): Promise<Ai
   const document = await env.getDocument(documentId)
   if (document === 'error') return { status: 'unavailable' }
   if (document === null) return { status: 'not-found' }
-  const settled = documentState(document)
-  if (settled) return settled
   const course = await eligibleCourse(env, document.institutionalCourseId)
   if (course.status !== 'ok') return { status: course.status }
+  const settled = documentState(document)
+  if (settled) return settled
   // Claim before any expensive work: concurrent requests for one upload never extract it twice.
   const claim = await env.claimExtraction(document.id)
   if (claim === null) return { status: 'unavailable' }
@@ -213,11 +213,11 @@ async function generate(env: AiPracticeEnv, command: Extract<AiPracticeCommand, 
   const document = await env.getDocument(command.documentId)
   if (document === 'error') return { status: 'unavailable' }
   if (document === null) return { status: 'not-found' }
+  const course = await eligibleCourse(env, document.institutionalCourseId)
+  if (course.status !== 'ok') return { status: course.status }
   if (document.status !== 'ready' || document.sourceText === null) {
     return documentState(document) ?? { status: 'invalid-request' }
   }
-  const course = await eligibleCourse(env, document.institutionalCourseId)
-  if (course.status !== 'ok') return { status: course.status }
   // Without a provider nothing is reserved: an outage never touches the allowance.
   if (!env.provider) return { status: 'unavailable' }
   const begun = await env.beginGeneration(command.requestId, document.id)

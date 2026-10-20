@@ -1,4 +1,5 @@
--- Master Course Catalog v1.1: the 22-page owner edition, pages 9-10 and 15-20.
+-- Master Course Catalog v1.1 identities remain stable; the forward BUA
+-- correction replaces only the active 300L First Semester offering.
 begin;
 
 select plan(16);
@@ -157,8 +158,8 @@ select is(
 select is(
   (select array_agg(course_code order by course_code) from v1_1_selection
    where department_key = 'business-administration' and level_key = '300-level' and period_key = 'first-semester'),
-  array['BUA302', 'BUA319', 'BUA321', 'BUA323', 'BUA325']::text[],
-  'BUA 300L First Semester includes only the five confirmed rows'
+  array['BUA303', 'BUA305', 'BUA310', 'BUA313', 'BUA319', 'BUA321', 'BUA323', 'BUS254']::text[],
+  'BUA 300L First Semester includes the eight updated owner-approved courses'
 );
 
 select is(
@@ -170,9 +171,9 @@ select is(
 
 select is(
   (select count(*)::int from public.institutional_courses
-   where course_code in ('BUA305', 'BUA313', 'FBA311', 'CIL318')),
+   where course_code in ('FBA311', 'CIL318')),
   0,
-  'the four expressly unconfirmed BUA 300L identities are absent'
+  'FBA311 and CIL318 remain absent from the catalogue'
 );
 
 select ok(

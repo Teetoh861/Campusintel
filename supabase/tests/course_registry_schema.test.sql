@@ -51,14 +51,14 @@ select is(
 
 select is(
   (select count(*)::int from public.institutional_courses),
-  149,
-  'v1.1 adds 48 exact identities to the 101-row predecessor catalogue'
+  154,
+  'the updated catalogue adds five distinct BUA identities and retains historical identities'
 );
 
 select ok(
   (
-    select count(distinct id) = 149
-      and count(distinct (course_code, display_title)) = 149
+    select count(distinct id) = 154
+      and count(distinct (course_code, display_title)) = 154
     from public.institutional_courses
   ),
   'institutional IDs and exact source code/title identities are unique'
@@ -102,7 +102,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is null
   ),
-  138,
+  143,
   'institutional catalogue courses may exist without repository content'
 );
 
@@ -183,8 +183,8 @@ select is(
 
 select is(
   (select count(*)::int from public.course_applicability),
-  264,
-  'v1.1 adds 68 source rows while preserving 32 faculty-wide GST tuples'
+  267,
+  'the BUA correction replaces two mappings with five and preserves all faculty-wide GST tuples'
 );
 
 select is(
@@ -274,7 +274,7 @@ select is(
   array[
     'accounting=29',
     'actuarial-science=31',
-    'business-administration=38',
+    'business-administration=41',
     'ehrm=32',
     'finance=31',
     'insurance=30',
@@ -292,8 +292,8 @@ select is(
       on academic_levels.id = course_applicability.academic_level_id
     where academic_levels.key = '300-level'
   ),
-  5,
-  'only five confirmed BUA 300L First Semester rows are added'
+  8,
+  'exactly eight approved BUA 300L First Semester mappings exist'
 );
 
 select is(
