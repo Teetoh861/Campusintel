@@ -133,8 +133,8 @@ select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000001', '63000
 insert into outcome values ('a-verify', public.verify_trial_otp('62000000-0000-4000-8000-000000000001',
   '63000000-0000-4000-8000-000000000001', pg_temp.h('code-a')));
 select is((select result->>'state' from outcome where step = 'a-verify'), 'activated', 'the right code activates the trial');
-select is((select (result->>'ends_at')::timestamptz from outcome where step = 'a-verify'), now() + interval '7 days',
-  'the trial lasts seven days from server time');
+select is((select (result->>'ends_at')::timestamptz from outcome where step = 'a-verify'), now() + interval '72 hours',
+  'the Discovery Pass lasts exactly 72 hours from database time (20261021100000_discovery_pass.sql)');
 select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001',
   pg_temp.h('code-a'))->>'state', 'already-used', 'replaying a used code is refused');
 select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000003',
@@ -143,7 +143,7 @@ select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000001', '6300
 reset role;
 select is((select jsonb_build_object('source', source, 'ai_terms', ai_terms, 'ai_units', ai_units)
   from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'),
-  '{"source":"trial","ai_terms":"capped","ai_units":10}'::jsonb, 'the trial carries the fixed shared AI allowance from policy');
+  '{"source":"trial","ai_terms":"capped","ai_units":1}'::jsonb, 'the pass carries the one-set Discovery AI allowance from policy');
 select is((select user_id from private.trial_phone_claims where phone_hash = pg_temp.h('phone-a')),
   '61000000-0000-4000-8000-000000000001'::uuid, 'the phone is claimed by the account that verified it');
 select ok(not exists (select 1 from private.trial_otp_challenges where code_hash = pg_temp.h('code-a') and status <> 'verified'),
@@ -156,13 +156,13 @@ select ok(not exists (select 1 from private.entitlement_events where detail::tex
 -- Mid-session: the same JWT and session see the new plan immediately, without logging out.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000001"}';
-select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000002')) > 0,
-  'the department course opens in the same session right after activation');
-select is((select e->>'tier' || '/' || (e->'trial'->>'status') || '/' || (e->'access'->>'source') from public.get_my_entitlement() e),
-  'full/active/trial', 'the summary reflects the active trial');
+select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000002') $$,
+  'CI403', null, 'a Discovery Pass never opens the whole department course: only pinned previews are served');
+select is((select e->>'tier' || '/' || (e->'trial'->>'status') || '/' || coalesce(e->'access'->>'source', 'none')
+  from public.get_my_entitlement() e), 'free/active/none', 'the summary shows an active pass on the free tier');
 select is((select jsonb_build_object('state', a->>'state', 'source', a->>'source', 'total', (a->>'total')::integer)
-  from public.get_my_ai_allowance() a), '{"state":"active","source":"trial","total":10}'::jsonb,
-  'the trial AI allowance is visible to the student');
+  from public.get_my_ai_allowance() a), '{"state":"active","source":"trial","total":1}'::jsonb,
+  'the Discovery AI allowance is visible to the student');
 reset role;
 
 -- 3. One verified phone, one trial, across accounts ----------------------------------------------------------------
@@ -265,20 +265,16 @@ select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000004', '6300
 reset role;
 update private.entitlement_policy set otp_global_sends_per_day = 2000;
 
--- 5. The AI allowance is one fixed total; exhausting it restricts AI only -----------------------------------------
-update public.entitlement_grants set starts_at = now() - interval '3 days', ends_at = now() + interval '4 days'
+-- 5. The Discovery AI allowance is one fixed total; exhausting it restricts AI only --------------------------------
+update public.entitlement_grants set starts_at = now() - interval '30 hours', ends_at = now() + interval '42 hours'
   where user_id = '61000000-0000-4000-8000-000000000001';
 insert into public.ai_usage_events (user_id, feature, state, reserved_at, settled_at, funding_source, funding_grant_id)
-  select '61000000-0000-4000-8000-000000000001', 'upload_practice', 'consumed', now() - interval '2 days', now() - interval '2 days', 'trial',
-    (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001' and source = 'trial')
-  from generate_series(1, 6);
-select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])->>'used',
-  '6', 'use from earlier trial days still counts: the allowance never resets daily');
-insert into public.ai_usage_events (user_id, feature, state, reserved_at, settled_at, funding_source, funding_grant_id)
-  select '61000000-0000-4000-8000-000000000001', 'upload_practice', 'consumed', now(), now(), 'trial',
-    (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001' and source = 'trial') from generate_series(1, 4);
-select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])->>'state',
-  'allowance-exhausted', 'the tenth use exhausts the trial allowance');
+  select '61000000-0000-4000-8000-000000000001', 'upload_practice', 'consumed', now() - interval '29 hours',
+    now() - interval '29 hours', 'trial',
+    (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001' and source = 'trial');
+select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])
+  - 'ends_at', '{"state":"allowance-exhausted","total":1,"used":1}'::jsonb,
+  'a set delivered on the first day still counts on the second: nothing replenishes');
 set local role service_role;
 select is(public.create_ai_practice_document('62000000-0000-4000-8000-000000000001',
   (select (result->>'id')::uuid from outcome where step = 'course-acc101'), 'notes.txt', 'text/plain', 100,
@@ -286,47 +282,38 @@ select is(public.create_ai_practice_document('62000000-0000-4000-8000-0000000000
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000001"}';
-select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000002')) > 0,
-  'with the AI allowance used up on day 3, department courses stay open for the rest of the trial');
-select is((select e->>'tier' from public.get_my_entitlement() e), 'full', 'the plan is still full access');
+select is((select e->>'tier' || '/' || (e->'trial'->>'status') from public.get_my_entitlement() e), 'free/active',
+  'with AI used up, the pass itself stays active until it ends');
 reset role;
 
--- A quiz attempt started during the trial ... -----------------------------------------------------------------------
+-- A Discovery Pass cannot start a full CBT attempt, so no question of the bank is pinned or revealed ---------------
 set local role service_role;
 select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000001',
   '40000000-0000-4000-8000-000000000002', 1, 'start', null, 'in_progress',
-  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]')->>'status', 'saved',
-  'an entitled student starts a CBT attempt');
+  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]'),
+  '{"status":"locked"}'::jsonb, 'a full attempt on a department course is refused during the pass');
 reset role;
 
--- 6. Trial expiry: back to the free tier, not a lockout ---------------------------------------------------------------
-update public.entitlement_grants set starts_at = now() - interval '7 days', ends_at = now() - interval '1 second'
+-- 6. Pass expiry: back to the free tier, not a lockout ----------------------------------------------------------------
+update public.entitlement_grants set starts_at = now() - interval '72 hours', ends_at = now() - interval '1 second'
   where user_id = '61000000-0000-4000-8000-000000000001';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000001"}';
 select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000002') $$,
-  'CI403', null, 'the moment the trial ends, the same session loses department content');
+  'CI403', null, 'department content stays locked after the pass');
 select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000013')) > 0,
-  'GST stays free after the trial');
+  'GST stays free after the pass');
 select is((select e->>'tier' || '/' || (e->'trial'->>'status') from public.get_my_entitlement() e), 'free/ended',
-  'the summary shows the ended trial and the free tier');
+  'the summary shows the ended pass and the free tier');
 reset role;
 select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])->>'state',
-  'allowance-expired', 'AI ends with the trial');
+  'allowance-expired', 'AI ends with the pass');
 set local role service_role;
-select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000001',
-  '40000000-0000-4000-8000-000000000002', 0, 'finish', 0, 'submitted',
-  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"option_index":0}]')->>'status', 'saved',
-  '... can still be finished after the trial ends');
-select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000002',
-  '40000000-0000-4000-8000-000000000002', 1, 'start', null, 'in_progress',
-  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]'),
-  '{"status":"locked"}'::jsonb, 'but a new attempt cannot start, so no question is pinned or revealed');
 select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000003',
   '40000000-0000-4000-8000-000000000008', 1, 'start', null, 'in_progress',
   (select result from outcome where step = 'gst-selection'))->>'status', 'saved', 'GST practice still starts on the free tier');
 select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000004',
-  pg_temp.h('phone-new'), '999', pg_temp.h('code-new'))->>'state', 'already-activated', 'an ended trial cannot restart');
+  pg_temp.h('phone-new'), '999', pg_temp.h('code-new'))->>'state', 'already-activated', 'an ended pass cannot restart');
 reset role;
 
 -- 6b. AI follows the entitlement: legacy windows cannot bypass a revoked or expired grant ------------------------------
@@ -533,15 +520,15 @@ set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000011","r
 select is((select (e->'trial'->>'status') || '/' || ((e->'trial'->>'available_from') is not null)::text
   from public.get_my_entitlement() e), 'after-early-access/true', 'the summary says when the trial becomes available');
 reset role;
--- Early Access ends: the trial is available (provisional policy) with its full seven days.
+-- Early Access ends: the pass is available (provisional policy) with its full 72 hours.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access';
 set local role service_role;
 select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000011', '63000000-0000-4000-8000-000000000111',
   pg_temp.h('code-h'))->>'state', 'activated', 'after Early Access ends the trial activates');
 reset role;
-select is((select ends_at from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial'), now() + interval '7 days',
-  'with all seven days of department access');
+select is((select ends_at from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial'), now() + interval '72 hours',
+  'with its full 72 hours');
 -- The owner may decide Early Access members never get a trial afterwards.
 update private.entitlement_policy set trial_after_early_access = false;
 set local role service_role;
@@ -567,8 +554,8 @@ insert into public.ai_usage_events (user_id, feature, state, reserved_at, settle
   select '61000000-0000-4000-8000-000000000008', 'upload_practice', 'consumed', now() - interval '1 day', now() - interval '1 day', 'early_access',
     (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000008' and source = 'early_access') from generate_series(1, 8);
 select is((select jsonb_build_object('state', a->>'state', 'total', (a->>'total')::integer, 'used', (a->>'used')::integer)
-  from private.ai_allowance_admission('61000000-0000-4000-8000-000000000008', array['trial', 'early_access']) a), '{"state":"active","total":10,"used":0}'::jsonb,
-  'eight generations during Early Access leave the trial allowance untouched');
+  from private.ai_allowance_admission('61000000-0000-4000-8000-000000000008', array['trial', 'early_access']) a), '{"state":"active","total":1,"used":0}'::jsonb,
+  'eight generations during Early Access leave the Discovery allowance untouched');
 
 -- 7c. Each AI use stays charged to the grant that funded it (M1) -----------------------------------------------------------
 -- J starts a trial, receives Early Access during it, and generates through the real admission and settlement path.
@@ -586,6 +573,9 @@ insert into public.ai_practice_documents (id, user_id, institutional_course_id, 
   values ('64000000-0000-4000-8000-000000000012', '61000000-0000-4000-8000-000000000012', (select (result->>'id')::uuid from outcome where step = 'course-acc101'),
     '61000000-0000-4000-8000-000000000012/64000000-0000-4000-8000-000000000012', 'n.txt', 'text/plain', 10,
     now() + interval '1 day', 'ready', 'ready text', pg_temp.h('ready text'), 2);
+-- This section tests funding attribution with a legacy ten-set trial grant, so the Discovery attempt limit
+-- (20261021100000_discovery_pass.sql) is lifted until it ends; discovery_pass.test.sql tests that limit.
+update private.entitlement_policy set discovery_ai_attempts = 10;
 -- Generate n sets, each admitted and then settled with the given outcome, through the service-role functions.
 create function pg_temp.generate(p_count integer, p_status text default 'generated') returns void language plpgsql as $$
 declare v_state jsonb;
@@ -651,6 +641,7 @@ select is((public.begin_ai_practice_generation('62000000-0000-4000-8000-00000000
   '64000000-0000-4000-8000-000000000012', array['trial', 'early_access']))->>'state', 'allowance-exhausted',
   'the trial is exhausted after exactly ten of its own sets');
 reset role;
+update private.entitlement_policy set discovery_ai_attempts = 3;
 -- Account deletion removes the ledger with the grants.
 delete from auth.users where id = '61000000-0000-4000-8000-000000000012';
 select is((select count(*)::integer from public.ai_usage_events where user_id = '61000000-0000-4000-8000-000000000012')

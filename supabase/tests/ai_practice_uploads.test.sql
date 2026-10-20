@@ -118,6 +118,9 @@ reset role;
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
   select '21111111-1111-4111-8111-111111111111', 'trial', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
     'test' from private.entitlement_policy;
+-- This suite exercises the shared ledger with a multi-unit grant. The Discovery Pass attempt and upload limits
+-- (20261021100000_discovery_pass.sql) are lifted here and tested in discovery_pass.test.sql.
+update private.entitlement_policy set discovery_ai_attempts = 10, discovery_ai_uploads = 10;
 select throws_ok($$ select public.issue_ai_allowance_grant('21111111-1111-4111-8111-111111111111', 'trial') $$, '22023', null,
   'trial AI can no longer be issued directly, bypassing phone verification');
 set local role service_role;

@@ -16,6 +16,7 @@ export function LockedCourseNotice({ backHref, backLabel }: { backHref?: string;
       See how to unlock
     </Link>{back}
   </>}>
-    Department courses open with a 7-day free trial or Early Access. GST courses stay free for every student.
+    Department courses open fully with Early Access. A free Discovery Pass lets you preview them first. GST courses stay
+    free for every student.
   </Notice>
 }

@@ -1,7 +1,9 @@
 // lib/entitlements/contract.ts — The student entitlement summary and the commands that may cross the client boundary.
 // Free courses never need an entitlement; full access is a server-issued grant (PRD v1.4 §4.5, §4.9). Early Access
-// is granted automatically by the database, so no student command exists for it.
+// is granted automatically by the database, so no student command exists for it. A 'trial' grant is the Discovery Pass
+// (20261021100000_discovery_pass.sql): previews and a small AI allowance, never full access.
 import { z } from 'zod'
+import { discoveryKind } from './discovery-contract'
 
 const timestamp = z.string().min(1)
 
@@ -11,13 +13,21 @@ export const entitlementSummarySchema = z.object({
   planned_launch_at: timestamp,
   // Set once by the founder; null until the platform has actually launched.
   actual_launch_at: timestamp.nullable(),
-  trial_days: z.number().int().positive(),
+  // Discovery Pass length, fixed by the database at activation.
+  trial_hours: z.number().int().positive(),
   expiry_notice_hours: z.number().int().positive(),
   tier: z.enum(['full', 'free']),
-  access: z.object({ source: z.enum(['trial', 'early_access', 'manual', 'paid']), ends_at: timestamp }).nullable(),
-  // after-early-access: no trial while Early Access is active; available_from says when it opens.
+  // Full access only. A Discovery Pass is reported under `trial`, never here.
+  access: z.object({ source: z.enum(['early_access', 'manual', 'paid']), ends_at: timestamp }).nullable(),
+  // The Discovery Pass. after-early-access: none while Early Access is active; available_from says when it opens.
   trial: z.object({ status: z.enum(['available', 'active', 'ended', 'after-early-access', 'not-offered']),
     starts_at: timestamp.nullable(), ends_at: timestamp.nullable(), available_from: timestamp.nullable() }),
+  // What a pass includes, and which previews it has used and on which course. No content is ever carried here.
+  discovery: z.object({
+    cbt_questions: z.number().int().positive(),
+    ai_sets: z.number().int().nonnegative(),
+    previews: z.array(z.object({ kind: discoveryKind, content_key: z.string().min(1), submitted: z.boolean() })),
+  }),
   // Automatic: awaiting-launch until the actual launch, then active for one month from enrollment.
   early_access: z.object({
     status: z.enum(['not-listed', 'awaiting-launch', 'pending', 'active', 'ended', 'enrollment-closed', 'unavailable',

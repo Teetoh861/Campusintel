@@ -1,5 +1,5 @@
 'use client'
-// app/access/TrialActivation.tsx — One-time phone check that starts the 7-day trial. Login never asks for it.
+// app/access/TrialActivation.tsx — One-time phone check that starts the Discovery Pass. Login never asks for it.
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Feedback } from '@/components/chrome/Feedback'
@@ -19,9 +19,9 @@ function secondsUntil(iso: string, now: number): number {
   return Math.max(0, Math.ceil((Date.parse(iso) - now) / 1000))
 }
 
-export function TrialActivation({ continuityToken, trialDays, initialChallenge }: {
+export function TrialActivation({ continuityToken, passHours, initialChallenge }: {
   continuityToken: string
-  trialDays: number
+  passHours: number
   /** A code sent earlier in this session, so a reload resumes at the code step. */
   initialChallenge: Challenge | null
 }): ReactElement {
@@ -84,7 +84,7 @@ export function TrialActivation({ continuityToken, trialDays, initialChallenge }
     {challenge === null
       ? <form onSubmit={submitPhone} className="grid gap-3" noValidate>
         <p className="text-sm text-student-text-secondary">
-          We’ll text a one-time code to confirm your number. Each phone number can start one {trialDays}-day trial.
+          We’ll text a one-time code to confirm your number. Each phone number can start one pass, and its {passHours} hours begin as soon as you confirm.
           You’ll keep signing in with your email and password.
         </p>
         <FormField id="trial-phone" name="phone" label="Nigerian mobile number" type="tel" inputMode="tel"
@@ -100,7 +100,7 @@ export function TrialActivation({ continuityToken, trialDays, initialChallenge }
           onChange={event => setCode(event.target.value.replace(/\D/g, '').slice(0, OTP_CODE_LENGTH))} />
         <div className="flex flex-wrap gap-2">
           <button type="submit" disabled={busy || code.length !== OTP_CODE_LENGTH} aria-busy={busy}
-            className={studentAction(btnNavy, studentFocusDark)}>{busy ? 'Checking…' : `Start my ${trialDays}-day trial`}</button>
+            className={studentAction(btnNavy, studentFocusDark)}>{busy ? 'Checking…' : 'Start my Discovery Pass'}</button>
           {phone.trim() !== '' && <button type="button" onClick={() => void sendCode()} disabled={busy || wait > 0}
             className={studentAction(btnGhost)}>{wait > 0 ? `Resend code in ${wait}s` : 'Resend code'}</button>}
           <button type="button" onClick={changeNumber} disabled={busy} className={studentAction(btnGhost)}>

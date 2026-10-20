@@ -41,7 +41,7 @@ export type BeginResult =
 
 export type ReserveResult =
   | { status: 'created'; documentId: string; storagePath: string }
-  | { status: 'upload-limit' | 'invalid-course' | 'signed-out' | 'not-entitled' | 'allowance-exhausted' | 'allowance-expired' }
+  | { status: 'upload-limit' | 'pass-upload-limit' | 'invalid-course' | 'signed-out' | 'not-entitled' | 'allowance-exhausted' | 'allowance-expired' }
 
 /** The extraction lease: only the holder of claimId may settle the document. */
 export type ClaimResult = { state: 'claimed'; claimId: string } | { state: 'busy' | 'settled' | 'not-found' | 'signed-out' }

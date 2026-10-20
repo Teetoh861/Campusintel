@@ -54,12 +54,12 @@ export type JourneyDeps = {
 }
 
 export const NOT_ENTITLED_TITLE = 'AI practice is not included in your account'
-export const NOT_ENTITLED_MESSAGE = 'AI practice opens with your 7-day free trial or Early Access. ' +
-  'Activate it from Plan & Access. GST courses stay free.'
+export const NOT_ENTITLED_MESSAGE = 'AI practice opens with a Discovery Pass or Early Access. ' +
+  'Get your pass from Plan & Access. GST courses stay free.'
 
-/** How the student's grant is named in copy. Only a trial grant is called a trial. */
+/** How the student's grant is named in copy. A trial grant is the Discovery Pass. */
 export function grantName(allowance: AllowanceSummary | null | undefined): string {
-  return allowance?.source === 'trial' ? 'AI trial' : 'AI access'
+  return allowance?.source === 'trial' ? 'Discovery Pass' : 'AI access'
 }
 
 const problem = (title: string, message: string, retry: 'same-file' | 'new-file' | 'none' = 'new-file',
@@ -93,6 +93,8 @@ export function describeResult(result: AiPracticeResult): JourneyOutcome {
       'Too many students are generating questions right now. Try again later.', 'same-file', 'info')
     case 'upload-limit': return problem('Daily upload limit reached',
       'You have uploaded the maximum number of files for today. Try again tomorrow.', 'none', 'info')
+    case 'pass-upload-limit': return problem('Discovery Pass uploads used',
+      'Your pass includes a small number of uploads and they have been used. They do not renew.', 'none', 'info')
     case 'not-eligible': return problem('This course has verified content',
       'Use the CampusIntell study material for this course instead.', 'none', 'info')
     case 'signed-out': return { ...problem('Signed out', 'Sign in again to continue.', 'none'), signedOut: true }

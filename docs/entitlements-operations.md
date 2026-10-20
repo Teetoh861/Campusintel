@@ -9,7 +9,7 @@ hosted migration, SMS send, Anthropic call or deployment was made while building
 | Plan | How it starts | Courses | AI practice |
 | --- | --- | --- | --- |
 | Free (every account) | Registration and email confirmation | Courses with `institutional_courses.is_free` (GST111, GST102, GST112, GST212) | None |
-| 7-day trial | One-time phone code, once per account and per phone; never while Early Access is active | Every course for 7 days, measured on database time | A fixed total for the whole trial (`ai_practice_policy.trial_units`, **10, provisional**) |
+| Discovery Pass (`source = 'trial'`, since `20261021100000_discovery_pass.sql`) | One-time phone code, once per account and per phone; never while Early Access is active | **A restricted sample, never full access.** For `discovery_hours` (72) on database time: one CBT exam of `discovery_cbt_questions` (50) from one course the student picks, timed at that course's own CBT duration with a database deadline (capped at the pass end; `discovery_cbt_grace_seconds`, 120, for a sheet in flight) and graded on the server; one complete study-guide topic the student picks from one course. Every other topic stays locked. No theory preview. Nothing renews | One accepted upload (`discovery_ai_uploads`, 1; unreadable files don't count) of at most `discovery_ai_source_chars` (20,000) characters, `discovery_ai_generations` (1) delivered set of five questions, at most `discovery_ai_attempts` (3) provider attempts |
 | Early Access | **Automatic**, once the founder activates the actual public launch | Every course for one calendar month from the student's own enrollment | No per-student cap; global and per-day guards still apply |
 | Operator grant | `scripts/entitlements/ops.cjs grant` | Every course for the stated days | None (course access only) |
 
@@ -175,7 +175,8 @@ The deletion form tells students this.
 
 ## Owner decisions required before production
 
-1. Trial AI allowance: 10 units is provisional (`ai_practice_policy.trial_units`).
+1. Discovery Pass limits are initial values in `private.entitlement_policy` (`discovery_*` columns); `trial_days` and
+   `ai_practice_policy.trial_units` are retired.
 2. Early Access enrollment window: 28 days after the actual launch is provisional (`configure-early-access`).
 3. Trial after Early Access: currently allowed once Early Access ends (`trial_after_early_access`).
 4. Retention and deletion: the keyed phone hash, imported list data (names, emails, phone hashes), used list entries

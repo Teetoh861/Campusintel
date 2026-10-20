@@ -1,4 +1,4 @@
-// app/access/trial-flow.ts — What the student is told after each trial activation command.
+// app/access/trial-flow.ts — What the student is told after each Discovery Pass activation command.
 import type { EntitlementResult } from '@/lib/entitlements/contract'
 
 export type FlowMessage = { tone: 'error' | 'info' | 'success'; text: string }
@@ -24,7 +24,7 @@ export function describeResult(result: EntitlementResult): { message: FlowMessag
     case 'code-sent': return { next: 'stay', message: { tone: 'info',
       text: `We sent a 6-digit code to the number ending ${result.phoneHint}.` } }
     case 'delivery-failed': return { next: 'stay', message: { tone: 'error',
-      text: 'We couldn’t deliver the code. Check the number and send it again; a failed send never uses up your trial.' } }
+      text: 'We couldn’t deliver the code. Check the number and send it again; a failed send never uses up your pass.' } }
     case 'cooldown': return { next: 'stay', message: { tone: 'info',
       text: `Please wait before asking for another code. You can try again at ${clockTime(result.retryAt)}.` } }
     case 'rate-limited': return { next: 'stay', message: { tone: 'error',
@@ -34,13 +34,13 @@ export function describeResult(result: EntitlementResult): { message: FlowMessag
     case 'trial-activated':
     case 'already-activated': return { next: 'refresh', message: { tone: 'success', text: 'Done. Updating your plan…' } }
     case 'early-access-active': return { next: 'refresh', message: { tone: 'info',
-      text: `You already have full access through Early Access. Your free trial opens after it ends (${dayDate(result.availableFrom)}).` } }
+      text: `You already have full access through Early Access. Your Discovery Pass opens after it ends (${dayDate(result.availableFrom)}).` } }
     case 'trial-not-offered': return { next: 'refresh', message: { tone: 'info',
-      text: 'The free trial is not offered to accounts that have had Early Access.' } }
+      text: 'The Discovery Pass is not offered to accounts that have had Early Access.' } }
     case 'invalid-phone': return { next: 'stay', message: { tone: 'error',
       text: 'Enter a Nigerian mobile number, for example 0803 123 4567.' } }
     case 'phone-already-used': return { next: 'restart', message: { tone: 'error',
-      text: 'This phone number has already been used for a free trial. Each number can start one trial. ' +
+      text: 'This phone number has already been used for a Discovery Pass. Each number can start one pass. ' +
         'If you think this is a mistake, contact support.' } }
     case 'expired': return { next: 'restart', message: { tone: 'error', text: 'That code has expired. Send a new code.' } }
     case 'superseded': return { next: 'restart', message: { tone: 'error',

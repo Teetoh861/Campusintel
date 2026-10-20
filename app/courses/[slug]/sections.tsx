@@ -100,14 +100,19 @@ function NoteBody({ note }: { note: ManagedNote }): ReactElement {
 
 const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator trick' } as const
 
+/** One published note, rendered the same wherever a student may read it. */
+export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
+  return <article className="student-surface student-detail-note">
+    {'noteType' in note && <p className="student-detail-kicker">{NOTE_KICKER[note.noteType]}</p>}
+    <h3>{note.title}</h3>
+    <NoteBody note={note} />
+  </article>
+}
+
 /** Validated managed notes in publication order; plain, topic and calculator notes keep their payload verbatim. */
 export function NotesSection({ notes, number }: { notes: ReadonlyArray<ManagedNote>; number: number }): ReactElement {
   return <StudySection id="notes" number={number}>
-    {notes.map(note => <article key={note.itemId} className="student-surface student-detail-note">
-      {'noteType' in note && <p className="student-detail-kicker">{NOTE_KICKER[note.noteType]}</p>}
-      <h3>{note.title}</h3>
-      <NoteBody note={note} />
-    </article>)}
+    {notes.map(note => <NoteArticle key={note.itemId} note={note} />)}
   </StudySection>
 }
 

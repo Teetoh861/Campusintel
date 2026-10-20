@@ -165,9 +165,9 @@ test('every server result has student-safe copy; unknown or broken replies degra
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
   assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['AI practice is not included in your account', 'none', 'info'])
-  // Only a trial grant is called a trial; Early Access copy stays neutral.
+  // A trial grant is named as the Discovery Pass; Early Access copy stays neutral.
   const allowance = source => ({ state: 'expired', source, total: 10, used: 10, endsAt: null })
-  assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('trial') }).message, /AI trial has ended/)
+  assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('trial') }).message, /Discovery Pass has ended/)
   assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('early_access') }).message,
     /AI access has ended/)
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)

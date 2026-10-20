@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { DiscoveryOffer } from '@/components/student/DiscoveryOffer'
 import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
 import { Notice } from '@/components/student/Notice'
 import { REPOSITORY_COURSE_LABEL } from '@/components/student/CourseRow'
@@ -15,6 +16,7 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
+import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
@@ -22,6 +24,7 @@ import { CourseViewTracker } from './CourseViewTracker'
 import { ApplicabilityList, COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
   StudyNav, TheorySection, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
+import type { EntitlementSummary } from '@/lib/entitlements/contract'
 import type { StudySectionId } from './sections'
 import type { ReactElement } from 'react'
 
@@ -43,12 +46,18 @@ export default async function CourseDetailPage({ params }: PageProps): Promise<R
 /** Resolve the one-course truth on a fresh request-scoped client after the gate. */
 async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
   let result: StudentCourseLookupResult
+  // Read only for a locked course: an active Discovery Pass offers previews in place of the locked notice.
+  let pass: EntitlementSummary | null = null
   try {
     const client = await createClient()
     const context = await getStudentSessionContext(undefined, client)
     result = context === null ? { status: 'signed-out' } : await getStudentCourseBySlugForVerifiedStudent(client, slug)
+    if ((result.status === 'ok' || result.status === 'repository-only') && result.course.content.state === 'locked') {
+      const read = await readEntitlementForVerifiedStudent(client)
+      pass = read.status === 'ok' && read.entitlement.trial.status === 'active' ? read.entitlement : null
+    }
   } catch { result = { status: 'unavailable' } }
-  if (result.status === 'ok' || result.status === 'repository-only') return <CourseStudyHub result={result} />
+  if (result.status === 'ok' || result.status === 'repository-only') return <CourseStudyHub result={result} pass={pass} />
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
   return <CourseUnavailable status={result.status} slug={slug} />
@@ -72,7 +81,7 @@ function RequestMaterialLink({ href, prominent = false }: { href: string; promin
 }
 
 /** Compose institutional or repository identity, availability and the study families from central truth. */
-function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
+function CourseStudyHub({ result, pass }: { result: ResolvedCourse; pass: EntitlementSummary | null }): ReactElement {
   const { learning, practice } = result
   const { repository, content } = result.course
   const institutional = result.status === 'ok' ? result.course : null
@@ -106,7 +115,8 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
         : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
-      {locked && <LockedCourseNotice />}
+      {locked && (pass === null ? <LockedCourseNotice />
+        : <DiscoveryOffer summary={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />

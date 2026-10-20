@@ -5,7 +5,7 @@ import { FileUp, LoaderCircle } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { UPLOAD_ACCEPT_ATTRIBUTE } from '@/lib/ai-practice/upload-contract'
+import { UPLOAD_ACCEPT_ATTRIBUTE, approximateWords } from '@/lib/ai-practice/upload-contract'
 import type { AllowanceSummary, PersonalSetView } from '@/lib/ai-practice/upload-contract'
 import { NOT_ENTITLED_MESSAGE, NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName,
   runUploadJourney } from './journey'
@@ -25,7 +25,10 @@ export function allowanceLine(allowance: AllowanceSummary | null): string | null
   if (allowance.state === 'expired') return `Your ${grantName(allowance)} has ended.`
   if (allowance.total === null) return 'Your AI access includes question sets without a set limit while it lasts.'
   const left = Math.max(0, allowance.total - allowance.used)
-  return `${left} of ${allowance.total} AI question sets left in your ${grantName(allowance)}.`
+  const sets = `${left} of ${allowance.total} AI question ${allowance.total === 1 ? 'set' : 'sets'} left`
+  if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance)}.`
+  return `${sets} on your ${grantName(allowance)}. Upload notes of up to about ` +
+    `${approximateWords(allowance.sourceCharLimit).toLocaleString('en-GB')} words.`
 }
 
 /** Progress for the current step. Generation repeats the unverified label next to the status it announces. */

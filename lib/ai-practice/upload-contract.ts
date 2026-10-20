@@ -51,6 +51,17 @@ export type AllowanceSummary = {
   total: number | null
   used: number
   endsAt: string | null
+  /** Discovery Pass only: the most extracted text one upload may carry, decided by the database. */
+  sourceCharLimit?: number
+}
+
+// Average English word plus its space, used only to tell a student roughly how much to upload.
+const CHARS_PER_WORD = 6
+const WORD_ROUNDING = 500
+
+/** A cautious "about N words" for a character limit, rounded down so the advice is always safe to follow. */
+export function approximateWords(chars: number): number {
+  return Math.max(WORD_ROUNDING, Math.floor(chars / CHARS_PER_WORD / WORD_ROUNDING) * WORD_ROUNDING)
 }
 
 /** Student-safe question shape: personal and unverified, with the quote that grounds the answer. */
@@ -80,7 +91,7 @@ export type AiPracticeResult =
   | { status: 'insufficient-source' | 'flagged-for-review' | 'generation-failed'; allowance: AllowanceSummary | null }
   | { status: 'allowance-exhausted' | 'allowance-expired'; allowance: AllowanceSummary | null }
   | { status: 'not-entitled' }
-  | { status: 'busy' | 'capacity' | 'upload-limit' | 'not-eligible' | 'disabled' | 'not-found' | 'signed-out'
+  | { status: 'busy' | 'capacity' | 'upload-limit' | 'pass-upload-limit' | 'not-eligible' | 'disabled' | 'not-found' | 'signed-out'
       | 'session-changed' | 'invalid-request' | 'unavailable' }
 
 export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {

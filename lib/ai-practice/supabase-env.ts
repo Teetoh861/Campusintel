@@ -31,7 +31,7 @@ type ServiceClient = SupabaseClient
 const uuid = z.string().uuid()
 const reserveRow = z.union([
   z.object({ status: z.literal('created'), document_id: uuid, storage_path: z.string() }),
-  z.object({ status: z.enum(['upload-limit', 'invalid-course', 'signed-out', 'not-entitled', 'allowance-exhausted',
+  z.object({ status: z.enum(['upload-limit', 'pass-upload-limit', 'invalid-course', 'signed-out', 'not-entitled', 'allowance-exhausted',
     'allowance-expired']) }),
 ])
 const claimRow = z.union([
@@ -49,7 +49,7 @@ const documentRow = z.object({
 const allowanceRow = z.object({ state: z.enum(['not-entitled', 'active', 'expired']),
   source: z.enum(['trial', 'early_access', 'test']).optional(), total: z.number().int().nullable(),
   used: z.number().int(),
-  ends_at: z.string().optional() })
+  ends_at: z.string().optional(), source_char_limit: z.number().int().positive().nullish() })
 const beginRow = z.object({ state: z.string(), generation_id: uuid.optional() })
 const generationRow = z.object({ id: uuid, status: z.enum(['running', 'generated', 'insufficient_source',
   'flagged_for_review', 'failed']), created_at: z.string(), question_set: z.unknown() })
@@ -68,7 +68,8 @@ export async function readAllowance(client: StudentClient,
   const parsed = allowanceRow.safeParse(data)
   if (error || !parsed.success) return null
   return effectiveAllowance({ state: parsed.data.state, source: parsed.data.source ?? null, total: parsed.data.total,
-    used: parsed.data.used, endsAt: parsed.data.ends_at ?? null }, accepted)
+    used: parsed.data.used, endsAt: parsed.data.ends_at ?? null,
+    ...(parsed.data.source_char_limit ? { sourceCharLimit: parsed.data.source_char_limit } : {}) }, accepted)
 }
 
 const RECENT_SET_LIMIT = 5

@@ -33,7 +33,7 @@ test('success refreshes the server-rendered plan; dead codes restart; a delivery
   }
   const failed = describeResult({ status: 'delivery-failed', ...SAMPLES['delivery-failed'] })
   assert.equal(failed.next, 'stay')
-  assert.match(failed.message.text, /never uses up your trial/)
+  assert.match(failed.message.text, /never uses up your pass/)
   assert.match(describeResult({ status: 'incorrect', attemptsLeft: 1 }).message.text, /1 attempt left/)
   assert.match(describeResult({ status: 'cooldown', retryAt: '2026-10-26T09:01:00.000Z' }).message.text, /10:01/)
 })
