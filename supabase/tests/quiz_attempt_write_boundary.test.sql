@@ -53,6 +53,11 @@ select is((select count(*)::int from quiz_selected), 2, 'fixture has two publish
 select ok((select bool_and(content_revision > 0 and question_id is not null) from quiz_selected),
   'published revisions and permanent question UUIDs are available');
 
+-- Non-free published content needs an active plan since 20261017100000_trial_entitlements.sql; these fixtures
+-- exercise content and attempt rules, so every student holds one. The gate itself is tested in trial_entitlements.
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
+  select id, 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test' from auth.users
+  where email like '%@example.test' and id not in (select user_id from public.entitlement_grants);
 set local role anon;
 select throws_ok($$select public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000001', (select course_id from quiz_fixture),

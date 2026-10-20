@@ -7,7 +7,7 @@ import type { TheoryMaterial } from './projection'
 
 export type TheoryPracticeResult =
   | { status: 'ready'; course: { slug: string; href: string; code: string; title: string }; materials: TheoryMaterial[] }
-  | { status: 'signed-out' | 'not-found' | 'invariant-failure' | 'unavailable' }
+  | { status: 'signed-out' | 'not-found' | 'locked' | 'invariant-failure' | 'unavailable' }
 
 /** Resolve central course identity, then reread published theory on the same verified cookie-bound client. */
 export async function getTheoryPracticeForVerifiedStudent(
@@ -15,10 +15,14 @@ export async function getTheoryPracticeForVerifiedStudent(
 ): Promise<TheoryPracticeResult> {
   const course = await getStudentCourseBySlugForVerifiedStudent(client, slug)
   if (course.status !== 'ok' && course.status !== 'repository-only') return course
+  // A plan that does not include the course stops here; the database would refuse the read anyway.
+  if (course.course.content.state === 'locked') return { status: 'locked' }
   if (course.course.content.state === 'temporarily-unavailable') return { status: 'unavailable' }
   const repository = course.course.repository
   const published = await getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId)
-  if (published.status !== 'ok') return { status: published.status === 'signed-out' ? 'signed-out' : 'unavailable' }
+  if (published.status !== 'ok') {
+    return { status: published.status === 'signed-out' || published.status === 'locked' ? published.status : 'unavailable' }
+  }
   const materials = projectTheoryPractice(published.content)
   if (materials === null) return { status: 'unavailable' }
   return { status: 'ready', course: { slug: repository.route.slug, href: repository.route.href,

@@ -40,6 +40,7 @@ export function DeleteAccountForm({ continuityToken }: { continuityToken: string
         <div id="deletion-details" className="space-y-2 text-sm text-student-text-secondary">
           <p>You will be signed out on every device. Before the {ACCOUNT_DELETION_GRACE_DAYS}-day deadline, sign in and choose “Yes, keep my account” to cancel.</p>
           <p>After the deadline, you can’t sign in or restore your account, even if deletion has not finished. Your profile, bookmarks, practice history and question reports that identify you will be removed.</p>
+          <p>If you used a free trial or Early Access, a protected code of the trial phone number and the Early Access claim are kept without your account so they cannot be used again.</p>
           <p>Our service providers may retain some records and backups under their policies or legal obligations. Contact support for details.</p>
         </div>
         <FormField id="delete-current-password" name="password" label="Current password" type="password"

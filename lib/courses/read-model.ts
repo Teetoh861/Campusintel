@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { getCourseByContentKey, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
+import { courseAccessFrom, readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { getPublishedManagedContentWithVerifiedClient } from '@/lib/managed-content/published'
 import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
 import { projectStudentLearning } from '@/lib/managed-content/student-projection'
@@ -13,6 +14,7 @@ import { projectTheoryPractice } from '@/lib/theory-practice/projection'
 import type { User } from '@supabase/supabase-js'
 import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion, StudentLearning }
   from '@/lib/managed-content/student-projection'
+import type { CourseAccess } from '@/lib/entitlements/contract'
 import type { SelectionIds } from '@/lib/profile/selection'
 import type { createClient } from '@/lib/supabase/server'
 import type { Course } from '@/lib/types'
@@ -43,12 +45,14 @@ export type StudentCourseRepository =
 
 export type StudyAvailability = { notes: boolean; cbtPractice: boolean; theory: boolean; overview: boolean }
 
-/** Published study state. `ready` requires at least one of notes, cbtPractice or theory. */
+/** Published study state. `ready` requires at least one of notes, cbtPractice or theory. `locked` is a non-free
+ * course the student's current plan does not include; nothing of it was read. */
 export type StudentCourseContent =
   | { state: 'not-built'; reason: 'unlinked' }
   | { state: 'ready'; study: StudyAvailability }
   | { state: 'no-published-learning'; study: StudyAvailability }
-  | { state: 'temporarily-unavailable'; reason: 'publication-read-failed' | 'projection-failed' }
+  | { state: 'locked' }
+  | { state: 'temporarily-unavailable'; reason: 'publication-read-failed' | 'projection-failed' | 'access-read-failed' }
 
 export type StudentCourse = {
   institutionalCourseId: string
@@ -243,12 +247,34 @@ function deriveStudy(learning: StudentLearning, repository: LinkedRepository): {
 
 type ResolvedPublication = { content: LinkedContent } & StudentCourseDetail
 
-/** Read one linked repository's publication on the caller's verified client. */
+/** The student's plan, read at most once per reader call and only when a non-free course needs it. */
+type AccessReader = () => Promise<CourseAccess | 'signed-out'>
+
+function accessReader(client: StudentClient): AccessReader {
+  let pending: Promise<CourseAccess | 'signed-out'> | null = null
+  return () => {
+    pending ??= readEntitlementForVerifiedStudent(client).then(read =>
+      read.status === 'signed-out' ? 'signed-out' : courseAccessFrom(read))
+    return pending
+  }
+}
+
+/** Read one linked repository's publication on the caller's verified client. A non-free course the plan does not
+ * include is never read; the database refuses that read too (CI403), so a race still yields `locked`. */
 async function resolvePublication(
-  client: StudentClient, repository: LinkedRepository,
+  client: StudentClient, repository: LinkedRepository, isFree: boolean, access: AccessReader,
 ): Promise<ResolvedPublication | 'signed-out'> {
+  if (!isFree) {
+    const plan = await access()
+    if (plan === 'signed-out') return 'signed-out'
+    if (plan === 'unknown') {
+      return { content: { state: 'temporarily-unavailable', reason: 'access-read-failed' }, learning: null, practice: null }
+    }
+    if (plan === 'free') return { content: { state: 'locked' }, learning: null, practice: null }
+  }
   const published = await getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId)
   if (published.status === 'signed-out') return 'signed-out'
+  if (published.status === 'locked') return { content: { state: 'locked' }, learning: null, practice: null }
   if (published.status !== 'ok') {
     return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
   }
@@ -267,24 +293,26 @@ async function resolvePublication(
 
 /** Catalogue readers keep only availability; payload bodies never reach catalogue rows. */
 async function resolvePublishedContent(
-  client: StudentClient, repository: LinkedRepository,
+  client: StudentClient, repository: LinkedRepository, isFree: boolean, access: AccessReader,
 ): Promise<LinkedContent | 'signed-out'> {
-  const resolved = await resolvePublication(client, repository)
+  const resolved = await resolvePublication(client, repository, isFree, access)
   return resolved === 'signed-out' ? resolved : resolved.content
 }
 
 function resolveContent(
-  client: StudentClient, repository: StudentCourseRepository,
+  client: StudentClient, structure: Structure, access: AccessReader,
 ): Promise<StudentCourseContent | 'signed-out'> {
+  const { repository } = structure
   if (repository.state === 'unlinked') return Promise.resolve({ state: 'not-built', reason: 'unlinked' })
-  return resolvePublishedContent(client, repository)
+  return resolvePublishedContent(client, repository, structure.isFree, access)
 }
 
 /** Bounded fan-out across linked identities only; one lost session fails the whole read. */
 async function resolveCourses(
   client: StudentClient, structures: ReadonlyArray<Structure>,
 ): Promise<StudentCourse[] | 'signed-out'> {
-  const contents = await Promise.all(structures.map(structure => resolveContent(client, structure.repository)))
+  const access = accessReader(client)
+  const contents = await Promise.all(structures.map(structure => resolveContent(client, structure, access)))
   const courses: StudentCourse[] = []
   for (const [index, content] of contents.entries()) {
     if (content === 'signed-out') return 'signed-out'
@@ -314,10 +342,19 @@ export function isActionableStudentCourse<T extends PresentableStudentCourse>(co
   return course.repository.state === 'shelved' && course.content.state === 'ready'
 }
 
-/** Why a course cannot be opened: an honest content gap, or a temporary route/publication problem. */
-export function getStudentCourseUnavailability(course: PresentableStudentCourse): 'missing' | 'temporary' | null {
+/** Whether the student's plan, not the content, is what stands between them and a shelved course. */
+export function isLockedStudentCourse<T extends PresentableStudentCourse>(course: T): course is T & {
+  repository: Extract<StudentCourseRepository, { state: 'shelved' }>; content: { state: 'locked' }
+} {
+  return course.repository.state === 'shelved' && course.content.state === 'locked'
+}
+
+/** Why a course cannot be opened: an honest content gap, the student's plan, or a temporary problem. */
+export function getStudentCourseUnavailability(course: PresentableStudentCourse):
+  'missing' | 'locked' | 'temporary' | null {
   if (isActionableStudentCourse(course)) return null
   if (course.repository.state === 'unlinked') return 'missing'
+  if (isLockedStudentCourse(course)) return 'locked'
   if (course.repository.state === 'unshelved-repository') return 'temporary'
   return course.content.state === 'no-published-learning' ? 'missing' : 'temporary'
 }
@@ -452,7 +489,8 @@ export async function getStudentCourseBySlugForVerifiedStudent(
         isShared: repositoryParsed.data.is_shared,
         route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course },
       }
-      const resolved = await resolvePublication(client, repository)
+      // Without an institutional owner nothing marks the course free, so the student's plan decides.
+      const resolved = await resolvePublication(client, repository, false, accessReader(client))
       return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'repository-only',
         course: { repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
     }
@@ -465,7 +503,7 @@ export async function getStudentCourseBySlugForVerifiedStudent(
       return { status: 'invariant-failure' }
     }
     const repository = structure.repository
-    const resolved = await resolvePublication(client, repository)
+    const resolved = await resolvePublication(client, repository, structure.isFree, accessReader(client))
     return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok',
       course: { ...structure, repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
   } catch {

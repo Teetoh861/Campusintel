@@ -27,7 +27,8 @@ export async function revealTheoryAnswer(
       }
     }
     if (body.status === 'signed-out' || body.status === 'session-changed' || body.status === 'incomplete' ||
-        body.status === 'invalid-request' || body.status === 'not-found' || body.status === 'content-changed') {
+        body.status === 'invalid-request' || body.status === 'not-found' || body.status === 'content-changed' ||
+        body.status === 'locked') {
       return { status: body.status }
     }
   } catch { /* Keep the draft available for retry after a timeout or network failure. */ }

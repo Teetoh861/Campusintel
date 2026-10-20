@@ -109,6 +109,15 @@ test('authentication, unknown courses and failures keep content closed without r
   }
 }))
 
+test('a locked course renders the unlock notice and no question, prompt or attempt field', async () => fixture(async f => {
+  f.state.result = { status: 'locked' }
+  const html = await f.html()
+  assert.doesNotMatch(html, /INST201|Institutional theory title|Explain management|data-attempt-id|textarea/)
+  assert.match(html, /Included with full access/)
+  assert.match(html, /href="\/access"/)
+  assert.match(html, /GST courses stay free/)
+}))
+
 test('loading announces once and contains no answer fields or unverified course identity', async () => fixture(async f => {
   const html = renderToStaticMarkup(React.createElement(f.loading))
   assert.equal((html.match(/Loading theory practice\./g) || []).length, 1)

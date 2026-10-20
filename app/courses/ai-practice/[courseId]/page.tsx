@@ -15,7 +15,8 @@ import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { isAiPracticeEligible } from '@/lib/ai-practice/student-flow'
 import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supabase-env'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse } from '@/lib/courses/read-model'
+import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLockedStudentCourse }
+  from '@/lib/courses/read-model'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AiPracticeClient } from './AiPracticeClient'
@@ -60,7 +61,8 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
   }
   const { course } = result
   // A course with verified content always sends students to it; AI practice never competes with it.
-  if (isActionableStudentCourse(course)) redirect(course.repository.route.href)
+  // A locked course is built too: its page explains how to unlock it.
+  if (isActionableStudentCourse(course) || isLockedStudentCourse(course)) redirect(course.repository.route.href)
   if (!isAiPracticeEligible(course)) {
     return <Unavailable title="This course is temporarily unavailable" message="Try again in a few minutes." />
   }

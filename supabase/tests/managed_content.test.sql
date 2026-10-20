@@ -48,6 +48,11 @@ insert into auth.sessions(id, user_id, created_at, updated_at) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', now(), now()),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', now(), now());
 
+-- Non-free published content needs an active plan since 20261017100000_trial_entitlements.sql; these fixtures
+-- exercise content and attempt rules, so every student holds one. The gate itself is tested in trial_entitlements.
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
+  select id, 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test' from auth.users
+  where email like '%@example.test' and id not in (select user_id from public.entitlement_grants);
 set local role anon;
 select throws_ok($sql$ select * from public.read_published_managed_content(
   '70000000-0000-4000-8000-000000000007') $sql$, '42501', null,

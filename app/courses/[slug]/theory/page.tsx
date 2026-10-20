@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost } from '@/components/chrome/ui'
+import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
@@ -37,6 +38,9 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}/theory`)
+  if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
+    <LockedCourseNotice backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course" />
+  </StudentPage>
   if (result.status !== 'ready') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
     <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
       retryHref={`/courses/${encodeURIComponent(slug)}/theory`} />

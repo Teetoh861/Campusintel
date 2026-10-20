@@ -15,6 +15,9 @@ function refusalMessage(status: Exclude<TheorySubmitResult['status'], 'ready'>):
     return 'Your sign-in has changed. Your answer is still here; copy it before reloading the page.'
   }
   if (status === 'incomplete') return 'Complete your student profile before practising. Copy your answer before leaving this page.'
+  if (status === 'locked') {
+    return 'Your access to this course has ended, so the model answer can’t be shown. Your answer is still here; copy it before leaving.'
+  }
   if (status === 'content-changed' || status === 'not-found') {
     return 'This question or its model answer has changed or is no longer available. Your answer is still here; copy it before reloading the page.'
   }

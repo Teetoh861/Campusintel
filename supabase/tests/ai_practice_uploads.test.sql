@@ -112,8 +112,15 @@ reset role;
 select is((select count(*)::integer from public.ai_practice_documents) + (select count(*)::integer
   from public.ai_allowance_windows), 0, 'a refused reservation creates nothing and never starts a trial');
 set local role service_role;
-select is((public.issue_ai_allowance_grant('21111111-1111-4111-8111-111111111111', 'trial') ->> 'state'), 'issued',
-  'trusted server code issues the trial grant');
+reset role;
+-- Since 20261017100000_trial_entitlements.sql a production trial grant comes only from phone verification; the
+-- fixture inserts the grant that verify_trial_otp() would create.
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
+  select '21111111-1111-4111-8111-111111111111', 'trial', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
+    'test' from private.entitlement_policy;
+select throws_ok($$ select public.issue_ai_allowance_grant('21111111-1111-4111-8111-111111111111', 'trial') $$, '22023', null,
+  'trial AI can no longer be issued directly, bypassing phone verification');
+set local role service_role;
 select is((public.create_ai_practice_document(gen_random_uuid(), (select value from fixture where key = 'course'),
   'notes.txt', 'text/plain', 10, array['trial']) ->> 'status'), 'signed-out', 'an unknown session reserves nothing');
 select is((public.create_ai_practice_document('a0000000-0000-4000-8000-00000000000e',
@@ -257,7 +264,7 @@ reset role;
 
 -- Generation admission: identity from the session --------------------------------------
 update private.ai_practice_policy set trial_units = 2;
-update public.ai_allowance_windows set total_units = 2 where user_id = '21111111-1111-4111-8111-111111111111';
+update public.entitlement_grants set ai_units = 2 where user_id = '21111111-1111-4111-8111-111111111111' and source = 'trial';
 set local role service_role;
 select is((public.begin_ai_practice_generation(gen_random_uuid(), gen_random_uuid(),
   (select value from fixture where key = 'doc_a'), array['trial']) ->> 'state'), 'signed-out',
@@ -358,8 +365,8 @@ select is((public.create_ai_practice_document('a1111111-1111-4111-8111-111111111
 reset role;
 
 -- The window is a fixed seven-day total, not a daily reset.
-update public.ai_allowance_windows set starts_at = now() - interval '2 days', ends_at = now() + interval '5 days'
-  where user_id = '21111111-1111-4111-8111-111111111111';
+update public.entitlement_grants set starts_at = now() - interval '2 days', ends_at = now() + interval '5 days'
+  where user_id = '21111111-1111-4111-8111-111111111111' and source = 'trial';
 update public.ai_usage_events set reserved_at = now() - interval '1 day 1 hour'
   where user_id = '21111111-1111-4111-8111-111111111111';
 set local role service_role;
@@ -367,10 +374,10 @@ select is((public.begin_ai_practice_generation('a1111111-1111-4111-8111-11111111
   '37777777-7777-4777-8777-777777777777', (select value from fixture where key = 'doc_a'), array['trial', 'early_access']) ->> 'state'),
   'allowance-exhausted', 'a new day does not restore consumed allowance');
 reset role;
-update public.ai_allowance_windows set ends_at = now() - interval '1 second', starts_at = now() - interval '7 days'
-  where user_id = '21111111-1111-4111-8111-111111111111';
+update public.entitlement_grants set ends_at = now() - interval '1 second', starts_at = now() - interval '7 days'
+  where user_id = '21111111-1111-4111-8111-111111111111' and source = 'trial';
 update private.ai_practice_policy set trial_units = 10;
-update public.ai_allowance_windows set total_units = 10 where user_id = '21111111-1111-4111-8111-111111111111';
+update public.entitlement_grants set ai_units = 10 where user_id = '21111111-1111-4111-8111-111111111111' and source = 'trial';
 set local role service_role;
 select is((public.begin_ai_practice_generation('a1111111-1111-4111-8111-111111111111',
   '38888888-8888-4888-8888-888888888888', (select value from fixture where key = 'doc_a'), array['trial', 'early_access']) ->> 'state'),
@@ -378,7 +385,7 @@ select is((public.begin_ai_practice_generation('a1111111-1111-4111-8111-11111111
 reset role;
 
 -- The global daily cap holds.
-update public.ai_allowance_windows set ends_at = now() + interval '1 day' where user_id = '21111111-1111-4111-8111-111111111111';
+update public.entitlement_grants set ends_at = now() + interval '1 day' where user_id = '21111111-1111-4111-8111-111111111111' and source = 'trial';
 update private.ai_practice_policy set global_daily_generations = 0;
 set local role service_role;
 select is((public.begin_ai_practice_generation('a1111111-1111-4111-8111-111111111111',
@@ -393,8 +400,11 @@ set local role service_role;
 select is((public.begin_ai_practice_generation('b2222222-2222-4222-8222-222222222222', gen_random_uuid(),
   gen_random_uuid(), array['trial', 'early_access', 'test']) ->> 'state'), 'signed-out',
   'after logout the session admits nothing');
-select is((public.issue_ai_allowance_grant('23333333-3333-4333-8333-333333333333', 'trial') ->> 'state'), 'issued',
-  'C holds a trial grant');
+reset role;
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
+  select '23333333-3333-4333-8333-333333333333', 'trial', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
+    'test' from private.entitlement_policy;
+set local role service_role;
 insert into fixture select 'doc_c', (public.create_ai_practice_document('c3333333-3333-4333-8333-333333333333',
   (select value from fixture where key = 'course'), 'c.txt', 'text/plain', 10, array['trial']) ->> 'document_id')::uuid;
 insert into fixture select 'doc_c2', (public.create_ai_practice_document('c3333333-3333-4333-8333-333333333333',
@@ -478,7 +488,7 @@ reset role;
 select is((select last_error_code from private.account_deletion_jobs where user_id = '23333333-3333-4333-8333-333333333333'),
   'P0002', 'and records the fail-closed Storage error for retry');
 select ok((select count(*) from public.ai_practice_documents where user_id = '23333333-3333-4333-8333-333333333333') = 2
-  and (select count(*) from public.ai_allowance_windows where user_id = '23333333-3333-4333-8333-333333333333') = 1,
+  and (select count(*) from public.entitlement_grants where user_id = '23333333-3333-4333-8333-333333333333') = 1,
   'the failed purge rolled back: every AI row is still present');
 set local role service_role;
 select is((public.purge_expired_ai_practice() ->> 'purge_blocking_uploads')::integer, 2,
@@ -498,7 +508,7 @@ reset role;
 select is((select count(*)::integer from public.ai_practice_documents where user_id = '23333333-3333-4333-8333-333333333333')
   + (select count(*)::integer from public.ai_practice_generations where user_id = '23333333-3333-4333-8333-333333333333')
   + (select count(*)::integer from public.ai_usage_events where user_id = '23333333-3333-4333-8333-333333333333')
-  + (select count(*)::integer from public.ai_allowance_windows where user_id = '23333333-3333-4333-8333-333333333333'),
+  + (select count(*)::integer from public.entitlement_grants where user_id = '23333333-3333-4333-8333-333333333333'),
   0, 'the purge leaves no AI rows for the account');
 select ok((select count(*) from public.ai_practice_documents where user_id = '21111111-1111-4111-8111-111111111111') >= 4
   and (select count(*) from storage.objects where name like '21111111-1111-4111-8111-111111111111/%') = 1,
@@ -553,7 +563,7 @@ insert into storage.objects (bucket_id, name, owner_id)
 delete from auth.users where id = '21111111-1111-4111-8111-111111111111';
 select is((select count(*)::integer from public.ai_usage_events where user_id = '21111111-1111-4111-8111-111111111111')
   + (select count(*)::integer from public.ai_practice_generations where user_id = '21111111-1111-4111-8111-111111111111')
-  + (select count(*)::integer from public.ai_allowance_windows where user_id = '21111111-1111-4111-8111-111111111111'),
+  + (select count(*)::integer from public.entitlement_grants where user_id = '21111111-1111-4111-8111-111111111111'),
   0, 'account deletion leaves no AI practice rows');
 set local role service_role;
 select ok((select count(*) from public.list_ai_practice_uploads_to_remove(100) name

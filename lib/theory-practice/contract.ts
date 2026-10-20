@@ -38,7 +38,7 @@ export type SelfRating = 'covered' | 'partly' | 'not-yet'
 export type TheorySubmitResult =
   | { status: 'ready'; feedback: TheoryFeedback }
   | { status: 'signed-out' | 'session-changed' | 'incomplete' | 'invalid-request' | 'not-found' |
-      'content-changed' | 'unavailable' }
+      'content-changed' | 'locked' | 'unavailable' }
 
 /** Count only the student's selections; these are coverage counts, never official marks. */
 export function countSelfRatings(points: ReadonlyArray<string>, ratings: Readonly<Record<number, SelfRating>>) {

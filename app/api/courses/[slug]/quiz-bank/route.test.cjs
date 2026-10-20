@@ -55,3 +55,11 @@ test('complete account sees published bank privately, and managed failure stays 
   assert.deepEqual(await unavailable.json(), { status: 'unavailable' })
   assert.equal(f.state.reads, 2)
 }))
+
+test('a plan that does not include the course gets 403 locked with no bank in the body', async () => fixture(async f => {
+  f.state.quiz = { status: 'locked' }
+  const locked = await f.read()
+  assert.equal(locked.status, 403)
+  assert.deepEqual(await locked.json(), { status: 'locked' })
+  assert.equal(locked.headers.get('cache-control'), 'private, no-store')
+}))

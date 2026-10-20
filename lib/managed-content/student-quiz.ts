@@ -10,7 +10,7 @@ import type { ManagedQuiz } from './quiz'
 
 export type StudentQuizResult =
   | { status: 'ready'; quiz: ManagedQuiz }
-  | { status: 'signed-out' | 'invalid-course' | 'unavailable' }
+  | { status: 'signed-out' | 'invalid-course' | 'locked' | 'unavailable' }
 
 /** Resolve the current published CBT bank through the repository content key. */
 export async function getStudentManagedQuiz(slug: string, response?: NextResponse): Promise<StudentQuizResult> {

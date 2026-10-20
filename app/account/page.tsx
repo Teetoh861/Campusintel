@@ -16,6 +16,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
 import { createClient } from '@/lib/supabase/server'
 import { readAccountLifecycle } from '@/lib/account/lifecycle'
@@ -75,6 +76,11 @@ export default async function AccountPage(): Promise<ReactElement> {
           </section>
         </div>
         <div className="grid min-w-0 content-start gap-4">
+          <section aria-labelledby="plan-access-heading" className="student-surface">
+            <h2 id="plan-access-heading" className="student-section-title">{STUDENT_DESTINATIONS.access.label}</h2>
+            <p className="mb-4 mt-2 text-sm text-student-text-secondary">Your free trial, Early Access and AI practice allowance.</p>
+            <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnGhost)}>View your plan</Link>
+          </section>
           <section aria-labelledby="security-heading" className="student-surface">
             <h2 id="security-heading" className="student-section-title">Security</h2>
             <p className="mb-4 mt-2 text-sm text-student-text-secondary">Sign out of this device when you finish using a shared computer.</p>

@@ -67,7 +67,8 @@ async function fixture(quiz, run) {
       correctOption: question.correctAnswer, section: question.section,
       ...(question.explanation ? { explanation: question.explanation } : {}) },
   }))]
-  const publishedState = { rows, available: true }
+  // locked: the plan excludes the course. bankLocked: access ended between the course read and the bank read.
+  const publishedState = { rows, available: true, locked: false, bankLocked: false, bankReads: 0 }
   try {
     Module._load = function(name, ...args) {
       if (name === 'server-only') return {}
@@ -90,6 +91,8 @@ async function fixture(quiz, run) {
       if (name === '@/lib/managed-content/student-quiz') return {
         getStudentManagedQuiz: async slug => {
           if (slug !== course.slug) return { status: 'invalid-course' }
+          publishedState.bankReads += 1
+          if (publishedState.locked || publishedState.bankLocked) return { status: 'locked' }
           if (!publishedState.available) return { status: 'unavailable' }
           const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
           const questions = publishedState.rows.filter(row => row.kind === 'cbt_question').map((row, index) => ({
@@ -112,6 +115,8 @@ async function fixture(quiz, run) {
             route: { slug: course.slug, href: `/courses/${course.slug}`, course } }
           const base = { institutionalCourseId: 'fixture-institutional', code: course.code, title: course.title,
             isFree: false, applicability: [], repository }
+          if (publishedState.locked) return { status: 'ok', learning: null, practice: null,
+            course: { ...base, content: { state: 'locked' } } }
           if (!publishedState.available) return { status: 'ok', learning: null, practice: null,
             course: { ...base, content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' } } }
           const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
@@ -228,6 +233,20 @@ test('managed read unavailability fails closed on the quiz route', async () => f
   assert.match(html, /couldn’t load the practice questions just now/)
   assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
   assert.doesNotMatch(html, /not available for this course/)
+}))
+
+test('a locked course never reads the bank; access ending before the bank read is locked too', async () => fixture(validQuiz, async f => {
+  f.publishedState.locked = true
+  let html = renderToStaticMarkup(await f.quizRoute(params))
+  assert.match(html, /Included with full access/)
+  assert.match(html, /href="\/access"/)
+  assert.doesNotMatch(html, /temporarily unavailable/i)
+  assert.equal(f.publishedState.bankReads, 0, 'the server never loads questions for a locked course')
+  f.publishedState.locked = false
+  f.publishedState.bankLocked = true
+  html = renderToStaticMarkup(await f.quizRoute(params))
+  assert.match(html, /Included with full access/)
+  assert.equal(f.publishedState.bankReads, 1)
 }))
 
 test('missing or unusable quiz configuration makes the quiz route reject the attempt', async () => {

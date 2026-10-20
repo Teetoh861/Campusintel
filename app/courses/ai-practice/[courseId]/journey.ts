@@ -54,8 +54,8 @@ export type JourneyDeps = {
 }
 
 export const NOT_ENTITLED_TITLE = 'AI practice is not included in your account'
-export const NOT_ENTITLED_MESSAGE = 'You don’t currently have access to AI practice. ' +
-  'You can still use available CampusIntell study materials.'
+export const NOT_ENTITLED_MESSAGE = 'AI practice opens with your 7-day free trial or Early Access. ' +
+  'Activate it from Plan & Access. GST courses stay free.'
 
 /** How the student's grant is named in copy. Only a trial grant is called a trial. */
 export function grantName(allowance: AllowanceSummary | null | undefined): string {

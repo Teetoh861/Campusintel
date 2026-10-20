@@ -47,7 +47,8 @@ const documentRow = z.object({
   rejection_reason: z.string().nullable(), source_text: z.string().nullable(),
 })
 const allowanceRow = z.object({ state: z.enum(['not-entitled', 'active', 'expired']),
-  source: z.enum(['trial', 'early_access', 'test']).optional(), total: z.number().int(), used: z.number().int(),
+  source: z.enum(['trial', 'early_access', 'test']).optional(), total: z.number().int().nullable(),
+  used: z.number().int(),
   ends_at: z.string().optional() })
 const beginRow = z.object({ state: z.string(), generation_id: uuid.optional() })
 const generationRow = z.object({ id: uuid, status: z.enum(['running', 'generated', 'insufficient_source',

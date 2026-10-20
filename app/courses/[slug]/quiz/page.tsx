@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
@@ -57,6 +58,10 @@ async function Quiz({ slug, continuityToken }: { slug: string; continuityToken: 
   const backToCourse = <Link href={route.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
     {PRACTICE_COPY.backToCourse}
   </Link>
+  const locked = <StudentPage band={band}>
+    <LockedCourseNotice backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} />
+  </StudentPage>
+  if (course.content.state === 'locked') return locked
   if (course.content.state === 'temporarily-unavailable') {
     return <StudentPage band={band}>
       <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
@@ -73,6 +78,7 @@ async function Quiz({ slug, continuityToken }: { slug: string; continuityToken: 
   // The managed quiz loader owns the actual usable live bank and its attempt policy.
   const bank = await getStudentManagedQuiz(route.slug)
   if (bank.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
+  if (bank.status === 'locked') return locked
   if (bank.status !== 'ready') {
     return <StudentPage band={band}>
       <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>

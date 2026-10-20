@@ -24,18 +24,23 @@ const publishedRow = z.object({
 export type PublishedManagedContent = z.infer<typeof publishedRow>
 export type PublishedContentResult =
   | { status: 'ok'; content: PublishedManagedContent[] }
-  | { status: 'signed-out' | 'invalid-course' | 'unavailable' }
+  | { status: 'signed-out' | 'invalid-course' | 'locked' | 'unavailable' }
 
 export type PublishedCourseResult =
   | { status: 'ok'; courseId: string; content: PublishedManagedContent[] }
-  | { status: 'signed-out' | 'invalid-course' | 'unavailable' }
+  | { status: 'signed-out' | 'invalid-course' | 'locked' | 'unavailable' }
 
 // private.require_live_account() raises this code when the cookie-bound session is no longer live.
 const LIVE_SESSION_REQUIRED_CODE = '42501'
+// The read raises this for a non-free course when the student has no active entitlement grant.
+const COURSE_LOCKED_CODE = 'CI403'
 
 async function readRows(client: AccountClient, courseId: string): Promise<PublishedContentResult> {
   const { data, error } = await client.rpc('read_published_managed_content', { p_course_id: courseId })
-  if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
+  if (error) {
+    return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out'
+      : error.code === COURSE_LOCKED_CODE ? 'locked' : 'unavailable' }
+  }
   const parsed = publishedRow.array().safeParse(data)
   if (!parsed.success || parsed.data.some(row => row.course_id !== courseId)) return { status: 'unavailable' }
   return { status: 'ok', content: parsed.data }
@@ -43,7 +48,8 @@ async function readRows(client: AccountClient, courseId: string): Promise<Publis
 
 /** Read through the published-only RPC after a live student check on this exact
  * cookie-bound client. The RPC requires a live account session: its 42501 refusal
- * is signed-out, while invalid results and other read failures stay unavailable.
+ * is signed-out, its CI403 entitlement refusal is locked, and invalid results and
+ * other read failures stay unavailable.
  * Do not pass a service-role client here.
  */
 export async function getPublishedManagedContentWithVerifiedClient(

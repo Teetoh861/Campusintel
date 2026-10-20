@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 
 type Context = { params: Promise<{ slug: string }> }
 
-/** Read the latest published quiz only for an account with a complete profile. */
+/** Read the latest published quiz only for an account with a complete profile and access to the course. */
 export async function GET(_request: Request, { params }: Context): Promise<NextResponse> {
   const response = NextResponse.json({ status: 'unavailable' }, {
     headers: { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' },
@@ -21,6 +21,6 @@ export async function GET(_request: Request, { params }: Context): Promise<NextR
   const { slug } = await params
   const result = await getStudentManagedQuiz(slug, response)
   const status = result.status === 'ready' ? 200 : result.status === 'signed-out' ? 401
-    : result.status === 'invalid-course' ? 404 : 503
+    : result.status === 'invalid-course' ? 404 : result.status === 'locked' ? 403 : 503
   return NextResponse.json(result, { status, headers: response.headers })
 }

@@ -118,3 +118,15 @@ test('StudentCourseRow forwards a trailing action beside the row target without 
   assert.doesNotMatch(anchors(html)[0], /<button/)
   assert.match(html, /student-course-row-action"><button/)
 })
+
+test('a locked row links to its course page, says it is included with full access, and offers no AI fallback', async () => {
+  const locked = course('BUA211', shelved('locked-slug'), { state: 'locked' })
+  const html = await render(locked)
+  assert.equal(anchors(html).length, 1)
+  assert.ok(anchors(html)[0].includes('href="/courses/locked-slug"'))
+  assert.match(html, /Included with full access\./)
+  assert.doesNotMatch(html, /Notes|CBT practice|Theory|Practise from your own notes|temporarily unavailable/)
+  const { presentStudentCourseRow } = await subject()
+  assert.deepEqual(presentStudentCourseRow(locked), { code: 'BUA211', title: 'BUA211 institutional title',
+    href: '/courses/locked-slug', locked: true })
+})
