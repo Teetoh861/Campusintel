@@ -184,8 +184,8 @@ test('empty semester is distinct and offers Change selection plus Browse All Cou
   f.state.result = { status: 'ok', selection, courses: [] }
   const html = await f.render()
   assert.match(html, /Business Administration · 200 Level · First Semester/)
-  assert.match(html, /No confirmed courses for this selection yet\./)
-  assert.match(html, /hasn’t confirmed the course list for this academic selection/)
+  assert.match(html, /No courses are listed for your academic details\./)
+  assert.match(html, /Check your department, level and semester, or browse All Courses to find study materials/)
   assert.match(anchor(html, '/courses'), /Browse All Courses/)
   assert.ok(anchors(html).some(link => link.includes('href="/profile-selection"') && link.includes('Change selection')))
   assert.doesNotMatch(html, /<ul\b|href="\/(bookmarks|account|materials)"|role="alert"|ready to study/)
@@ -215,14 +215,14 @@ test('domain failures retain truthful recovery and never look like an empty seme
   for (const [status, message, href] of [
     ['missing-profile', 'profile could not be found', '/contact'],
     ['unavailable', 'Courses temporarily unavailable', '/my-courses'],
-    ['invariant-failure', 'Course information needs attention', '/contact'],
+    ['invariant-failure', 'Course details unavailable', '/contact'],
   ]) {
     f.state.result = { status, message: 'private Supabase provider error', courses: [ready] }
     const html = await f.render()
     assert.match(html, new RegExp(message))
     assert.match(html, /role="alert"/)
     assert.ok(anchor(html, href))
-    assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|No confirmed courses/)
+    assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|No courses are listed/)
   }
 }))
 
@@ -234,7 +234,7 @@ test('every selection mismatch fails closed before rendering mixed context/cours
     const html = await f.render()
     assert.match(html, /selection changed/)
     assert.ok(anchor(html, '/my-courses'))
-    assert.doesNotMatch(html, /BUA201|Business Administration|No confirmed courses/)
+    assert.doesNotMatch(html, /BUA201|Business Administration|No courses are listed/)
   }
   f.state.contextError = new Error('provider secret')
   assert.doesNotMatch(await f.render(), /provider secret/)
@@ -242,7 +242,7 @@ test('every selection mismatch fails closed before rendering mixed context/cours
 
 test('profile-label read failures cannot expose courses or bypass completion', async () => fixture(async f => {
   for (const [status, expected] of [
-    ['missing-profile', 'profile could not be found'], ['invariant-failure', 'Course information needs attention'],
+    ['missing-profile', 'profile could not be found'], ['invariant-failure', 'Course details unavailable'],
     ['unavailable', 'Courses temporarily unavailable'],
   ]) {
     f.state.profile = { status }
@@ -270,10 +270,10 @@ test('actionability needs a shelved route and ready content; overview alone is n
     { state: 'no-published-learning', study: study({ overview: true }) })
   const inert = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: overviewOnly }))
   assert.doesNotMatch(inert, /<a\b|href=|Notes/)
-  assert.match(inert, /Study content not yet available/)
+  assert.match(inert, /Study materials are not available/)
   const unshelvedReady = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: broken }))
   assert.doesNotMatch(unshelvedReady, /<a\b|href=|Notes|provisioned/)
-  assert.match(unshelvedReady, /Content temporarily unavailable/)
+  assert.match(unshelvedReady, /Study materials are temporarily unavailable/)
   const routed = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: ready }))
   assert.ok(anchor(routed, '/courses/resolved-slug'))
   f.state.result = { status: 'ok', selection, courses: [ready, broken, overviewOnly, unavailable] }

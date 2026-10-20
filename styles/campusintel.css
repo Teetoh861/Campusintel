@@ -55,7 +55,6 @@ img,svg{display:block;}
   display:inline-flex;align-items:center;justify-content:center;gap:9px;line-height:1;
   min-height:48px;white-space:nowrap;
 }
-.btn .arrow{font-family:var(--mono);font-size:13px;}
 .btn-primary{background:var(--p-600);color:var(--student-primary-text);}
 .btn-primary:hover{background:var(--p-700);}
 .btn-primary:active{background:var(--p-900);}
@@ -73,9 +72,8 @@ img,svg{display:block;}
 .btn-saved:active{background:var(--t-50);border-color:var(--t-700);}
 .btn-sm{min-height:42px;padding:10px 18px;font-size:14px;}
 
-/* inline ghost link with arrow */
+/* inline ghost link */
 .glink{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:15px;font-weight:500;color:var(--p-600);transition:gap .14s,color .14s;}
-.glink .arrow{font-family:var(--mono);font-size:13px;}
 .glink:hover{gap:12px;color:var(--p-700);}
 
 /* ---------- difficulty signal bars (board) ---------- */

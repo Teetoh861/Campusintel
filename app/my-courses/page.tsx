@@ -1,6 +1,5 @@
 // app/my-courses/page.tsx — Request-scoped semester register with verified academic context.
 import Link from 'next/link'
-import { ArrowRight } from 'lucide-react'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { AccessNotice } from '@/components/student/AccessNotice'
@@ -50,7 +49,7 @@ function MyCoursesError({ state }: { state: ErrorState }): ReactElement {
   return <StudentPage band={<MyCoursesBand />}>
     {state === 'selection-changed'
       // Unique to this surface: the saved selection moved while the page was composing.
-      ? <Notice title="Study context changed" action={
+      ? <Notice title="Your semester selection has changed" action={
         <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
       }>Your semester selection changed. Reload to see the latest courses.</Notice>
       : <ResultNotice state={RESULT_STATE[state]} retryHref={MY_COURSES_PATH} />}
@@ -75,7 +74,7 @@ function SemesterContext({ selection, total, ready }: {
 /** Render only the current session owner's persisted institutional semester. */
 export default async function MyCoursesPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <StudentPage band={<MyCoursesBand />}>
-    <Notice title="My Courses is not available yet" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
+    <Notice title="My Courses is currently unavailable" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
   </StudentPage>
 
   let verified: {
@@ -115,11 +114,11 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
   return <>{continuity}<StudentPage band={<SemesterContext selection={profile.selection} total={result.courses.length}
     ready={result.courses.filter(isActionableStudentCourse).length} />}>
     {result.courses.length === 0
-      ? <EmptyState title="No confirmed courses for this selection yet." actions={<>
+      ? <EmptyState title="No courses are listed for your academic details." actions={<>
         <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Change selection</Link>
         <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnGhost)}>Browse All Courses</Link>
       </>}>
-        CampusIntell hasn’t confirmed the course list for this academic selection yet. Check your selection, or look through the full library.
+        Check your department, level and semester, or browse All Courses to find study materials.
       </EmptyState>
       : <section aria-labelledby="my-courses-list-title" className="student-stack">
         <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
@@ -131,7 +130,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
           <div className="student-register-request">
             <p>Missing material for one of your courses?</p>
             <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false} className={studentAction('student-register-request-link')}>
-              {STUDENT_DESTINATIONS.materials.label}<ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+              {STUDENT_DESTINATIONS.materials.label}
             </Link>
           </div>}
       </section>}

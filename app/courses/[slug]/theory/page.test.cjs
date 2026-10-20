@@ -54,7 +54,7 @@ test('the initial server page sends only question prompts to clients and keeps o
   assert.ok(!html.includes(modelAnswer.body) && !html.includes(rubric.body))
   assert.match(html, /INST201 · Institutional theory title/)
   assert.match(html, /Student self-assessment/)
-  assert.match(html, /not verified or AI graded/)
+  assert.match(html, /not verified or graded by AI/)
   assert.match(html, /written answers and reflections stay on this page only\. They are never sent to CampusIntell and are not saved to attempt history/)
   assert.match(html, /<details[^>]*name="theory-practice"[^>]*open=""/)
   assert.deepEqual(f.calls, ['client', 'session', 'published'])
@@ -83,13 +83,13 @@ test('question labels match Course Detail, including questions without a publish
 test('missing model answers never launch practice and empty courses have a usable state', async () => fixture(async f => {
   f.state.result.materials = [{ question, feedback: null }]
   const html = await f.html()
-  assert.match(html, /Theory practice is not yet available/)
+  assert.match(html, /Theory practice is not available for this course/)
   assert.doesNotMatch(html, /data-attempt-id|<details/)
   assert.match(html, new RegExp(`href="/courses/${slug}"`))
   f.state.result.materials = [{ question, feedback }, { question: { ...question, itemId: modelAnswer.itemId }, feedback: null }]
   const partial = await f.html()
   assert.equal((partial.match(/data-attempt-id/g) || []).length, 1)
-  assert.match(partial, /model answers have not been published/)
+  assert.match(partial, /Model answers are not available for those questions/)
 }))
 
 test('authentication, unknown courses and failures keep content closed without repository fallback', async () => fixture(async f => {

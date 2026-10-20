@@ -41,7 +41,7 @@ test('result states map to one copy and one recovery action; redirects share the
     assert.deepEqual(recoveryAction('missing-profile', '/x'), { kind: 'support', href: '/contact', label: 'Contact support' })
     assert.deepEqual(recoveryAction('courses-unavailable', '/courses'), { kind: 'retry', href: '/courses', label: 'Try again' })
     assert.deepEqual(recoveryAction('course-unavailable', '/courses/x'), { kind: 'retry', href: '/courses/x', label: 'Try again' })
-    assert.equal(RESULT_COPY['courses-unavailable'].body, 'Content temporarily unavailable.')
+    assert.equal(RESULT_COPY['courses-unavailable'].body, 'Study materials are temporarily unavailable.')
     assert.equal(RESULT_COPY['course-unavailable'].body, RESULT_COPY['courses-unavailable'].body)
     assert.throws(() => redirectForStudentState('signed-out', '/my-courses'), /redirect:\/login\?next=%2Fmy-courses/)
     assert.throws(() => redirectForStudentState('signed-out', '/courses/../evil'), /redirect:\/login\?next=%2Fdashboard/)
@@ -49,7 +49,7 @@ test('result states map to one copy and one recovery action; redirects share the
     assert.deepEqual(redirects, ['/login?next=%2Fmy-courses', '/login?next=%2Fdashboard', '/profile-selection'])
     const invariant = renderToStaticMarkup(React.createElement(ResultNotice, { state: 'course-invariant', retryHref: '/courses' }))
     assert.match(invariant, /role="alert"/)
-    assert.match(invariant, /Course information needs attention/)
+    assert.match(invariant, /Course details unavailable/)
     assert.ok(anchors(invariant).some(link => link.includes('href="/contact"') && link.includes('Contact support')))
     assert.doesNotMatch(invariant, /Try again/)
     const unavailable = renderToStaticMarkup(React.createElement(ResultNotice, { state: 'courses-unavailable', retryHref: '/courses',

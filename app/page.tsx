@@ -35,7 +35,7 @@ function cardPropsFor(course: Course, index: number): CardProps {
     // The public page cannot inspect protected managed publication.
     flag: critical
       ? { kind: 'critical', label: 'Exam-critical' }
-      : { kind: 'tracked', label: 'Tracked' },
+      : { kind: 'tracked', label: 'Course guide' },
     level: String(course.level),
     credits: `${course.credits} credits`,
     timeLimit: '',
@@ -44,7 +44,6 @@ function cardPropsFor(course: Course, index: number): CardProps {
       label: 'View course',
       href: `/courses/${course.slug}`,
       variant: 'primary',
-      withArrow: true,
     },
   }
 }
@@ -155,7 +154,7 @@ export default function HomePage(): ReactElement {
           <div className="mb-[42px] flex flex-wrap items-end justify-between gap-6">
             <div>
               <span className="text-[12.5px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">
-                Featured files
+                Featured courses
               </span>
               <h2 className="mt-[14px] max-w-[18ch] text-balance text-[clamp(30px,4.6vw,46px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-ci-navy-900">
                 Start with the courses that move your grade.
@@ -183,8 +182,8 @@ export default function HomePage(): ReactElement {
               fall on the 1/3 and 2/3 marks with equal gaps between all four. */}
           <div className="grid w-full grid-cols-2 gap-x-5 gap-y-[30px] tablet:flex tablet:justify-between">
             <Stat value={courseCountLabel} label="Courses" />
-            <Stat value={String(textbookCount)} label="Textbooks indexed" />
-            <Stat value="Peer" label="Tutors coming soon" soon />
+            <Stat value={String(textbookCount)} label="Reference textbooks" />
+            <Stat value="Peer" label="Tutoring waitlist" soon />
           </div>
           <p className="mt-6 border-t border-ci-border pt-5 text-[14.5px] font-medium text-ci-gray-600">
             Now serving <b className="font-bold text-ci-navy-900">Business Administration</b> · 200 Level ·
@@ -201,7 +200,7 @@ export default function HomePage(): ReactElement {
               Peer tutoring
             </h2>
             <span className="inline-flex min-h-7 items-center rounded-full border border-ci-blue-200 bg-ci-blue-50 px-3 py-1 text-[11.5px] font-bold uppercase tracking-[0.1em] text-ci-navy">
-              Coming soon
+              Waitlist open
             </span>
           </div>
 
@@ -210,9 +209,9 @@ export default function HomePage(): ReactElement {
               href="/tutors"
               className="flex min-h-11 flex-col justify-center rounded-[14px] border border-ci-border bg-ci-white p-5 transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-ci-border-2 hover:shadow-ci-card"
             >
-              <h3 className="text-[17px] font-bold text-ci-navy-900">Find a tutor</h3>
+              <h3 className="text-[17px] font-bold text-ci-navy-900">Join the tutoring waitlist</h3>
               <p className="mt-1 text-[14.5px] leading-[1.5] text-ci-gray-600">
-                Join the waitlist for focused course support.
+                Sessions are not available to book. Join for availability updates.
               </p>
             </Link>
             <Link

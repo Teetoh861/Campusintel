@@ -1,7 +1,6 @@
 // app/courses/[slug]/page.tsx — Account-gated Course Detail study hub composed from central one-course truth.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowRight } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
@@ -68,7 +67,7 @@ function CourseUnavailable({ status, slug }: { status: 'unavailable' | 'invarian
 function RequestMaterialLink({ href, prominent = false }: { href: string; prominent?: boolean }): ReactElement {
   return <Link href={href} prefetch={false}
     className={prominent ? studentAction(btnNavy, studentFocusDark) : studentAction(btnGhost, 'bg-student-surface')}>
-    Request material{prominent && <ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />}
+    Request material
   </Link>
 }
 
@@ -105,16 +104,16 @@ function CourseStudyHub({ result }: { result: ResolvedCourse }): ReactElement {
           <ApplicabilityList applicability={institutional.applicability} />
         </section>
         : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
-          Institutional applicability has not been confirmed for this course. The study content below is published repository material.
+          Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
       {locked && <LockedCourseNotice />}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />
-      </>}>We couldn’t load the published study content for this course just now.</Notice>}
+      </>}>We couldn’t load the study materials for this course just now.</Notice>}
       {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
         action={<RequestMaterialLink href={materialsHref} prominent />}>
-        CampusIntell hasn’t published notes, CBT practice or theory questions for this course yet.
+        Notes, CBT practice and theory questions are not available for this course. You can request study material below.
       </Notice>}
       {sections.includes('notes') && learning && <NotesSection notes={learning.notes} number={number('notes')} />}
       {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} number={number('cbtPractice')} />}

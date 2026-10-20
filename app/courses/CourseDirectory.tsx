@@ -64,8 +64,8 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
   }
   const resetAll = () => { setQuery(''); setFilters(ALL_FILTERS); setPage(1); searchRef.current?.focus() }
 
-  if (items.length === 0) return <EmptyState title="No institutional courses available yet." actions={null}>
-    The institutional catalogue is empty. Please check back later.
+  if (items.length === 0) return <EmptyState title="No courses are available to browse." actions={null}>
+    Please check back later, or contact support for help finding study materials.
   </EmptyState>
 
   return <>
@@ -92,9 +92,9 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
     </div>
     <section ref={resultsRef} tabIndex={-1} aria-labelledby="course-results-title"
       className={'student-catalogue-results ' + studentFocusControl}>
-      <h2 id="course-results-title" className="sr-only">Institutional course results</h2>
+      <h2 id="course-results-title" className="sr-only">Course search results</h2>
       {filtered.length > 0
-        ? <CourseRegister label="Institutional courses">
+        ? <CourseRegister label="Courses">
           {visible.map(item => <Fragment key={item.institutionalCourseId}>{item.row}</Fragment>)}
         </CourseRegister>
         : <EmptyState title="No courses match your search and filters." actions={

@@ -63,11 +63,11 @@ export function TutorForm() {
   return (
     <div className="mx-auto max-w-[640px] rounded-[20px] border border-ci-border bg-ci-white p-[28px_24px] shadow-ci-card min-[900px]:p-9">
       <p className="text-[16px] leading-[1.6] text-ci-gray-600">
-        A short brief is all we need to start. We review applications and pick up the conversation directly.
+        Tell us about your subjects and experience. Send your details on WhatsApp, and we’ll follow up with you there.
       </p>
       <div className="mt-3 inline-flex items-center gap-2 text-[13px] text-ci-gray-600">
         <span className="h-[6px] w-[6px] rounded-full bg-ci-blue-400" />
-        Routes straight to a real person on WhatsApp
+        Discuss your application with us on WhatsApp
       </div>
 
       <div className="mt-7 flex flex-col gap-5">
@@ -121,7 +121,7 @@ export function TutorForm() {
 
         <div>
           <div className="flex items-baseline justify-between gap-3">
-            <label htmlFor="f-msg" className={labelClass}>Short message</label>
+            <label htmlFor="f-msg" className={labelClass}>Short message (optional)</label>
             <span
               className={cx(
                 'text-[12.5px] [font-variant-numeric:tabular-nums]',
@@ -136,7 +136,7 @@ export function TutorForm() {
             id="f-msg"
             name="message"
             maxLength={MESSAGE_MAX}
-            placeholder="Which courses you aced, your results, and why students should learn this from you."
+            placeholder="Tell us which courses you can teach, your results and any tutoring experience."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             className={cx(fieldClass, 'mt-2 min-h-[140px] resize-y leading-[1.5]')}
@@ -159,7 +159,7 @@ export function TutorForm() {
       </div>
 
       <p className="mt-5 text-[14px] leading-[1.55] text-ci-gray-600">
-        Opens WhatsApp with your details pre-filled. Nothing is sent until you hit send there.
+        Opens WhatsApp with your details pre-filled. Review them there before sending your application.
       </p>
     </div>
   )

@@ -53,7 +53,7 @@ export type JourneyDeps = {
   requests: GenerationRequests
 }
 
-export const NOT_ENTITLED_TITLE = 'AI practice needs an active trial'
+export const NOT_ENTITLED_TITLE = 'AI practice is not included in your account'
 export const NOT_ENTITLED_MESSAGE = 'AI practice opens with your 7-day free trial or Early Access. ' +
   'Activate it from Plan & Access. GST courses stay free.'
 
@@ -75,9 +75,9 @@ export function describeResult(result: AiPracticeResult): JourneyOutcome {
       'Your notes did not contain enough clear material for five fair questions. Try fuller notes on one topic. ' +
       'This did not use any of your AI allowance.', 'new-file', 'info'), allowance: result.allowance }
     case 'flagged-for-review': return { ...problem('We could not generate questions from this file',
-      'The material does not look like study notes for this course. Upload notes for this course instead. ' +
+      'We couldn’t use this material for course practice. Upload clear, appropriate study notes for this course instead. ' +
       'This did not use any of your AI allowance.', 'new-file', 'info'), allowance: result.allowance }
-    case 'generation-failed': return { ...problem('Generation did not finish',
+    case 'generation-failed': return { ...problem('Your questions could not be created',
       'Something went wrong while writing your questions. This did not use any of your AI allowance. Try again.',
       'same-file'), allowance: result.allowance }
     case 'allowance-exhausted': return { ...problem('AI allowance used up',
@@ -87,8 +87,8 @@ export function describeResult(result: AiPracticeResult): JourneyOutcome {
       `Your ${grantName(result.allowance)} has ended. Verified CampusIntell content stays available.`, 'none', 'info'),
       allowance: result.allowance }
     case 'not-entitled': return problem(NOT_ENTITLED_TITLE, NOT_ENTITLED_MESSAGE, 'none', 'info')
-    case 'busy': return problem('Already working on it',
-      'An earlier request for this file is still running. Wait a moment, then try again.', 'same-file', 'info')
+    case 'busy': return problem('Your questions are still being prepared',
+      'Please wait a moment, then try again.', 'same-file', 'info')
     case 'capacity': return problem('AI practice is busy',
       'Too many students are generating questions right now. Try again later.', 'same-file', 'info')
     case 'upload-limit': return problem('Daily upload limit reached',
@@ -96,7 +96,7 @@ export function describeResult(result: AiPracticeResult): JourneyOutcome {
     case 'not-eligible': return problem('This course has verified content',
       'Use the CampusIntell study material for this course instead.', 'none', 'info')
     case 'signed-out': return { ...problem('Signed out', 'Sign in again to continue.', 'none'), signedOut: true }
-    case 'session-changed': return problem('Your session changed', 'Reload this page and try again.', 'none')
+    case 'session-changed': return problem('Your sign-in has changed', 'Reload this page and try again.', 'none')
     case 'disabled': return problem('AI practice is not available', 'Try again later.', 'none', 'info')
     case 'not-found': return problem('Upload not found', 'Choose your file again.')
     default: return problem('Something went wrong', 'Check your connection and try again.', 'same-file')

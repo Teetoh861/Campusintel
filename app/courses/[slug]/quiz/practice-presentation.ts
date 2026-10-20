@@ -3,11 +3,11 @@ import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 
 export const PRACTICE_COPY = {
   title: 'Practice',
-  lede: 'Timed CBT practice from the published question bank.',
+  lede: 'Test your knowledge with timed multiple-choice questions.',
   backToCourse: 'Back to course',
-  notBuiltTitle: 'CBT practice is not available for this course yet.',
-  notBuiltBody: 'CampusIntell hasn’t published a usable practice bank for this course. Notes and theory may still be available on the course page.',
-  temporaryBody: 'We couldn’t load the published question bank just now. Your saved results are unaffected.',
+  notBuiltTitle: 'CBT practice is not available for this course.',
+  notBuiltBody: 'Check the course page for other study materials, or request the material you need.',
+  temporaryBody: 'We couldn’t load the practice questions just now. Your saved results are unaffected.',
   loading: 'Loading practice.',
   leaveTitle: 'Leave practice?',
   leaveBody: 'This attempt will end. It can’t be resumed, and your answers won’t be submitted.',
@@ -38,8 +38,8 @@ export type PracticeIdentity = {
 /** Institutional code and title win; a repository-only course is named as repository identity, never as an owner. */
 export function practiceIdentity(code: string, title: string, repositoryOnly: boolean): PracticeIdentity {
   if (repositoryOnly) {
-    return { context: `CampusIntell repository · ${title}`,
-      lede: 'CBT practice · Repository course, not yet linked to an institutional course code',
+    return { context: `Additional study material · ${title}`,
+      lede: 'CBT practice · Check that this material matches your course and syllabus',
       barCode: title, barTitle: 'Practice', heading: `Practice — ${title}` }
   }
   return { context: `${code} · ${title}`, lede: 'CBT practice · One timed attempt',

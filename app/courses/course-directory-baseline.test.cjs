@@ -84,7 +84,7 @@ test('gated server page reads the full central catalogue once on its verified cl
   assert.equal(directory.props.items[0].row.props.course, shared)
   assert.equal(directory.props.items[0].row.type, f.StudentCourseRow, 'rows come from the shared owner')
   const html = f.html(tree)
-  assert.match(html, /Institutional course catalogue/)
+  assert.match(html, /Course catalogue/)
   assert.match(html, /2 courses/)
   assert.match(html, /LAG-BUA210 institutional title/)
   assert.equal((html.match(/<li\b/g) || []).length, 2)
@@ -93,11 +93,11 @@ test('gated server page reads the full central catalogue once on its verified cl
 
 test('no published learning, unlinked, unshelved-ready and publication failure keep every identity in the register', async () => fixture(async f => {
   const inputs = [
-    [course('empty', 'EMPTY', shelved, { state: 'no-published-learning', study: study({}) }), 'Study content not yet available.'],
-    [course('unlinked', 'UNLINKED', { state: 'unlinked' }, { state: 'not-built', reason: 'unlinked' }), 'Study content not yet available.'],
+    [course('empty', 'EMPTY', shelved, { state: 'no-published-learning', study: study({}) }), 'Study materials are not available.'],
+    [course('unlinked', 'UNLINKED', { state: 'unlinked' }, { state: 'not-built', reason: 'unlinked' }), 'Study materials are not available.'],
     [course('unshelved', 'UNSHELVED', { state: 'unshelved-repository', repositoryCourseId: 'provisioned', contentKey: 'new-key', isShared: null },
-      { state: 'ready', study: study({ notes: true, theory: true }) }), 'Content temporarily unavailable.'],
-    [course('failed', 'FAILED', shelved, { state: 'temporarily-unavailable', reason: 'publication-read-failed' }), 'Content temporarily unavailable.'],
+      { state: 'ready', study: study({ notes: true, theory: true }) }), 'Study materials are temporarily unavailable.'],
+    [course('failed', 'FAILED', shelved, { state: 'temporarily-unavailable', reason: 'publication-read-failed' }), 'Study materials are temporarily unavailable.'],
   ]
   f.state.result = { status: 'ok', courses: [course('ready','READY'), ...inputs.map(([input]) => input)] }
   const html = f.html(await f.granted())
@@ -111,8 +111,8 @@ test('catalogue unavailable and invariant failure retain the PageBand and safe r
     const tree = await f.granted(), html = f.html(tree)
     assert.match(html, /All Courses/)
     assert.equal(f.nodes(tree).some(node => node.type === f.CourseDirectory), false)
-    if (status === 'unavailable') { assert.match(html, /Content temporarily unavailable\./); assert.match(html, /Try again/) }
-    else { assert.match(html, /Course information needs attention/); assert.match(html, /Contact support/) }
+    if (status === 'unavailable') { assert.match(html, /Study materials are temporarily unavailable\./); assert.match(html, /Try again/) }
+    else { assert.match(html, /Course details unavailable/); assert.match(html, /Contact support/) }
     assert.doesNotMatch(html, /private|0 courses|15 courses|BUA201/)
   }
 }))
@@ -128,17 +128,17 @@ test('session loss before or during the catalogue preserves the existing login r
 
 test('validation failure is sanitized and empty catalogue remains a genuine empty institutional state', async () => fixture(async f => {
   f.state.sessionError = true
-  assert.match(f.html(await f.granted()), /Content temporarily unavailable\./)
+  assert.match(f.html(await f.granted()), /Study materials are temporarily unavailable\./)
   assert.doesNotMatch(f.html(await f.granted()), /private provider details/)
   f.state.sessionError = false; f.state.result = { status: 'ok', courses: [] }
   const html = f.html(await f.granted())
-  assert.match(html, /0 courses/); assert.match(html, /No institutional courses available yet\./)
+  assert.match(html, /0 courses/); assert.match(html, /No courses are available to browse\./)
   assert.doesNotMatch(html, /<input\b|<select\b|<nav\b|No courses match/)
 }))
 
 test('loading follows the shared Student register pattern and is inert without fabricated identities', async () => fixture(async f => {
   const html = f.html(require('./loading.tsx').default())
-  assert.match(html, /All Courses|Institutional course catalogue/)
+  assert.match(html, /All Courses|Course catalogue/)
   assert.match(html, /aria-busy="true"|Loading institutional courses\./)
   assert.match(html, /student-course-register/)
   assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b|animate-pulse|Business Administration|\d+ courses/)

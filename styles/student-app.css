@@ -44,10 +44,8 @@
 .student-course-row-error > svg { flex: none; margin-top: 2px; }
 .student-course-row-locked { display: flex; align-items: flex-start; gap: 7px; color: var(--student-text-secondary); }
 .student-course-row-locked > svg { flex: none; margin-top: 2px; }
-.student-course-row-chevron { align-self: center; flex: none; color: var(--student-text-muted); }
 .student-course-row-link { transition: background-color 140ms ease; }
 .student-course-row-link:hover { background: var(--student-surface-muted); }
-.student-course-row-link:hover .student-course-row-chevron { color: var(--student-primary); }
 .student-course-row-link:active { background: var(--student-brand-surface); }
 .student-register-request { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 16px; padding-inline: 8px; }
 .student-register-request > p { color: var(--student-text-muted); font-size: 14px; line-height: 1.4; }
@@ -153,10 +151,9 @@
 .dashboard-bookmark-card { position: relative; }
 .dashboard-bookmark-card::before { content: ''; position: absolute; right: 14px; top: -1px; width: 13px; height: 21px; background: var(--ci-brand-blue); clip-path: polygon(0 0,100% 0,100% 100%,50% 75%,0 100%); }
 .dashboard-utility-group { display: grid; }
-.dashboard-utility-row { display: grid; grid-template-columns: 20px minmax(0,1fr) 18px; align-items: start; gap: 12px; min-width: 0; min-height: 72px; padding: 12px 8px; border-bottom: 1px solid var(--student-border); text-decoration: none; }
+.dashboard-utility-row { display: grid; grid-template-columns: 20px minmax(0,1fr); align-items: start; gap: 12px; min-width: 0; min-height: 72px; padding: 12px 8px; border-bottom: 1px solid var(--student-border); text-decoration: none; }
 .dashboard-utility-row > svg { flex: none; color: var(--student-link); }
 .dashboard-utility-icon { margin-top: 2px; }
-.dashboard-utility-arrow { align-self: center; }
 .dashboard-utility-row h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .student-footer { border-top: 1px solid var(--student-border); background: var(--student-surface); }
 .student-footer-inner { display: flex; align-items: center; gap: 10px; padding-block: 20px 28px; color: var(--student-text-muted); font-size: 13px; line-height: 1.3; font-weight: 600; }
@@ -211,7 +208,6 @@
   .dashboard-bookmark-card { grid-column: 1 / -1; }
   .dashboard-utility-group { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
   .dashboard-utility-row { grid-template-columns: 20px minmax(0,1fr); gap: 12px; padding: 16px; border-bottom: 0; border-radius: 11px; }
-  .dashboard-utility-arrow { display: none; }
   .dashboard-record { margin-top: 0; }
 }
 @media (min-width: 1200px) {
