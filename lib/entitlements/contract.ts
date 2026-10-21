@@ -45,8 +45,8 @@ const summaryWire = z.object({
       'account-restricted']),
     starts_at: timestamp.nullable(), ends_at: timestamp.nullable(), enrollment_closes_at: timestamp.nullable(),
   }),
-  otp: z.object({ challenge_id: z.string().uuid(), phone_hint: z.string().regex(/^\d{3}$/), expires_at: timestamp,
-    delivery: z.enum(['sent', 'failed']), resend_at: timestamp }).nullable(),
+  // `otp` is still sent (always null) for builds from before the Discovery Pass; it is dropped here with every other
+  // unknown key. No code, phone number or hint ever reaches a page.
 })
 
 /**
@@ -72,31 +72,24 @@ export type AccessSource = NonNullable<EntitlementSummary['access']>['source']
 /** What one course offers this student now. `unknown` means the entitlement read failed: fail closed. */
 export type CourseAccess = 'full' | 'free' | 'unknown'
 
-// A trial code is six digits. Phone numbers are accepted in common Nigerian forms and normalized server-side.
-export const OTP_CODE_LENGTH = 6
-const PHONE_INPUT_MAX = 24
-
+// Activation is one explicit command with nothing to fill in: no phone number, no code. The student is the verified
+// session; the database decides eligibility, the one-pass-per-account rule and the pass window on its own clock.
 export const entitlementCommandSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('send-trial-code'), phone: z.string().min(1).max(PHONE_INPUT_MAX) }).strict(),
-  z.object({ action: z.literal('verify-trial-code'), challengeId: z.string().uuid(),
-    code: z.string().regex(new RegExp(`^\\d{${OTP_CODE_LENGTH}}$`)) }).strict(),
+  z.object({ action: z.literal('activate-discovery-pass') }).strict(),
 ])
 
 export type EntitlementCommand = z.infer<typeof entitlementCommandSchema>
 
-const PLAIN_RESULTS = ['signed-out', 'session-changed', 'invalid-request', 'invalid-phone', 'unavailable', 'capacity',
-  'already-activated', 'phone-already-used', 'expired', 'superseded', 'already-used', 'too-many-attempts',
-  'trial-not-offered'] as const
+// already-claimed: this confirmed email address started a pass on an account that was since deleted.
+// rate-limited: too many activation requests from this account or address; nothing was started.
+// capacity: the platform-wide daily activation guard; nothing was started.
+const PLAIN_RESULTS = ['signed-out', 'session-changed', 'invalid-request', 'unavailable', 'capacity', 'rate-limited',
+  'already-claimed', 'trial-not-offered'] as const
 
 export const entitlementResultSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('code-sent'), challengeId: z.string().uuid(), phoneHint: z.string().regex(/^\d{3}$/),
-    expiresAt: timestamp, resendAt: timestamp }).strict(),
-  z.object({ status: z.literal('delivery-failed'), challengeId: z.string().uuid(), phoneHint: z.string().regex(/^\d{3}$/),
-    resendAt: timestamp }).strict(),
-  z.object({ status: z.literal('cooldown'), retryAt: timestamp }).strict(),
-  z.object({ status: z.literal('rate-limited'), retryAt: timestamp }).strict(),
-  z.object({ status: z.literal('incorrect'), attemptsLeft: z.number().int().nonnegative() }).strict(),
-  z.object({ status: z.literal('trial-activated'), endsAt: timestamp }).strict(),
+  z.object({ status: z.literal('pass-activated'), endsAt: timestamp }).strict(),
+  // The account already has its one trial grant (active, ended or revoked): a replay, never a second pass.
+  z.object({ status: z.literal('already-activated'), endsAt: timestamp }).strict(),
   z.object({ status: z.literal('early-access-active'), availableFrom: timestamp }).strict(),
   ...PLAIN_RESULTS.map(status => z.object({ status: z.literal(status) }).strict()),
 ])

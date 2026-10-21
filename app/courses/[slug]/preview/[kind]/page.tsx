@@ -150,7 +150,7 @@ function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
       </Notice>
     case 'no-pass':
       return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_LABEL}`} action={plan}>
-        Get a free pass with a one-time phone check to try a department course.
+        Start your free pass from Plan & Access to try a department course. It takes one tap.
       </Notice>
     case 'nothing-to-preview':
       return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'study guide topics'} />

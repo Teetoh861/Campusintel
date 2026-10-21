@@ -106,7 +106,7 @@ function PassUsage({ discovery }: { discovery: DiscoverySummary }): ReactElement
 
 function TrialSection({ entitlement, continuityToken }: { entitlement: EntitlementSummary; continuityToken: string }):
   ReactElement | null {
-  const { trial, otp, discovery } = entitlement
+  const { trial, discovery } = entitlement
   const sevenDay = trial.policy === 'seven-day'
   // A seven-day trial issued before the pass is full access, already shown as the current plan.
   if (sevenDay && trial.status === 'active') return null
@@ -115,9 +115,7 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
       <p className="mt-2 text-sm text-student-text-secondary">Try department courses free for {entitlement.trial_hours} hours.
         It’s a sample, not full access: each item can be used once, and nothing renews.</p>
       {discovery !== null && <PassIncludes discovery={discovery} />}
-      <div className="mt-3"><TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours}
-        initialChallenge={otp === null ? null : { challengeId: otp.challenge_id, phoneHint: otp.phone_hint,
-          resendAt: otp.resend_at }} /></div>
+      <div className="mt-3"><TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours} /></div>
     </>,
     'active': <>
       <p className="mt-2 text-sm text-student-text-secondary">Active until
@@ -125,7 +123,7 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
       {discovery !== null && <PassUsage discovery={discovery} />}
     </>,
     'ended': <p className="mt-2 text-sm text-student-text-secondary">Your {sevenDay ? 'trial' : 'pass'} has ended
-      {trial.ends_at !== null && <> ({formatAccessDate(trial.ends_at)})</>}. Each account and phone number can have one
+      {trial.ends_at !== null && <> ({formatAccessDate(trial.ends_at)})</>}. Each account can have one
       {sevenDay ? ' trial' : ' pass'}.</p>,
     'after-early-access': <p className="mt-2 text-sm text-student-text-secondary">You already have full access through Early
       Access, so your pass is kept for later. It becomes available
@@ -145,7 +143,7 @@ function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }
   const text: Record<Exclude<typeof early.status, 'not-listed'>, ReactElement> = {
     // Never a date: the month starts at the actual public launch, not the planned one.
     'awaiting-launch': <>You’re on the Early Access list. Your free month of full access, with AI practice included, starts
-      automatically when CampusIntell launches publicly. There is nothing to claim and no phone check.</>,
+      automatically when CampusIntell launches publicly. There is nothing to claim.</>,
     'pending': <>You’re on the Early Access list. Your free month is being set up; refresh this page in a moment.</>,
     'active': <>Active
       {early.ends_at !== null && <> until {formatAccessDate(early.ends_at)}</>}. Every course and AI practice are included.</>,

@@ -5,8 +5,8 @@ import { discoveryResultSchema } from './discovery-contract'
 import type { EntitlementCommand, EntitlementResult } from './contract'
 import type { DiscoveryCommand, DiscoveryResult } from './discovery-contract'
 
-// Sending a code waits for the SMS provider (up to 10 s) as well as the database.
-const REQUEST_TIMEOUT_MS = 20_000
+// Activation is one database round trip.
+const REQUEST_TIMEOUT_MS = 10_000
 
 /** Post one command. Any transport or shape problem reads as `unavailable`; nothing is retried automatically. */
 export async function postEntitlementCommand(command: EntitlementCommand, pageToken: string,

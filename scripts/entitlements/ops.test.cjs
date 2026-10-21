@@ -96,13 +96,15 @@ test('every recovery change requires an actor and a reason and calls one narrow 
   await assert.rejects(h.run(['change-grant', '--grant', grant, '--action', 'delete', '--actor', 'a', '--reason', 'r']), /--action/)
   assert.equal(h.requests.length, 0)
   await h.run(['change-grant', '--grant', grant, '--action', 'extend', '--until', '2026-11-10T00:00:00Z',
-    '--actor', 'ops', '--reason', 'SMS outage during trial'])
+    '--actor', 'ops', '--reason', 'activation outage compensation'])
   assert.deepEqual(h.requests.at(-1), { fn: 'admin_change_grant', headers: h.requests.at(-1).headers, body: {
     p_grant_id: grant, p_action: 'extend', p_ends_at: '2026-11-10T00:00:00.000Z', p_ai_units: null,
-    p_actor: 'ops', p_reason: 'SMS outage during trial' } })
-  await h.run(['release-phone', '--phone', '+234 803 123 4567', '--actor', 'ops', '--reason', 'number reassigned'])
-  assert.deepEqual(h.requests.at(-1).body, { p_phone_hash: phoneHash(KEY, '+2348031234567'), p_actor: 'ops',
-    p_reason: 'number reassigned' })
+    p_actor: 'ops', p_reason: 'activation outage compensation' } })
+  // The phone-code commands of the retired activation no longer exist; a pass is started only by the student.
+  for (const command of [['release-phone', '--phone', '+234 803 123 4567', '--actor', 'ops', '--reason', 'r'], ['purge-otp']]) {
+    await assert.rejects(h.run(command), /usage/)
+  }
+  assert.equal(h.requests.filter(r => r.fn !== 'admin_change_grant').length, 0)
 })
 
 test('hosted configuration requires HTTPS and an sb_secret_ key; nothing is sent otherwise', async () => {

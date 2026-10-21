@@ -1,37 +1,41 @@
--- supabase/tests/trial_entitlements.test.sql — Free GST access, the phone-OTP trial, the shared AI allowance, Early
--- Access, Account deletion and operator recovery, enforced inside the database (PRD v1.4 §4.5, §4.9).
--- Time is simulated by moving grant and challenge timestamps: now() is fixed for the whole transaction.
+-- supabase/tests/trial_entitlements.test.sql — Free GST access, one-click Discovery Pass activation (one per account and
+-- per confirmed email, no phone number), the shared AI allowance, Early Access, Account deletion and operator recovery,
+-- enforced inside the database (PRD v1.4 §4.5, §4.9).
+-- Time is simulated by moving grant timestamps: now() is fixed for the whole transaction.
 begin;
 select no_plan();
 
 -- Structure and deny-by-default access ------------------------------------------------------------------------
 select has_table('public', 'entitlement_grants', 'grants table exists');
-select has_table('private', 'trial_phone_claims', 'phone claims table exists');
-select has_table('private', 'trial_otp_challenges', 'OTP challenges table exists');
+select has_table('private', 'trial_phone_claims', 'the historical phone claims of seven-day trials remain');
+select has_table('private', 'discovery_pass_claims', 'pass claims by confirmed email exist');
+select hasnt_table('private', 'trial_otp_challenges', 'the phone-code challenges are gone');
+select ok(not exists (select 1 from information_schema.columns where table_schema = 'private'
+  and table_name = 'entitlement_policy' and column_name like 'otp%'), 'no phone-code policy remains');
+select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
+  and p.proname in ('prepare_trial_otp', 'record_trial_otp_delivery', 'verify_trial_otp', 'purge_trial_otp_challenges',
+    'admin_release_trial_phone')), 0, 'no phone-code function remains');
 select has_table('private', 'early_access_members', 'trusted Early Access list exists');
 select has_table('private', 'entitlement_events', 'audit trail exists');
 select hasnt_function('public', 'claim_early_access', 'there is no manual Early Access claim: enrollment is automatic');
 select is((select actual_launch_at from private.entitlement_policy), null,
   'the actual public launch starts unset; the planned date is never used in its place');
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.entitlement_grants'::regclass,
-  'private.trial_phone_claims'::regclass, 'private.trial_otp_challenges'::regclass,
+  'private.trial_phone_claims'::regclass, 'private.discovery_pass_claims'::regclass,
   'private.early_access_members'::regclass, 'private.entitlement_events'::regclass)), 'RLS is enabled everywhere');
 select is((select count(*)::integer from unnest(array['public.entitlement_grants', 'private.trial_phone_claims',
-    'private.trial_otp_challenges', 'private.early_access_members', 'private.entitlement_events',
+    'private.discovery_pass_claims', 'private.early_access_members', 'private.entitlement_events',
     'private.entitlement_policy']) tbl, unnest(array['anon', 'authenticated', 'service_role']) api_role,
     unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) privilege
   where has_table_privilege(api_role, tbl, privilege)), 0, 'no API role can touch an entitlement table directly');
 select is((select count(*)::integer from unnest(array[
-    'public.prepare_trial_otp(uuid,uuid,text,text,text)', 'public.record_trial_otp_delivery(uuid,uuid,text)',
-    'public.verify_trial_otp(uuid,uuid,text)',
+    'public.activate_discovery_pass(uuid)',
     'public.admin_entitlement_status(uuid)', 'public.admin_grant_access(uuid,integer,text,text)',
     'public.admin_change_grant(uuid,text,timestamptz,integer,text,text)',
-    'public.admin_release_trial_phone(text,text,text)',
     'public.admin_add_early_access_member(text,text,text,timestamptz,text,text,text)',
     'public.admin_change_early_access_member(text,text,text,text,text)', 'public.admin_early_access_report()',
     'public.admin_configure_early_access(timestamptz,integer,boolean,text,text)',
-    'public.admin_activate_public_launch(text,text,integer)', 'public.admin_reconcile_early_access(text,text,integer)',
-    'public.purge_trial_otp_challenges()']) fn
+    'public.admin_activate_public_launch(text,text,integer)', 'public.admin_reconcile_early_access(text,text,integer)']) fn
   where has_function_privilege('authenticated', fn, 'EXECUTE') or has_function_privilege('anon', fn, 'EXECUTE')
     or not has_function_privilege('service_role', fn, 'EXECUTE')), 0,
   'activation, claims and every recovery function are service-role only');
@@ -43,14 +47,15 @@ select is((select count(*)::integer from unnest(array['private.can_read_course_c
     'private.reconcile_early_access(uuid,text)', 'private.reconcile_all_early_access(text,integer)',
     'private.early_access_sweep_candidates()', 'private.retire_legacy_ai_windows(text)', 'private.lock_early_access_accounts(text)',
     'private.lock_early_access_groups(text[],uuid[],boolean)',
-    'private.resolve_early_access_duplicates(uuid,text,text)']) fn, unnest(array['anon', 'authenticated', 'service_role']) api_role
+    'private.resolve_early_access_duplicates(uuid,text,text)', 'private.discovery_email_hash(text)']) fn,
+    unnest(array['anon', 'authenticated', 'service_role']) api_role
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'access helpers are not callable by any API role');
 select is((select string_agg(conrelid::regclass::text || '=' || confdeltype::text, ',' order by conrelid::regclass::text)
   from pg_constraint where contype = 'f' and confrelid = 'auth.users'::regclass and conrelid in (
-    'public.entitlement_grants'::regclass, 'private.trial_phone_claims'::regclass, 'private.trial_otp_challenges'::regclass,
+    'public.entitlement_grants'::regclass, 'private.trial_phone_claims'::regclass, 'private.discovery_pass_claims'::regclass,
     'private.early_access_members'::regclass, 'private.entitlement_events'::regclass)),
-  'entitlement_grants=c,private.early_access_members=n,private.entitlement_events=n,private.trial_otp_challenges=c,private.trial_phone_claims=n',
-  'Account purge removes grants and codes, but keeps phone claims, list claims and audit rows without the account');
+  'entitlement_grants=c,private.discovery_pass_claims=n,private.early_access_members=n,private.entitlement_events=n,private.trial_phone_claims=n',
+  'Account purge removes grants, but keeps pass claims, historical phone claims, list claims and audit rows without the account');
 
 -- Fixtures --------------------------------------------------------------------------------------------------------
 -- A, B, F, G, H: ordinary students. C: deletion scheduled later. D, E: Early Access list (E duplicates D by phone).
@@ -84,12 +89,12 @@ insert into outcome select 'gst-selection', jsonb_build_array(jsonb_build_object
   'content_revision', published_revision)) from public.managed_content_items
   where course_id = '40000000-0000-4000-8000-000000000008' and kind = 'cbt_question' and published_revision is not null
   order by created_at limit 1;
--- Keyed hashes are computed by the server; any 64-hex value stands in for one here.
+-- Keyed Early Access phone hashes are computed by the operator tool; any 64-hex value stands in for one here.
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
 grant execute on function pg_temp.h(text) to authenticated, service_role;
 
--- 1. Permanent free GST access, no OTP or payment ----------------------------------------------------------------
+-- 1. Permanent free GST access, no activation or payment --------------------------------------------------------
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000001"}';
 select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000008')) > 0,
@@ -106,8 +111,8 @@ select is((select jsonb_build_object('tier', e->>'tier', 'trial', e->'trial'->>'
 select throws_ok($$ insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
   values ('61000000-0000-4000-8000-000000000001', 'manual', now(), now() + interval '1 year', 'none', 'me') $$,
   '42501', null, 'a student cannot grant themselves access');
-select throws_ok($$ select public.verify_trial_otp('62000000-0000-4000-8000-000000000001', gen_random_uuid(), pg_temp.h('x')) $$,
-  '42501', null, 'a student cannot call trial verification directly');
+select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000001') $$,
+  '42501', null, 'a student cannot call activation with their own JWT');
 select throws_ok($$ select public.admin_activate_public_launch('me', 'launch it myself') $$,
   '42501', null, 'a student cannot activate the public launch');
 reset role;
@@ -115,43 +120,36 @@ set local role anon;
 select throws_ok($$ select public.get_my_entitlement() $$, '42501', null, 'anonymous callers have no plan to read');
 reset role;
 
--- 2. Trial activation by one-time phone code -----------------------------------------------------------------------
+-- 2. Activation is explicit, one click, and the account's own: no phone number, no code -----------------------------
 set local role service_role;
-insert into outcome values ('a-prepare', public.prepare_trial_otp('62000000-0000-4000-8000-000000000001',
-  '63000000-0000-4000-8000-000000000001', pg_temp.h('phone-a'), '567', pg_temp.h('code-a')));
-select is((select result->>'state' from outcome where step = 'a-prepare'), 'ready', 'a first code request is accepted');
-select is((select (result->>'user_id')::uuid from outcome where step = 'a-prepare'),
-  '61000000-0000-4000-8000-000000000001'::uuid, 'identity comes from the verified session id');
-select is(public.record_trial_otp_delivery('61000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001',
-  'sent'), true, 'the delivery outcome is recorded once');
-select is(public.record_trial_otp_delivery('61000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001',
-  'failed'), false, 'a settled delivery cannot be rewritten');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000002',
-  pg_temp.h('phone-a'), '567', pg_temp.h('code-a2'))->>'state', 'cooldown', 'resending inside the cooldown is refused');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001',
-  pg_temp.h('wrong')), '{"state":"incorrect","attempts_left":4}'::jsonb, 'a wrong code counts an attempt');
-insert into outcome values ('a-verify', public.verify_trial_otp('62000000-0000-4000-8000-000000000001',
-  '63000000-0000-4000-8000-000000000001', pg_temp.h('code-a')));
-select is((select result->>'state' from outcome where step = 'a-verify'), 'activated', 'the right code activates the trial');
-select is((select (result->>'ends_at')::timestamptz from outcome where step = 'a-verify'), now() + interval '72 hours',
+select is(public.activate_discovery_pass(gen_random_uuid())->>'state', 'signed-out', 'an unknown session starts nothing');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000009')->>'state', 'signed-out',
+  'an unconfirmed email cannot start a pass');
+insert into outcome values ('a-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000001'));
+select is((select result->>'state' from outcome where step = 'a-activate'), 'activated', 'one tap activates the pass');
+select is((select (result->>'ends_at')::timestamptz from outcome where step = 'a-activate'), now() + interval '72 hours',
   'the Discovery Pass lasts exactly 72 hours from database time (20261021100000_discovery_pass.sql)');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000001',
-  pg_temp.h('code-a'))->>'state', 'already-used', 'replaying a used code is refused');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000003',
-  pg_temp.h('phone-a2'), '111', pg_temp.h('code-a3'))->>'state', 'already-activated',
-  'one account never gets a second trial, even with another phone');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001'),
+  jsonb_build_object('state', 'already-activated', 'ends_at', now() + interval '72 hours'),
+  'a second tap on the same account is a replay: nothing changes and the same end is reported');
 reset role;
-select is((select jsonb_build_object('source', source, 'ai_terms', ai_terms, 'ai_units', ai_units)
-  from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'),
-  '{"source":"trial","ai_terms":"capped","ai_units":1}'::jsonb, 'the pass carries the one-set Discovery AI allowance from policy');
-select is((select user_id from private.trial_phone_claims where phone_hash = pg_temp.h('phone-a')),
-  '61000000-0000-4000-8000-000000000001'::uuid, 'the phone is claimed by the account that verified it');
-select ok(not exists (select 1 from private.trial_otp_challenges where code_hash = pg_temp.h('code-a') and status <> 'verified'),
-  'the used challenge is settled as verified');
-select ok(exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000001'
-  and event = 'trial.activated'), 'activation is audited');
-select ok(not exists (select 1 from private.entitlement_events where detail::text ~ 'phone-a|567'),
-  'the audit trail carries no phone data');
+select is((select count(*)::integer from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'), 1,
+  'one grant, however many taps');
+select is((select jsonb_build_object('source', source, 'policy', trial_policy, 'ai_terms', ai_terms, 'ai_units', ai_units,
+    'created_by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'),
+  '{"source":"trial","policy":"discovery","ai_terms":"capped","ai_units":1,"created_by":"student"}'::jsonb,
+  'the pass carries the one-set Discovery AI allowance from policy');
+select is((select user_id from private.discovery_pass_claims
+    where email_hash = private.discovery_email_hash('ent-a@example.test')), '61000000-0000-4000-8000-000000000001'::uuid,
+  'the confirmed email is claimed by the account that activated');
+select is(private.discovery_email_hash(' ENT-A@Example.TEST '), private.discovery_email_hash('ent-a@example.test'),
+  'case and whitespace never make one address two claims');
+select ok(not exists (select 1 from private.trial_phone_claims where user_id = '61000000-0000-4000-8000-000000000001'),
+  'no phone claim is written: nothing about a phone exists in this flow');
+select is((select count(*)::integer from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000001'
+  and event = 'discovery.activated'), 1, 'activation is audited once, never a replay');
+select ok(not exists (select 1 from private.entitlement_events where detail::text ~ 'ent-a@|example\.test'),
+  'the audit trail carries no email address');
 
 -- Mid-session: the same JWT and session see the new plan immediately, without logging out.
 set local role authenticated;
@@ -160,110 +158,45 @@ select throws_ok($$ select * from public.read_published_managed_content('4000000
   'CI403', null, 'a Discovery Pass never opens the whole department course: only pinned previews are served');
 select is((select e->>'tier' || '/' || (e->'trial'->>'status') || '/' || coalesce(e->'access'->>'source', 'none')
   from public.get_my_entitlement() e), 'free/active/none', 'the summary shows an active pass on the free tier');
+select is((select e->'otp' from public.get_my_entitlement() e), 'null'::jsonb,
+  'the summary keeps the pre-Discovery otp key for rollout compatibility, always null');
 select is((select jsonb_build_object('state', a->>'state', 'source', a->>'source', 'total', (a->>'total')::integer)
   from public.get_my_ai_allowance() a), '{"state":"active","source":"trial","total":1}'::jsonb,
   'the Discovery AI allowance is visible to the student');
 reset role;
 
--- 3. One verified phone, one trial, across accounts ----------------------------------------------------------------
+-- 3. One pass per account, enforced by the database itself ----------------------------------------------------------
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000002', '63000000-0000-4000-8000-000000000011',
-  pg_temp.h('phone-a'), '567', pg_temp.h('code-b')), '{"state":"phone-already-used"}'::jsonb,
-  'a second account cannot even receive a code for a phone that already started a trial');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000007')->>'state', 'activated', 'F activates a pass');
 reset role;
-select ok(not exists (select 1 from private.trial_otp_challenges where id = '63000000-0000-4000-8000-000000000011'),
-  'no SMS is spent on a refused number');
--- Two accounts hold live codes for the same new phone; only the first to verify wins.
-set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000002', '63000000-0000-4000-8000-000000000012',
-  pg_temp.h('phone-x'), '222', pg_temp.h('code-bx'))->>'state', 'ready', 'B requests a code for phone X');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000007', '63000000-0000-4000-8000-000000000071',
-  pg_temp.h('phone-x'), '222', pg_temp.h('code-fx'))->>'state', 'ready', 'F requests a code for the same phone X');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000007', '63000000-0000-4000-8000-000000000071',
-  pg_temp.h('code-fx'))->>'state', 'activated', 'F verifies first and starts the trial');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000002', '63000000-0000-4000-8000-000000000012',
-  pg_temp.h('code-bx'))->>'state', 'phone-already-used', 'B, with a correct code for the same phone, is refused');
-reset role;
-select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000002'),
-  'B holds no grant');
-select is((select status from private.trial_otp_challenges where id = '63000000-0000-4000-8000-000000000012'), 'refused',
-  'B''s code is settled and cannot be retried');
-select throws_ok($$ insert into private.trial_phone_claims (phone_hash, user_id) values (pg_temp.h('phone-x'),
-  '61000000-0000-4000-8000-000000000002') $$, '23505', null, 'the phone claim is unique even for direct writes');
 select throws_ok($$ insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
   values ('61000000-0000-4000-8000-000000000007', 'trial', 'discovery', now(), now() + interval '7 days', 'capped', 10, 'x') $$,
-  '23505', null, 'an account has at most one trial grant, ever');
+  '23505', null, 'an account has at most one trial grant, ever, even for direct writes');
+select throws_ok($$ insert into private.discovery_pass_claims (email_hash, user_id) values
+  (private.discovery_email_hash('ent-f@example.test'), '61000000-0000-4000-8000-000000000002') $$, '23505', null,
+  'a confirmed email is claimed once, even for direct writes');
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000002'),
+  'B holds no grant');
 
--- 4. Code expiry, replacement, lockout, delivery failure and send limits --------------------------------------------
+-- 4. Abuse guards: the platform-wide daily activation guard and the request limit policy ---------------------------
+update private.entitlement_policy set discovery_activations_per_day = (select count(*) from public.entitlement_grants
+  where trial_policy = 'discovery' and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc');
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000081',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g1'))->>'state', 'ready', 'G requests a code');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008'), '{"state":"capacity"}'::jsonb,
+  'the platform-wide daily activation guard holds');
 reset role;
-update private.trial_otp_challenges set created_at = now() - interval '2 minutes', expires_at = now() + interval '8 minutes'
-  where id = '63000000-0000-4000-8000-000000000081';
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000008')
+  and not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000008'),
+  'a refused activation consumes nothing');
+update private.entitlement_policy set discovery_activations_per_day = 2000;
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000082',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g2'))->>'state', 'ready', 'after the cooldown G can resend');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000081',
-  pg_temp.h('code-g1'))->>'state', 'superseded', 'a resend kills the earlier code, even if correct');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008')->>'state', 'activated',
+  'G activates once the guard allows');
+select is(public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 5, 900, 20, 900), true,
+  'the activation request limit policy exists in the database');
+select throws_ok($$ select public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 500, 900, 20, 900) $$,
+  '22023', null, 'the caller cannot weaken the activation request limit');
 reset role;
-update private.trial_otp_challenges set created_at = now() - interval '11 minutes', expires_at = now() - interval '1 minute'
-  where id = '63000000-0000-4000-8000-000000000082';
-set local role service_role;
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000082',
-  pg_temp.h('code-g2'))->>'state', 'expired', 'an expired code is refused');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000083',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g3'))->>'state', 'ready', 'a fresh code after expiry');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000002', '63000000-0000-4000-8000-000000000083',
-  pg_temp.h('code-g3'))->>'state', 'invalid', 'another account cannot use G''s challenge');
-select is((select array_agg(public.verify_trial_otp('62000000-0000-4000-8000-000000000008',
-  '63000000-0000-4000-8000-000000000083', pg_temp.h('wrong-' || n))->>'state' order by n) from generate_series(1, 5) n),
-  array['incorrect', 'incorrect', 'incorrect', 'incorrect', 'too-many-attempts'], 'five wrong codes lock the challenge');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000083',
-  pg_temp.h('code-g3'))->>'state', 'too-many-attempts', 'a locked code stays locked even for the right value');
--- A provider failure never blocks the student: it does not count against the send limit and allows an immediate retry.
-reset role;
-update private.trial_otp_challenges set created_at = now() - interval '2 minutes'
-  where id = '63000000-0000-4000-8000-000000000083';
-set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000084',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g4'))->>'state', 'ready', 'G requests a fourth code');
-select is(public.record_trial_otp_delivery('61000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000084',
-  'failed'), true, 'the provider rejected it');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000085',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g5'))->>'state', 'ready', 'a failed delivery can be retried at once');
-reset role;
-select is((select count(*)::integer from private.trial_otp_challenges where user_id = '61000000-0000-4000-8000-000000000008'
-  and delivery <> 'failed'), 4, 'only delivered codes count: G has used 4 of 5 sends, even after the failed one was replaced');
-update private.trial_otp_challenges set created_at = now() - interval '2 minutes'
-  where id = '63000000-0000-4000-8000-000000000085';
-set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000086',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g6'))->>'state', 'ready', 'the fifth delivered code is allowed');
-reset role;
-update private.trial_otp_challenges set created_at = now() - interval '2 minutes'
-  where id = '63000000-0000-4000-8000-000000000086';
-set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000087',
-  pg_temp.h('phone-g'), '333', pg_temp.h('code-g7'))->>'state', 'rate-limited', 'the sixth in a day is rate limited');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000008', '63000000-0000-4000-8000-000000000086',
-  pg_temp.h('code-g6'))->>'state', 'activated', 'the latest code still activates after earlier failures');
-reset role;
--- Per-phone limit across accounts, and the global SMS guard.
-update private.entitlement_policy set otp_phone_sends_per_day = 1;
-set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000002', '63000000-0000-4000-8000-000000000013',
-  pg_temp.h('phone-shared'), '444', pg_temp.h('code-b2'))->>'state', 'ready', 'one code to a new phone');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000004', '63000000-0000-4000-8000-000000000041',
-  pg_temp.h('phone-shared'), '444', pg_temp.h('code-d1'))->>'state', 'rate-limited',
-  'another account cannot flood the same phone with codes');
-reset role;
-update private.entitlement_policy set otp_phone_sends_per_day = 5, otp_global_sends_per_day = 0;
-set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000004', '63000000-0000-4000-8000-000000000042',
-  pg_temp.h('phone-d'), '555', pg_temp.h('code-d2')), '{"state":"capacity"}'::jsonb, 'the platform-wide SMS guard holds');
-reset role;
-update private.entitlement_policy set otp_global_sends_per_day = 2000;
 
 -- 5. The Discovery AI allowance is one fixed total; exhausting it restricts AI only --------------------------------
 update public.entitlement_grants set starts_at = now() - interval '30 hours', ends_at = now() + interval '42 hours'
@@ -312,8 +245,8 @@ set local role service_role;
 select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000003',
   '40000000-0000-4000-8000-000000000008', 1, 'start', null, 'in_progress',
   (select result from outcome where step = 'gst-selection'))->>'status', 'saved', 'GST practice still starts on the free tier');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000001', '63000000-0000-4000-8000-000000000004',
-  pg_temp.h('phone-new'), '999', pg_temp.h('code-new'))->>'state', 'already-activated', 'an ended pass cannot restart');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001')->>'state', 'already-activated',
+  'an ended pass cannot restart');
 reset role;
 
 -- 6b. AI follows the entitlement: legacy windows cannot bypass a revoked or expired grant ------------------------------
@@ -321,7 +254,7 @@ select throws_ok($$ insert into public.ai_allowance_windows (user_id, source, st
   values ('61000000-0000-4000-8000-000000000007', 'trial', now(), now() + interval '7 days', 10) $$, '23514', null,
   'no production allowance window can exist beside the grants any more');
 select throws_ok($$ select public.issue_ai_allowance_grant('61000000-0000-4000-8000-000000000007', 'trial') $$, '22023', null,
-  'trial AI cannot be issued directly, bypassing phone verification');
+  'trial AI cannot be issued directly, bypassing activation');
 select throws_ok($$ select public.issue_ai_allowance_grant('61000000-0000-4000-8000-000000000007', 'early_access', 5, 30) $$, '22023', null,
   'nor can Early Access AI');
 -- A window issued before this migration: ignored by admission, then retired and audited by the migration step.
@@ -499,22 +432,15 @@ select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000004',
 
 -- 7b. No trial during active Early Access -----------------------------------------------------------------------------
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000011', '63000000-0000-4000-8000-000000000110',
-  pg_temp.h('phone-h'), '888', pg_temp.h('code-h0'))->>'state', 'early-access-active',
-  'H, on active Early Access, cannot request a trial code');
+insert into outcome values ('h-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000011'));
 reset role;
--- A code H obtained before Early Access began.
-insert into private.trial_otp_challenges (id, user_id, phone_hash, phone_hint, code_hash, delivery, expires_at)
-  values ('63000000-0000-4000-8000-000000000111', '61000000-0000-4000-8000-000000000011', pg_temp.h('phone-h'), '888', pg_temp.h('code-h'), 'sent',
-    now() + interval '10 minutes');
-set local role service_role;
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000011', '63000000-0000-4000-8000-000000000111',
-  pg_temp.h('code-h'))->>'state', 'early-access-active', 'nor activate a trial with an earlier code');
-reset role;
+select is((select (result->>'state') || '/' || ((result->>'available_from')::timestamptz = (select ends_at
+    from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access'))::text
+  from outcome where step = 'h-activate'), 'early-access-active/true',
+  'H, on active Early Access, cannot start a pass, and is told when it opens');
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial')
-  and (select attempts from private.trial_otp_challenges where id = '63000000-0000-4000-8000-000000000111') = 0
-  and not exists (select 1 from private.trial_phone_claims where phone_hash = pg_temp.h('phone-h')),
-  'nothing is consumed: no trial, no code attempt and no phone claim');
+  and not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000011'),
+  'nothing is consumed: no pass and no claim');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000011","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000011"}';
 select is((select (e->'trial'->>'status') || '/' || ((e->'trial'->>'available_from') is not null)::text
@@ -524,17 +450,16 @@ reset role;
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access';
 set local role service_role;
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000011', '63000000-0000-4000-8000-000000000111',
-  pg_temp.h('code-h'))->>'state', 'activated', 'after Early Access ends the trial activates');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000011')->>'state', 'activated',
+  'after Early Access ends the pass activates');
 reset role;
 select is((select ends_at from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial'), now() + interval '72 hours',
   'with its full 72 hours');
 -- The owner may decide Early Access members never get a trial afterwards.
 update private.entitlement_policy set trial_after_early_access = false;
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000004', '63000000-0000-4000-8000-000000000042',
-  pg_temp.h('phone-d2'), '444', pg_temp.h('code-d3')), '{"state":"trial-not-offered"}'::jsonb,
-  'the post-Early-Access trial can be switched off');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000004'), '{"state":"trial-not-offered"}'::jsonb,
+  'the post-Early-Access pass can be switched off');
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000004"}';
@@ -714,10 +639,8 @@ reset role;
 insert into private.account_deletion_jobs (user_id, requested_at, deadline, retry_at)
   values ('61000000-0000-4000-8000-000000000003', now(), now() + interval '720 hours', now() + interval '720 hours');
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000003', '63000000-0000-4000-8000-000000000031',
-  pg_temp.h('phone-c'), '777', pg_temp.h('code-c'))->>'state', 'signed-out', 'a deletion-scheduled account cannot request a code');
-select is(public.verify_trial_otp('62000000-0000-4000-8000-000000000003', gen_random_uuid(), pg_temp.h('code-c'))->>'state',
-  'signed-out', 'nor verify one');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000003')->>'state', 'signed-out',
+  'a deletion-scheduled account cannot start a pass');
 select is(public.admin_add_early_access_member('ent-c@example.test', 'C Member', null, now() - interval '40 days',
   'import', 'google-form', 'ops')->>'enrollment', 'account-restricted', 'nor be enrolled in Early Access');
 reset role;
@@ -725,39 +648,45 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000003"}';
 select throws_ok($$ select public.get_my_entitlement() $$, '42501', null, 'a scheduled account has no plan to read');
 reset role;
--- Purging A and D (as the deletion worker does) keeps the phone and the Early Access place used.
+-- Purging A and D (as the deletion worker does) keeps the email claim and the Early Access place used.
 delete from auth.users where id in ('61000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000004');
 select ok(not exists (select 1 from public.entitlement_grants where user_id in ('61000000-0000-4000-8000-000000000001',
   '61000000-0000-4000-8000-000000000004')), 'grants go with the account');
 select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])->>'state',
   'not-entitled', 'and so does every AI allowance');
-select is((select user_id from private.trial_phone_claims where phone_hash = pg_temp.h('phone-a')), null,
-  'the phone claim survives without the account');
+select is((select user_id from private.discovery_pass_claims where email_hash = private.discovery_email_hash('ent-a@example.test')),
+  null, 'the pass claim survives without the account');
 select is((select (claimed_by is null and claimed_at is not null) from private.early_access_members
   where email = 'early-d@example.test'), true, 'the list place stays claimed without the account');
-select ok(exists (select 1 from private.entitlement_events where event = 'trial.activated' and user_id is null),
+select ok(exists (select 1 from private.entitlement_events where event = 'discovery.activated' and user_id is null),
   'audit rows stay, de-identified');
+-- A registers again with the same address (in another case), and D does too.
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data,
-  raw_user_meta_data, created_at, updated_at) values ('00000000-0000-0000-0000-000000000000',
-  '61000000-0000-4000-8000-000000000010', 'authenticated', 'authenticated', 'early-d@example.test', 'x', now(),
-  '{"provider":"email","providers":["email"]}', '{}', now(), now());
+  raw_user_meta_data, created_at, updated_at) values
+  ('00000000-0000-0000-0000-000000000000', '61000000-0000-4000-8000-000000000010', 'authenticated', 'authenticated',
+    'Ent-A@example.test', 'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '61000000-0000-4000-8000-000000000015', 'authenticated', 'authenticated',
+    'early-d@example.test', 'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
-  ('62000000-0000-4000-8000-000000000010', '61000000-0000-4000-8000-000000000010', now(), now());
+  ('62000000-0000-4000-8000-000000000010', '61000000-0000-4000-8000-000000000010', now(), now()),
+  ('62000000-0000-4000-8000-000000000015', '61000000-0000-4000-8000-000000000015', now(), now());
 set local role service_role;
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000101',
-  pg_temp.h('phone-a'), '567', pg_temp.h('code-again')), '{"state":"phone-already-used"}'::jsonb,
-  'deleting and re-registering does not free the phone for a second trial');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010'), '{"state":"already-claimed"}'::jsonb,
+  'deleting and re-registering the same address does not buy a second pass');
 reset role;
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000010')
-  and private.early_access_status('61000000-0000-4000-8000-000000000010')->>'status' = 'unavailable',
-  'nor does it free the Early Access month for the same confirmed email');
+  and exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000010'
+    and event = 'discovery.claim-refused'), 'the refusal is audited and nothing is granted');
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000015')
+  and private.early_access_status('61000000-0000-4000-8000-000000000015')->>'status' = 'unavailable',
+  'nor does re-registering free the Early Access month for the same confirmed email');
 set local role service_role;
 
 -- 9. Operator recovery and preview ----------------------------------------------------------------------------------------
 select throws_ok($$ select public.admin_grant_access('61000000-0000-4000-8000-000000000002', 3, 'ops', '') $$, '22023', null,
   'a recovery change needs a reason');
 insert into outcome values ('b-grant', public.admin_grant_access('61000000-0000-4000-8000-000000000002', 3, 'ops',
-  'SMS outage during activation'));
+  'activation outage compensation'));
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000002"}';
@@ -783,10 +712,9 @@ insert into outcome select 'f-trial', jsonb_build_object('id', id) from public.e
 set local role service_role;
 select is(public.admin_change_grant((select (result->>'id')::uuid from outcome where step = 'f-trial'),
   'set-ai-units', null, 15, 'ops', 'failed generations disputed')->>'state', 'changed', 'a disputed trial AI allowance is raised');
-select is(public.admin_release_trial_phone(pg_temp.h('phone-a'), 'ops', 'number reassigned by carrier')->>'state', 'released',
-  'an operator frees a disputed phone');
-select is(public.prepare_trial_otp('62000000-0000-4000-8000-000000000010', '63000000-0000-4000-8000-000000000102',
-  pg_temp.h('phone-a'), '567', pg_temp.h('code-released'))->>'state', 'ready', 'the released phone can start a trial');
+select is((select s->>'discovery_claimed' || '/' || (s->>'trial_phone_claimed') || '/' || (s ? 'otp_challenges')::text
+  from public.admin_entitlement_status('61000000-0000-4000-8000-000000000007') s), 'true/false/false',
+  'the operator view shows the pass claim, no phone claim and no codes');
 select ok((select jsonb_array_length(public.admin_entitlement_status('61000000-0000-4000-8000-000000000002')->'events') >= 2),
   'the account history shows the grant and its revocation');
 reset role;

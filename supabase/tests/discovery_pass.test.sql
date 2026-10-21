@@ -25,7 +25,7 @@ select is((select count(*)::integer from unnest(array['private.discovery_preview
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'preview helpers are not callable by any API role');
 -- No entitlement function accepts a timestamp from its caller: the database clock decides every start and end.
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname in ('prepare_trial_otp', 'verify_trial_otp', 'discovery_preview',
+  where n.nspname = 'public' and p.proname in ('activate_discovery_pass', 'discovery_preview',
     'submit_discovery_cbt', 'begin_ai_practice_generation', 'create_ai_practice_document', 'get_my_entitlement')
     and exists (select 1 from unnest(p.proargtypes::oid[]) t
       where t in ('timestamptz'::regtype, 'timestamp'::regtype, 'interval'::regtype, 'date'::regtype))), 0,
@@ -40,7 +40,7 @@ select is((select count(*)::integer from public.entitlement_grants where trial_p
   and ends_at - starts_at > interval '72 hours'), 0, 'no Discovery Pass outlasts 72 hours');
 
 -- Fixtures ----------------------------------------------------------------------------------------------------------
--- P: activates a pass. Q: same phone, other account. F: full plan. N: no pass. R: account deleted and recreated.
+-- P: activates a pass. Q: another account. F: full plan. N: no pass. R: account deleted and recreated.
 -- S: a pass close to its end.
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -82,8 +82,8 @@ create function pg_temp.open_exam(p_session uuid, p_course uuid) returns jsonb l
   $$ select public.discovery_preview(p_session, p_course, 'cbt', true, null, 1800) $$;
 grant execute on function pg_temp.open_exam(uuid, uuid) to service_role;
 
--- 1. Activation is explicit: only a verified phone code starts the pass, 72 hours from that transaction's clock ------
--- Signing in and reading the plan (dashboard, course pages, Plan & Access) never start one.
+-- 1. Activation is explicit: only the student's own activation starts the pass, 72 hours from that transaction's clock
+-- Signing in and reading the plan (dashboard, course pages, Plan & Access) never start one. No phone, no code.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000001"}';
 select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'available', 'a signed-in student is offered a pass');
@@ -94,18 +94,14 @@ select is((select count(*)::integer from public.entitlement_grants where user_id
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false),
   '{"state":"no-pass"}'::jsonb, 'opening a course page before activation offers nothing and starts nothing');
-select is(public.prepare_trial_otp('72000000-0000-4000-8000-000000000001', '73000000-0000-4000-8000-000000000001',
-  pg_temp.h('phone-p'), '101', pg_temp.h('code-p'))->>'state', 'ready', 'P requests a code');
-select is(public.verify_trial_otp('72000000-0000-4000-8000-000000000001', '73000000-0000-4000-8000-000000000001',
-  pg_temp.h('wrong-code'))->>'state', 'incorrect', 'a wrong code starts nothing');
+select is(public.activate_discovery_pass(gen_random_uuid())->>'state', 'signed-out', 'an unknown session starts nothing');
 reset role;
 select is((select count(*)::integer from public.entitlement_grants where user_id = '71000000-0000-4000-8000-000000000001'),
-  0, 'sending a code, or entering a wrong one, does not start the pass');
+  0, 'no pass exists before the student activates one');
 set local role service_role;
-insert into outcome values ('p-verify', public.verify_trial_otp('72000000-0000-4000-8000-000000000001',
-  '73000000-0000-4000-8000-000000000001', pg_temp.h('code-p')));
+insert into outcome values ('p-activate', public.activate_discovery_pass('72000000-0000-4000-8000-000000000001'));
 reset role;
-select is((select result->>'state' from outcome where step = 'p-verify'), 'activated', 'the right code starts the pass');
+select is((select result->>'state' from outcome where step = 'p-activate'), 'activated', 'one tap starts the pass');
 select is((select jsonb_build_object('starts', starts_at = now(), 'ends', ends_at = now() + interval '72 hours',
     'units', ai_units, 'policy', trial_policy) from public.entitlement_grants
     where user_id = '71000000-0000-4000-8000-000000000001'),
@@ -461,11 +457,10 @@ insert into auth.sessions (id, user_id, created_at, updated_at) values
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000011', pg_temp.c('02'), 'cbt', false),
   '{"state":"expired"}'::jsonb, 'a fresh session does not revive it');
-select is(public.prepare_trial_otp('72000000-0000-4000-8000-000000000011', '73000000-0000-4000-8000-000000000011',
-  pg_temp.h('phone-p2'), '102', pg_temp.h('code-p2'))->>'state', 'already-activated',
-  'nor can the account start a second pass with another SIM');
-select is(public.prepare_trial_otp('72000000-0000-4000-8000-000000000002', '73000000-0000-4000-8000-000000000002',
-  pg_temp.h('phone-p'), '101', pg_temp.h('code-q'))->>'state', 'phone-already-used', 'one phone, one pass');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000011')->>'state', 'already-activated',
+  'nor can the account start a second pass from a new session: a revoked pass was its one pass');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000002')->>'state', 'activated',
+  'another account is another pass: one per account, which is not one per person');
 
 -- 7. Who never gets a preview ---------------------------------------------------------------------------------------
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000003', pg_temp.c('02')),
@@ -478,12 +473,9 @@ select throws_ok($$ select public.discovery_preview('72000000-0000-4000-8000-000
   '22023', null, 'an unknown preview kind is refused');
 reset role;
 
--- 8. Account deletion: the previews go, the phone claim stays ---------------------------------------------------------
+-- 8. Account deletion: the previews go, the email claim stays ---------------------------------------------------------
 set local role service_role;
-select is(public.prepare_trial_otp('72000000-0000-4000-8000-000000000005', '73000000-0000-4000-8000-000000000005',
-  pg_temp.h('phone-r'), '105', pg_temp.h('code-r'))->>'state', 'ready', 'R requests a code');
-select is(public.verify_trial_otp('72000000-0000-4000-8000-000000000005', '73000000-0000-4000-8000-000000000005',
-  pg_temp.h('code-r'))->>'state', 'activated', 'R starts a pass');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000005')->>'state', 'activated', 'R starts a pass');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000005', pg_temp.c('02'), 'cbt', true, null, 1800)
   ->>'state', 'ready', 'R opens an exam');
 reset role;
@@ -503,9 +495,8 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000006', '71000000-0000-4000-8000-000000000006', now(), now());
 set local role service_role;
-select is(public.prepare_trial_otp('72000000-0000-4000-8000-000000000006', '73000000-0000-4000-8000-000000000006',
-  pg_temp.h('phone-r'), '105', pg_temp.h('code-r2'))->>'state', 'phone-already-used',
-  're-registering with the same email and phone cannot buy a second pass');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006')->>'state', 'already-claimed',
+  're-registering with the same email cannot buy a second pass');
 reset role;
 
 -- 9. AI on a pass: one accepted upload, one delivered set of five, bounded attempts and text -------------------------------------
@@ -682,7 +673,7 @@ select is((select count(*)::integer from public.ai_usage_events where user_id = 
   1, 'and only that one reached admission');
 
 -- 10. A seven-day trial issued before the Discovery Pass keeps exactly what it was issued ---------------------------------
--- L's grant is what verify_trial_otp() issued before 20261021100000 (the migration marks it 'seven-day').
+-- L's grant is what the phone activation issued before 20261021100000 (the migration marks it 'seven-day').
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at) values ('00000000-0000-0000-0000-000000000000',
   '71000000-0000-4000-8000-000000000010', 'authenticated', 'authenticated', 'disc-legacy@example.test', 'x', now(),

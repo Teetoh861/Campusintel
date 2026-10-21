@@ -1,12 +1,13 @@
 -- supabase/migrations/20261021100000_discovery_pass.sql — Replace the seven-day full-access trial with the Discovery
 -- Pass (founder decisions, 2026-10-20). Runs after 20261017100000_trial_entitlements.sql and
 -- 20261020100000_bua_300l_catalogue_correction.sql, and changes nothing in either.
--- The phone-OTP activation, its once-per-account and once-per-phone claims, Early Access and paid/manual grants are
--- kept as they are. What changes is what a newly issued 'trial' grant buys. Every trial grant now names its policy
--- (trial_policy). A grant issued before this migration is 'seven-day' and keeps exactly what it was issued: its own
--- end, full access and its AI allowance. A grant issued from now on is 'discovery': a restricted sampling entitlement,
--- never temporary full access:
---   * It lasts discovery_hours (72) from verified activation, measured on the database clock.
+-- Early Access and paid/manual grants are kept as they are. What changes is how a 'trial' grant starts and what it
+-- buys. Activation is explicit and one click for a signed-in student (founder decision, 2026-10-21): the phone-code
+-- activation of 20261017100000 is retired below, no phone number is collected, and one lifetime pass per account (and
+-- per confirmed email) is enforced by the database. Every trial grant now names its policy (trial_policy). A grant
+-- issued before this migration is 'seven-day' and keeps exactly what it was issued: its own end, full access and its AI
+-- allowance. A grant issued from now on is 'discovery': a restricted sampling entitlement, never temporary full access:
+--   * It lasts discovery_hours (72) from activation, measured on the database clock.
 --   * Non-free courses stay locked (read_published_managed_content still raises CI403), so no course can ever be read
 --     whole with a pass.
 --   * One complete CBT exam of exactly discovery_cbt_questions (50) valid questions from one actively offered course
@@ -52,7 +53,7 @@ comment on column private.ai_practice_policy.trial_units is
 -- ---------------------------------------------------------------------------
 -- Every trial grant names the policy it was issued under. Grants issued before this migration were seven-day full
 -- access trials and keep exactly that: their end, their full access and their AI allowance are not touched. Only a
--- grant verify_trial_otp() issues from now on is a Discovery Pass.
+-- grant activate_discovery_pass() issues from now on is a Discovery Pass.
 -- ---------------------------------------------------------------------------
 alter table public.entitlement_grants
   add column trial_policy text check (trial_policy in ('seven-day', 'discovery'));
@@ -497,10 +498,50 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Activation. Unchanged from 20261017100000 except the length (discovery_hours), the AI allowance
--- (discovery_ai_generations) and the explicit 'discovery' policy, all fixed at activation from the database clock.
+-- Activation (founder decision, 2026-10-21): explicit and one click, for a signed-in student with a confirmed email.
+-- No phone number, SMS or one-time code is collected or sent. The pass is therefore one per ACCOUNT, not one per
+-- person, and the application must never claim otherwise. What the database enforces, atomically under the per-account
+-- lock that Early Access enrollment and previews also take:
+--   * one lifetime trial grant per account (entitlement_grants_one_trial_idx; a revoked or ended one still counts);
+--   * one pass per confirmed email address, recorded in a ledger that outlives account deletion, so deleting the
+--     account and registering the same address again cannot start a second pass (as an Early Access claim survives);
+--   * no pass while Early Access is active, and none afterwards unless trial_after_early_access allows it;
+--   * a platform-wide activation guard per UTC day against account farming (discovery_activations_per_day);
+--   * start and end fixed from this transaction's clock; nothing is accepted from the browser.
+-- Per-account and per-origin request limits apply before this function is reached (consume_auth_rate_limit, action
+-- DISCOVERY_ACTIVATION). Nothing here is a NIN, a BVN, a device fingerprint or a phone number.
 -- ---------------------------------------------------------------------------
-create or replace function public.verify_trial_otp(p_session_id uuid, p_challenge_id uuid, p_code_hash text) returns jsonb
+alter table private.entitlement_policy
+  -- PROVISIONAL platform-wide guard. Replaces the SMS spend guard: it bounds how fast a farm of confirmed accounts
+  -- can sample the question banks, not what any one student may do.
+  add column discovery_activations_per_day integer not null default 2000
+    check (discovery_activations_per_day between 0 and 1000000);
+
+-- One row per confirmed address that has ever started a pass. Only a hash is kept, never the address, and the account
+-- link is cleared on deletion so the claim itself survives. A row with no account is still a used claim.
+create table private.discovery_pass_claims (
+  email_hash text primary key check (email_hash ~ '^[0-9a-f]{64}$'),
+  user_id uuid unique references auth.users (id) on delete set null,
+  grant_id uuid,
+  claimed_at timestamptz not null default now()
+);
+alter table private.discovery_pass_claims enable row level security;
+revoke all on table private.discovery_pass_claims from public, anon, authenticated, service_role;
+
+-- Case and surrounding whitespace never make one address two claims.
+create function private.discovery_email_hash(p_email text) returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select encode(sha256(convert_to('discovery-pass:' || lower(btrim(p_email)), 'UTF8')), 'hex');
+$$;
+
+-- Service role only; identity from the verified session id, as for every other entitlement write. Replays answer the
+-- same way, so a double tap or a lost response never costs anything.
+-- Lock order: account row share lock (inside ai_practice_session_user), the per-account advisory lock, the per-claim
+-- lock, then the global day lock. No Early Access path takes the last two, and this path takes no group lock.
+create function public.activate_discovery_pass(p_session_id uuid) returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -508,19 +549,25 @@ as $$
 declare
   v_user_id uuid;
   v_policy private.entitlement_policy;
-  v_challenge private.trial_otp_challenges;
-  v_grant public.entitlement_grants;
+  v_email text;
+  v_email_hash text;
+  v_existing public.entitlement_grants;
   v_early public.entitlement_grants;
+  v_grant public.entitlement_grants;
+  v_today integer;
 begin
-  if p_challenge_id is null or p_code_hash is null or p_code_hash !~ '^[0-9a-f]{64}$' then
-    raise exception 'Invalid trial code' using errcode = '22023';
-  end if;
+  -- Only a live, confirmed account that is not scheduled for deletion.
   v_user_id := private.ai_practice_session_user(p_session_id);
   if v_user_id is null then return jsonb_build_object('state', 'signed-out'); end if;
   select * into strict v_policy from private.entitlement_policy;
   perform pg_advisory_xact_lock(hashtextextended('entitlement-account:' || v_user_id::text, 0));
 
-  -- Checked before the code, so a refused attempt never counts. No pass while Early Access is active.
+  select * into v_existing from public.entitlement_grants where user_id = v_user_id and source = 'trial';
+  if v_existing.id is not null then
+    return jsonb_build_object('state', 'already-activated', 'ends_at', v_existing.ends_at);
+  end if;
+  -- No pass while Early Access is active, so neither is spent during the free month. Not ended is enough: an
+  -- enrollment that won the account lock may carry a start a moment after this transaction's now().
   select * into v_early from public.entitlement_grants
     where user_id = v_user_id and source = 'early_access' and revoked_at is null;
   if v_early.id is not null and v_early.ends_at > now() then
@@ -530,65 +577,147 @@ begin
     return jsonb_build_object('state', 'trial-not-offered');
   end if;
 
-  select * into v_challenge from private.trial_otp_challenges
-    where id = p_challenge_id and user_id = v_user_id for update;
-  if not found then return jsonb_build_object('state', 'invalid'); end if;
-  if v_challenge.status = 'verified' then return jsonb_build_object('state', 'already-used'); end if;
-  if v_challenge.status in ('superseded', 'refused') then return jsonb_build_object('state', 'superseded'); end if;
-  if v_challenge.status = 'locked' then return jsonb_build_object('state', 'too-many-attempts'); end if;
-  if v_challenge.status = 'expired' or v_challenge.expires_at <= now() then
-    update private.trial_otp_challenges set status = 'expired', settled_at = coalesce(settled_at, now())
-      where id = v_challenge.id;
-    return jsonb_build_object('state', 'expired');
+  -- The confirmed address claims at most one pass, ever, even across deleted accounts.
+  select email into v_email from auth.users where id = v_user_id;
+  if v_email is null or btrim(v_email) = '' then return jsonb_build_object('state', 'signed-out'); end if;
+  v_email_hash := private.discovery_email_hash(v_email);
+  perform pg_advisory_xact_lock(hashtextextended('discovery-claim:' || v_email_hash, 0));
+  if exists (select 1 from private.discovery_pass_claims where email_hash = v_email_hash) then
+    perform private.log_entitlement_event(v_user_id, null, 'discovery.claim-refused', 'student', '{}'::jsonb);
+    return jsonb_build_object('state', 'already-claimed');
   end if;
 
-  update private.trial_otp_challenges set attempts = attempts + 1 where id = v_challenge.id
-    returning * into v_challenge;
-  if v_challenge.code_hash <> p_code_hash then
-    if v_challenge.attempts >= v_policy.otp_max_attempts then
-      update private.trial_otp_challenges set status = 'locked', settled_at = now() where id = v_challenge.id;
-      perform private.log_entitlement_event(v_user_id, null, 'trial.code-locked', 'student',
-        jsonb_build_object('challenge_id', v_challenge.id));
-      return jsonb_build_object('state', 'too-many-attempts');
-    end if;
-    return jsonb_build_object('state', 'incorrect', 'attempts_left', v_policy.otp_max_attempts - v_challenge.attempts);
+  perform pg_advisory_xact_lock(hashtextextended('discovery-activation-global-day', 0));
+  select count(*) into v_today from public.entitlement_grants
+    where source = 'trial' and trial_policy = 'discovery'
+      and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+  if v_today >= v_policy.discovery_activations_per_day then
+    return jsonb_build_object('state', 'capacity');
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended('entitlement-phone:' || v_challenge.phone_hash, 0));
-  if exists (select 1 from public.entitlement_grants where user_id = v_user_id and source = 'trial') then
-    update private.trial_otp_challenges set status = 'refused', settled_at = now() where id = v_challenge.id;
-    return jsonb_build_object('state', 'already-activated');
-  end if;
-  if exists (select 1 from private.trial_phone_claims where phone_hash = v_challenge.phone_hash) then
-    update private.trial_otp_challenges set status = 'refused', settled_at = now() where id = v_challenge.id;
-    perform private.log_entitlement_event(v_user_id, null, 'trial.phone-refused', 'student',
-      jsonb_build_object('challenge_id', v_challenge.id));
-    return jsonb_build_object('state', 'phone-already-used');
-  end if;
-
-  -- Start and end both come from this transaction's clock: exactly discovery_hours after verification.
+  -- Start and end both come from this transaction's clock: exactly discovery_hours from activation. The AI allowance
+  -- is fixed here; later policy edits never change a running pass.
   insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units,
-      reference, created_by)
+      created_by)
     values (v_user_id, 'trial', 'discovery', now(), now() + make_interval(hours => v_policy.discovery_hours), 'capped',
-      v_policy.discovery_ai_generations, jsonb_build_object('challenge_id', v_challenge.id), 'student')
+      v_policy.discovery_ai_generations, 'student')
     returning * into v_grant;
-  insert into private.trial_phone_claims (phone_hash, user_id, grant_id)
-    values (v_challenge.phone_hash, v_user_id, v_grant.id);
-  update private.trial_otp_challenges set status = 'verified', settled_at = now() where id = v_challenge.id;
-  update private.trial_otp_challenges set status = 'superseded', settled_at = now()
-    where user_id = v_user_id and id <> v_challenge.id and status = 'pending';
-  perform private.log_entitlement_event(v_user_id, v_grant.id, 'trial.activated', 'student',
+  insert into private.discovery_pass_claims (email_hash, user_id, grant_id) values (v_email_hash, v_user_id, v_grant.id);
+  perform private.log_entitlement_event(v_user_id, v_grant.id, 'discovery.activated', 'student',
     jsonb_build_object('ends_at', v_grant.ends_at, 'ai_units', v_grant.ai_units, 'policy', 'discovery'));
   return jsonb_build_object('state', 'activated', 'ends_at', v_grant.ends_at, 'ai_units', v_grant.ai_units);
 end;
 $$;
 
+-- The request limiter of 20260912090000 learns the activation action: 5 requests per account and 20 per origin
+-- address in 15 minutes, applied by the API route before the database is asked. Every other policy is unchanged.
+create or replace function public.consume_auth_rate_limit(
+  p_action text, p_account text, p_origin text,
+  p_account_limit integer, p_account_window integer,
+  p_origin_limit integer, p_origin_window integer
+) returns boolean
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_now timestamptz;
+  v_account_count integer;
+  v_origin_count integer;
+  v_expected integer[];
+begin
+  v_expected := case p_action
+    when 'LOGIN' then array[20,900,30,300]
+    when 'REGISTER' then array[3,3600,20,3600]
+    when 'RESEND_CONFIRMATION' then array[3,3600,20,3600]
+    when 'PASSWORD_RESET_REQUEST' then array[3,3600,20,3600]
+    when 'PASSWORD_RESET_SUBMIT' then array[5,900,20,900]
+    when 'ACCOUNT_DELETION' then array[5,900,20,900]
+    when 'CONFIRM_EMAIL' then array[5,900,20,900]
+    when 'DISCOVERY_ACTIVATION' then array[5,900,20,900]
+    else null end;
+  if v_expected is null or p_account is null or p_origin is null
+    or p_account !~ '^[a-f0-9]{64}$' or p_origin !~ '^[a-f0-9]{64}$'
+    or array[p_account_limit,p_account_window,p_origin_limit,p_origin_window] is distinct from v_expected
+  then raise exception using errcode = '22023', message = 'Invalid auth rate-limit arguments'; end if;
+
+  -- Every call locks account then origin. Kind is part of the lock namespace, so no cycles.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_action || ':account:' || p_account, 0));
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_action || ':origin:' || p_origin, 1));
+  v_now := pg_catalog.clock_timestamp();
+  -- Maximum window is one hour. Opportunistic cleanup bounds retention without a new scheduler.
+  -- SKIP LOCKED avoids cleanup deadlocks across unrelated concurrent buckets.
+  delete from public.auth_rate_limit_events where id in (
+    select id from public.auth_rate_limit_events
+    where created_at <= v_now - interval '1 hour'
+    for update skip locked
+  );
+  select count(*) into v_account_count from public.auth_rate_limit_events
+    where action = p_action and kind = 'account' and bucket = p_account
+      and created_at > v_now - pg_catalog.make_interval(secs => p_account_window);
+  select count(*) into v_origin_count from public.auth_rate_limit_events
+    where action = p_action and kind = 'origin' and bucket = p_origin
+      and created_at > v_now - pg_catalog.make_interval(secs => p_origin_window);
+
+  -- Charge each bucket that still has capacity even when its partner is exhausted:
+  -- repeated attempts at one exhausted account must not bypass the origin limit.
+  if v_account_count < p_account_limit then
+    insert into public.auth_rate_limit_events(action,kind,bucket,created_at)
+      values(p_action,'account',p_account,v_now);
+  end if;
+  if v_origin_count < p_origin_limit then
+    insert into public.auth_rate_limit_events(action,kind,bucket,created_at)
+      values(p_action,'origin',p_origin,v_now);
+  end if;
+  return v_account_count < p_account_limit and v_origin_count < p_origin_limit;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- The phone-code activation of 20261017100000 is retired: its functions, its challenge table and its policy go, and
+-- no phone number is collected anywhere. private.trial_phone_claims stays, read-only, as the record of the seven-day
+-- trials that were activated by phone before this migration; nothing writes it any more.
+-- ---------------------------------------------------------------------------
+drop function public.prepare_trial_otp(uuid, uuid, text, text, text);
+drop function public.record_trial_otp_delivery(uuid, uuid, text);
+drop function public.verify_trial_otp(uuid, uuid, text);
+drop function public.purge_trial_otp_challenges();
+drop function public.admin_release_trial_phone(text, text, text);
+drop table private.trial_otp_challenges;
+alter table private.entitlement_policy
+  drop column otp_ttl_seconds, drop column otp_max_attempts, drop column otp_resend_seconds,
+  drop column otp_user_sends_per_day, drop column otp_phone_sends_per_day, drop column otp_failed_sends_per_day,
+  drop column otp_global_sends_per_day;
+comment on table private.trial_phone_claims is
+  'Keyed phone hashes of the seven-day trials activated by phone before 20261021100000. Historical and read-only: the Discovery Pass collects no phone number.';
+
+-- The operator view of one account, without the retired codes and with the pass claim.
+create or replace function public.admin_entitlement_status(p_user_id uuid) returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'full_access', private.has_full_access(p_user_id),
+    'grants', coalesce((select jsonb_agg(jsonb_build_object('id', g.id, 'source', g.source, 'trial_policy', g.trial_policy,
+      'starts_at', g.starts_at, 'ends_at', g.ends_at, 'ai_terms', g.ai_terms, 'ai_units', g.ai_units,
+      'revoked_at', g.revoked_at, 'revoke_reason', g.revoke_reason, 'created_by', g.created_by) order by g.created_at)
+      from public.entitlement_grants g where g.user_id = p_user_id), '[]'::jsonb),
+    -- Seven-day trials only (phone activation before 20261021100000).
+    'trial_phone_claimed', exists (select 1 from private.trial_phone_claims where user_id = p_user_id),
+    'discovery_claimed', exists (select 1 from private.discovery_pass_claims where user_id = p_user_id),
+    'ai_allowance', private.ai_allowance_admission(p_user_id, array['trial', 'early_access']),
+    'early_access', private.early_access_status(p_user_id),
+    'events', coalesce((select jsonb_agg(jsonb_build_object('at', e.occurred_at, 'event', e.event, 'actor', e.actor,
+      'grant_id', e.grant_id, 'detail', e.detail) order by e.occurred_at desc)
+      from (select * from private.entitlement_events where user_id = p_user_id
+        order by occurred_at desc limit 50) e), '[]'::jsonb));
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Student summary. As in 20261017100000, except that a Discovery Pass is never the full tier, the trial names its
--- policy, and the pass's limits and pinned previews are reported so pages can show what is left without reading any
--- content. Every field the 20261017100000 shape had is still returned with the same meaning (trial_days is the pass
--- length in whole days, rounded up), so application instances built before this migration keep parsing it during a
--- rollout.
+-- policy, the pass's limits and pinned previews are reported so pages can show what is left without reading any
+-- content, and there is no code to report. Every field the 20261017100000 shape had is still returned with a value it
+-- accepts (trial_days is the pass length in whole days, rounded up; otp is always null), so application instances
+-- built before this migration keep parsing it during a rollout.
 -- ---------------------------------------------------------------------------
 create or replace function public.get_my_entitlement() returns jsonb
 language plpgsql
@@ -603,8 +732,6 @@ declare
   v_early_grant public.entitlement_grants;
   v_early jsonb;
   v_trial_status text;
-  v_challenge private.trial_otp_challenges;
-  v_otp jsonb := null;
 begin
   if v_user_id is null or not private.has_live_account_session() then
     raise exception 'Not authenticated' using errcode = '42501';
@@ -633,19 +760,6 @@ begin
     when v_early_grant.id is not null and not v_policy.trial_after_early_access then 'not-offered'
     else 'available' end;
 
-  if v_trial_status = 'available' then
-    select * into v_challenge from private.trial_otp_challenges
-      where user_id = v_user_id and status = 'pending' and expires_at > now()
-      order by created_at desc limit 1;
-    if v_challenge.id is not null then
-      v_otp := jsonb_build_object('challenge_id', v_challenge.id, 'phone_hint', v_challenge.phone_hint,
-        'expires_at', v_challenge.expires_at,
-        'delivery', case when v_challenge.delivery = 'failed' then 'failed' else 'sent' end,
-        'resend_at', case when v_challenge.delivery = 'failed' then v_challenge.created_at
-          else v_challenge.created_at + make_interval(secs => v_policy.otp_resend_seconds) end);
-    end if;
-  end if;
-
   return jsonb_build_object(
     'now', now(),
     'planned_launch_at', v_policy.planned_launch_at,
@@ -672,7 +786,8 @@ begin
       'starts_at', v_early->'starts_at', 'ends_at', v_early->'ends_at',
       'enrollment_closes_at', case when v_policy.actual_launch_at is null then null
         else v_policy.actual_launch_at + make_interval(days => v_policy.early_access_enrollment_days) end),
-    'otp', v_otp);
+    -- Rollout compatibility only: builds from before this migration require the key. There is no code any more.
+    'otp', null);
 end;
 $$;
 
@@ -1028,9 +1143,10 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Privileges. Previews are written only by the service role with a verified session id.
+-- Privileges. Activation and previews are written only by the service role with a verified session id.
 -- ---------------------------------------------------------------------------
-revoke all on function private.is_discovery_grant(uuid), private.course_has_active_offering(uuid),
+revoke all on function private.discovery_email_hash(text), public.activate_discovery_pass(uuid),
+  private.is_discovery_grant(uuid), private.course_has_active_offering(uuid),
   private.discovery_cbt_question_valid(jsonb), private.discovery_cbt_pool(uuid),
   private.discovery_preview_content(uuid, text, uuid), private.discovery_topic_titles(uuid),
   private.discovery_preview_view(private.discovery_previews), private.discovery_answers_valid(jsonb, jsonb),
@@ -1039,7 +1155,8 @@ revoke all on function private.is_discovery_grant(uuid), private.course_has_acti
   public.discovery_preview(uuid, uuid, text, boolean, uuid, integer), public.save_discovery_cbt(uuid, uuid, jsonb),
   public.submit_discovery_cbt(uuid, uuid, jsonb)
   from public, anon, authenticated, service_role;
-grant execute on function public.discovery_preview(uuid, uuid, text, boolean, uuid, integer),
+grant execute on function public.activate_discovery_pass(uuid), public.admin_entitlement_status(uuid),
+  public.discovery_preview(uuid, uuid, text, boolean, uuid, integer),
   public.save_discovery_cbt(uuid, uuid, jsonb), public.submit_discovery_cbt(uuid, uuid, jsonb) to service_role;
 
 comment on table public.entitlement_grants is
@@ -1048,3 +1165,5 @@ comment on table private.discovery_previews is
   'One pinned preview per Discovery Pass and kind (one timed CBT exam, one complete study-guide topic). Never replenished.';
 comment on table private.discovery_ai_uploads is
   'Uploads a Discovery Pass accepted (at most discovery_ai_uploads). Only these documents can use the pass''s AI.';
+comment on table private.discovery_pass_claims is
+  'One row per confirmed email address that has started a Discovery Pass (hash only). Survives account deletion, so the same address cannot start a second pass. One pass per account is enforced by entitlement_grants_one_trial_idx; neither is a guarantee of one pass per person.';

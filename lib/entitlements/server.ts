@@ -1,21 +1,20 @@
-// lib/entitlements/server.ts — Server reads of the student's entitlement and the verified command entry point.
+// lib/entitlements/server.ts — Server reads of the student's entitlement and the verified activation entry point.
 // get_my_entitlement() also enrolls an eligible Early Access member the database has not yet enrolled.
-// Reads use the student's own cookie-bound client; every write is a service-role function given the verified
+// Reads use the student's own cookie-bound client; the activation write is a service-role function given the verified
 // session id, so the database derives the student itself (the same contract as AI practice and quiz attempts).
 import 'server-only'
-import { randomUUID } from 'node:crypto'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { track } from '@vercel/analytics/server'
 import type { NextResponse } from 'next/server'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { PRODUCT_EVENTS } from '@/lib/analytics/product-events'
 import { getAuthSecretKey, getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
+import { consumeAuthLimit } from '@/lib/auth/rate-limit'
+import { AuthRequestError } from '@/lib/auth/request'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { entitlementCommandSchema, entitlementSummarySchema } from './contract'
-import { generateCode, readPhoneHashKey } from './otp-crypto'
-import { executeEntitlementCommand, prepareRow, verifyRow } from './service'
-import { readSmsConfig } from './sms'
+import { activationRow, executeEntitlementCommand } from './service'
 import type { CourseAccess, EntitlementResult, EntitlementSummary } from './contract'
 import type { EntitlementEnv } from './service'
 
@@ -23,6 +22,7 @@ type StudentClient = Awaited<ReturnType<typeof createClient>>
 
 // private.require_live_account() and get_my_entitlement() raise this when the session is no longer live.
 const LIVE_SESSION_REQUIRED_CODE = '42501'
+const RATE_LIMITED_STATUS = 429
 
 export type EntitlementRead =
   | { status: 'ok'; entitlement: EntitlementSummary }
@@ -46,51 +46,42 @@ export function courseAccessFrom(read: EntitlementRead): CourseAccess {
   return read.entitlement.tier === 'full' ? 'full' : 'free'
 }
 
-function createSupabaseEntitlementEnv(sessionId: string): EntitlementEnv {
-  // Server-only client for the activation RPCs; mirrors lib/auth/rate-limit.ts.
+function createSupabaseEntitlementEnv(sessionId: string, email: string, address: string): EntitlementEnv {
+  // Server-only client for the activation RPC; mirrors lib/auth/rate-limit.ts.
   const service = createServiceClient(getSupabaseConfig().url, getAuthSecretKey(), {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
   return {
-    phoneKey: readPhoneHashKey(),
-    sms: readSmsConfig(),
-    newChallengeId: randomUUID,
-    newCode: generateCode,
-    now: Date.now,
-    async prepare(challengeId, hash, hint, code) {
-      const { data, error } = await service.rpc('prepare_trial_otp', { p_session_id: sessionId,
-        p_challenge_id: challengeId, p_phone_hash: hash, p_phone_hint: hint, p_code_hash: code })
-      const parsed = prepareRow.safeParse(data)
+    async limit() {
+      // The same purpose-separated buckets as the auth routes: the raw address and email never enter the database.
+      try { await consumeAuthLimit('DISCOVERY_ACTIVATION', email.toLowerCase(), address) }
+      catch (error) {
+        if (error instanceof AuthRequestError && error.status === RATE_LIMITED_STATUS) return 'limited'
+        throw error
+      }
+      return 'allowed'
+    },
+    async activate() {
+      const { data, error } = await service.rpc('activate_discovery_pass', { p_session_id: sessionId })
+      const parsed = activationRow.safeParse(data)
       return error || !parsed.success ? null : parsed.data
-    },
-    async recordDelivery(userId, challengeId, delivery) {
-      const { error } = await service.rpc('record_trial_otp_delivery', { p_user_id: userId,
-        p_challenge_id: challengeId, p_delivery: delivery })
-      if (error) throw new Error('Delivery record failed')
-    },
-    async verify(challengeId, code) {
-      const { data, error } = await service.rpc('verify_trial_otp', { p_session_id: sessionId,
-        p_challenge_id: challengeId, p_code_hash: code })
-      const parsed = verifyRow.safeParse(data)
-      return error || !parsed.success ? null : parsed.data
-    },
-    reportProblem(problem) {
-      // Private operator signal: the failure class only. No number, code or student identity.
-      console.error(`entitlements: ${problem}`)
     },
   }
 }
 
-/** Count a new trial. No identity, phone or header leaves the server. Early Access is granted in the database. */
+/** Count a new pass. No identity or header leaves the server. Early Access is granted in the database. */
 async function recordGrant(result: EntitlementResult): Promise<void> {
-  if (result.status !== 'trial-activated') return
+  if (result.status !== 'pass-activated') return
   try { await track(PRODUCT_EVENTS.trialActivated, undefined, { headers: { 'user-agent': 'CampusIntel product events' } }) }
   catch { /* Analytics availability must never reverse a granted entitlement. */ }
 }
 
-/** Verify the live session and page continuity, then run one command for that student only. */
-export async function runEntitlementRequest(input: unknown, response: NextResponse, pageToken: string | null):
-  Promise<EntitlementResult> {
+/**
+ * Verify the live session and page continuity, apply the request limit, then run one command for that student only.
+ * `address` is the trusted requester address (lib/auth/request.ts getRequesterAddress) for the per-origin limit.
+ */
+export async function runEntitlementRequest(input: unknown, response: NextResponse, pageToken: string | null,
+  address: string): Promise<EntitlementResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
     const client = await createClient(response)
@@ -101,7 +92,10 @@ export async function runEntitlementRequest(input: unknown, response: NextRespon
     }
     const parsed = entitlementCommandSchema.safeParse(input)
     if (!parsed.success) return { status: 'invalid-request' }
-    const result = await executeEntitlementCommand(createSupabaseEntitlementEnv(context.sessionId), parsed.data)
+    // A live student session always carries its confirmed address; without one nothing can be limited or claimed.
+    if (!context.user.email) return { status: 'unavailable' }
+    const env = createSupabaseEntitlementEnv(context.sessionId, context.user.email, address)
+    const result = await executeEntitlementCommand(env, parsed.data)
     await recordGrant(result)
     return result
   } catch (error) {
