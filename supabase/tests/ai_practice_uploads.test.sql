@@ -114,13 +114,11 @@ select is((select count(*)::integer from public.ai_practice_documents) + (select
 set local role service_role;
 reset role;
 -- Since 20261017100000_trial_entitlements.sql a production trial grant comes only from phone verification; the
--- fixture inserts the grant that verify_trial_otp() would create.
-insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
-  select '21111111-1111-4111-8111-111111111111', 'trial', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
+-- fixture inserts the seven-day grant verify_trial_otp() created before 20261021100000_discovery_pass.sql, which keeps
+-- these shared-ledger rules. The Discovery Pass limits are tested in discovery_pass.test.sql.
+insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  select '21111111-1111-4111-8111-111111111111', 'trial', 'seven-day', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
     'test' from private.entitlement_policy;
--- This suite exercises the shared ledger with a multi-unit grant. The Discovery Pass attempt and upload limits
--- (20261021100000_discovery_pass.sql) are lifted here and tested in discovery_pass.test.sql.
-update private.entitlement_policy set discovery_ai_attempts = 10, discovery_ai_uploads = 10;
 select throws_ok($$ select public.issue_ai_allowance_grant('21111111-1111-4111-8111-111111111111', 'trial') $$, '22023', null,
   'trial AI can no longer be issued directly, bypassing phone verification');
 set local role service_role;
@@ -404,8 +402,8 @@ select is((public.begin_ai_practice_generation('b2222222-2222-4222-8222-22222222
   gen_random_uuid(), array['trial', 'early_access', 'test']) ->> 'state'), 'signed-out',
   'after logout the session admits nothing');
 reset role;
-insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
-  select '23333333-3333-4333-8333-333333333333', 'trial', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
+insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  select '23333333-3333-4333-8333-333333333333', 'trial', 'seven-day', now(), now() + make_interval(days => trial_days), 'capped', (select trial_units from private.ai_practice_policy),
     'test' from private.entitlement_policy;
 set local role service_role;
 insert into fixture select 'doc_c', (public.create_ai_practice_document('c3333333-3333-4333-8333-333333333333',

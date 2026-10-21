@@ -9,7 +9,8 @@ hosted migration, SMS send, Anthropic call or deployment was made while building
 | Plan | How it starts | Courses | AI practice |
 | --- | --- | --- | --- |
 | Free (every account) | Registration and email confirmation | Courses with `institutional_courses.is_free` (GST111, GST102, GST112, GST212) | None |
-| Discovery Pass (`source = 'trial'`, since `20261021100000_discovery_pass.sql`) | One-time phone code, once per account and per phone; never while Early Access is active | **A restricted sample, never full access.** For `discovery_hours` (72) on database time: one CBT exam of `discovery_cbt_questions` (50) from one course the student picks, timed at that course's own CBT duration with a database deadline (capped at the pass end; `discovery_cbt_grace_seconds`, 120, for a sheet in flight) and graded on the server; one complete study-guide topic the student picks from one course. Every other topic stays locked. No theory preview. Nothing renews | One accepted upload (`discovery_ai_uploads`, 1; unreadable files don't count) of at most `discovery_ai_source_chars` (20,000) characters, `discovery_ai_generations` (1) delivered set of five questions, at most `discovery_ai_attempts` (3) provider attempts |
+| Discovery Pass (`source = 'trial'`, `trial_policy = 'discovery'`, since `20261021100000_discovery_pass.sql`) | One-time phone code, once per account and per phone; never while Early Access is active | **A restricted sample, never full access.** For `discovery_hours` (72) on database time: one CBT exam of exactly `discovery_cbt_questions` (50) valid questions from one actively offered course the student picks. It opens only if that course's whole CBT duration fits before the pass ends, and is never shortened. Answers are saved as the student goes; at the database deadline the exam closes and is marked from the last sheet saved in time. Nothing sent after the deadline is marked, and `discovery_cbt_grace_seconds` (120) only replays an already marked result. Plus one complete study-guide topic the student picks from one actively offered course. Every other topic stays locked. No theory preview. Nothing renews | One accepted upload (`discovery_ai_uploads`, 1, enforced when an upload becomes ready, however many were reserved; refused files cost nothing) of at most `discovery_ai_source_chars` (20,000) characters. Only that upload can use the pass. `discovery_ai_generations` (1) delivered set of exactly five valid questions; a short or malformed set is a failed attempt and is not charged. At most `discovery_ai_attempts` (3) provider attempts, failed ones included |
+| Seven-day trial (`source = 'trial'`, `trial_policy = 'seven-day'`) | Issued before `20261021100000`; no new ones | Every course until its own original end | Its original allowance under the shared AI rules |
 | Early Access | **Automatic**, once the founder activates the actual public launch | Every course for one calendar month from the student's own enrollment | No per-student cap; global and per-day guards still apply |
 | Operator grant | `scripts/entitlements/ops.cjs grant` | Every course for the stated days | None (course access only) |
 
@@ -89,7 +90,7 @@ already made; revoke it explicitly with `change-grant`.
 A student whose Early Access is active cannot prepare or verify a trial code (`early-access-active`, with the date
 the trial opens). The check runs under the same account lock as enrollment, before any SMS or code attempt, so a race
 cannot start a trial during Early Access, and nothing is consumed: no trial eligibility, code attempt or phone claim.
-After Early Access ends the student may start the trial with its full seven days, if
+After Early Access ends the student may start a Discovery Pass with its full 72 hours, if
 `trial_after_early_access` is true (**provisional**). AI used during Early Access never counts against a later
 trial's fixed allowance. A trial that was already running when Early Access began (for example a pre-launch trial)
 continues.
@@ -175,8 +176,11 @@ The deletion form tells students this.
 
 ## Owner decisions required before production
 
-1. Discovery Pass limits are initial values in `private.entitlement_policy` (`discovery_*` columns); `trial_days` and
-   `ai_practice_policy.trial_units` are retired.
+1. Discovery Pass limits are initial values in `private.entitlement_policy` (`discovery_*` columns). `trial_days` and
+   `ai_practice_policy.trial_units` describe only the seven-day trials issued before the pass, which keep their end,
+   full access and AI allowance (audited as `trial.seven-day-preserved`). `get_my_entitlement()` still returns
+   `trial_days` (the pass length in whole days) beside `trial_hours`, so older application instances keep working
+   during a rollout.
 2. Early Access enrollment window: 28 days after the actual launch is provisional (`configure-early-access`).
 3. Trial after Early Access: currently allowed once Early Access ends (`trial_after_early_access`).
 4. Retention and deletion: the keyed phone hash, imported list data (names, emails, phone hashes), used list entries

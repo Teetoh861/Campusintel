@@ -1,6 +1,6 @@
-// app/api/discovery/route.ts — Open the Discovery Pass exam or topic, or grade the exam. The body names the course, the
-// action and (for the topic) the student's choice only; the student, the pass window, the exam deadline, the limits and
-// the material all come from the server and the database.
+// app/api/discovery/route.ts — Open the Discovery Pass exam or topic, save the open exam's answers, or grade it. The body
+// names the course, the action and (for the topic) the student's choice only; the student, the pass window, the exam
+// deadline, the limits and the material all come from the server and the database.
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
@@ -23,6 +23,7 @@ const HTTP_STATUS: Partial<Record<DiscoveryResultStatus, number>> = {
   'no-pass': 403,
   'expired': 403,
   'used-elsewhere': 409,
+  'not-enough-time': 409,
   'nothing-to-preview': 404,
   'not-opened': 409,
   'unavailable': 503,

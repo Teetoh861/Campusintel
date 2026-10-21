@@ -1,15 +1,16 @@
 // lib/entitlements/discovery.ts — Server entry points for Discovery Pass previews.
 // The course comes from the central read model on the student's own cookie-bound client; the preview functions are
 // service-role only and take the verified session id, so the database derives the student, applies the pass window on
-// its own clock and returns only the pinned slice (20261021100000_discovery_pass.sql). The exam length is the course's
-// own CBT duration from the server's quiz configuration; the browser can never supply or change it.
+// its own clock and returns only the pinned slice (20261021100000_discovery_pass.sql). Only an actively offered
+// institutional course has previews, checked here and again in the database. The exam length is the course's own CBT
+// duration from the server's quiz configuration; the browser can never supply or change it.
 import 'server-only'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getAuthSecretKey, getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
+import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { getCourseByContentKey } from '@/lib/data/courses'
 import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
 import { createClient } from '@/lib/supabase/server'
@@ -26,8 +27,10 @@ const previewRow = z.discriminatedUnion('state', [
     // Strict: a topic that carries anything beyond its title fails the whole answer closed.
     topics: z.array(z.object({ item_id: z.string().uuid(), title: z.string() }).strict()).nullable() }),
   z.object({ state: z.literal('used-elsewhere'), ends_at: timestamp, content_key: z.string().nullable() }),
-  z.object({ state: z.enum(['signed-out', 'invalid-course', 'invalid-request', 'free-course', 'full-access', 'no-pass',
-    'expired', 'nothing-to-preview', 'not-opened']) }),
+  z.object({ state: z.literal('not-enough-time'), now: timestamp, ends_at: timestamp }),
+  z.object({ state: z.literal('saved'), now: timestamp }),
+  z.object({ state: z.enum(['signed-out', 'invalid-course', 'not-offered', 'invalid-request', 'free-course',
+    'full-access', 'no-pass', 'expired', 'nothing-to-preview', 'not-opened']) }),
 ])
 // The preview functions raise this for a malformed request, such as an answer to a question outside the sample.
 const INVALID_REQUEST_CODE = '22023'
@@ -41,8 +44,10 @@ function rpcAnswer(data: unknown, error: { code?: string } | null): unknown {
 export type DiscoveryOpen = { kind: 'cbt'; examSeconds: number } | { kind: 'study_guide'; itemId: string }
 
 export type DiscoveryEnv = {
-  read(courseId: string, kind: DiscoveryKind): Promise<unknown>
+  /** examSeconds lets the database say whether the whole exam still fits before the pass ends. */
+  read(courseId: string, kind: DiscoveryKind, examSeconds: number | null): Promise<unknown>
   open(courseId: string, target: DiscoveryOpen): Promise<unknown>
+  save(courseId: string, answers: SampleAnswers): Promise<unknown>
   submit(courseId: string, answers: SampleAnswers): Promise<unknown>
 }
 
@@ -53,12 +58,14 @@ export function discoveryResultFrom(data: unknown): DiscoveryResult {
   const row = parsed.data
   if (row.state === 'ready') return { status: 'ready', now: row.now, endsAt: row.ends_at, preview: row.preview }
   if (row.state === 'available') return { status: 'available', now: row.now, endsAt: row.ends_at, topics: row.topics }
+  if (row.state === 'not-enough-time') return { status: 'not-enough-time', now: row.now, endsAt: row.ends_at }
+  if (row.state === 'saved') return { status: 'saved', now: row.now }
   if (row.state === 'used-elsewhere') {
     const course = row.content_key === null ? undefined : getCourseByContentKey(row.content_key)
     return { status: 'used-elsewhere', endsAt: row.ends_at, courseCode: course?.code ?? null,
       courseSlug: course?.slug ?? null }
   }
-  return { status: row.state === 'invalid-course' ? 'not-found' : row.state }
+  return { status: row.state === 'invalid-course' || row.state === 'not-offered' ? 'not-found' : row.state }
 }
 
 function createSupabaseDiscoveryEnv(sessionId: string): DiscoveryEnv {
@@ -67,15 +74,20 @@ function createSupabaseDiscoveryEnv(sessionId: string): DiscoveryEnv {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
   return {
-    async read(courseId, kind) {
+    async read(courseId, kind, examSeconds) {
       const { data, error } = await service.rpc('discovery_preview', { p_session_id: sessionId, p_course_id: courseId,
-        p_kind: kind, p_claim: false })
+        p_kind: kind, p_claim: false, p_exam_seconds: kind === 'cbt' ? examSeconds : null })
       return rpcAnswer(data, error)
     },
     async open(courseId, target) {
       const { data, error } = await service.rpc('discovery_preview', { p_session_id: sessionId, p_course_id: courseId,
         p_kind: target.kind, p_claim: true, p_item_id: target.kind === 'study_guide' ? target.itemId : null,
         p_exam_seconds: target.kind === 'cbt' ? target.examSeconds : null })
+      return rpcAnswer(data, error)
+    },
+    async save(courseId, answers) {
+      const { data, error } = await service.rpc('save_discovery_cbt', { p_session_id: sessionId,
+        p_course_id: courseId, p_answers: answers })
       return rpcAnswer(data, error)
     },
     async submit(courseId, answers) {
@@ -89,12 +101,17 @@ function createSupabaseDiscoveryEnv(sessionId: string): DiscoveryEnv {
 type CourseIdentity = { status: 'ok'; courseId: string; slug: string }
   | { status: 'signed-out' | 'not-found' | 'unavailable' }
 
-/** The repository course behind a slug, resolved on the student's own client. */
+/**
+ * The repository course behind a slug, resolved on the student's own client. Only an institutional course offered in an
+ * active department, level and semester has previews; repository-only and retired identities are not offered.
+ */
 async function courseFor(client: StudentClient, slug: string): Promise<CourseIdentity> {
   const result = await getStudentCourseBySlugForVerifiedStudent(client, slug)
-  if (result.status === 'ok' || result.status === 'repository-only') {
+  if (result.status === 'ok') {
+    if (!hasActiveCourseOffering(result.course)) return { status: 'not-found' }
     return { status: 'ok', courseId: result.course.repository.repositoryCourseId, slug: result.course.repository.route.slug }
   }
+  if (result.status === 'repository-only') return { status: 'not-found' }
   return { status: result.status === 'invariant-failure' ? 'unavailable' : result.status }
 }
 
@@ -106,8 +123,8 @@ export function examSecondsFor(slug: string): number | null {
 
 /** Read a preview without opening one, for the preview page. Never spends anything. */
 export async function readDiscoveryPreview(sessionId: string, courseId: string, kind: DiscoveryKind,
-  env: DiscoveryEnv = createSupabaseDiscoveryEnv(sessionId)): Promise<DiscoveryResult> {
-  try { return discoveryResultFrom(await env.read(courseId, kind)) }
+  examSeconds: number | null, env: DiscoveryEnv = createSupabaseDiscoveryEnv(sessionId)): Promise<DiscoveryResult> {
+  try { return discoveryResultFrom(await env.read(courseId, kind, examSeconds)) }
   catch { return { status: 'unavailable' } }
 }
 
@@ -128,6 +145,7 @@ export async function runDiscoveryRequest(input: unknown, response: NextResponse
     const course = await courseFor(client, command.courseSlug)
     if (course.status !== 'ok') return { status: course.status }
     const env = createSupabaseDiscoveryEnv(context.sessionId)
+    if (command.action === 'save-answers') return discoveryResultFrom(await env.save(course.courseId, command.answers))
     if (command.action === 'submit-exam') return discoveryResultFrom(await env.submit(course.courseId, command.answers))
     if (command.action === 'open-topic') {
       return discoveryResultFrom(await env.open(course.courseId, { kind: 'study_guide', itemId: command.itemId }))

@@ -21,12 +21,19 @@ export function formatAccessDate(iso: string): string {
 }
 
 export const ACCESS_SOURCE_LABEL: Record<AccessSource, string> = {
+  // A seven-day trial issued before the Discovery Pass replaced it.
+  trial: 'Free trial',
   early_access: 'Early Access',
   manual: 'Full access',
   paid: 'Paid plan',
 }
 
 export const DISCOVERY_PASS_LABEL = 'Discovery Pass'
+
+/** What the student's own trial is called: a Discovery Pass, or the seven-day trial they were issued earlier. */
+export function trialLabel(summary: EntitlementSummary): string {
+  return summary.trial.policy === 'seven-day' ? 'free trial' : DISCOVERY_PASS_LABEL
+}
 
 /** The preview names a student sees, in the order the course page offers them. */
 export const DISCOVERY_PREVIEW_LABEL: Record<DiscoveryKind, string> = {
@@ -42,6 +49,7 @@ function msUntil(summary: EntitlementSummary, iso: string | null): number {
 
 /** The previews this pass has not used yet, by their student-facing names. */
 export function unusedPreviews(summary: EntitlementSummary): DiscoveryKind[] {
+  if (summary.discovery === null) return []
   const used = new Set(summary.discovery.previews.map(preview => preview.kind))
   return DISCOVERY_KINDS.filter(kind => !used.has(kind))
 }
@@ -81,12 +89,12 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
   if (trial.status === 'ended') {
     const since = -msUntil(summary, trial.ends_at)
     if (since >= 0 && since <= ENDED_NOTICE_DAYS * DAY_MS) {
-      return { id: 'trial-ended', tone: 'info', title: `Your ${DISCOVERY_PASS_LABEL} has ended`,
+      return { id: 'trial-ended', tone: 'info', title: `Your ${trialLabel(summary)} has ended`,
         body: 'GST courses stay free, and your saved bookmarks and results are kept.', action: 'View your plan' }
     }
     return null
   }
-  if (trial.status === 'available') {
+  if (trial.status === 'available' && summary.discovery !== null) {
     return { id: 'trial-available', tone: 'info', title: 'Preview your department courses',
       body: `A free ${summary.trial_hours}-hour ${DISCOVERY_PASS_LABEL} includes one full ` +
         `${summary.discovery.cbt_questions}-question CBT exam and one complete study guide topic, from courses you ` +

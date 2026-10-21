@@ -20,7 +20,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { TrialActivation } from './TrialActivation'
 import type { AllowanceSummary } from '@/lib/ai-practice/upload-contract'
-import type { EntitlementSummary } from '@/lib/entitlements/contract'
+import type { DiscoverySummary, EntitlementSummary } from '@/lib/entitlements/contract'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -81,8 +81,7 @@ function CurrentPlan({ entitlement }: { entitlement: EntitlementSummary }): Reac
 }
 
 /** What a pass includes, from the database's own limits. */
-function PassIncludes({ entitlement }: { entitlement: EntitlementSummary }): ReactElement {
-  const { discovery } = entitlement
+function PassIncludes({ discovery }: { discovery: DiscoverySummary }): ReactElement {
   return <ul className="student-detail-points">
     <li>One full {discovery.cbt_questions}-question CBT exam from a course you choose, timed like the real CBT and marked
       with the correct answers</li>
@@ -93,8 +92,8 @@ function PassIncludes({ entitlement }: { entitlement: EntitlementSummary }): Rea
 }
 
 /** Each preview once, on a course the student chooses; listed with where it was used. */
-function PassUsage({ entitlement }: { entitlement: EntitlementSummary }): ReactElement {
-  const used = new Map(entitlement.discovery.previews.map(preview => [preview.kind, preview.content_key]))
+function PassUsage({ discovery }: { discovery: DiscoverySummary }): ReactElement {
+  const used = new Map(discovery.previews.map(preview => [preview.kind, preview.content_key]))
   return <ul className="student-detail-points">
     {DISCOVERY_KINDS.map(kind => {
       const key = used.get(kind)
@@ -106,13 +105,16 @@ function PassUsage({ entitlement }: { entitlement: EntitlementSummary }): ReactE
 }
 
 function TrialSection({ entitlement, continuityToken }: { entitlement: EntitlementSummary; continuityToken: string }):
-  ReactElement {
-  const { trial, otp } = entitlement
+  ReactElement | null {
+  const { trial, otp, discovery } = entitlement
+  const sevenDay = trial.policy === 'seven-day'
+  // A seven-day trial issued before the pass is full access, already shown as the current plan.
+  if (sevenDay && trial.status === 'active') return null
   const body: Record<EntitlementSummary['trial']['status'], ReactElement> = {
     'available': <>
       <p className="mt-2 text-sm text-student-text-secondary">Try department courses free for {entitlement.trial_hours} hours.
         It’s a sample, not full access: each item can be used once, and nothing renews.</p>
-      <PassIncludes entitlement={entitlement} />
+      {discovery !== null && <PassIncludes discovery={discovery} />}
       <div className="mt-3"><TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours}
         initialChallenge={otp === null ? null : { challengeId: otp.challenge_id, phoneHint: otp.phone_hint,
           resendAt: otp.resend_at }} /></div>
@@ -120,11 +122,11 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
     'active': <>
       <p className="mt-2 text-sm text-student-text-secondary">Active until
         {trial.ends_at !== null && <> {formatAccessDate(trial.ends_at)}</>}. Open a department course to use what’s left.</p>
-      <PassUsage entitlement={entitlement} />
+      {discovery !== null && <PassUsage discovery={discovery} />}
     </>,
-    'ended': <p className="mt-2 text-sm text-student-text-secondary">Your pass has ended
+    'ended': <p className="mt-2 text-sm text-student-text-secondary">Your {sevenDay ? 'trial' : 'pass'} has ended
       {trial.ends_at !== null && <> ({formatAccessDate(trial.ends_at)})</>}. Each account and phone number can have one
-      pass.</p>,
+      {sevenDay ? ' trial' : ' pass'}.</p>,
     'after-early-access': <p className="mt-2 text-sm text-student-text-secondary">You already have full access through Early
       Access, so your pass is kept for later. It becomes available
       {trial.available_from !== null && <> on {formatAccessDate(trial.available_from)}</>}, when Early Access ends.</p>,
@@ -132,7 +134,7 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
       accounts that have had Early Access.</p>,
   }
   return <section aria-labelledby="trial-heading" className="student-surface">
-    <h2 id="trial-heading" className="student-section-title">{DISCOVERY_PASS_LABEL}</h2>
+    <h2 id="trial-heading" className="student-section-title">{sevenDay ? 'Free trial' : DISCOVERY_PASS_LABEL}</h2>
     {body[trial.status]}
   </section>
 }

@@ -39,6 +39,8 @@ export type AiPracticeCommand = z.infer<typeof aiPracticeCommandSchema>
 /** Why an uploaded file was refused. Matches the database's rejection_reason values. */
 export type UploadRejection =
   | 'missing-upload' | 'too-large' | 'unsupported-type' | 'corrupt' | 'encrypted' | 'empty' | 'too-short' | 'too-much-text'
+  // Discovery Pass only: the pass's one accepted upload was used by another file first.
+  | 'pass-upload-limit'
 
 /** Where an AI grant came from. Only trusted server code issues grants; AI use never creates one. */
 export type AiGrantSource = 'trial' | 'early_access' | 'test'
@@ -103,4 +105,5 @@ export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
   'empty': 'We could not find any text in this file. Upload a file with selectable text; scanned images are not supported.',
   'too-short': 'There is not enough text here to write fair questions. Upload fuller notes (at least about 150 words).',
   'too-much-text': 'This file has more text than we can use at once. Upload one topic or chapter at a time.',
+  'pass-upload-limit': 'Your Discovery Pass includes one AI upload, and another file already used it.',
 }

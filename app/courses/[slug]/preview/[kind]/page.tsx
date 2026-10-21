@@ -12,7 +12,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
+import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { examSecondsFor, readDiscoveryPreview } from '@/lib/entitlements/discovery'
 import { kindFromSegment, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
 import { DISCOVERY_PASS_LABEL, formatAccessDate } from '@/lib/entitlements/presentation'
@@ -60,19 +60,21 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   }
   const { repository, content } = lookup.course
   const route = repository.route
-  const course: CourseIdentity = { href: route.href, slug: route.slug,
-    code: lookup.status === 'ok' ? lookup.course.code : route.course.code,
-    title: lookup.status === 'ok' ? lookup.course.title : route.course.title }
   // A course the student can already read in full needs no preview.
   if (content.state !== 'locked') redirect(route.href)
+  // Previews belong to courses offered now; a repository-only or retired course has none.
+  if (lookup.status !== 'ok' || !hasActiveCourseOffering(lookup.course)) return notFound()
+  const course: CourseIdentity = { href: route.href, slug: route.slug, code: lookup.course.code,
+    title: lookup.course.title }
 
+  const examSeconds = kind === 'cbt' ? examSecondsFor(route.slug) : null
   const [result, plan] = await Promise.all([
-    readDiscoveryPreview(context.sessionId, repository.repositoryCourseId, kind),
+    readDiscoveryPreview(context.sessionId, repository.repositoryCourseId, kind, examSeconds),
     readEntitlementForVerifiedStudent(client),
   ])
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (result.status === 'free-course' || result.status === 'full-access') redirect(route.href)
-  const examQuestions = plan.status === 'ok' ? plan.entitlement.discovery.cbt_questions : null
+  const examQuestions = plan.status === 'ok' ? plan.entitlement.discovery?.cbt_questions ?? null : null
   const endsAt = 'endsAt' in result ? result.endsAt : null
   const band = <PageBand title={TITLE[kind]} lede={`${course.code} · ${course.title}`}
     context={endsAt !== null && <p>{DISCOVERY_PASS_LABEL} · ends {formatAccessDate(endsAt)}</p>} />
@@ -87,13 +89,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   </StudentPage>
 }
 
-/** Minutes the exam will actually get: the course's own duration, cut short only by the pass ending first. */
-function examMinutes(slug: string, now: string, endsAt: string): number | null {
-  const seconds = examSecondsFor(slug)
-  if (seconds === null) return null
-  const left = (Date.parse(endsAt) - Date.parse(now)) / 1000
-  return Math.max(1, Math.floor(Math.min(seconds, left) / 60))
-}
+const SECONDS_PER_MINUTE = 60
 
 function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
   result: DiscoveryResult; kind: DiscoveryKind; course: CourseIdentity; examQuestions: number | null
@@ -106,8 +102,9 @@ function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
       return <Pinned preview={result.preview} now={result.now} course={course} continuityToken={continuityToken} />
     case 'available':
       if (kind === 'cbt') {
-        const minutes = examMinutes(course.slug, result.now, result.endsAt)
-        if (minutes === null) return <NotOffered course={course} what="a CBT exam" />
+        const seconds = examSecondsFor(course.slug)
+        if (seconds === null) return <NotOffered course={course} what="a CBT exam" />
+        const minutes = Math.round(seconds / SECONDS_PER_MINUTE)
         return <section className="student-surface student-surface-raised" aria-labelledby="open-title">
           <h2 id="open-title" className="student-section-title">{course.code} CBT exam</h2>
           <p className="student-detail-prose mt-2">
@@ -136,6 +133,11 @@ function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
           </li>)}
         </ul>
       </section>
+    case 'not-enough-time':
+      return <Notice tone="info" title="Not enough time left on your pass" action={plan}>
+        The {course.code} CBT exam takes {Math.round((examSecondsFor(course.slug) ?? 0) / SECONDS_PER_MINUTE)} minutes,
+        and your {DISCOVERY_PASS_LABEL} ends {formatAccessDate(result.endsAt)}. Nothing was used.
+      </Notice>
     case 'used-elsewhere':
       return <Notice tone="info" title="Already used on another course" action={result.courseSlug !== null
         && <Link href={`/courses/${result.courseSlug}/preview/${PREVIEW_SEGMENT[kind]}`} prefetch={false}

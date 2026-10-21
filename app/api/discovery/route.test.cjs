@@ -67,4 +67,8 @@ test('each outcome has an explicit status; refusals never look like success', as
   }
   f.state.result = { status: 'used-elsewhere', endsAt: 'x', courseCode: 'BUA203', courseSlug: 'business-statistics' }
   assert.equal((await f.post()).status, 409)
+  f.state.result = { status: 'not-enough-time', now: 'x', endsAt: 'y' }
+  assert.equal((await f.post()).status, 409, 'an exam that no longer fits is a refusal')
+  f.state.result = { status: 'saved', now: 'x' }
+  assert.equal((await f.post()).status, 200, 'a saved sheet is a success')
 }))

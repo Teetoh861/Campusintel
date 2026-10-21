@@ -190,8 +190,8 @@ select is((select status from private.trial_otp_challenges where id = '63000000-
   'B''s code is settled and cannot be retried');
 select throws_ok($$ insert into private.trial_phone_claims (phone_hash, user_id) values (pg_temp.h('phone-x'),
   '61000000-0000-4000-8000-000000000002') $$, '23505', null, 'the phone claim is unique even for direct writes');
-select throws_ok($$ insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
-  values ('61000000-0000-4000-8000-000000000007', 'trial', now(), now() + interval '7 days', 'capped', 10, 'x') $$,
+select throws_ok($$ insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  values ('61000000-0000-4000-8000-000000000007', 'trial', 'discovery', now(), now() + interval '7 days', 'capped', 10, 'x') $$,
   '23505', null, 'an account has at most one trial grant, ever');
 
 -- 4. Code expiry, replacement, lockout, delivery failure and send limits --------------------------------------------
@@ -564,8 +564,9 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
   'authenticated', 'ent-j@example.test', 'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('62000000-0000-4000-8000-000000000012', '61000000-0000-4000-8000-000000000012', now(), now());
-insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by) values
-  ('61000000-0000-4000-8000-000000000012', 'trial', now() - interval '2 days', now() + interval '5 days', 'capped', 10, 'test');
+-- A seven-day trial issued before 20261021100000_discovery_pass.sql, which keeps its ten-set allowance.
+insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by) values
+  ('61000000-0000-4000-8000-000000000012', 'trial', 'seven-day', now() - interval '2 days', now() + interval '5 days', 'capped', 10, 'test');
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by) values
   ('61000000-0000-4000-8000-000000000012', 'early_access', now() - interval '1 day', now() + interval '29 days', 'uncapped', 'test');
 insert into public.ai_practice_documents (id, user_id, institutional_course_id, storage_path, file_name, media_type,
@@ -573,9 +574,6 @@ insert into public.ai_practice_documents (id, user_id, institutional_course_id, 
   values ('64000000-0000-4000-8000-000000000012', '61000000-0000-4000-8000-000000000012', (select (result->>'id')::uuid from outcome where step = 'course-acc101'),
     '61000000-0000-4000-8000-000000000012/64000000-0000-4000-8000-000000000012', 'n.txt', 'text/plain', 10,
     now() + interval '1 day', 'ready', 'ready text', pg_temp.h('ready text'), 2);
--- This section tests funding attribution with a legacy ten-set trial grant, so the Discovery attempt limit
--- (20261021100000_discovery_pass.sql) is lifted until it ends; discovery_pass.test.sql tests that limit.
-update private.entitlement_policy set discovery_ai_attempts = 10;
 -- Generate n sets, each admitted and then settled with the given outcome, through the service-role functions.
 create function pg_temp.generate(p_count integer, p_status text default 'generated') returns void language plpgsql as $$
 declare v_state jsonb;
@@ -641,7 +639,6 @@ select is((public.begin_ai_practice_generation('62000000-0000-4000-8000-00000000
   '64000000-0000-4000-8000-000000000012', array['trial', 'early_access']))->>'state', 'allowance-exhausted',
   'the trial is exhausted after exactly ten of its own sets');
 reset role;
-update private.entitlement_policy set discovery_ai_attempts = 3;
 -- Account deletion removes the ledger with the grants.
 delete from auth.users where id = '61000000-0000-4000-8000-000000000012';
 select is((select count(*)::integer from public.ai_usage_events where user_id = '61000000-0000-4000-8000-000000000012')

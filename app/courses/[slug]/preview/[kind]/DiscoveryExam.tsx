@@ -1,8 +1,9 @@
 'use client'
 // app/courses/[slug]/preview/[kind]/DiscoveryExam.tsx — The Discovery Pass CBT exam. The browser holds only the
-// questions; the database fixed the deadline when the exam opened and grades the answers once, and only then returns
-// the correct options and explanations. The countdown is display only: it starts from the server's own `now` and
-// deadline and runs on the monotonic page clock, so the device's time or timezone never changes it.
+// questions; the database fixed the deadline when the exam opened, keeps the choices saved before it, and grades the
+// answers once, and only then returns the correct options and explanations. Nothing sent after the deadline is marked.
+// The countdown is display only: it starts from the server's own `now` and deadline and runs on the monotonic page
+// clock, so the device's time or timezone never changes it.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
@@ -13,13 +14,15 @@ import type { ReactElement } from 'react'
 
 const optionLetter = (index: number) => String.fromCharCode(65 + index)
 const TICK_MS = 1000
-// When time is up, a lost submission is retried inside the server's grace window.
+// When time is up, the marked result is fetched again if the network drops, inside the server's replay window.
 const RETRY_MS = 10_000
 const MAX_AUTO_RETRIES = 10
 const LOW_TIME_MS = 5 * 60_000
+// Choices are saved to the server shortly after each change, so time running out marks them.
+const SAVE_DELAY_MS = 800
 
 const REFUSAL: Record<string, string> = {
-  'expired': 'Your Discovery Pass has ended, so this exam can no longer be marked.',
+  'expired': 'Your Discovery Pass has ended, so this exam’s result can no longer be shown.',
   'session-changed': 'You signed in on another tab. Refresh this page to continue.',
   'signed-out': 'You’ve been signed out. Sign in again before time runs out.',
 }
@@ -63,13 +66,19 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [confirming, setConfirming] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const answersRef = useRef(answers)
+  // Choices made since the last save reached the server.
+  const unsaved = useRef(false)
   const sending = useRef(false)
   const autoRetries = useRef(0)
   const timeUp = remaining <= 0
   const answered = Object.keys(answers).length
 
-  useEffect(() => { if (initialResult === null) setAnswers(readSaved(storageKey, questions)) },
-    [initialResult, storageKey, questions])
+  useEffect(() => {
+    if (initialResult !== null) return
+    const restored = readSaved(storageKey, questions)
+    unsaved.current = Object.keys(restored).length > 0
+    setAnswers(restored)
+  }, [initialResult, storageKey, questions])
   // The submission reads the latest answers even when it is fired by the deadline rather than a click.
   useEffect(() => { answersRef.current = answers }, [answers])
 
@@ -99,6 +108,18 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     return outcome.status !== 'unavailable'
   }, [continuityToken, courseSlug, storageKey])
 
+  // Save shortly after each change while time remains; at the deadline the server marks the last saved sheet.
+  useEffect(() => {
+    if (!unsaved.current || result !== null || timeUp) return
+    const timer = window.setTimeout(() => {
+      unsaved.current = false
+      void postDiscoveryCommand({ action: 'save-answers', courseSlug, answers }, continuityToken).then(outcome => {
+        if (outcome.status !== 'saved') unsaved.current = true
+      })
+    }, SAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [answers, result, timeUp, courseSlug, continuityToken])
+
   // At the deadline the exam submits itself, and keeps trying briefly if the network drops.
   useEffect(() => {
     if (!timeUp || result !== null) return
@@ -117,6 +138,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     setAnswers(current => {
       const next = { ...current, [itemId]: option }
       save(storageKey, next)
+      unsaved.current = true
       return next
     })
   }
@@ -181,7 +203,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
         : <button type="button" disabled={busy}
           onClick={() => { if (unanswered > 0 && !timeUp) setConfirming(true); else void submit() }}
           className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:w-auto')}>
-          {busy ? 'Marking…' : timeUp ? 'Send my answers' : 'Submit exam'}
+          {busy ? 'Marking…' : timeUp ? 'See my result' : 'Submit exam'}
         </button>}
       {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message}</p>}
     </div>
@@ -194,8 +216,8 @@ function ExamReview({ questions, result }: { questions: ReadonlyArray<SampleQues
   return <div className="grid gap-4">
     <div className="student-surface student-surface-raised" role="status">
       <h2 className="student-section-title">You scored {result.score} of {result.total}</h2>
-      {result.timed_out && <p className="student-detail-prose mt-1">Time ran out before your answers reached us, so
-        this exam was closed without them. The correct answers are below.</p>}
+      {result.timed_out && <p className="student-detail-prose mt-1">Time ran out, so we marked the answers saved before
+        the deadline. The correct answers are below.</p>}
       <p className="student-meta mt-1">Regular CBT practice for this course comes with full access.</p>
     </div>
     {questions.map((question, number) => {

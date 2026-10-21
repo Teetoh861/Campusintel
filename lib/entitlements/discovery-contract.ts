@@ -30,6 +30,8 @@ export const discoveryCommandSchema = z.discriminatedUnion('action', [
   // The study guide names the topic the student chose; the exam names nothing else. Duration never comes from here.
   z.object({ action: z.literal('open'), courseSlug, kind: z.literal('cbt') }).strict(),
   z.object({ action: z.literal('open-topic'), courseSlug, itemId: uuid }).strict(),
+  // Saved while the exam is open, so time running out marks what the student had chosen. Refused after the deadline.
+  z.object({ action: z.literal('save-answers'), courseSlug, answers: sampleAnswers }).strict(),
   z.object({ action: z.literal('submit-exam'), courseSlug, answers: sampleAnswers }).strict(),
 ])
 export type DiscoveryCommand = z.infer<typeof discoveryCommandSchema>
@@ -41,7 +43,7 @@ const sampleQuestion = z.object({ item_id: uuid, prompt: z.string(), options: z.
 const sampleResult = z.object({
   score: z.number().int().nonnegative(),
   total: z.number().int().positive(),
-  // The exam closed at its deadline without an answer sheet arriving in time.
+  // The exam closed at its deadline before it was submitted, and was marked from the answers saved in time.
   timed_out: z.boolean(),
   answers: z.array(z.object({ item_id: uuid, selected: z.number().int().nonnegative().nullable(),
     correct_option: z.number().int().nonnegative(), explanation: z.string().nullable() }).strict()),
@@ -68,6 +70,9 @@ export const discoveryResultSchema = z.discriminatedUnion('status', [
     .strict(),
   z.object({ status: z.literal('used-elsewhere'), endsAt: timestamp, courseCode: z.string().nullable(),
     courseSlug: z.string().nullable() }).strict(),
+  // The exam runs for the course's whole duration or not at all: less than that is left on the pass.
+  z.object({ status: z.literal('not-enough-time'), now: timestamp, endsAt: timestamp }).strict(),
+  z.object({ status: z.literal('saved'), now: timestamp }).strict(),
   ...PLAIN_STATUSES.map(status => z.object({ status: z.literal(status) }).strict()),
 ])
 export type DiscoveryResult = z.infer<typeof discoveryResultSchema>

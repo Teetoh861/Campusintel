@@ -1,7 +1,8 @@
 -- supabase/tests/discovery_pass.test.sql — The Discovery Pass that replaced the seven-day trial
 -- (20261021100000_discovery_pass.sql): 72 hours on the database clock, one timed 50-question CBT exam and one complete
--- study-guide topic pinned and served by the server only, answers withheld until grading, one AI upload with one set of
--- five questions, no theory preview and no replenishment.
+-- study-guide topic from actively offered courses, pinned and served by the server only, answers withheld until grading
+-- and refused after the deadline, one AI upload with one complete set of five questions, no theory preview and no
+-- replenishment. Seven-day trials issued before the migration keep their full access and allowance.
 -- Time is simulated by moving grant and deadline timestamps: now() is fixed for the whole transaction.
 begin;
 select no_plan();
@@ -35,8 +36,8 @@ select is((select jsonb_build_object('hours', discovery_hours, 'cbt', discovery_
   '{"hours":72,"cbt":50,"grace":120,"ai_sets":1,"ai_attempts":3,"ai_uploads":1,"ai_chars":20000}'::jsonb,
   'approved Discovery Pass limits');
 select hasnt_column('private', 'entitlement_policy', 'discovery_theory_questions', 'there is no theory preview');
-select is((select count(*)::integer from public.entitlement_grants where source = 'trial'
-  and ends_at - starts_at > interval '72 hours'), 0, 'no trial grant outlasts 72 hours');
+select is((select count(*)::integer from public.entitlement_grants where trial_policy = 'discovery'
+  and ends_at - starts_at > interval '72 hours'), 0, 'no Discovery Pass outlasts 72 hours');
 
 -- Fixtures ----------------------------------------------------------------------------------------------------------
 -- P: activates a pass. Q: same phone, other account. F: full plan. N: no pass. R: account deleted and recreated.
@@ -56,16 +57,23 @@ select ('72000000-0000-4000-8000-00000000000' || n)::uuid, ('71000000-0000-4000-
   now(), now(), null from unnest(array[1, 2, 3, 4, 5, 8]) n;
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by) values
   ('71000000-0000-4000-8000-000000000003', 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test');
-insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by) values
-  ('71000000-0000-4000-8000-000000000008', 'trial', now() - interval '71 hours 50 minutes', now() + interval '10 minutes',
-    'capped', 1, 'test');
+insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  values ('71000000-0000-4000-8000-000000000008', 'trial', 'discovery', now() - interval '71 hours 50 minutes',
+    now() + interval '10 minutes', 'capped', 1, 'test');
+select throws_ok($$ insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units,
+    created_by) values ('71000000-0000-4000-8000-000000000004', 'trial', now(), now() + interval '1 hour', 'capped', 1,
+    'test') $$, '23514', null, 'a trial grant must name the policy it is issued under');
+select throws_ok($$ insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms,
+    created_by) values ('71000000-0000-4000-8000-000000000004', 'manual', 'discovery', now(), now() + interval '1 hour',
+    'none', 'test') $$, '23514', null, 'and only a trial grant has one');
 
 create temporary table outcome (step text primary key, result jsonb) on commit drop;
 grant all on outcome to authenticated, service_role;
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
 grant execute on function pg_temp.h(text) to authenticated, service_role;
--- Course fixtures: 02 has 390 CBT questions and notes, 07 also has theory, 11 has CBT only, 08 is a free GST course.
+-- Course fixtures: 02 has 390 CBT questions and notes, 03 is another offered course, 11 has CBT only, 08 is a free GST
+-- course, and 07 (notes, theory, 150 questions) is repository-only, so it is offered in no active catalogue.
 create function pg_temp.c(p_n text) returns uuid language sql immutable as
   $$ select ('40000000-0000-4000-8000-0000000000' || p_n)::uuid $$;
 grant execute on function pg_temp.c(text) to authenticated, service_role;
@@ -99,8 +107,10 @@ insert into outcome values ('p-verify', public.verify_trial_otp('72000000-0000-4
 reset role;
 select is((select result->>'state' from outcome where step = 'p-verify'), 'activated', 'the right code starts the pass');
 select is((select jsonb_build_object('starts', starts_at = now(), 'ends', ends_at = now() + interval '72 hours',
-    'units', ai_units) from public.entitlement_grants where user_id = '71000000-0000-4000-8000-000000000001'),
-  '{"starts":true,"ends":true,"units":1}'::jsonb, 'starts now and ends exactly 72 hours later, with one AI set');
+    'units', ai_units, 'policy', trial_policy) from public.entitlement_grants
+    where user_id = '71000000-0000-4000-8000-000000000001'),
+  '{"starts":true,"ends":true,"units":1,"policy":"discovery"}'::jsonb,
+  'starts now and ends exactly 72 hours later, with one AI set, explicitly as a Discovery Pass');
 select is(private.has_full_access('71000000-0000-4000-8000-000000000001'), false, 'a pass is never full access');
 
 -- 2. No course is ever readable whole with a pass --------------------------------------------------------------------
@@ -116,7 +126,10 @@ select throws_ok($$ select public.discovery_preview('72000000-0000-4000-8000-000
   '42501', null, 'a student cannot call previews with their own JWT');
 select is((select (e->'discovery') - 'previews' from public.get_my_entitlement() e),
   '{"ai_sets":1,"cbt_questions":50}'::jsonb, 'the summary reports the pass limits, and no theory preview');
-select is((select (e->>'trial_hours')::integer from public.get_my_entitlement() e), 72, 'and its length in hours');
+select is((select jsonb_build_object('hours', e->'trial_hours', 'days', e->'trial_days', 'policy', e->'trial'->'policy',
+    'tier', e->'tier', 'access', e->'access') from public.get_my_entitlement() e),
+  '{"hours":72,"days":3,"policy":"discovery","tier":"free","access":null}'::jsonb,
+  'and its length in hours, with the pre-Discovery trial_days field still present for older application instances');
 reset role;
 set local role service_role;
 select is(public.write_quiz_attempt('72000000-0000-4000-8000-000000000001', '74000000-0000-4000-8000-000000000001',
@@ -162,7 +175,7 @@ insert into auth.sessions (id, user_id, created_at, updated_at) values
 set local role service_role;
 select is((pg_temp.open_exam('72000000-0000-4000-8000-000000000021', pg_temp.c('02'))->'preview'->>'deadline_at')::timestamptz,
   now() + interval '5 minutes', 'reopening, refreshing or signing in again keeps the original deadline');
-select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000001', pg_temp.c('07')) - 'ends_at' - 'now',
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000001', pg_temp.c('03')) - 'ends_at' - 'now',
   '{"state":"used-elsewhere","content_key":"principles-business-administration"}'::jsonb,
   'the exam cannot be taken again on another course');
 reset role;
@@ -186,7 +199,7 @@ select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-
 select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'),
   (select jsonb_build_object(key, 99) from outcome, jsonb_each(result) where step = 'answers-37' limit 1)) $$, '22023',
   null, 'an option that does not exist is refused');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('07'), '{}'),
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('03'), '{}'),
   '{"state":"not-opened"}'::jsonb, 'a course with no opened exam cannot be graded');
 insert into outcome values ('p-submit', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001',
   pg_temp.c('02'), (select result from outcome where step = 'answers-37')));
@@ -204,28 +217,62 @@ select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_te
   (select result->'preview'->'result' from outcome where step = 'p-submit'), 'a reload shows the same result');
 reset role;
 
--- 4b. The exam clock: capped at the pass end, a bounded network grace, and closure when the sheet never arrives -------
+-- 4b. The exam clock: the whole duration or nothing, answers saved until the deadline, nothing accepted after it ------
+-- S has ten minutes of pass left.
 set local role service_role;
-insert into outcome values ('s-cbt', pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02')));
-select is((select (result->'preview'->>'deadline_at')::timestamptz from outcome where step = 's-cbt'),
-  now() + interval '10 minutes', 'an exam opened ten minutes before the pass ends gets ten minutes, not thirty');
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02')) - 'now' - 'ends_at',
+  '{"state":"not-enough-time"}'::jsonb,
+  'a 30-minute exam does not open with ten minutes of pass left: it is never shortened to fit');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false, null, 1800)
+  ->>'state', 'not-enough-time', 'and the exam page says so before anything is spent');
 reset role;
--- Deadline passed 60 seconds ago (inside the 120-second grace): a sheet still in flight is graded.
+select is((select count(*)::integer from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'),
+  0, 'nothing is claimed when the exam does not fit');
+set local role service_role;
+insert into outcome values ('s-cbt', public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  'cbt', true, null, 600));
+select is((select (result->'preview'->>'deadline_at')::timestamptz from outcome where step = 's-cbt'),
+  now() + interval '10 minutes', 'a ten-minute exam that exactly fits opens with its whole duration');
+reset role;
+insert into outcome values ('answers-s-saved', pg_temp.answers('71000000-0000-4000-8000-000000000008', 10)),
+  ('answers-s-all', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
+set local role service_role;
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-saved')) - 'now', '{"state":"saved"}'::jsonb,
+  'choices are saved while the exam is open');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  jsonb_build_object(gen_random_uuid()::text, 0)) $$, '22023', null, 'a saved answer outside the exam is refused');
+reset role;
+-- Deadline plus 60 seconds: the deadline passed a minute ago, and with it the pass.
 update private.discovery_previews set deadline_at = now() - interval '60 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 update public.entitlement_grants set ends_at = now() - interval '60 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
-insert into outcome values ('answers-s', pg_temp.answers('71000000-0000-4000-8000-000000000008', 10));
 set local role service_role;
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s'))->'preview'->'result'->>'score', '10',
-  'a sheet arriving inside the network grace is graded, even just after the pass ended');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-all'))->'preview'->'result'->>'score', '10',
+  'a save 60 seconds after the deadline changes nothing: the exam was marked from the sheet saved in time');
+insert into outcome values ('s-late', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008',
+  pg_temp.c('02'), (select result from outcome where step = 'answers-s-all')));
+select is((select jsonb_build_object('score', (result->'preview'->'result'->>'score')::integer,
+    'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 's-late'),
+  '{"score":10,"timed_out":true}'::jsonb,
+  'a perfect sheet submitted 60 seconds after the deadline is not marked: only the answers saved before it count');
 select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}'),
-  '{"state":"expired"}'::jsonb, 'once the pass has ended nothing more is served, not even a replay');
+  (select result from outcome where step = 's-late'),
+  'inside the network grace a lost response replays the committed result, even just after the pass ended');
+reset role;
+select ok(exists (select 1 from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000008'
+  and event = 'discovery.exam-timed-out'), 'closing at the deadline is audited');
+update private.discovery_previews set deadline_at = now() - interval '121 seconds'
+  where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}'),
+  '{"state":"expired"}'::jsonb, 'after the grace, with the pass over, nothing more is served, not even a replay');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false),
   '{"state":"expired"}'::jsonb, 'and the exam page fails closed');
 reset role;
--- Q never sent a sheet: an exam whose deadline and grace have passed closes with no answers and cannot be graded later.
+-- The deadline is exact: a sheet before it is marked in full, one second after it nothing is accepted.
 update public.entitlement_grants set starts_at = now() - interval '1 hour', ends_at = now() + interval '71 hours'
   where user_id = '71000000-0000-4000-8000-000000000008';
 delete from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
@@ -233,18 +280,104 @@ set local role service_role;
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02'))->>'state', 'ready',
   'a fresh exam opens');
 reset role;
-update private.discovery_previews set deadline_at = now() - interval '121 seconds'
+update private.discovery_previews set deadline_at = now() + interval '1 microsecond'
   where user_id = '71000000-0000-4000-8000-000000000008';
-insert into outcome values ('answers-late', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
+insert into outcome values ('answers-s-in-time', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
 set local role service_role;
-insert into outcome values ('s-late', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008',
-  pg_temp.c('02'), (select result from outcome where step = 'answers-late')));
-select is((select jsonb_build_object('score', (result->'preview'->'result'->>'score')::integer,
-    'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 's-late'),
-  '{"score":0,"timed_out":true}'::jsonb, 'a sheet after the grace is not graded: the exam closed with no answers');
+select is((select jsonb_build_object('score', (r->'preview'->'result'->>'score')::integer,
+    'timed_out', (r->'preview'->'result'->>'timed_out')::boolean)
+  from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+    (select result from outcome where step = 'answers-s-in-time')) r),
+  '{"score":50,"timed_out":false}'::jsonb, 'a sheet that arrives before the deadline is marked in full');
+reset role;
+delete from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02'))->>'state', 'ready',
+  'another fresh exam opens');
+reset role;
+update private.discovery_previews set deadline_at = now() - interval '1 second'
+  where user_id = '71000000-0000-4000-8000-000000000008';
+insert into outcome values ('answers-s-unsaved', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
+set local role service_role;
+select is((select jsonb_build_object('score', (r->'preview'->'result'->>'score')::integer,
+    'timed_out', (r->'preview'->'result'->>'timed_out')::boolean)
+  from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+    (select result from outcome where step = 'answers-s-unsaved')) r),
+  '{"score":0,"timed_out":true}'::jsonb,
+  'one second after the deadline nothing is accepted: with nothing saved, the exam closes unanswered');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false)
   ->'preview'->'result'->>'timed_out', 'true', 'the closed exam shows its review');
 reset role;
+
+-- 4c. An exam is exactly 50 valid questions, or it does not open -------------------------------------------------------
+-- Course 01 publishes exactly 50 questions. One malformed revision leaves 49 valid ones.
+create temporary table discovery_q_fixture on commit drop as
+  select r.item_id, r.revision, r.payload from public.managed_content_items i
+  join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
+  where i.course_id = pg_temp.c('01') and i.kind = 'cbt_question' order by i.id limit 1;
+update public.managed_content_revisions r set payload = r.payload - 'correctOption'
+  from discovery_q_fixture f where r.item_id = f.item_id and r.revision = f.revision;
+delete from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('01'), 'cbt', false, null, 1800),
+  '{"state":"nothing-to-preview"}'::jsonb, 'a course with 49 valid questions offers no exam');
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('01')),
+  '{"state":"nothing-to-preview"}'::jsonb, 'and opening one fails');
+reset role;
+select is((select count(*)::integer from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'),
+  0, 'without consuming the lifetime exam');
+update public.managed_content_revisions r set payload = f.payload
+  from discovery_q_fixture f where r.item_id = f.item_id and r.revision = f.revision;
+set local role service_role;
+insert into outcome values ('s-fifty', pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('01')));
+select is((select jsonb_array_length(result->'preview'->'questions') from outcome where step = 's-fifty'), 50,
+  'with all 50 valid, the exam opens with exactly 50');
+reset role;
+select is((select count(distinct q->>'item_id')::integer from private.discovery_previews p,
+    jsonb_array_elements(p.content) q where p.user_id = '71000000-0000-4000-8000-000000000008'), 50,
+  'fifty distinct questions, each with a markable key');
+select ok((select bool_and(private.discovery_cbt_question_valid(jsonb_build_object('prompt', q->'prompt',
+    'options', q->'options', 'correctOption', q->'correct_option'))) from private.discovery_previews p,
+    jsonb_array_elements(p.content) q where p.user_id = '71000000-0000-4000-8000-000000000008'),
+  'every pinned question is valid');
+
+-- 4d. Previews belong to actively offered courses only -------------------------------------------------------------
+set local role service_role;
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('07'), 'study_guide', false),
+  '{"state":"not-offered"}'::jsonb, 'a repository-only course is in no active catalogue and offers no preview');
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000004', pg_temp.c('07')),
+  '{"state":"no-pass"}'::jsonb, 'without a pass the answer is unchanged');
+reset role;
+-- BUA201 (course 02) loses every active offering: its identity, content and history stay, the previews close.
+create temporary table discovery_offering_fixture on commit drop as
+  select a.* from public.course_applicability a join public.institutional_courses c on c.id = a.institutional_course_id
+  where c.repository_course_id = pg_temp.c('02');
+select ok((select count(*) from discovery_offering_fixture) > 0, 'BUA201 is offered before the change');
+update public.academic_periods set is_active = false
+  where id in (select academic_period_id from discovery_offering_fixture);
+set local role service_role;
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false),
+  '{"state":"not-offered"}'::jsonb, 'an exam already opened on a course no longer offered is not served');
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}'),
+  '{"state":"not-offered"}'::jsonb, 'nor graded');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}'),
+  '{"state":"not-offered"}'::jsonb, 'nor saved');
+reset role;
+select ok(exists (select 1 from public.institutional_courses where repository_course_id = pg_temp.c('02'))
+  and exists (select 1 from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000001'),
+  'the historical identity and the pinned exam are kept');
+update public.academic_periods set is_active = true
+  where id in (select academic_period_id from discovery_offering_fixture);
+-- Offered in one active tuple is enough: removing every other mapping keeps the course offered.
+delete from public.course_applicability a using discovery_offering_fixture f
+  where a.institutional_course_id = f.institutional_course_id and (a.department_id, a.academic_level_id,
+    a.academic_period_id) <> (select department_id, academic_level_id, academic_period_id from discovery_offering_fixture
+      order by department_id, academic_level_id, academic_period_id limit 1);
+select ok(private.course_has_active_offering(pg_temp.c('02')), 'one active offering anywhere keeps the course offered');
+insert into public.course_applicability select * from discovery_offering_fixture on conflict do nothing;
+select is((select count(*) from public.course_applicability a join discovery_offering_fixture f
+  using (institutional_course_id, department_id, academic_level_id, academic_period_id)),
+  (select count(*) from discovery_offering_fixture), 'the offering is restored for the remaining tests');
 
 -- 5. Study guide: the student picks one complete topic; titles only before that -----------------------------------------
 set local role service_role;
@@ -301,6 +434,9 @@ select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_te
 reset role;
 update public.entitlement_grants set starts_at = now() - interval '72 hours', ends_at = now()
   where user_id = '71000000-0000-4000-8000-000000000001';
+-- The exam was taken a day earlier, so its replay grace is long over.
+update private.discovery_previews set deadline_at = now() - interval '1 day'
+  where user_id = '71000000-0000-4000-8000-000000000001' and kind = 'cbt';
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'study_guide', false),
   '{"state":"expired"}'::jsonb, 'at the end instant every preview fails closed, including one already opened');
@@ -374,30 +510,42 @@ reset role;
 
 -- 9. AI on a pass: one accepted upload, one delivered set of five, bounded attempts and text -------------------------------------
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-  raw_app_meta_data, raw_user_meta_data, created_at, updated_at) values ('00000000-0000-0000-0000-000000000000',
-  '71000000-0000-4000-8000-000000000007', 'authenticated', 'authenticated', 'disc-ai@example.test', 'x', now(),
-  '{"provider":"email","providers":["email"]}', '{}', now(), now());
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now(),
+  '{"provider":"email","providers":["email"]}', '{}', now(), now()
+from (values ('71000000-0000-4000-8000-000000000007', 'disc-ai@example.test'),
+  ('71000000-0000-4000-8000-000000000009', 'disc-ai2@example.test')) fixture_users(id, email);
 insert into auth.sessions (id, user_id, created_at, updated_at) values
-  ('72000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000007', now(), now());
-insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, ai_units, created_by)
-  select '71000000-0000-4000-8000-000000000007', 'trial', now(), now() + make_interval(hours => discovery_hours), 'capped',
-    discovery_ai_generations, 'test' from private.entitlement_policy;
+  ('72000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000007', now(), now()),
+  ('72000000-0000-4000-8000-000000000009', '71000000-0000-4000-8000-000000000009', now(), now());
+insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  select user_id::uuid, 'trial', 'discovery', now(), now() + make_interval(hours => discovery_hours), 'capped',
+    discovery_ai_generations, 'test' from private.entitlement_policy,
+    unnest(array['71000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000009']) user_id;
 insert into outcome values ('acc101', to_jsonb((select id from public.institutional_courses where course_code = 'ACC101')));
--- Reserve, claim and settle one upload with the given text, returning the settle answer and the stored status.
-create function pg_temp.upload(p_text text) returns jsonb language plpgsql security definer as $$
-declare v_doc uuid; v_claim uuid; v_settled boolean;
-begin
-  v_doc := (public.create_ai_practice_document('72000000-0000-4000-8000-000000000007',
+-- Reserve one upload slot for the student with the given session, as the upload page does before sending a file.
+create function pg_temp.reserve(p_session uuid) returns uuid language sql security definer as $$
+  select (public.create_ai_practice_document(p_session,
     (select (result #>> '{}')::uuid from outcome where step = 'acc101'), 'n.txt', 'text/plain', 100, array['trial'])
-    ->> 'document_id')::uuid;
-  if v_doc is null then return jsonb_build_object('reserved', false); end if;
-  v_claim := (public.claim_ai_practice_extraction('72000000-0000-4000-8000-000000000007', v_doc) ->> 'claim_id')::uuid;
-  v_settled := public.settle_ai_practice_document('72000000-0000-4000-8000-000000000007', v_doc, v_claim, null,
+    ->> 'document_id')::uuid $$;
+-- Claim and settle a reserved upload with the given text, returning the settle answer and the stored status.
+create function pg_temp.settle(p_session uuid, p_doc uuid, p_text text) returns jsonb language plpgsql security definer as $$
+declare v_claim uuid; v_settled boolean;
+begin
+  v_claim := (public.claim_ai_practice_extraction(p_session, p_doc) ->> 'claim_id')::uuid;
+  v_settled := public.settle_ai_practice_document(p_session, p_doc, v_claim, null,
     p_text, encode(sha256(convert_to(p_text, 'UTF8')), 'hex'), 200);
-  return jsonb_build_object('reserved', true, 'settled', v_settled, 'document', v_doc, 'status',
-    (select status || coalesce(':' || rejection_reason, '') from public.ai_practice_documents where id = v_doc));
+  return jsonb_build_object('reserved', true, 'settled', v_settled, 'document', p_doc, 'status',
+    (select status || coalesce(':' || rejection_reason, '') from public.ai_practice_documents where id = p_doc));
 end $$;
-grant execute on function pg_temp.upload(text) to service_role;
+create function pg_temp.upload(p_text text) returns jsonb language plpgsql security definer as $$
+declare v_doc uuid;
+begin
+  v_doc := pg_temp.reserve('72000000-0000-4000-8000-000000000007');
+  if v_doc is null then return jsonb_build_object('reserved', false); end if;
+  return pg_temp.settle('72000000-0000-4000-8000-000000000007', v_doc, p_text);
+end $$;
+grant execute on function pg_temp.reserve(uuid), pg_temp.settle(uuid, uuid, text), pg_temp.upload(text) to service_role;
 set local role service_role;
 insert into outcome values ('too-long', pg_temp.upload(repeat('word ', 4001)));
 select is((select result - 'document' from outcome where step = 'too-long'),
@@ -413,40 +561,197 @@ reset role;
 select is((select count(*)::integer from public.ai_practice_documents
   where user_id = '71000000-0000-4000-8000-000000000007' and discovery_grant_id is not null), 2,
   'every Discovery upload records the pass it counts against');
-create function pg_temp.begin_and_finish(p_status text) returns text language plpgsql as $$
-declare v_state jsonb;
-begin
-  v_state := public.begin_ai_practice_generation('72000000-0000-4000-8000-000000000007', gen_random_uuid(),
-    (select (result->>'document')::uuid from outcome where step = 'upload-1'), array['trial']);
-  if v_state->>'state' <> 'started' then return v_state->>'state'; end if;
-  perform public.finish_ai_practice_generation('71000000-0000-4000-8000-000000000007', (v_state->>'generation_id')::uuid,
-    p_status, case when p_status = 'failed' then 'timeout' end, case when p_status = 'generated' then jsonb_build_object(
-      'formatVersion', 1, 'origin', 'ai-generated', 'visibility', 'personal', 'verification', 'unverified',
-      'questions', jsonb_build_array(jsonb_build_object('id', 'q1'))) end, null);
-  return 'started';
-end $$;
-grant execute on function pg_temp.begin_and_finish(text) to service_role;
+
+-- Two uploads reserved one after the other before either is read (two tabs, or a quick second try): only the first to
+-- become ready is accepted, and the other is rejected for free.
 set local role service_role;
-select is(pg_temp.begin_and_finish('failed'), 'started', 'a first attempt fails at the provider');
-select is(pg_temp.begin_and_finish('failed'), 'started', 'so does a second');
-select is(pg_temp.begin_and_finish('generated'), 'started', 'the third delivers a set: the failures cost nothing');
+insert into outcome values ('pre-a', to_jsonb(pg_temp.reserve('72000000-0000-4000-8000-000000000009'))),
+  ('pre-b', to_jsonb(pg_temp.reserve('72000000-0000-4000-8000-000000000009')));
+select ok((select bool_and(result <> 'null'::jsonb) from outcome where step in ('pre-a', 'pre-b')),
+  'both slots are reserved while nothing has been accepted yet');
+select is(pg_temp.settle('72000000-0000-4000-8000-000000000009',
+    (select (result #>> '{}')::uuid from outcome where step = 'pre-a'), repeat('alpha ', 300)) - 'document',
+  '{"reserved":true,"settled":true,"status":"ready"}'::jsonb, 'the first to be read is accepted');
+select is(pg_temp.settle('72000000-0000-4000-8000-000000000009',
+    (select (result #>> '{}')::uuid from outcome where step = 'pre-b'), repeat('bravo ', 300)) - 'document',
+  '{"reserved":true,"settled":false,"status":"rejected:pass-upload-limit"}'::jsonb,
+  'the second reserved upload cannot also become ready: it is rejected as the pass limit');
+select is(pg_temp.reserve('72000000-0000-4000-8000-000000000009'), null, 'and no further slot is reserved');
+reset role;
+select is((select count(*)::integer from private.discovery_ai_uploads u join public.entitlement_grants g on g.id = u.grant_id
+  where g.user_id = '71000000-0000-4000-8000-000000000009'), 1, 'exactly one accepted upload is recorded for the pass');
+select is((select count(*)::integer from public.ai_practice_documents
+  where user_id = '71000000-0000-4000-8000-000000000009' and status = 'ready'), 1, 'and exactly one document is ready');
+
+-- A set the pass delivers: exactly five questions in the stored shape the student view reads back.
+create function pg_temp.question(p_n integer, p_doc uuid) returns jsonb language sql as $$
+  select jsonb_build_object('id', 'ai_' || lpad(to_hex(p_n), 24, '0'), 'prompt', 'Question ' || p_n || '?',
+    'options', jsonb_build_array('A', 'B', 'C', 'D'), 'correctOption', p_n % 4, 'explanation', 'Because.',
+    'section', 'General', 'grounding', jsonb_build_object('documentId', p_doc, 'sourceSha256', repeat('a', 64),
+      'passageId', 'P1', 'passageStart', 0, 'passageEnd', 10, 'quote', 'a quoted passage')) $$;
+create function pg_temp.question_set(p_questions jsonb) returns jsonb language sql as $$
+  select jsonb_build_object('formatVersion', 1, 'origin', 'ai-generated', 'visibility', 'personal',
+    'verification', 'unverified', 'source', jsonb_build_object('fileName', 'n.txt'), 'questions', p_questions) $$;
+create function pg_temp.full_set(p_doc uuid) returns jsonb language sql as $$
+  select pg_temp.question_set((select jsonb_agg(pg_temp.question(n, p_doc)) from generate_series(1, 5) n)) $$;
+create function pg_temp.begin_and_finish(p_status text, p_set jsonb default null) returns text language plpgsql as $$
+declare v_state jsonb; v_doc uuid := (select (result->>'document')::uuid from outcome where step = 'upload-1');
+begin
+  v_state := public.begin_ai_practice_generation('72000000-0000-4000-8000-000000000007', gen_random_uuid(), v_doc,
+    array['trial']);
+  if v_state->>'state' <> 'started' then return v_state->>'state'; end if;
+  return public.finish_ai_practice_generation('71000000-0000-4000-8000-000000000007', (v_state->>'generation_id')::uuid,
+    p_status, case when p_status = 'failed' then 'timeout' end,
+    case when p_status = 'generated' then coalesce(p_set, pg_temp.full_set(v_doc)) end, null) ->> 'status';
+end $$;
+grant execute on function pg_temp.question(integer, uuid), pg_temp.question_set(jsonb), pg_temp.full_set(uuid),
+  pg_temp.begin_and_finish(text, jsonb) to service_role;
+insert into outcome values ('four-questions', pg_temp.question_set((select jsonb_agg(pg_temp.question(n,
+  (select (result->>'document')::uuid from outcome where step = 'upload-1'))) from generate_series(1, 4) n)));
+set local role service_role;
+select is(pg_temp.begin_and_finish('generated', (select result from outcome where step = 'four-questions')), 'failed',
+  'a set of four questions is never delivered on a pass: it is recorded as a failed attempt');
+reset role;
+select is((select jsonb_build_object('status', status, 'reason', outcome_reason, 'set', question_set is not null)
+  from public.ai_practice_generations where user_id = '71000000-0000-4000-8000-000000000007'),
+  '{"status":"failed","reason":"incomplete-set","set":false}'::jsonb, 'nothing partial is stored');
+select is((select state from public.ai_usage_events where user_id = '71000000-0000-4000-8000-000000000007'), 'released',
+  'and the one set is not spent on it');
+set local role service_role;
+select is(pg_temp.begin_and_finish('failed'), 'failed', 'a second attempt fails at the provider');
+select is(pg_temp.begin_and_finish('generated'), 'generated',
+  'the third attempt delivers exactly five valid questions: the failures cost nothing');
 select is(public.begin_ai_practice_generation('72000000-0000-4000-8000-000000000007', gen_random_uuid(),
   (select (result->>'document')::uuid from outcome where step = 'upload-1'), array['trial'])->>'state',
   'allowance-exhausted', 'the one set is used and nothing replenishes');
 reset role;
 select is((select count(*)::integer from public.ai_usage_events where user_id = '71000000-0000-4000-8000-000000000007'
   and state = 'consumed'), 1, 'exactly one set was charged');
--- A different student whose provider keeps failing is stopped after three attempts, with the set still unspent.
+select is((select jsonb_array_length(question_set->'questions') from public.ai_practice_generations
+  where user_id = '71000000-0000-4000-8000-000000000007' and status = 'generated'), 5, 'and it holds five questions');
+-- With the set unspent, the partial and failed attempts still count toward the three-attempt ceiling.
 update public.ai_usage_events set state = 'released', settled_at = now()
   where user_id = '71000000-0000-4000-8000-000000000007' and state = 'consumed';
 set local role service_role;
 select is(pg_temp.begin_and_finish('failed'), 'allowance-exhausted',
-  'after three attempts no further provider call is admitted, even with the set unspent');
+  'after three attempts, the partial one included, no further provider call is admitted');
 reset role;
+update public.ai_usage_events set state = 'consumed'
+  where id = (select usage_event_id from public.ai_practice_generations
+    where user_id = '71000000-0000-4000-8000-000000000007' and status = 'generated');
+-- A malformed five-question set (a duplicate id, or a missing quote) is no more deliverable than a short one.
+select ok(not private.discovery_ai_set_complete(pg_temp.question_set((select jsonb_agg(pg_temp.question(1, gen_random_uuid()))
+  from generate_series(1, 5)))), 'five copies of one question are not a set of five');
+select ok(not private.discovery_ai_set_complete(pg_temp.question_set((select jsonb_agg(case when n = 3
+    then pg_temp.question(n, gen_random_uuid()) #- '{grounding,quote}' else pg_temp.question(n, gen_random_uuid()) end)
+  from generate_series(1, 5) n))), 'a question without its grounding quote cannot be shown, so the set is incomplete');
+select ok(private.discovery_ai_set_complete(pg_temp.full_set(gen_random_uuid())), 'five valid questions are complete');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000007","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000007"}';
 select is((select (a->>'source_char_limit')::integer from public.get_my_ai_allowance() a), 20000,
   'the page is told the Discovery text limit');
+reset role;
+
+-- Only an upload this pass accepted, within its limit, can be spent on it. AI2 still has its whole set and attempts.
+-- An Early Access upload kept from before the pass (no pass recorded), a pass document that was never accepted, and an
+-- accepted one over the text limit are all refused before any provider call.
+insert into public.ai_practice_documents (id, user_id, institutional_course_id, storage_path, file_name, media_type,
+  declared_bytes, expires_at, status, source_text, source_sha256, word_count, discovery_grant_id)
+select doc.id, '71000000-0000-4000-8000-000000000009', (select (result #>> '{}')::uuid from outcome where step = 'acc101'),
+  '71000000-0000-4000-8000-000000000009/' || doc.id, 'old.txt', 'text/plain', 10, now() + interval '1 day', 'ready',
+  doc.body, pg_temp.h(doc.body), 2, case when doc.in_pass then (select id from public.entitlement_grants
+    where user_id = '71000000-0000-4000-8000-000000000009') end
+from (values ('74000000-0000-4000-8000-000000000091'::uuid, 'early access notes', false),
+  ('74000000-0000-4000-8000-000000000092'::uuid, 'never accepted', true),
+  ('74000000-0000-4000-8000-000000000093'::uuid, repeat('x', 20001), true)) doc(id, body, in_pass);
+insert into private.discovery_ai_uploads (document_id, grant_id)
+  select '74000000-0000-4000-8000-000000000093', id from public.entitlement_grants
+  where user_id = '71000000-0000-4000-8000-000000000009';
+set local role service_role;
+select is((select array_agg(public.begin_ai_practice_generation('72000000-0000-4000-8000-000000000009', gen_random_uuid(),
+    doc, array['trial', 'early_access'])->>'state' order by doc)
+  from unnest(array['74000000-0000-4000-8000-000000000091', '74000000-0000-4000-8000-000000000092',
+    '74000000-0000-4000-8000-000000000093']::uuid[]) doc),
+  array['document-unavailable', 'document-unavailable', 'document-unavailable'],
+  'a historical Early Access upload, an unaccepted one and an over-limit one cannot use the pass');
+select is(public.begin_ai_practice_generation('72000000-0000-4000-8000-000000000009', gen_random_uuid(),
+  (select (result #>> '{}')::uuid from outcome where step = 'pre-a'), array['trial'])->>'state', 'started',
+  'the accepted upload of this pass can');
+reset role;
+select is((select count(*)::integer from public.ai_usage_events where user_id = '71000000-0000-4000-8000-000000000009'),
+  1, 'and only that one reached admission');
+
+-- 10. A seven-day trial issued before the Discovery Pass keeps exactly what it was issued ---------------------------------
+-- L's grant is what verify_trial_otp() issued before 20261021100000 (the migration marks it 'seven-day').
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at) values ('00000000-0000-0000-0000-000000000000',
+  '71000000-0000-4000-8000-000000000010', 'authenticated', 'authenticated', 'disc-legacy@example.test', 'x', now(),
+  '{"provider":"email","providers":["email"]}', '{}', now(), now());
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('72000000-0000-4000-8000-000000000010', '71000000-0000-4000-8000-000000000010', now(), now());
+insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  values ('71000000-0000-4000-8000-000000000010', 'trial', 'seven-day', now() - interval '4 days',
+    now() + interval '3 days', 'capped', 10, 'student');
+select ok(private.has_full_access('71000000-0000-4000-8000-000000000010'), 'a seven-day trial is still full access');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000010","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000010"}';
+select ok((select count(*) from public.read_published_managed_content(pg_temp.c('02'))) > 0,
+  'every department course stays readable until its own end, four days in');
+select is((select jsonb_build_object('tier', e->'tier', 'access', e->'access'->'source', 'policy', e->'trial'->'policy',
+    'status', e->'trial'->'status', 'ends', (e->'trial'->>'ends_at')::timestamptz = now() + interval '3 days')
+  from public.get_my_entitlement() e),
+  '{"tier":"full","access":"trial","policy":"seven-day","status":"active","ends":true}'::jsonb,
+  'the summary reports full access through the trial, with its original end');
+select is((select jsonb_build_object('total', a->'total', 'source_char_limit', a->'source_char_limit')
+  from public.get_my_ai_allowance() a), '{"total":10,"source_char_limit":null}'::jsonb,
+  'with its whole ten-set AI allowance and no Discovery text limit');
+reset role;
+set local role service_role;
+select is(public.write_quiz_attempt('72000000-0000-4000-8000-000000000010', '74000000-0000-4000-8000-000000000010',
+  pg_temp.c('02'), 1, 'start', null, 'in_progress',
+  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]')->>'status', 'saved',
+  'a regular CBT attempt still starts');
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000010', pg_temp.c('02')), '{"state":"full-access"}'::jsonb,
+  'previews do not apply: the course itself is open');
+reset role;
+-- Its AI keeps the shared rules: no pass upload limit, attempt ceiling or five-question rule.
+insert into public.ai_practice_documents (id, user_id, institutional_course_id, storage_path, file_name, media_type,
+  declared_bytes, expires_at, status, source_text, source_sha256, word_count)
+values ('74000000-0000-4000-8000-000000000101', '71000000-0000-4000-8000-000000000010',
+  (select (result #>> '{}')::uuid from outcome where step = 'acc101'),
+  '71000000-0000-4000-8000-000000000010/74000000-0000-4000-8000-000000000101', 'n.txt', 'text/plain', 10,
+  now() + interval '1 day', 'ready', repeat('y', 30000), pg_temp.h(repeat('y', 30000)), 2);
+create function pg_temp.legacy_attempt(p_status text) returns text language plpgsql as $$
+declare v_state jsonb;
+begin
+  v_state := public.begin_ai_practice_generation('72000000-0000-4000-8000-000000000010', gen_random_uuid(),
+    '74000000-0000-4000-8000-000000000101', array['trial']);
+  if v_state->>'state' <> 'started' then return v_state->>'state'; end if;
+  return public.finish_ai_practice_generation('71000000-0000-4000-8000-000000000010', (v_state->>'generation_id')::uuid,
+    p_status, case when p_status = 'failed' then 'timeout' end, case when p_status = 'generated' then
+      pg_temp.question_set(jsonb_build_array(pg_temp.question(1, '74000000-0000-4000-8000-000000000101'))) end,
+    null) ->> 'status';
+end $$;
+grant execute on function pg_temp.legacy_attempt(text) to service_role;
+set local role service_role;
+select is((select array_agg(pg_temp.legacy_attempt(status) order by n) from unnest(array['failed', 'failed', 'failed',
+    'failed', 'generated']) with ordinality as t(status, n)),
+  array['failed', 'failed', 'failed', 'failed', 'generated'],
+  'more than three attempts, 30,000 characters of text and a one-question set are all accepted as before');
+select ok(public.create_ai_practice_document('72000000-0000-4000-8000-000000000010',
+    (select (result #>> '{}')::uuid from outcome where step = 'acc101'), 'n.txt', 'text/plain', 100, array['trial'])
+  ->>'status' = 'created', 'and uploads are not capped at one');
+reset role;
+select is((select count(*)::integer from public.ai_practice_documents
+  where user_id = '71000000-0000-4000-8000-000000000010' and discovery_grant_id is not null), 0,
+  'no upload of a seven-day trial is bound to the Discovery rules');
+-- When it ends it is this account's one trial: it never becomes a pass.
+update public.entitlement_grants set starts_at = now() - interval '7 days', ends_at = now()
+  where user_id = '71000000-0000-4000-8000-000000000010';
+select ok(not private.has_full_access('71000000-0000-4000-8000-000000000010'), 'full access ends at its own end');
+set local role service_role;
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000010', pg_temp.c('02')), '{"state":"expired"}'::jsonb,
+  'an ended seven-day trial offers no Discovery Pass previews');
 reset role;
 
 select * from finish();
