@@ -7,6 +7,7 @@ const SAMPLES = {
   'pass-activated': { endsAt: '2026-10-29T09:00:00.000Z' },
   'already-activated': { endsAt: '2026-10-29T09:00:00.000Z' },
   'early-access-active': { availableFrom: '2026-11-25T09:00:00.000Z' },
+  'already-claimed': { retentionMonths: 24 },
 }
 const STATUSES = ['pass-activated', 'already-activated', 'already-claimed', 'early-access-active', 'trial-not-offered',
   'rate-limited', 'capacity', 'signed-out', 'session-changed', 'invalid-request', 'unavailable']
@@ -23,9 +24,9 @@ test('every status is described and never echoes an address, a phone number, a c
 test('success and a replay refresh the server-rendered plan; refusals stay put with an honest reason', () => {
   assert.equal(describeResult({ status: 'pass-activated', endsAt: 'x' }).next, 'refresh')
   assert.equal(describeResult({ status: 'already-activated', endsAt: 'x' }).next, 'refresh')
-  const claimed = describeResult({ status: 'already-claimed' })
+  const claimed = describeResult({ status: 'already-claimed', retentionMonths: 24 })
   assert.equal(claimed.next, 'stay')
-  assert.match(claimed.message.text, /already had a Discovery Pass/)
+  assert.match(claimed.message.text, /has had a Discovery Pass in the last 24 months/)
   assert.match(claimed.message.text, /GST courses stay free/)
   assert.equal(describeResult({ status: 'rate-limited' }).next, 'stay')
   assert.match(describeResult({ status: 'rate-limited' }).message.text, /wait a few minutes/)

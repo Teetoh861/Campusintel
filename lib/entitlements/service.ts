@@ -1,8 +1,9 @@
 // lib/entitlements/service.ts — One-click Discovery Pass activation for one verified student.
 // The database decides identity, eligibility, the one-pass-per-account and one-pass-per-email rules, the Early Access
 // overlap, the daily guard and the pass window (activate_discovery_pass in 20261021100000_discovery_pass.sql). This
-// layer applies the request limit first and maps the database answer to the client contract. No phone number, code
-// or SMS exists anywhere in this flow.
+// layer applies the request limit first and maps the database answer to the client contract. The keyed email claim
+// hashes are computed by the caller (lib/entitlements/claim-hash.ts). No phone number, code or SMS exists anywhere in
+// this flow.
 import 'server-only'
 import { z } from 'zod'
 import type { EntitlementCommand, EntitlementResult } from './contract'
@@ -12,7 +13,8 @@ export const activationRow = z.discriminatedUnion('state', [
   z.object({ state: z.literal('activated'), ends_at: timestamp }),
   z.object({ state: z.literal('already-activated'), ends_at: timestamp }),
   z.object({ state: z.literal('early-access-active'), available_from: timestamp }),
-  z.object({ state: z.enum(['signed-out', 'already-claimed', 'capacity', 'trial-not-offered']) }),
+  z.object({ state: z.literal('already-claimed'), retention_months: z.number().int().positive() }),
+  z.object({ state: z.enum(['signed-out', 'capacity', 'trial-not-offered']) }),
 ])
 export type ActivationRow = z.infer<typeof activationRow>
 
@@ -30,6 +32,7 @@ async function activatePass(env: EntitlementEnv): Promise<EntitlementResult> {
   if (row.state === 'activated') return { status: 'pass-activated', endsAt: row.ends_at }
   if (row.state === 'already-activated') return { status: 'already-activated', endsAt: row.ends_at }
   if (row.state === 'early-access-active') return { status: row.state, availableFrom: row.available_from }
+  if (row.state === 'already-claimed') return { status: row.state, retentionMonths: row.retention_months }
   return { status: row.state }
 }
 

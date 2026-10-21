@@ -13,8 +13,10 @@ import { consumeAuthLimit } from '@/lib/auth/rate-limit'
 import { AuthRequestError } from '@/lib/auth/request'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
+import { claimHashes, readClaimHashKeys } from './claim-hash'
 import { entitlementCommandSchema, entitlementSummarySchema } from './contract'
 import { activationRow, executeEntitlementCommand } from './service'
+import type { ClaimKeys } from './claim-hash'
 import type { CourseAccess, EntitlementResult, EntitlementSummary } from './contract'
 import type { EntitlementEnv } from './service'
 
@@ -46,7 +48,8 @@ export function courseAccessFrom(read: EntitlementRead): CourseAccess {
   return read.entitlement.tier === 'full' ? 'full' : 'free'
 }
 
-function createSupabaseEntitlementEnv(sessionId: string, email: string, address: string): EntitlementEnv {
+function createSupabaseEntitlementEnv(sessionId: string, email: string, address: string, keys: ClaimKeys):
+  EntitlementEnv {
   // Server-only client for the activation RPC; mirrors lib/auth/rate-limit.ts.
   const service = createServiceClient(getSupabaseConfig().url, getAuthSecretKey(), {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -62,7 +65,9 @@ function createSupabaseEntitlementEnv(sessionId: string, email: string, address:
       return 'allowed'
     },
     async activate() {
-      const { data, error } = await service.rpc('activate_discovery_pass', { p_session_id: sessionId })
+      // Only keyed hashes of the confirmed address reach the database, current key first.
+      const { data, error } = await service.rpc('activate_discovery_pass', { p_session_id: sessionId,
+        p_claim_hashes: claimHashes(keys, email) })
       const parsed = activationRow.safeParse(data)
       return error || !parsed.success ? null : parsed.data
     },
@@ -83,6 +88,9 @@ async function recordGrant(result: EntitlementResult): Promise<void> {
 export async function runEntitlementRequest(input: unknown, response: NextResponse, pageToken: string | null,
   address: string): Promise<EntitlementResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  // Fail closed before any session or database work when the claim key is not configured.
+  const keys = readClaimHashKeys()
+  if (keys === null) return { status: 'unavailable' }
   try {
     const client = await createClient(response)
     const context = await getStudentSessionContext(response, client)
@@ -94,7 +102,7 @@ export async function runEntitlementRequest(input: unknown, response: NextRespon
     if (!parsed.success) return { status: 'invalid-request' }
     // A live student session always carries its confirmed address; without one nothing can be limited or claimed.
     if (!context.user.email) return { status: 'unavailable' }
-    const env = createSupabaseEntitlementEnv(context.sessionId, context.user.email, address)
+    const env = createSupabaseEntitlementEnv(context.sessionId, context.user.email, address, keys)
     const result = await executeEntitlementCommand(env, parsed.data)
     await recordGrant(result)
     return result

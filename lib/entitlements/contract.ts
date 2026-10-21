@@ -80,16 +80,21 @@ export const entitlementCommandSchema = z.discriminatedUnion('action', [
 
 export type EntitlementCommand = z.infer<typeof entitlementCommandSchema>
 
-// already-claimed: this confirmed email address started a pass on an account that was since deleted.
 // rate-limited: too many activation requests from this account or address; nothing was started.
 // capacity: the platform-wide daily activation guard; nothing was started.
 const PLAIN_RESULTS = ['signed-out', 'session-changed', 'invalid-request', 'unavailable', 'capacity', 'rate-limited',
-  'already-claimed', 'trial-not-offered'] as const
+  'trial-not-offered'] as const
+
+// How long a used email address blocks a second pass (private.entitlement_policy.discovery_claim_retention).
+// PROPOSED pending privacy approval; the activation answer carries the database's own value.
+export const DISCOVERY_CLAIM_RETENTION_MONTHS = 24
 
 export const entitlementResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pass-activated'), endsAt: timestamp }).strict(),
   // The account already has its one trial grant (active, ended or revoked): a replay, never a second pass.
   z.object({ status: z.literal('already-activated'), endsAt: timestamp }).strict(),
+  // This confirmed email address started a pass (on this or a since-deleted account) within the retention period.
+  z.object({ status: z.literal('already-claimed'), retentionMonths: z.number().int().positive() }).strict(),
   z.object({ status: z.literal('early-access-active'), availableFrom: timestamp }).strict(),
   ...PLAIN_RESULTS.map(status => z.object({ status: z.literal(status) }).strict()),
 ])

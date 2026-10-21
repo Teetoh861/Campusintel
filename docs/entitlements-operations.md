@@ -28,10 +28,9 @@ service role. The database, under the same per-account lock Early Access enrollm
   harmless replay for a double tap or a lost response);
 - refuses while Early Access is active (`early-access-active`, with the date the pass opens) or, after it, when
   `trial_after_early_access` is false (`trial-not-offered`);
-- refuses a confirmed email address that has already started a pass on any account, including one since deleted
-  (`already-claimed`; `private.discovery_pass_claims` keeps a hash of the address, never the address, and survives
-  account deletion exactly as Early Access claims do);
-- refuses once the platform-wide guard for the UTC day is reached (`capacity`);
+- refuses a confirmed email address that has started a pass on any account, including one since deleted, within the
+  claim retention period (`already-claimed`, with the retention in months; see "Email claims" below);
+- refuses once the platform-wide guard for the UTC day is reached (`capacity`), when the owner has set one;
 - otherwise writes the grant with start and end from its own clock (`discovery_hours`), the fixed AI allowance
   (`discovery_ai_generations`), the claim row and the `discovery.activated` audit event, all in one transaction.
 
@@ -45,14 +44,49 @@ protections are deliberately proportionate: no NIN, BVN, device fingerprint or p
 | Limit | Where | Default |
 | --- | --- | --- |
 | Activation requests per account | `consume_auth_rate_limit('DISCOVERY_ACTIVATION')`, applied by the API route (account bucket keyed by the confirmed email, origin bucket by the trusted requester address, both as HMACs) | 5 per 15 minutes |
-| Activation requests per requester address | same | 20 per 15 minutes |
+| Activation requests per requester address | same. Wide on purpose: campus Wi-Fi puts many students behind one address, and a replay costs nothing | 60 per 15 minutes |
 | Passes per account, ever | `entitlement_grants_one_trial_idx` | 1 |
-| Passes per confirmed email address, ever | `private.discovery_pass_claims` | 1 |
-| Activations per UTC day, platform-wide | `private.entitlement_policy.discovery_activations_per_day` | 2000 (**provisional**; bounds how fast a farm of confirmed accounts can sample the banks) |
+| Passes per confirmed email address within the claim retention period | `private.discovery_pass_claims` | 1 per 24 months (**proposed**) |
+| Activations per UTC day, platform-wide | `private.entitlement_policy.discovery_activations_per_day` | **off** (null). Set only with the founder's approval; it bounds how fast a farm of confirmed accounts could sample the banks, never what one student may do |
 | Registration | existing `REGISTER` limit and email confirmation | 3 per account per hour, 20 per address per hour |
 
 Everything a pass can spend (one exam, one topic, one accepted upload, one delivered set, three provider attempts) is
 unchanged and listed above.
+
+Shared campus addresses: on launch day watch `public.auth_rate_limit_events` for `action = 'DISCOVERY_ACTIVATION'`
+and `kind = 'origin'`. A bucket reaching 60 in 15 minutes means a whole lecture hall activating behind one NAT address
+was refused with `rate-limited` (nothing is lost: they tap again a few minutes later), and the limit should be widened
+in `lib/auth/constants.ts` and `consume_auth_rate_limit` together.
+
+### Email claims
+
+`private.discovery_pass_claims` holds, per address that started a pass, an HMAC-SHA256 of the normalized address
+(trimmed, lower-cased) under a purpose string, keyed with a server secret the database never sees, plus the key
+version and an expiry. It never holds the address, and nothing in the database can turn a row back into one.
+
+| Variable (server only) | Value |
+| --- | --- |
+| `ENTITLEMENT_CLAIM_HASH_KEYS` | `<version>:<secret>[,<version>:<secret>…]`, current key first; each secret at least 32 characters (`openssl rand -base64 32`), versions distinct integers 1–1000, at most 8 keys. Missing or malformed: activation is `unavailable` (fail closed) |
+
+Rotation: prepend a new version (`3:<new>,2:<old>`). New claims are written under version 3; lookups try every listed
+version, so claims under version 2 keep blocking their addresses. Drop version 2 from the list only when
+`ops.cjs claim-keys` shows no live claim under it (at the latest 24 months after the rotation). A key dropped early
+makes its claims unmatchable, which quietly re-opens those addresses; the database cannot re-key rows it cannot read.
+
+Retention: each claim expires `discovery_claim_retention` (**24 months, proposed pending privacy approval**) after it
+is made; an expired claim blocks nothing even before it is removed, and `ops.cjs purge-claims` removes expired rows.
+Changing the policy value affects new claims only. No hosted database ever held the earlier unkeyed shape of this
+table, so there are no rows to migrate; the migration is edited in place before its first hosted run.
+
+### Exam answers are saved in revision order
+
+The exam page numbers every change and sends one save at a time; `save_discovery_cbt` accepts a sheet only when its
+revision is above the one already saved (compare-and-swap under the account lock), acknowledges an identical retry as
+saved, and answers `stale` with the sheet that stands for anything else, so a save delayed on the network or sent from
+another tab can never overwrite newer answers. A failed save is retried with bounded backoff (2 s doubling to 15 s, 8
+times) without waiting for another change, the student sees saving / saved / not saved, and a change made near the
+deadline is sent at once and still sent after the clock runs out: the database's own deadline is the only cutoff, and
+a change it did not receive in time is reported as possibly not saved, never as saved.
 
 ## Early Access: automatic, from the actual launch
 
@@ -161,6 +195,7 @@ transaction. The audit trail never contains phone numbers, email addresses or co
 | Situation | Command |
 | --- | --- |
 | See an account's grants, pass claim, Early Access status, AI allowance and history | `status --user <uuid>` |
+| Remove expired email claims / see which claim key versions are still referenced | `purge-claims` / `claim-keys` |
 | Activation outage or support compensation | `grant --user <uuid> --days <n>` (course access, no AI) |
 | Extend, revoke or restore a grant (revoking ends its AI at once) | `change-grant --grant <uuid> --action extend --until <ISO>` / `revoke` / `restore` |
 | Generations disputed during a trial | `change-grant --grant <uuid> --action set-ai-units --units <n>` |
@@ -175,9 +210,10 @@ example an address they never controlled) is handled with `grant`, never by free
 ## Account deletion
 
 A deletion-scheduled account cannot start a pass or be enrolled in Early Access. Purging an account removes its
-grants (and so its AI) and its previews. The email-hash pass claim, the used Early Access entry, any historical phone
-hash and the audit rows are kept without the account link, so deleting and re-registering the same address cannot start
-a second pass or a second month. The deletion form tells students this.
+grants (and so its AI) and its previews. The keyed pass claim (for its retention period), the used Early Access entry,
+any historical phone hash and the audit rows are kept without the account link, so deleting and re-registering the same
+address cannot start a second pass within the retention period, or a second month. The deletion form tells students
+this.
 
 ## Owner decisions required before production
 
@@ -188,11 +224,11 @@ a second pass or a second month. The deletion form tells students this.
    during a rollout.
 2. Early Access enrollment window: 28 days after the actual launch is provisional (`configure-early-access`).
 3. Trial after Early Access: currently allowed once Early Access ends (`trial_after_early_access`).
-4. Retention and deletion: email-hash pass claims, historical phone hashes, imported list data (names, emails, phone
-   hashes), used list entries and de-identified audit rows are currently kept indefinitely. A retention period and
-   privacy-notice wording are needed.
-5. The platform-wide daily activation guard (`discovery_activations_per_day`, 2000) and whether the per-account and
-   per-address request limits (5 and 20 per 15 minutes) suit launch day.
+4. Retention and deletion: keyed pass claims expire after 24 months (proposed, pending privacy approval). Historical
+   phone hashes, imported list data (names, emails, phone hashes), used list entries and de-identified audit rows are
+   currently kept indefinitely. A retention period and privacy-notice wording are needed.
+5. Whether to set the platform-wide daily activation guard (`discovery_activations_per_day`, off by default) and
+   whether the per-account and per-address request limits (5 and 60 per 15 minutes) suit launch day.
 6. The moment to run `activate-launch`, which is irreversible.
 
 ## Payments

@@ -6,8 +6,13 @@ import { studentAction, studentFocusDark } from './ui'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { ReactElement, ReactNode } from 'react'
 
-/** No content of the course is rendered beside this notice; the server never read it. */
-export function LockedCourseNotice({ backHref, backLabel }: { backHref?: string; backLabel?: string }): ReactElement {
+/**
+ * No content of the course is rendered beside this notice; the server never read it. `passOffered` is true only when
+ * the database affirmatively offers a Discovery Pass; otherwise the pass is not mentioned at all.
+ */
+export function LockedCourseNotice({ backHref, backLabel, passOffered = false }: {
+  backHref?: string; backLabel?: string; passOffered?: boolean
+}): ReactElement {
   const back: ReactNode = backHref && backLabel
     ? <Link href={backHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>{backLabel}</Link>
     : null
@@ -16,7 +21,7 @@ export function LockedCourseNotice({ backHref, backLabel }: { backHref?: string;
       See how to unlock
     </Link>{back}
   </>}>
-    Department courses open fully with Early Access. A free Discovery Pass lets you preview them first. GST courses stay
-    free for every student.
+    Department courses open fully with Early Access.{passOffered && ' A free Discovery Pass lets you preview them first.'} GST
+    courses stay free for every student.
   </Notice>
 }

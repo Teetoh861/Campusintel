@@ -15,9 +15,11 @@ export function kindFromSegment(segment: string): DiscoveryKind | null {
   return DISCOVERY_KINDS.find(kind => PREVIEW_SEGMENT[kind] === segment) ?? null
 }
 
-// Mirrors the database bounds: at most 100 pinned questions of at most 8 options.
+// Mirrors the database bounds: at most 100 pinned questions of at most 8 options, and a save revision of at most a
+// million changes to one sheet.
 const MAX_SAMPLE_QUESTIONS = 100
 const MAX_OPTION_INDEX = 7
+export const MAX_SAVE_REVISION = 1_000_000
 const courseSlug = z.string().min(1).max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
 const timestamp = z.string().min(1)
 const uuid = z.string().uuid()
@@ -25,13 +27,18 @@ const uuid = z.string().uuid()
 export const sampleAnswers = z.record(uuid, z.number().int().min(0).max(MAX_OPTION_INDEX))
   .refine(answers => Object.keys(answers).length <= MAX_SAMPLE_QUESTIONS)
 export type SampleAnswers = z.infer<typeof sampleAnswers>
+// The client's count of changes to its sheet. The database accepts a sheet only when its revision is higher than the
+// one it already holds, so saves delayed on the network can never overwrite newer answers. Zero means nothing saved.
+export const saveRevision = z.number().int().min(1).max(MAX_SAVE_REVISION)
+const savedRevision = z.number().int().min(0).max(MAX_SAVE_REVISION)
 
 export const discoveryCommandSchema = z.discriminatedUnion('action', [
   // The study guide names the topic the student chose; the exam names nothing else. Duration never comes from here.
   z.object({ action: z.literal('open'), courseSlug, kind: z.literal('cbt') }).strict(),
   z.object({ action: z.literal('open-topic'), courseSlug, itemId: uuid }).strict(),
-  // Saved while the exam is open, so time running out marks what the student had chosen. Refused after the deadline.
-  z.object({ action: z.literal('save-answers'), courseSlug, answers: sampleAnswers }).strict(),
+  // Saved while the exam is open, so time running out marks what the student had chosen. Refused after the deadline,
+  // and ignored when a newer revision of the sheet has already been saved.
+  z.object({ action: z.literal('save-answers'), courseSlug, answers: sampleAnswers, revision: saveRevision }).strict(),
   z.object({ action: z.literal('submit-exam'), courseSlug, answers: sampleAnswers }).strict(),
 ])
 export type DiscoveryCommand = z.infer<typeof discoveryCommandSchema>
@@ -49,9 +56,14 @@ const sampleResult = z.object({
     correct_option: z.number().int().nonnegative(), explanation: z.string().nullable() }).strict()),
 }).strict()
 
+// The sheet the database holds for an open exam and its revision, so a reload or another device continues from it.
+const savedSheet = z.object({ revision: savedRevision, answers: sampleAnswers }).strict()
+
 export const discoveryPreviewSchema = z.discriminatedUnion('kind', [
+  // `saved` is null once the exam has been graded.
   z.object({ kind: z.literal('cbt'), deadline_at: timestamp,
-    questions: z.array(sampleQuestion).min(1).max(MAX_SAMPLE_QUESTIONS), result: sampleResult.nullable() }).strict(),
+    questions: z.array(sampleQuestion).min(1).max(MAX_SAMPLE_QUESTIONS), saved: savedSheet.nullable(),
+    result: sampleResult.nullable() }).strict(),
   z.object({ kind: z.literal('study_guide'), items: z.array(z.object({ item_id: uuid, revision: z.number().int().positive(),
     note: noteContent }).strict()).length(1) }).strict(),
 ])
@@ -59,6 +71,7 @@ export type DiscoveryPreview = z.infer<typeof discoveryPreviewSchema>
 export type SampleQuestion = z.infer<typeof sampleQuestion>
 export type TopicTitle = z.infer<typeof topicTitle>
 export type SampleResult = z.infer<typeof sampleResult>
+export type SavedSheet = z.infer<typeof savedSheet>
 
 const PLAIN_STATUSES = ['signed-out', 'session-changed', 'invalid-request', 'not-found', 'free-course', 'full-access',
   'no-pass', 'expired', 'nothing-to-preview', 'not-opened', 'unavailable'] as const
@@ -72,7 +85,11 @@ export const discoveryResultSchema = z.discriminatedUnion('status', [
     courseSlug: z.string().nullable() }).strict(),
   // The exam runs for the course's whole duration or not at all: less than that is left on the pass.
   z.object({ status: z.literal('not-enough-time'), now: timestamp, endsAt: timestamp }).strict(),
-  z.object({ status: z.literal('saved'), now: timestamp }).strict(),
+  // `revision` is the sheet now saved: the one sent (or an identical retry of it).
+  z.object({ status: z.literal('saved'), now: timestamp, revision: savedRevision }).strict(),
+  // The database already holds a sheet at or above this revision (an older save delayed on the network, or another
+  // tab): nothing changed, and the sheet that stands is returned so the client continues from it.
+  z.object({ status: z.literal('stale'), now: timestamp, revision: savedRevision, answers: sampleAnswers }).strict(),
   ...PLAIN_STATUSES.map(status => z.object({ status: z.literal(status) }).strict()),
 ])
 export type DiscoveryResult = z.infer<typeof discoveryResultSchema>

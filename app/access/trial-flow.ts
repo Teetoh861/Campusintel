@@ -19,7 +19,8 @@ export function describeResult(result: EntitlementResult): { message: FlowMessag
     case 'already-activated': return { next: 'refresh', message: { tone: 'info',
       text: 'This account has already had its Discovery Pass. Updating your plan…' } }
     case 'already-claimed': return { next: 'stay', message: { tone: 'error',
-      text: 'This email address has already had a Discovery Pass, so another can’t be started. GST courses stay free.' } }
+      text: `This email address has had a Discovery Pass in the last ${result.retentionMonths} months, so another ` +
+        'can’t be started yet. GST courses stay free.' } }
     case 'early-access-active': return { next: 'refresh', message: { tone: 'info',
       text: `You already have full access through Early Access. Your Discovery Pass opens after it ends (${dayDate(result.availableFrom)}).` } }
     case 'trial-not-offered': return { next: 'refresh', message: { tone: 'info',

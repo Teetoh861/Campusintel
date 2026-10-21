@@ -18,6 +18,10 @@
 //       Records the ACTUAL public launch (once, now) and enrolls eligible confirmed accounts in bounded batches until
 //       none remain.
 //   node scripts/entitlements/ops.cjs reconcile-early-access --actor <name> --reason <text>
+//   node scripts/entitlements/ops.cjs purge-claims
+//       Removes expired Discovery Pass email claims (past discovery_claim_retention).
+//   node scripts/entitlements/ops.cjs claim-keys
+//       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
 const fs = require('node:fs')
 const { normalizeNigerianMobile, phoneHash } = require('../../lib/entitlements/phone.cjs')
 
@@ -241,6 +245,8 @@ async function run(args, env = process.env, transport = fetch, write = text => p
       return print({ ...launched, ...await sweepAll(rpc, note(), launched) })
     }
     case 'reconcile-early-access': return print(await sweepAll(rpc, note(), null))
+    case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
+    case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
     default: throw new Error('usage: see the header of scripts/entitlements/ops.cjs')
   }
 }

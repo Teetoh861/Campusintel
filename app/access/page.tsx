@@ -58,7 +58,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
       </div>
       <div className="grid min-w-0 content-start gap-4">
         <EarlyAccessSection entitlement={entitlement} />
-        <AiSection allowance={allowance} />
+        <AiSection allowance={allowance} passOffered={entitlement.discovery !== null} />
       </div>
     </div>
   </StudentPage>
@@ -110,6 +110,15 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
   const sevenDay = trial.policy === 'seven-day'
   // A seven-day trial issued before the pass is full access, already shown as the current plan.
   if (sevenDay && trial.status === 'active') return null
+  // A database from before the Discovery Pass offers no pass: what it would issue is not the pass described here, so
+  // nothing is offered or advertised. The plan stays accurate and neutral.
+  if (discovery === null && trial.status === 'available') {
+    return <section aria-labelledby="trial-heading" className="student-surface">
+      <h2 id="trial-heading" className="student-section-title">Department courses</h2>
+      <p className="mt-2 text-sm text-student-text-secondary">Department courses open fully with Early Access. GST courses
+        stay free for every student.</p>
+    </section>
+  }
   const body: Record<EntitlementSummary['trial']['status'], ReactElement> = {
     'available': <>
       <p className="mt-2 text-sm text-student-text-secondary">Try department courses free for {entitlement.trial_hours} hours.
@@ -160,9 +169,9 @@ function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }
   </section>
 }
 
-function AiSection({ allowance }: { allowance: AllowanceSummary | null }): ReactElement {
+function AiSection({ allowance, passOffered }: { allowance: AllowanceSummary | null; passOffered: boolean }): ReactElement {
   const line = allowance === null || allowance.state === 'not-entitled'
-    ? 'AI practice from your own notes comes with a Discovery Pass or Early Access.'
+    ? `AI practice from your own notes comes with ${passOffered ? 'a Discovery Pass or ' : ''}Early Access.`
     : allowance.state === 'expired' ? 'Your AI practice access has ended.'
       : allowance.total === null ? 'Your AI practice has no set limit during Early Access. Fair-use limits apply.'
         : `${Math.max(0, allowance.total - allowance.used)} of ${allowance.total} AI question ` +

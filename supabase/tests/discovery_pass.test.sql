@@ -15,7 +15,7 @@ select is((select count(*)::integer from unnest(array['anon', 'authenticated', '
   where has_table_privilege(api_role, 'private.discovery_previews', privilege)), 0,
   'no API role can read or write previews directly, so the pinned answer key never leaves through PostgREST');
 select is((select count(*)::integer from unnest(array['public.discovery_preview(uuid,uuid,text,boolean,uuid,integer)',
-    'public.submit_discovery_cbt(uuid,uuid,jsonb)']) fn
+    'public.save_discovery_cbt(uuid,uuid,jsonb,integer)', 'public.submit_discovery_cbt(uuid,uuid,jsonb)']) fn
   where has_function_privilege('authenticated', fn, 'EXECUTE') or has_function_privilege('anon', fn, 'EXECUTE')
     or not has_function_privilege('service_role', fn, 'EXECUTE')), 0, 'preview functions are service-role only');
 select is((select count(*)::integer from unnest(array['private.discovery_preview_content(uuid,text,uuid)',
@@ -36,6 +36,8 @@ select is((select jsonb_build_object('hours', discovery_hours, 'cbt', discovery_
   '{"hours":72,"cbt":50,"grace":120,"ai_sets":1,"ai_attempts":3,"ai_uploads":1,"ai_chars":20000}'::jsonb,
   'approved Discovery Pass limits');
 select hasnt_column('private', 'entitlement_policy', 'discovery_theory_questions', 'there is no theory preview');
+select ok(to_regprocedure('public.save_discovery_cbt(uuid,uuid,jsonb)') is null,
+  'every exam save names its revision: there is no save without one');
 select is((select count(*)::integer from public.entitlement_grants where trial_policy = 'discovery'
   and ends_at - starts_at > interval '72 hours'), 0, 'no Discovery Pass outlasts 72 hours');
 
@@ -72,6 +74,9 @@ grant all on outcome to authenticated, service_role;
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
 grant execute on function pg_temp.h(text) to authenticated, service_role;
+create function pg_temp.claim(p_email text) returns jsonb language sql immutable as
+  $$ select jsonb_build_array(jsonb_build_object('version', 1, 'hash', pg_temp.h('claim-v1:' || p_email))) $$;
+grant execute on function pg_temp.claim(text) to authenticated, service_role;
 -- Course fixtures: 02 has 390 CBT questions and notes, 03 is another offered course, 11 has CBT only, 08 is a free GST
 -- course, and 07 (notes, theory, 150 questions) is repository-only, so it is offered in no active catalogue.
 create function pg_temp.c(p_n text) returns uuid language sql immutable as
@@ -94,12 +99,12 @@ select is((select count(*)::integer from public.entitlement_grants where user_id
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false),
   '{"state":"no-pass"}'::jsonb, 'opening a course page before activation offers nothing and starts nothing');
-select is(public.activate_discovery_pass(gen_random_uuid())->>'state', 'signed-out', 'an unknown session starts nothing');
+select is(public.activate_discovery_pass(gen_random_uuid(), pg_temp.claim('x@example.test'))->>'state', 'signed-out', 'an unknown session starts nothing');
 reset role;
 select is((select count(*)::integer from public.entitlement_grants where user_id = '71000000-0000-4000-8000-000000000001'),
   0, 'no pass exists before the student activates one');
 set local role service_role;
-insert into outcome values ('p-activate', public.activate_discovery_pass('72000000-0000-4000-8000-000000000001'));
+insert into outcome values ('p-activate', public.activate_discovery_pass('72000000-0000-4000-8000-000000000001', pg_temp.claim('disc-p@example.test')));
 reset role;
 select is((select result->>'state' from outcome where step = 'p-activate'), 'activated', 'one tap starts the pass');
 select is((select jsonb_build_object('starts', starts_at = now(), 'ends', ends_at = now() + interval '72 hours',
@@ -139,7 +144,8 @@ select throws_ok($$ select public.discovery_preview('72000000-0000-4000-8000-000
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false) - 'ends_at' - 'now',
   '{"state":"available","topics":null}'::jsonb, 'reading without opening spends nothing');
 reset role;
-select is((select count(*)::integer from private.discovery_previews), 0, 'and creates no preview');
+select is((select count(*)::integer from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000001'),
+  0, 'and creates no preview');
 set local role service_role;
 select throws_ok($$ select public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', true) $$,
   '22023', null, 'an exam cannot open without the server''s course duration');
@@ -156,6 +162,8 @@ select is((select (result->'preview'->>'deadline_at')::timestamptz from outcome 
 select is((select (result->>'now')::timestamptz from outcome where step = 'p-cbt'), now(),
   'the server clock is sent for the countdown display');
 select is((select (result->'preview'->>'result') from outcome where step = 'p-cbt'), null, 'with no result yet');
+select is((select result->'preview'->'saved' from outcome where step = 'p-cbt'), '{"revision":0,"answers":{}}'::jsonb,
+  'and no sheet saved yet, at revision zero');
 select ok((select result::text !~ '(correct_option|correctOption|explanation)' from outcome where step = 'p-cbt'),
   'no answer key or explanation is sent before grading');
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000001', pg_temp.c('02')),
@@ -231,13 +239,72 @@ select is((select (result->'preview'->>'deadline_at')::timestamptz from outcome 
   now() + interval '10 minutes', 'a ten-minute exam that exactly fits opens with its whole duration');
 reset role;
 insert into outcome values ('answers-s-saved', pg_temp.answers('71000000-0000-4000-8000-000000000008', 10)),
+  ('answers-s-20', pg_temp.answers('71000000-0000-4000-8000-000000000008', 20)),
+  ('answers-s-30', pg_temp.answers('71000000-0000-4000-8000-000000000008', 30)),
   ('answers-s-all', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
 set local role service_role;
 select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-saved')) - 'now', '{"state":"saved"}'::jsonb,
-  'choices are saved while the exam is open');
+  (select result from outcome where step = 'answers-s-saved'), 1) - 'now', '{"state":"saved","revision":1}'::jsonb,
+  'choices are saved while the exam is open, and the answer names the revision now saved');
 select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  jsonb_build_object(gen_random_uuid()::text, 0)) $$, '22023', null, 'a saved answer outside the exam is refused');
+  jsonb_build_object(gen_random_uuid()::text, 0), 2) $$, '22023', null, 'a saved answer outside the exam is refused');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}', 0) $$,
+  '22023', null, 'revision zero is not a save');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}', null) $$,
+  '22023', null, 'nor is a save without a revision');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}',
+  1000001) $$, '22023', null, 'nor one beyond the bound');
+-- Saves arrive out of order: revision 3 lands first, then the delayed revision 2 with better answers.
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-20'), 3) - 'now', '{"state":"saved","revision":3}'::jsonb,
+  'the third revision is saved');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-all'), 2) - 'now',
+  (select jsonb_build_object('state', 'stale', 'revision', 3, 'answers', result) from outcome where step = 'answers-s-20'),
+  'an older revision arriving later is answered as stale with the newer sheet that stands, not applied');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-20'), 3) - 'now', '{"state":"saved","revision":3}'::jsonb,
+  'a duplicate retry of the saved sheet is acknowledged as saved');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-saved'), 3)->>'state', 'stale',
+  'the same revision with other answers (another tab) is stale, never applied');
+-- Regression (Codex finding 1): answer 0, then answer 1, with the older request completing last. 1 must remain.
+insert into outcome select 'q-first', to_jsonb(result->'preview'->'questions'->0->>'item_id') from outcome where step = 's-cbt';
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q-first'), 5)->>'state', 'saved',
+  'the newer save (answer 1, revision 5) lands first');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select jsonb_build_object(result #>> '{}', 0) from outcome where step = 'q-first'), 4)->>'state', 'stale',
+  'the older save (answer 0, revision 4) completes last and is refused');
+reset role;
+select is((select saved_answers -> (select result #>> '{}' from outcome where step = 'q-first') from private.discovery_previews
+    where user_id = '71000000-0000-4000-8000-000000000008'), '1'::jsonb, 'the final saved answer remains 1');
+set local role service_role;
+reset role;
+select is((select jsonb_build_object('revision', saved_revision, 'sheet', saved_answers) from private.discovery_previews
+    where user_id = '71000000-0000-4000-8000-000000000008'),
+  (select jsonb_build_object('revision', 5, 'sheet', jsonb_build_object(result #>> '{}', 1)) from outcome where step = 'q-first'),
+  'the newest accepted sheet stands: an older save never overwrites it');
+set local role service_role;
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false)
+    ->'preview'->'saved', (select jsonb_build_object('revision', 5, 'answers', jsonb_build_object(result #>> '{}', 1))
+    from outcome where step = 'q-first'),
+  'a reload or another device is given the saved sheet and its revision to continue from');
+reset role;
+-- A change half a second before the deadline is saved: the deadline is the only cut-off.
+update private.discovery_previews set deadline_at = now() + interval '500 milliseconds'
+  where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-30'), 6) - 'now', '{"state":"saved","revision":6}'::jsonb,
+  'a sheet saved 500 milliseconds before the deadline is accepted');
+reset role;
+update private.discovery_previews set deadline_at = now() + interval '300 milliseconds'
+  where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-30'), 7) - 'now', '{"state":"saved","revision":7}'::jsonb,
+  'and 300 milliseconds before it');
 reset role;
 -- Deadline plus 60 seconds: the deadline passed a minute ago, and with it the pass.
 update private.discovery_previews set deadline_at = now() - interval '60 seconds'
@@ -246,14 +313,16 @@ update public.entitlement_grants set ends_at = now() - interval '60 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
 select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-all'))->'preview'->'result'->>'score', '10',
+  (select result from outcome where step = 'answers-s-all'), 8)->'preview'->'result'->>'score', '30',
   'a save 60 seconds after the deadline changes nothing: the exam was marked from the sheet saved in time');
 insert into outcome values ('s-late', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008',
   pg_temp.c('02'), (select result from outcome where step = 'answers-s-all')));
 select is((select jsonb_build_object('score', (result->'preview'->'result'->>'score')::integer,
     'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 's-late'),
-  '{"score":10,"timed_out":true}'::jsonb,
+  '{"score":30,"timed_out":true}'::jsonb,
   'a perfect sheet submitted 60 seconds after the deadline is not marked: only the answers saved before it count');
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}')
+    ->'preview'->>'saved', null, 'a graded exam carries its result, not an open sheet');
 select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}'),
   (select result from outcome where step = 's-late'),
   'inside the network grace a lost response replays the committed result, even just after the pass ended');
@@ -356,7 +425,7 @@ select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_te
   '{"state":"not-offered"}'::jsonb, 'an exam already opened on a course no longer offered is not served');
 select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}'),
   '{"state":"not-offered"}'::jsonb, 'nor graded');
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}'),
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}', 1),
   '{"state":"not-offered"}'::jsonb, 'nor saved');
 reset role;
 select ok(exists (select 1 from public.institutional_courses where repository_course_id = pg_temp.c('02'))
@@ -457,9 +526,9 @@ insert into auth.sessions (id, user_id, created_at, updated_at) values
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000011', pg_temp.c('02'), 'cbt', false),
   '{"state":"expired"}'::jsonb, 'a fresh session does not revive it');
-select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000011')->>'state', 'already-activated',
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000011', pg_temp.claim('disc-p@example.test'))->>'state', 'already-activated',
   'nor can the account start a second pass from a new session: a revoked pass was its one pass');
-select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000002')->>'state', 'activated',
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000002', pg_temp.claim('disc-q@example.test'))->>'state', 'activated',
   'another account is another pass: one per account, which is not one per person');
 
 -- 7. Who never gets a preview ---------------------------------------------------------------------------------------
@@ -475,7 +544,7 @@ reset role;
 
 -- 8. Account deletion: the previews go, the email claim stays ---------------------------------------------------------
 set local role service_role;
-select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000005')->>'state', 'activated', 'R starts a pass');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000005', pg_temp.claim('disc-r@example.test'))->>'state', 'activated', 'R starts a pass');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000005', pg_temp.c('02'), 'cbt', true, null, 1800)
   ->>'state', 'ready', 'R opens an exam');
 reset role;
@@ -495,7 +564,7 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000006', '71000000-0000-4000-8000-000000000006', now(), now());
 set local role service_role;
-select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006')->>'state', 'already-claimed',
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test'))->>'state', 'already-claimed',
   're-registering with the same email cannot buy a second pass');
 reset role;
 

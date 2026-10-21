@@ -49,6 +49,8 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
   // Read only for a locked course that is offered now: an active Discovery Pass offers previews in place of the locked
   // notice. Repository-only and retired courses have no previews.
   let pass: DiscoveryPass | null = null
+  // Mentioned only when the database affirmatively offers a pass (a database from before the pass offers none).
+  let passOffered = false
   try {
     const client = await createClient()
     const context = await getStudentSessionContext(undefined, client)
@@ -56,12 +58,15 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
     if (result.status === 'ok' && result.course.content.state === 'locked' && hasActiveCourseOffering(result.course)) {
       const read = await readEntitlementForVerifiedStudent(client)
       const entitlement = read.status === 'ok' ? read.entitlement : null
+      passOffered = entitlement !== null && entitlement.discovery !== null
       pass = entitlement !== null && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         && entitlement.discovery !== null
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
     }
   } catch { result = { status: 'unavailable' } }
-  if (result.status === 'ok' || result.status === 'repository-only') return <CourseStudyHub result={result} pass={pass} />
+  if (result.status === 'ok' || result.status === 'repository-only') {
+    return <CourseStudyHub result={result} pass={pass} passOffered={passOffered} />
+  }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
   return <CourseUnavailable status={result.status} slug={slug} />
@@ -85,7 +90,9 @@ function RequestMaterialLink({ href, prominent = false }: { href: string; promin
 }
 
 /** Compose institutional or repository identity, availability and the study families from central truth. */
-function CourseStudyHub({ result, pass }: { result: ResolvedCourse; pass: DiscoveryPass | null }): ReactElement {
+function CourseStudyHub({ result, pass, passOffered }: {
+  result: ResolvedCourse; pass: DiscoveryPass | null; passOffered: boolean
+}): ReactElement {
   const { learning, practice } = result
   const { repository, content } = result.course
   const institutional = result.status === 'ok' ? result.course : null
@@ -119,7 +126,7 @@ function CourseStudyHub({ result, pass }: { result: ResolvedCourse; pass: Discov
         : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
-      {locked && (pass === null ? <LockedCourseNotice />
+      {locked && (pass === null ? <LockedCourseNotice passOffered={passOffered} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>

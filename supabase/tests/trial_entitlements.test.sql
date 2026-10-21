@@ -9,6 +9,15 @@ select no_plan();
 select has_table('public', 'entitlement_grants', 'grants table exists');
 select has_table('private', 'trial_phone_claims', 'the historical phone claims of seven-day trials remain');
 select has_table('private', 'discovery_pass_claims', 'pass claims by confirmed email exist');
+select ok(not exists (select 1 from information_schema.columns where table_schema = 'private'
+  and table_name = 'discovery_pass_claims' and column_name = 'email_hash')
+  and exists (select 1 from information_schema.columns where table_schema = 'private'
+    and table_name = 'discovery_pass_claims' and column_name = 'key_version'), 'claims are keyed and versioned hashes');
+select is((select jsonb_build_object('guard', discovery_activations_per_day, 'retention', discovery_claim_retention::text)
+  from private.entitlement_policy), '{"guard":null,"retention":"2 years"}'::jsonb,
+  'the daily activation guard is off until the owner sets it; claims are kept 24 months (proposed)');
+select ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'private' and p.proname = 'discovery_email_hash'), 'the unkeyed email hash is gone');
 select hasnt_table('private', 'trial_otp_challenges', 'the phone-code challenges are gone');
 select ok(not exists (select 1 from information_schema.columns where table_schema = 'private'
   and table_name = 'entitlement_policy' and column_name like 'otp%'), 'no phone-code policy remains');
@@ -29,7 +38,8 @@ select is((select count(*)::integer from unnest(array['public.entitlement_grants
     unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) privilege
   where has_table_privilege(api_role, tbl, privilege)), 0, 'no API role can touch an entitlement table directly');
 select is((select count(*)::integer from unnest(array[
-    'public.activate_discovery_pass(uuid)',
+    'public.activate_discovery_pass(uuid,jsonb)', 'public.purge_discovery_pass_claims()',
+    'public.admin_discovery_claim_keys()',
     'public.admin_entitlement_status(uuid)', 'public.admin_grant_access(uuid,integer,text,text)',
     'public.admin_change_grant(uuid,text,timestamptz,integer,text,text)',
     'public.admin_add_early_access_member(text,text,text,timestamptz,text,text,text)',
@@ -47,7 +57,7 @@ select is((select count(*)::integer from unnest(array['private.can_read_course_c
     'private.reconcile_early_access(uuid,text)', 'private.reconcile_all_early_access(text,integer)',
     'private.early_access_sweep_candidates()', 'private.retire_legacy_ai_windows(text)', 'private.lock_early_access_accounts(text)',
     'private.lock_early_access_groups(text[],uuid[],boolean)',
-    'private.resolve_early_access_duplicates(uuid,text,text)', 'private.discovery_email_hash(text)']) fn,
+    'private.resolve_early_access_duplicates(uuid,text,text)', 'private.discovery_claim_hashes_valid(jsonb)']) fn,
     unnest(array['anon', 'authenticated', 'service_role']) api_role
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'access helpers are not callable by any API role');
 select is((select string_agg(conrelid::regclass::text || '=' || confdeltype::text, ',' order by conrelid::regclass::text)
@@ -93,6 +103,12 @@ insert into outcome select 'gst-selection', jsonb_build_array(jsonb_build_object
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
 grant execute on function pg_temp.h(text) to authenticated, service_role;
+-- The keyed claim hashes the application sends for an address (lib/entitlements/claim-hash.ts); the current key is
+-- listed first. Any 64-hex value stands in for the HMAC here.
+create function pg_temp.claim(p_email text, p_versions integer[] default array[1]) returns jsonb language sql immutable as
+  $$ select jsonb_agg(jsonb_build_object('version', v, 'hash', pg_temp.h('claim-v' || v || ':' || lower(btrim(p_email))))
+       order by ordinality) from unnest(p_versions) with ordinality as t(v, ordinality) $$;
+grant execute on function pg_temp.claim(text, integer[]) to authenticated, service_role;
 
 -- 1. Permanent free GST access, no activation or payment --------------------------------------------------------
 set local role authenticated;
@@ -111,7 +127,7 @@ select is((select jsonb_build_object('tier', e->>'tier', 'trial', e->'trial'->>'
 select throws_ok($$ insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
   values ('61000000-0000-4000-8000-000000000001', 'manual', now(), now() + interval '1 year', 'none', 'me') $$,
   '42501', null, 'a student cannot grant themselves access');
-select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000001') $$,
+select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test')) $$,
   '42501', null, 'a student cannot call activation with their own JWT');
 select throws_ok($$ select public.admin_activate_public_launch('me', 'launch it myself') $$,
   '42501', null, 'a student cannot activate the public launch');
@@ -122,14 +138,14 @@ reset role;
 
 -- 2. Activation is explicit, one click, and the account's own: no phone number, no code -----------------------------
 set local role service_role;
-select is(public.activate_discovery_pass(gen_random_uuid())->>'state', 'signed-out', 'an unknown session starts nothing');
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000009')->>'state', 'signed-out',
+select is(public.activate_discovery_pass(gen_random_uuid(), pg_temp.claim('nobody@example.test'))->>'state', 'signed-out', 'an unknown session starts nothing');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000009', pg_temp.claim('unconfirmed-u@example.test'))->>'state', 'signed-out',
   'an unconfirmed email cannot start a pass');
-insert into outcome values ('a-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000001'));
+insert into outcome values ('a-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test')));
 select is((select result->>'state' from outcome where step = 'a-activate'), 'activated', 'one tap activates the pass');
 select is((select (result->>'ends_at')::timestamptz from outcome where step = 'a-activate'), now() + interval '72 hours',
   'the Discovery Pass lasts exactly 72 hours from database time (20261021100000_discovery_pass.sql)');
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001'),
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test')),
   jsonb_build_object('state', 'already-activated', 'ends_at', now() + interval '72 hours'),
   'a second tap on the same account is a replay: nothing changes and the same end is reported');
 reset role;
@@ -139,11 +155,19 @@ select is((select jsonb_build_object('source', source, 'policy', trial_policy, '
     'created_by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'),
   '{"source":"trial","policy":"discovery","ai_terms":"capped","ai_units":1,"created_by":"student"}'::jsonb,
   'the pass carries the one-set Discovery AI allowance from policy');
-select is((select user_id from private.discovery_pass_claims
-    where email_hash = private.discovery_email_hash('ent-a@example.test')), '61000000-0000-4000-8000-000000000001'::uuid,
-  'the confirmed email is claimed by the account that activated');
-select is(private.discovery_email_hash(' ENT-A@Example.TEST '), private.discovery_email_hash('ent-a@example.test'),
-  'case and whitespace never make one address two claims');
+select is((select jsonb_build_object('user', user_id, 'version', key_version, 'expires', expires_at = now() + interval '24 months')
+    from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
+  '{"user":"61000000-0000-4000-8000-000000000001","version":1,"expires":true}'::jsonb,
+  'the keyed claim of the confirmed email is recorded under its key version, for the retention period');
+select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000002', '[]'::jsonb) $$,
+  '22023', null, 'activation needs at least one claim hash');
+select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000002',
+  '[{"version":1,"hash":"not-hex"}]'::jsonb) $$, '22023', null, 'and every hash must be 64 hex characters');
+select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000002',
+  pg_temp.claim('ent-b@example.test', array[1, 1])) $$, '22023', null, 'and key versions must be distinct');
+select throws_ok($$ select public.activate_discovery_pass('62000000-0000-4000-8000-000000000002',
+  jsonb_build_array(jsonb_build_object('version', 1, 'hash', pg_temp.h('x'), 'email', 'ent-b@example.test'))) $$,
+  '22023', null, 'an address itself is never accepted');
 select ok(not exists (select 1 from private.trial_phone_claims where user_id = '61000000-0000-4000-8000-000000000001'),
   'no phone claim is written: nothing about a phone exists in this flow');
 select is((select count(*)::integer from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000001'
@@ -167,34 +191,54 @@ reset role;
 
 -- 3. One pass per account, enforced by the database itself ----------------------------------------------------------
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000007')->>'state', 'activated', 'F activates a pass');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000007', pg_temp.claim('ent-f@example.test'))->>'state', 'activated', 'F activates a pass');
 reset role;
 select throws_ok($$ insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
   values ('61000000-0000-4000-8000-000000000007', 'trial', 'discovery', now(), now() + interval '7 days', 'capped', 10, 'x') $$,
   '23505', null, 'an account has at most one trial grant, ever, even for direct writes');
-select throws_ok($$ insert into private.discovery_pass_claims (email_hash, user_id) values
-  (private.discovery_email_hash('ent-f@example.test'), '61000000-0000-4000-8000-000000000002') $$, '23505', null,
-  'a confirmed email is claimed once, even for direct writes');
+select throws_ok($$ insert into private.discovery_pass_claims (claim_hash, key_version, user_id, expires_at) values
+  (pg_temp.claim('ent-f@example.test') -> 0 ->> 'hash', 1, '61000000-0000-4000-8000-000000000002', now() + interval '1 year') $$,
+  '23505', null, 'a confirmed email is claimed once, even for direct writes');
+-- Key rotation: a claim recorded under key 1 is still found when the application now sends key 2 first.
+set local role service_role;
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000002', pg_temp.claim('ent-f@example.test', array[2, 1]))
+  ->>'state', 'already-claimed', 'a claim under a retired key version still blocks the address after rotation');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000002', pg_temp.claim('ent-f@example.test', array[2]))
+  ->>'state', 'activated', 'without the retired key the old claim cannot be matched: keys are dropped only once their claims expire');
+insert into outcome values ('claim-keys', public.admin_discovery_claim_keys());
+reset role;
+-- Counted against the table itself, so claims other sessions of this database hold do not change the outcome.
+select is((select result from outcome where step = 'claim-keys'), (select jsonb_agg(jsonb_build_object('key_version', key_version,
+    'claims', claims, 'last_expires_at', last_expires_at) order by key_version) from (select key_version, count(*) as claims,
+    max(expires_at) as last_expires_at from private.discovery_pass_claims where expires_at > now() group by key_version) v),
+  'the operator sees which key versions live claims still reference');
+select ok((select (e->>'claims')::integer >= 2 from outcome, jsonb_array_elements(result) e
+    where step = 'claim-keys' and (e->>'key_version')::integer = 1)
+  and (select (e->>'claims')::integer from outcome, jsonb_array_elements(result) e
+    where step = 'claim-keys' and (e->>'key_version')::integer = 2) = 1, 'version 1 holds A and F, version 2 holds B');
+-- B's pass is not part of the later sections: it is revoked and its claim removed so B stays the account without a pass.
+delete from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000002';
+delete from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000002';
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000002'),
   'B holds no grant');
 
--- 4. Abuse guards: the platform-wide daily activation guard and the request limit policy ---------------------------
+-- 4. Abuse guards: the optional platform-wide daily activation guard and the request limit policy -------------------
 update private.entitlement_policy set discovery_activations_per_day = (select count(*) from public.entitlement_grants
   where trial_policy = 'discovery' and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc');
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008'), '{"state":"capacity"}'::jsonb,
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008', pg_temp.claim('ent-g@example.test')), '{"state":"capacity"}'::jsonb,
   'the platform-wide daily activation guard holds');
 reset role;
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000008')
   and not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000008'),
   'a refused activation consumes nothing');
-update private.entitlement_policy set discovery_activations_per_day = 2000;
+update private.entitlement_policy set discovery_activations_per_day = null;
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008')->>'state', 'activated',
-  'G activates once the guard allows');
-select is(public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 5, 900, 20, 900), true,
-  'the activation request limit policy exists in the database');
-select throws_ok($$ select public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 500, 900, 20, 900) $$,
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008', pg_temp.claim('ent-g@example.test'))->>'state', 'activated',
+  'G activates once the guard is off again');
+select is(public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 5, 900, 60, 900), true,
+  'the activation request limit policy exists in the database: 5 per account, 60 per shared campus address');
+select throws_ok($$ select public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 500, 900, 60, 900) $$,
   '22023', null, 'the caller cannot weaken the activation request limit');
 reset role;
 
@@ -245,7 +289,7 @@ set local role service_role;
 select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000003',
   '40000000-0000-4000-8000-000000000008', 1, 'start', null, 'in_progress',
   (select result from outcome where step = 'gst-selection'))->>'status', 'saved', 'GST practice still starts on the free tier');
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001')->>'state', 'already-activated',
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test'))->>'state', 'already-activated',
   'an ended pass cannot restart');
 reset role;
 
@@ -432,7 +476,7 @@ select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000004',
 
 -- 7b. No trial during active Early Access -----------------------------------------------------------------------------
 set local role service_role;
-insert into outcome values ('h-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000011'));
+insert into outcome values ('h-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000011', pg_temp.claim('ent-h@example.test')));
 reset role;
 select is((select (result->>'state') || '/' || ((result->>'available_from')::timestamptz = (select ends_at
     from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access'))::text
@@ -450,7 +494,7 @@ reset role;
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access';
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000011')->>'state', 'activated',
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000011', pg_temp.claim('ent-h@example.test'))->>'state', 'activated',
   'after Early Access ends the pass activates');
 reset role;
 select is((select ends_at from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial'), now() + interval '72 hours',
@@ -458,7 +502,7 @@ select is((select ends_at from public.entitlement_grants where user_id = '610000
 -- The owner may decide Early Access members never get a trial afterwards.
 update private.entitlement_policy set trial_after_early_access = false;
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000004'), '{"state":"trial-not-offered"}'::jsonb,
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000004', pg_temp.claim('early-d@example.test')), '{"state":"trial-not-offered"}'::jsonb,
   'the post-Early-Access pass can be switched off');
 reset role;
 set local role authenticated;
@@ -639,7 +683,7 @@ reset role;
 insert into private.account_deletion_jobs (user_id, requested_at, deadline, retry_at)
   values ('61000000-0000-4000-8000-000000000003', now(), now() + interval '720 hours', now() + interval '720 hours');
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000003')->>'state', 'signed-out',
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000003', pg_temp.claim('ent-c@example.test'))->>'state', 'signed-out',
   'a deletion-scheduled account cannot start a pass');
 select is(public.admin_add_early_access_member('ent-c@example.test', 'C Member', null, now() - interval '40 days',
   'import', 'google-form', 'ops')->>'enrollment', 'account-restricted', 'nor be enrolled in Early Access');
@@ -654,7 +698,7 @@ select ok(not exists (select 1 from public.entitlement_grants where user_id in (
   '61000000-0000-4000-8000-000000000004')), 'grants go with the account');
 select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])->>'state',
   'not-entitled', 'and so does every AI allowance');
-select is((select user_id from private.discovery_pass_claims where email_hash = private.discovery_email_hash('ent-a@example.test')),
+select is((select user_id from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
   null, 'the pass claim survives without the account');
 select is((select (claimed_by is null and claimed_at is not null) from private.early_access_members
   where email = 'early-d@example.test'), true, 'the list place stays claimed without the account');
@@ -671,8 +715,9 @@ insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('62000000-0000-4000-8000-000000000010', '61000000-0000-4000-8000-000000000010', now(), now()),
   ('62000000-0000-4000-8000-000000000015', '61000000-0000-4000-8000-000000000015', now(), now());
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010'), '{"state":"already-claimed"}'::jsonb,
-  'deleting and re-registering the same address does not buy a second pass');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test')),
+  '{"state":"already-claimed","retention_months":24}'::jsonb,
+  'deleting and re-registering the same address does not buy a second pass, and the student is told for how long');
 reset role;
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000010')
   and exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000010'
@@ -680,6 +725,27 @@ select ok(not exists (select 1 from public.entitlement_grants where user_id = '6
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000015')
   and private.early_access_status('61000000-0000-4000-8000-000000000015')->>'status' = 'unavailable',
   'nor does re-registering free the Early Access month for the same confirmed email');
+-- Retention: once the claim expires the address may start a pass again on a new account, and expired rows are purged.
+update private.discovery_pass_claims set claimed_at = now() - interval '25 months', expires_at = now() - interval '1 month'
+  where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash';
+set local role service_role;
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test'))->>'state',
+  'activated', 'an expired claim no longer blocks the address, even before it is purged');
+reset role;
+select is((select jsonb_build_object('user', user_id, 'fresh', expires_at = now() + interval '24 months')
+    from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
+  '{"user":"61000000-0000-4000-8000-000000000010","fresh":true}'::jsonb, 'the new claim replaces the expired one');
+update private.discovery_pass_claims set claimed_at = now() - interval '25 months', expires_at = now() - interval '1 day'
+  where user_id = '61000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is((public.admin_entitlement_status('61000000-0000-4000-8000-000000000008')->>'discovery_claimed')::boolean, false,
+  'an expired claim is not reported as a live claim');
+select is(public.purge_discovery_pass_claims(), 1, 'purging removes exactly the expired claims');
+select is(public.purge_discovery_pass_claims(), 0, 'and nothing else');
+reset role;
+select ok(not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000008')
+  and exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000010'),
+  'live claims stay');
 set local role service_role;
 
 -- 9. Operator recovery and preview ----------------------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 -- Early Access and paid/manual grants are kept as they are. What changes is how a 'trial' grant starts and what it
 -- buys. Activation is explicit and one click for a signed-in student (founder decision, 2026-10-21): the phone-code
 -- activation of 20261017100000 is retired below, no phone number is collected, and one lifetime pass per account (and
--- per confirmed email) is enforced by the database. Every trial grant now names its policy (trial_policy). A grant
+-- one per confirmed email within the claim retention period) is enforced by the database. Every trial grant now names its policy (trial_policy). A grant
 -- issued before this migration is 'seven-day' and keeps exactly what it was issued: its own end, full access and its AI
 -- allowance. A grant issued from now on is 'discovery': a restricted sampling entitlement, never temporary full access:
 --   * It lasts discovery_hours (72) from activation, measured on the database clock.
@@ -12,8 +12,9 @@
 --     whole with a pass.
 --   * One complete CBT exam of exactly discovery_cbt_questions (50) valid questions from one actively offered course
 --     the student selects. It opens only when the whole of that course's own exam duration fits before the pass ends;
---     the database fixes the deadline then, and no answer is accepted after it. The answer key stays on the server
---     until the exam is graded.
+--     the database fixes the deadline then, and no answer is accepted after it. Answers are saved as the student goes,
+--     serialized and in revision order, so a delayed save never overwrites a newer one. The answer key stays on the
+--     server until the exam is graded.
 --   * One complete study-guide topic, chosen by the student from one actively offered course. Every other topic stays
 --     locked.
 --   * AI: one accepted upload and one delivered set of exactly five valid questions, at most discovery_ai_attempts
@@ -133,6 +134,9 @@ create table private.discovery_previews (
   -- CBT only: the latest answer sheet saved before the deadline. If time runs out, this is what is marked.
   saved_answers jsonb check (saved_answers is null or jsonb_typeof(saved_answers) = 'object'),
   saved_at timestamptz,
+  -- CBT only: the client's revision of that sheet. Saves are serialized under the account lock and accepted only in
+  -- increasing revision order, so a save delayed on the network can never overwrite a newer sheet already accepted.
+  saved_revision integer not null default 0 check (saved_revision >= 0),
   answers jsonb check (answers is null or jsonb_typeof(answers) = 'object'),
   score integer check (score >= 0),
   -- The exam closed at its deadline before the student submitted it.
@@ -142,7 +146,7 @@ create table private.discovery_previews (
   primary key (grant_id, kind),
   constraint discovery_previews_deadline_check check ((kind = 'cbt') = (deadline_at is not null)),
   constraint discovery_previews_saved_check check ((saved_answers is null) = (saved_at is null)
-    and (kind = 'cbt' or saved_answers is null)),
+    and (saved_answers is null) = (saved_revision = 0) and (kind = 'cbt' or saved_answers is null)),
   constraint discovery_previews_submit_check check (
     (submitted_at is null) = (answers is null) and (answers is null) = (score is null)
     and (kind = 'cbt' or submitted_at is null) and (submitted_at is not null or not timed_out))
@@ -240,7 +244,9 @@ as $$
   where i.course_id = p_course_id and i.kind = 'note' and i.published_revision is not null;
 $$;
 
--- What the student may see of a pinned preview. An exam shows no answer key until it has been graded.
+-- What the student may see of a pinned preview. An exam shows no answer key until it has been graded. While it is
+-- open it carries the sheet last saved and its revision, so a reload or another device continues from what the
+-- database holds rather than from the browser.
 create function private.discovery_preview_view(p_preview private.discovery_previews) returns jsonb
 language sql
 stable
@@ -252,6 +258,8 @@ as $$
       'questions', (select jsonb_agg(jsonb_build_object('item_id', q -> 'item_id', 'prompt', q -> 'prompt',
           'options', q -> 'options', 'section', q -> 'section') order by position)
         from jsonb_array_elements(p_preview.content) with ordinality as t(q, position)),
+      'saved', case when p_preview.submitted_at is null then jsonb_build_object('revision', p_preview.saved_revision,
+        'answers', coalesce(p_preview.saved_answers, '{}'::jsonb)) end,
       'result', case when p_preview.submitted_at is null then null else jsonb_build_object(
         'score', p_preview.score, 'total', jsonb_array_length(p_preview.content), 'timed_out', p_preview.timed_out,
         'answers', (select jsonb_agg(jsonb_build_object('item_id', q -> 'item_id',
@@ -424,7 +432,13 @@ $$;
 
 -- Save the answer sheet while the exam is open, so time running out marks what the student had chosen. Nothing is
 -- saved after the deadline: by then close_overdue_discovery_exam has already marked the exam.
-create function public.save_discovery_cbt(p_session_id uuid, p_course_id uuid, p_answers jsonb) returns jsonb
+-- p_revision is the client's count of changes to its sheet, starting after the revision the exam was opened or
+-- reloaded with. Saves of one exam are serialized (the account lock, then the row lock in discovery_exam_for) and a
+-- sheet is accepted only when its revision is higher than the one already saved (compare-and-swap), so requests that
+-- arrive out of order, duplicate retries and a second tab can never replace newer answers with older ones. The answer
+-- always names the revision now saved, so the client can tell whether its latest sheet has been accepted.
+create function public.save_discovery_cbt(p_session_id uuid, p_course_id uuid, p_answers jsonb, p_revision integer)
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -432,9 +446,10 @@ as $$
 declare
   v_user_id uuid;
   v_exam record;
+  v_preview private.discovery_previews;
 begin
   if p_course_id is null or p_answers is null or jsonb_typeof(p_answers) <> 'object'
-      or octet_length(p_answers::text) > 8192 then
+      or octet_length(p_answers::text) > 8192 or p_revision is null or p_revision not between 1 and 1000000 then
     raise exception 'Invalid exam answers' using errcode = '22023';
   end if;
   v_user_id := private.ai_practice_session_user(p_session_id);
@@ -442,13 +457,25 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('entitlement-account:' || v_user_id::text, 0));
   select * into v_exam from private.discovery_exam_for(v_user_id, p_course_id);
   if v_exam.o_state <> 'ok' then return jsonb_build_object('state', v_exam.o_state); end if;
-  if (v_exam.o_preview).submitted_at is null then
-    if not private.discovery_answers_valid((v_exam.o_preview).content, p_answers) then
+  v_preview := v_exam.o_preview;
+  if v_preview.submitted_at is null then
+    if not private.discovery_answers_valid(v_preview.content, p_answers) then
       raise exception 'Invalid exam answers' using errcode = '22023';
     end if;
-    update private.discovery_previews set saved_answers = p_answers, saved_at = now()
-      where grant_id = (v_exam.o_preview).grant_id and kind = 'cbt';
-    return jsonb_build_object('state', 'saved', 'now', now());
+    if p_revision > v_preview.saved_revision then
+      update private.discovery_previews set saved_answers = p_answers, saved_at = now(), saved_revision = p_revision
+        where grant_id = v_preview.grant_id and kind = 'cbt'
+        returning * into v_preview;
+      return jsonb_build_object('state', 'saved', 'now', now(), 'revision', v_preview.saved_revision);
+    end if;
+    -- A retry of the sheet already saved is acknowledged as saved. Anything else at or below the saved revision is
+    -- stale (an older save delayed on the network, or another tab numbering its own changes): it changes nothing, and
+    -- the answer carries the sheet that stands so the client can continue from it.
+    if p_revision = v_preview.saved_revision and v_preview.saved_answers = p_answers then
+      return jsonb_build_object('state', 'saved', 'now', now(), 'revision', v_preview.saved_revision);
+    end if;
+    return jsonb_build_object('state', 'stale', 'now', now(), 'revision', v_preview.saved_revision,
+      'answers', coalesce(v_preview.saved_answers, '{}'::jsonb));
   end if;
   return jsonb_build_object('state', 'ready', 'now', now(), 'ends_at', (v_exam.o_grant).ends_at,
     'preview', private.discovery_preview_view(v_exam.o_preview));
@@ -503,45 +530,68 @@ $$;
 -- person, and the application must never claim otherwise. What the database enforces, atomically under the per-account
 -- lock that Early Access enrollment and previews also take:
 --   * one lifetime trial grant per account (entitlement_grants_one_trial_idx; a revoked or ended one still counts);
---   * one pass per confirmed email address, recorded in a ledger that outlives account deletion, so deleting the
---     account and registering the same address again cannot start a second pass (as an Early Access claim survives);
+--   * one pass per confirmed email address within the claim retention period, recorded in a ledger that outlives
+--     account deletion, so deleting the account and registering the same address again cannot start a second pass
+--     until the claim expires (as an Early Access claim survives). The ledger holds only an HMAC of the address, keyed
+--     with a server secret the application holds (ENTITLEMENT_CLAIM_HASH_KEYS, versioned so the key can be rotated);
+--     the database never sees the address or the key;
 --   * no pass while Early Access is active, and none afterwards unless trial_after_early_access allows it;
---   * a platform-wide activation guard per UTC day against account farming (discovery_activations_per_day);
+--   * an optional platform-wide activation guard per UTC day (discovery_activations_per_day, off until the founder
+--     sets it);
 --   * start and end fixed from this transaction's clock; nothing is accepted from the browser.
 -- Per-account and per-origin request limits apply before this function is reached (consume_auth_rate_limit, action
 -- DISCOVERY_ACTIVATION). Nothing here is a NIN, a BVN, a device fingerprint or a phone number.
 -- ---------------------------------------------------------------------------
 alter table private.entitlement_policy
-  -- PROVISIONAL platform-wide guard. Replaces the SMS spend guard: it bounds how fast a farm of confirmed accounts
-  -- can sample the question banks, not what any one student may do.
-  add column discovery_activations_per_day integer not null default 2000
-    check (discovery_activations_per_day between 0 and 1000000);
+  -- Platform-wide guard against account farming, per UTC day. Null (the default) means no guard: it bounds how fast
+  -- a farm of confirmed accounts could sample the question banks, never what one student may do, and the owner
+  -- decides whether launch traffic warrants it.
+  add column discovery_activations_per_day integer
+    check (discovery_activations_per_day is null or discovery_activations_per_day between 1 and 1000000),
+  -- How long a used email claim blocks the same address. PROPOSED pending privacy approval.
+  add column discovery_claim_retention interval not null default interval '24 months'
+    check (discovery_claim_retention between interval '1 month' and interval '10 years');
 
--- One row per confirmed address that has ever started a pass. Only a hash is kept, never the address, and the account
--- link is cleared on deletion so the claim itself survives. A row with no account is still a used claim.
+-- One row per confirmed address that has started a pass, for the retention period. claim_hash is the application's
+-- keyed HMAC of the normalized address under key_version; the account link is cleared on deletion so the claim itself
+-- survives, and a row with no account is still a used claim until it expires. Nothing here can be reversed to an
+-- address without the server key. No earlier shape of this table was ever applied to a hosted database, so there are
+-- no unkeyed rows to migrate.
 create table private.discovery_pass_claims (
-  email_hash text primary key check (email_hash ~ '^[0-9a-f]{64}$'),
+  claim_hash text primary key check (claim_hash ~ '^[0-9a-f]{64}$'),
+  key_version integer not null check (key_version between 1 and 1000),
   user_id uuid unique references auth.users (id) on delete set null,
   grant_id uuid,
-  claimed_at timestamptz not null default now()
+  claimed_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  constraint discovery_pass_claims_expiry_check check (expires_at > claimed_at)
 );
+create index discovery_pass_claims_expiry_idx on private.discovery_pass_claims (expires_at);
 alter table private.discovery_pass_claims enable row level security;
 revoke all on table private.discovery_pass_claims from public, anon, authenticated, service_role;
 
--- Case and surrounding whitespace never make one address two claims.
-create function private.discovery_email_hash(p_email text) returns text
+-- The hashes the application computed for this session's confirmed address: one per key version it still holds, the
+-- current key first. Lookups match any version (so a rotated key keeps old claims effective until they expire); the
+-- insert uses the first.
+create function private.discovery_claim_hashes_valid(p_hashes jsonb) returns boolean
 language sql
 immutable
 set search_path = ''
 as $$
-  select encode(sha256(convert_to('discovery-pass:' || lower(btrim(p_email)), 'UTF8')), 'hex');
+  select coalesce(jsonb_typeof(p_hashes) = 'array' and jsonb_array_length(p_hashes) between 1 and 8
+    and not exists (select 1 from jsonb_array_elements(p_hashes) h
+      where jsonb_typeof(h) <> 'object' or (select count(*) from jsonb_object_keys(h)) <> 2
+        or jsonb_typeof(h -> 'version') <> 'number'
+        or (h ->> 'version') !~ '^[0-9]{1,4}$' or (h ->> 'version')::integer not between 1 and 1000
+        or jsonb_typeof(h -> 'hash') <> 'string' or (h ->> 'hash') !~ '^[0-9a-f]{64}$')
+    and (select count(distinct h ->> 'version') = count(*) from jsonb_array_elements(p_hashes) h), false);
 $$;
 
 -- Service role only; identity from the verified session id, as for every other entitlement write. Replays answer the
 -- same way, so a double tap or a lost response never costs anything.
 -- Lock order: account row share lock (inside ai_practice_session_user), the per-account advisory lock, the per-claim
 -- lock, then the global day lock. No Early Access path takes the last two, and this path takes no group lock.
-create function public.activate_discovery_pass(p_session_id uuid) returns jsonb
+create function public.activate_discovery_pass(p_session_id uuid, p_claim_hashes jsonb) returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -549,13 +599,16 @@ as $$
 declare
   v_user_id uuid;
   v_policy private.entitlement_policy;
-  v_email text;
-  v_email_hash text;
+  v_claim_hash text;
+  v_key_version integer;
   v_existing public.entitlement_grants;
   v_early public.entitlement_grants;
   v_grant public.entitlement_grants;
   v_today integer;
 begin
+  if not private.discovery_claim_hashes_valid(p_claim_hashes) then
+    raise exception 'Invalid activation request' using errcode = '22023';
+  end if;
   -- Only a live, confirmed account that is not scheduled for deletion.
   v_user_id := private.ai_practice_session_user(p_session_id);
   if v_user_id is null then return jsonb_build_object('state', 'signed-out'); end if;
@@ -577,22 +630,28 @@ begin
     return jsonb_build_object('state', 'trial-not-offered');
   end if;
 
-  -- The confirmed address claims at most one pass, ever, even across deleted accounts.
-  select email into v_email from auth.users where id = v_user_id;
-  if v_email is null or btrim(v_email) = '' then return jsonb_build_object('state', 'signed-out'); end if;
-  v_email_hash := private.discovery_email_hash(v_email);
-  perform pg_advisory_xact_lock(hashtextextended('discovery-claim:' || v_email_hash, 0));
-  if exists (select 1 from private.discovery_pass_claims where email_hash = v_email_hash) then
+  -- The confirmed address claims at most one pass per retention period, even across deleted accounts. Expired claims
+  -- no longer count (they are purged by purge_discovery_pass_claims()).
+  v_claim_hash := p_claim_hashes -> 0 ->> 'hash';
+  v_key_version := (p_claim_hashes -> 0 ->> 'version')::integer;
+  perform pg_advisory_xact_lock(hashtextextended('discovery-claim:' || v_claim_hash, 0));
+  if exists (select 1 from private.discovery_pass_claims c
+      join jsonb_array_elements(p_claim_hashes) h on c.claim_hash = h ->> 'hash'
+        and c.key_version = (h ->> 'version')::integer
+      where c.expires_at > now()) then
     perform private.log_entitlement_event(v_user_id, null, 'discovery.claim-refused', 'student', '{}'::jsonb);
-    return jsonb_build_object('state', 'already-claimed');
+    return jsonb_build_object('state', 'already-claimed',
+      'retention_months', round(extract(epoch from v_policy.discovery_claim_retention) / 2629800)::integer);
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended('discovery-activation-global-day', 0));
-  select count(*) into v_today from public.entitlement_grants
-    where source = 'trial' and trial_policy = 'discovery'
-      and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc';
-  if v_today >= v_policy.discovery_activations_per_day then
-    return jsonb_build_object('state', 'capacity');
+  if v_policy.discovery_activations_per_day is not null then
+    perform pg_advisory_xact_lock(hashtextextended('discovery-activation-global-day', 0));
+    select count(*) into v_today from public.entitlement_grants
+      where source = 'trial' and trial_policy = 'discovery'
+        and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+    if v_today >= v_policy.discovery_activations_per_day then
+      return jsonb_build_object('state', 'capacity');
+    end if;
   end if;
 
   -- Start and end both come from this transaction's clock: exactly discovery_hours from activation. The AI allowance
@@ -602,15 +661,49 @@ begin
     values (v_user_id, 'trial', 'discovery', now(), now() + make_interval(hours => v_policy.discovery_hours), 'capped',
       v_policy.discovery_ai_generations, 'student')
     returning * into v_grant;
-  insert into private.discovery_pass_claims (email_hash, user_id, grant_id) values (v_email_hash, v_user_id, v_grant.id);
+  -- An expired claim of the same address (not yet purged) is replaced by the new one.
+  insert into private.discovery_pass_claims (claim_hash, key_version, user_id, grant_id, expires_at)
+    values (v_claim_hash, v_key_version, v_user_id, v_grant.id, now() + v_policy.discovery_claim_retention)
+    on conflict (claim_hash) do update set key_version = excluded.key_version, user_id = excluded.user_id,
+      grant_id = excluded.grant_id, claimed_at = now(), expires_at = excluded.expires_at;
   perform private.log_entitlement_event(v_user_id, v_grant.id, 'discovery.activated', 'student',
     jsonb_build_object('ends_at', v_grant.ends_at, 'ai_units', v_grant.ai_units, 'policy', 'discovery'));
   return jsonb_build_object('state', 'activated', 'ends_at', v_grant.ends_at, 'ai_units', v_grant.ai_units);
 end;
 $$;
 
--- The request limiter of 20260912090000 learns the activation action: 5 requests per account and 20 per origin
--- address in 15 minutes, applied by the API route before the database is asked. Every other policy is unchanged.
+-- Expired claims are removed; a row past its expiry already blocks nothing. Run from the operator tool.
+create function public.purge_discovery_pass_claims() returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_count integer;
+begin
+  delete from private.discovery_pass_claims where expires_at <= now();
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+-- Which key versions live claims still reference, and until when, so a retired key is dropped from
+-- ENTITLEMENT_CLAIM_HASH_KEYS only once nothing can need it. Counts only; never a hash.
+create function public.admin_discovery_claim_keys() returns jsonb
+language sql
+security definer
+set search_path = ''
+as $$
+  select coalesce((select jsonb_agg(jsonb_build_object('key_version', key_version, 'claims', claims,
+      'last_expires_at', last_expires_at) order by key_version)
+    from (select key_version, count(*) as claims, max(expires_at) as last_expires_at
+      from private.discovery_pass_claims where expires_at > now() group by key_version) versions), '[]'::jsonb);
+$$;
+
+-- The request limiter of 20260912090000 learns the activation action: 5 requests per account and 60 per origin
+-- address in 15 minutes, applied by the API route before the database is asked. The origin limit is wide because
+-- campus networks put many students behind one address; a replay costs nothing, so it only bounds abuse. Every other
+-- policy is unchanged.
 create or replace function public.consume_auth_rate_limit(
   p_action text, p_account text, p_origin text,
   p_account_limit integer, p_account_window integer,
@@ -632,7 +725,7 @@ begin
     when 'PASSWORD_RESET_SUBMIT' then array[5,900,20,900]
     when 'ACCOUNT_DELETION' then array[5,900,20,900]
     when 'CONFIRM_EMAIL' then array[5,900,20,900]
-    when 'DISCOVERY_ACTIVATION' then array[5,900,20,900]
+    when 'DISCOVERY_ACTIVATION' then array[5,900,60,900]
     else null end;
   if v_expected is null or p_account is null or p_origin is null
     or p_account !~ '^[a-f0-9]{64}$' or p_origin !~ '^[a-f0-9]{64}$'
@@ -703,7 +796,8 @@ as $$
       from public.entitlement_grants g where g.user_id = p_user_id), '[]'::jsonb),
     -- Seven-day trials only (phone activation before 20261021100000).
     'trial_phone_claimed', exists (select 1 from private.trial_phone_claims where user_id = p_user_id),
-    'discovery_claimed', exists (select 1 from private.discovery_pass_claims where user_id = p_user_id),
+    'discovery_claimed', exists (select 1 from private.discovery_pass_claims where user_id = p_user_id
+      and expires_at > now()),
     'ai_allowance', private.ai_allowance_admission(p_user_id, array['trial', 'early_access']),
     'early_access', private.early_access_status(p_user_id),
     'events', coalesce((select jsonb_agg(jsonb_build_object('at', e.occurred_at, 'event', e.event, 'actor', e.actor,
@@ -1145,19 +1239,22 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Privileges. Activation and previews are written only by the service role with a verified session id.
 -- ---------------------------------------------------------------------------
-revoke all on function private.discovery_email_hash(text), public.activate_discovery_pass(uuid),
+revoke all on function private.discovery_claim_hashes_valid(jsonb), public.activate_discovery_pass(uuid, jsonb),
+  public.purge_discovery_pass_claims(), public.admin_discovery_claim_keys(),
   private.is_discovery_grant(uuid), private.course_has_active_offering(uuid),
   private.discovery_cbt_question_valid(jsonb), private.discovery_cbt_pool(uuid),
   private.discovery_preview_content(uuid, text, uuid), private.discovery_topic_titles(uuid),
   private.discovery_preview_view(private.discovery_previews), private.discovery_answers_valid(jsonb, jsonb),
   private.discovery_exam_score(jsonb, jsonb), private.close_overdue_discovery_exam(uuid),
   private.discovery_exam_for(uuid, uuid), private.discovery_ai_set_complete(jsonb),
-  public.discovery_preview(uuid, uuid, text, boolean, uuid, integer), public.save_discovery_cbt(uuid, uuid, jsonb),
-  public.submit_discovery_cbt(uuid, uuid, jsonb)
-  from public, anon, authenticated, service_role;
-grant execute on function public.activate_discovery_pass(uuid), public.admin_entitlement_status(uuid),
   public.discovery_preview(uuid, uuid, text, boolean, uuid, integer),
-  public.save_discovery_cbt(uuid, uuid, jsonb), public.submit_discovery_cbt(uuid, uuid, jsonb) to service_role;
+  public.save_discovery_cbt(uuid, uuid, jsonb, integer), public.submit_discovery_cbt(uuid, uuid, jsonb)
+  from public, anon, authenticated, service_role;
+grant execute on function public.activate_discovery_pass(uuid, jsonb), public.purge_discovery_pass_claims(),
+  public.admin_discovery_claim_keys(), public.admin_entitlement_status(uuid),
+  public.discovery_preview(uuid, uuid, text, boolean, uuid, integer),
+  public.save_discovery_cbt(uuid, uuid, jsonb, integer), public.submit_discovery_cbt(uuid, uuid, jsonb)
+  to service_role;
 
 comment on table public.entitlement_grants is
   'Windows of access. Early Access, operator, future paid grants and seven-day trials issued before 20261021100000 are full access; a discovery trial grant is the Discovery Pass (one exam, one topic and a small AI allowance, never full access). Free courses never need one.';
@@ -1166,4 +1263,4 @@ comment on table private.discovery_previews is
 comment on table private.discovery_ai_uploads is
   'Uploads a Discovery Pass accepted (at most discovery_ai_uploads). Only these documents can use the pass''s AI.';
 comment on table private.discovery_pass_claims is
-  'One row per confirmed email address that has started a Discovery Pass (hash only). Survives account deletion, so the same address cannot start a second pass. One pass per account is enforced by entitlement_grants_one_trial_idx; neither is a guarantee of one pass per person.';
+  'One row per confirmed email address that has started a Discovery Pass (server-keyed HMAC only, with its key version), kept for discovery_claim_retention. Survives account deletion, so the same address cannot start a second pass until the claim expires. One pass per account is enforced by entitlement_grants_one_trial_idx; neither is a guarantee of one pass per person.';

@@ -26,12 +26,17 @@ export async function postEntitlementCommand(command: EntitlementCommand, pageTo
 // Opening or grading a preview is one database round trip.
 const DISCOVERY_TIMEOUT_MS = 10_000
 
-/** Post one preview command. A lost response is safe to repeat: the server returns the same preview or grading. */
+/**
+ * Post one preview command. A lost response is safe to repeat: the server returns the same preview or grading, and a
+ * save names its revision so the database applies it at most once and never over a newer sheet. A save is sent with
+ * keepalive, so one fired as the page is being left still reaches the server.
+ */
 export async function postDiscoveryCommand(command: DiscoveryCommand, pageToken: string,
   request: typeof fetch = fetch): Promise<DiscoveryResult> {
   try {
     const response = await request('/api/discovery', {
       method: 'POST', cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
+      keepalive: command.action === 'save-answers',
       headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken },
       body: JSON.stringify(command),
     })

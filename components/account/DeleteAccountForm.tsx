@@ -8,6 +8,7 @@ import { studentAction } from '@/components/student/ui'
 import { AUTH_API, PASSWORD_MAX_LENGTH } from '@/lib/auth/constants'
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@/lib/account/constants'
 import type { FormEvent } from 'react'
+import { DISCOVERY_CLAIM_RETENTION_MONTHS } from '@/lib/entitlements/contract'
 
 /** Require an explicit, accessible confirmation and keep the password in the form only. */
 export function DeleteAccountForm({ continuityToken }: { continuityToken: string }) {
@@ -40,7 +41,7 @@ export function DeleteAccountForm({ continuityToken }: { continuityToken: string
         <div id="deletion-details" className="space-y-2 text-sm text-student-text-secondary">
           <p>You will be signed out on every device. Before the {ACCOUNT_DELETION_GRACE_DAYS}-day deadline, sign in and choose “Yes, keep my account” to cancel.</p>
           <p>After the deadline, you can’t sign in or restore your account, even if deletion has not finished. Your profile, bookmarks, practice history and question reports that identify you will be removed.</p>
-          <p>If you used a Discovery Pass, a free trial or Early Access, a protected record of that claim is kept without your account so it cannot be used again.</p>
+          <p>If you used a Discovery Pass, a protected record of your email address is kept without your account for up to {DISCOVERY_CLAIM_RETENTION_MONTHS} months, so the same address cannot start another pass in that time. A used free trial or Early Access place stays used.</p>
           <p>Our service providers may retain some records and backups under their policies or legal obligations. Contact support for details.</p>
         </div>
         <FormField id="delete-current-password" name="password" label="Current password" type="password"

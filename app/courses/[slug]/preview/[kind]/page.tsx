@@ -109,8 +109,9 @@ function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
           <h2 id="open-title" className="student-section-title">{course.code} CBT exam</h2>
           <p className="student-detail-prose mt-2">
             {examQuestions ?? 'The'}{examQuestions !== null && '-question'} exam, timed at {minutes} minutes like the real
-            CBT. The timer starts when you begin and keeps running if you leave the page. When you submit, you’ll see
-            your score with the correct answers.
+            CBT. The timer starts when you begin and keeps running if you leave the page. Your answers save as you go,
+            and only answers saved before time runs out count. When you submit, you’ll see your score with the correct
+            answers.
           </p>
           <p className="student-meta mt-2">Your pass includes one CBT exam, on the course you start it on.</p>
           <div className="mt-4">
@@ -171,7 +172,7 @@ function Pinned({ preview, now, course, continuityToken }: {
 }): ReactElement {
   if (preview.kind === 'cbt') {
     return <DiscoveryExam continuityToken={continuityToken} courseSlug={course.slug} questions={preview.questions}
-      deadlineAt={preview.deadline_at} serverNow={now} initialResult={preview.result} />
+      deadlineAt={preview.deadline_at} serverNow={now} savedSheet={preview.saved} initialResult={preview.result} />
   }
   return <>{preview.items.map(item => <NoteArticle key={item.item_id}
     note={{ itemId: item.item_id, publishedRevision: item.revision, ...item.note }} />)}

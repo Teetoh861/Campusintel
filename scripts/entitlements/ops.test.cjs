@@ -105,6 +105,11 @@ test('every recovery change requires an actor and a reason and calls one narrow 
     await assert.rejects(h.run(command), /usage/)
   }
   assert.equal(h.requests.filter(r => r.fn !== 'admin_change_grant').length, 0)
+  // Claim housekeeping calls one narrow function each and sends nothing else.
+  await h.run(['purge-claims'])
+  assert.deepEqual([h.requests.at(-1).fn, h.requests.at(-1).body], ['purge_discovery_pass_claims', {}])
+  await h.run(['claim-keys'])
+  assert.deepEqual([h.requests.at(-1).fn, h.requests.at(-1).body], ['admin_discovery_claim_keys', {}])
 })
 
 test('hosted configuration requires HTTPS and an sb_secret_ key; nothing is sent otherwise', async () => {
