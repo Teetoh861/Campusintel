@@ -512,6 +512,59 @@ select is(public.admin_change_early_access_member('early-e@example.test', 'exclu
 reset role;
 select ok((select excluded_at is not null from private.early_access_members where email = 'early-e@example.test'),
   'the exclusion is recorded');
+-- A duplicate merge locks every account it can touch before any grant lock (M5). The merge revokes the other
+-- identity's grant and audits it against that grant's owner, whose auth row the audit row references; the deletion
+-- worker takes an auth row first and cascades to its grants afterwards, so the owner's account lock must come first.
+-- Fixtures are written directly: the import path would take these account locks itself and mask the check.
+-- Transaction-scoped advisory locks stay visible in pg_locks until the end of this test transaction.
+create function pg_temp.account_locked(p_account uuid) returns boolean language sql stable as
+  $$ select exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and objsubid = 1
+       and ((classid::bigint << 32) | objid::bigint) = hashtextextended('entitlement-account:' || p_account::text, 0)) $$;
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now() - interval '40 days',
+  '{"provider":"email","providers":["email"]}', '{}', now() - interval '40 days', now()
+from (values ('61000000-0000-4000-8000-000000000021', 'm5-one@example.test'),
+  ('61000000-0000-4000-8000-000000000022', 'm5-two@example.test'),
+  ('61000000-0000-4000-8000-000000000023', 'm5-three@example.test'),
+  ('61000000-0000-4000-8000-000000000024', 'm5-four@example.test')) m5_users(id, email);
+insert into private.early_access_members (id, email, full_name, joined_at, source, batch, added_by, claimed_at, claimed_by)
+select ('71000000-0000-4000-8000-0000000000' || n)::uuid, 'm5-' || name || '@example.test', 'Same Person',
+  now() - interval '40 days', 'import', 'm5', 'test', now() - interval '2 days', ('61000000-0000-4000-8000-0000000000' || n)::uuid
+from (values ('21', 'one'), ('22', 'two'), ('23', 'three'), ('24', 'four')) m5_members(n, name);
+-- One and Three enrolled a day earlier than Two and Four: theirs are the canonical months of each pair.
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, reference, created_by)
+select ('61000000-0000-4000-8000-0000000000' || n)::uuid, 'early_access', now() - make_interval(days => days),
+  now() - make_interval(days => days) + interval '1 month', 'uncapped',
+  jsonb_build_object('member_id', '71000000-0000-4000-8000-0000000000' || n), 'test'
+from (values ('21', 2), ('22', 1), ('23', 2), ('24', 1)) m5_grants(n, days);
+select is(pg_temp.account_locked('61000000-0000-4000-8000-000000000022'), false, 'before the merge, Two''s account is not locked here');
+set local role service_role;
+-- Older into newer: One is marked a duplicate of Two. Two's grant is the one revoked, so Two's account must be locked.
+insert into outcome values ('m5-merge-older-into-newer', public.admin_change_early_access_member('m5-one@example.test',
+  'mark-duplicate', 'm5-two@example.test', 'ops', 'one person, two addresses'));
+-- Newer into older: Four is marked a duplicate of Three. Four's own grant is revoked; Three's account must be locked too.
+insert into outcome values ('m5-merge-newer-into-older', public.admin_change_early_access_member('m5-four@example.test',
+  'mark-duplicate', 'm5-three@example.test', 'ops', 'one person, two addresses'));
+reset role;
+select is((select result from outcome where step = 'm5-merge-older-into-newer'),
+  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":1}'::jsonb, 'the older-into-newer merge revokes one grant');
+select is((select result from outcome where step = 'm5-merge-newer-into-older'),
+  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":1}'::jsonb, 'the newer-into-older merge revokes one grant');
+select is((select array_agg(pg_temp.account_locked(id) order by id) from auth.users where email like 'm5-%@example.test'),
+  array[true, true, true, true], 'every account whose grant or claim the merges touched holds its account lock: the other identity''s too');
+select is((select array_agg(user_id::text order by user_id) from public.entitlement_grants where source = 'early_access'
+  and revoked_at is null and user_id in (select id from auth.users where email like 'm5-%@example.test')),
+  array['61000000-0000-4000-8000-000000000021', '61000000-0000-4000-8000-000000000023'],
+  'each pair keeps its earliest month: one surviving grant per identity');
+select is((select jsonb_build_object('by', revoked_by, 'ended', revoked_at = now(), 'kept', starts_at is not null)
+  from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000022'),
+  '{"by":"system:duplicate-merge","ended":true,"kept":true}'::jsonb, 'the revoked grant keeps its history');
+select is((select count(*)::integer from private.entitlement_events where event = 'early-access.duplicate-revoked'
+  and user_id in ('61000000-0000-4000-8000-000000000022', '61000000-0000-4000-8000-000000000024')), 2,
+  'each revocation is audited against the grant''s owner');
+select is((select array_agg(duplicate_of::text order by email) from private.early_access_members where email in ('m5-one@example.test', 'm5-four@example.test')),
+  array['71000000-0000-4000-8000-000000000023', '71000000-0000-4000-8000-000000000022'], 'the members point at their new roots');
 -- Expiry: the month ends on its own date and is never renewed.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access';
