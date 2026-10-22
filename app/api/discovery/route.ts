@@ -26,6 +26,7 @@ const HTTP_STATUS: Partial<Record<DiscoveryResultStatus, number>> = {
   'not-enough-time': 409,
   'nothing-to-preview': 404,
   'not-opened': 409,
+  'too-many-tabs': 409,
   'unavailable': 503,
 }
 

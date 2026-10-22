@@ -71,4 +71,6 @@ test('each outcome has an explicit status; refusals never look like success', as
   assert.equal((await f.post()).status, 409, 'an exam that no longer fits is a refusal')
   f.state.result = { status: 'saved', now: 'x' }
   assert.equal((await f.post()).status, 200, 'a saved sheet is a success')
+  f.state.result = { status: 'too-many-tabs', now: 'x', deadlineAt: 'y', revision: 1, answers: {} }
+  assert.equal((await f.post()).status, 409, 'a tab identity beyond the exam capacity is a refusal')
 }))

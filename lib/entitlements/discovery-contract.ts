@@ -109,6 +109,10 @@ export const discoveryResultSchema = z.discriminatedUnion('status', [
   // the sheet that stands is returned so the tab continues from it.
   z.object({ status: z.literal('stale'), now: timestamp, deadlineAt: timestamp, revision: savedRevision,
     answers: sampleAnswers }).strict(),
+  // This tab identity cannot save on this exam: the exam already accepts changes from as many tabs as it allows.
+  // Nothing was applied; the sheet that stands is returned. Existing tabs are unaffected.
+  z.object({ status: z.literal('too-many-tabs'), now: timestamp, deadlineAt: timestamp, revision: savedRevision,
+    answers: sampleAnswers }).strict(),
   ...PLAIN_STATUSES.map(status => z.object({ status: z.literal(status) }).strict()),
 ])
 export type DiscoveryResult = z.infer<typeof discoveryResultSchema>

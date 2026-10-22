@@ -141,8 +141,8 @@ create table private.discovery_previews (
   saved_revision integer not null default 0 check (saved_revision >= 0),
   -- CBT only: per browser tab, the last change sequence applied ({"<tab>": {"seq": n, "at": time}}). Requests of one
   -- tab are applied in sequence order only: one delayed on the network behind a newer request of the same tab is
-  -- ignored, and a retry of an applied request is acknowledged, not reapplied. At most discovery_exam_tabs entries;
-  -- the one least recently seen is dropped.
+  -- ignored, and a retry of an applied request is acknowledged, not reapplied. An entry is never dropped while the
+  -- exam lives; once discovery_exam_tabs identities are known, a new one with changes is refused (too-many-tabs).
   saved_sources jsonb not null default '{}'::jsonb check (jsonb_typeof(saved_sources) = 'object'),
   answers jsonb check (answers is null or jsonb_typeof(answers) = 'object'),
   score integer check (score >= 0),
@@ -468,23 +468,21 @@ as $$
     select key, value from jsonb_each(p_changes) where jsonb_typeof(value) <> 'null') merged), '{}'::jsonb);
 $$;
 
--- How many browser tabs one exam remembers a change sequence for (saved_sources). Beyond it the entry seen least
--- recently is dropped: a tab that saved nothing while that many other tabs did starts its sequence afresh.
+-- How many browser tab identities one exam accepts changes from (saved_sources). Their sequence watermarks are kept
+-- for the exam's lifetime, so an older request can never be applied over a newer one; a further identity with
+-- changes is refused explicitly, and existing identities keep saving.
 alter table private.entitlement_policy add column discovery_exam_tabs integer not null default 64
   check (discovery_exam_tabs between 1 and 1000);
 
--- The sequence ledger after one tab's request is applied. Entries for other tabs are kept, bounded by the policy.
+-- The sequence ledger after one tab's request is applied: the tab's entry is added or advanced, every other entry
+-- is kept. Nothing is ever evicted (capacity is enforced before this, in discovery_reconcile_sheet).
 create function private.discovery_sources_with(p_sources jsonb, p_tab uuid, p_sequence integer, p_at timestamptz)
 returns jsonb
 language sql
-stable
+immutable
 set search_path = ''
 as $$
-  with kept as (
-    select key, value from jsonb_each(coalesce(p_sources, '{}'::jsonb)) where key <> p_tab::text
-      order by (value ->> 'at')::timestamptz desc
-      limit (select discovery_exam_tabs - 1 from private.entitlement_policy))
-  select coalesce((select jsonb_object_agg(key, value) from kept), '{}'::jsonb)
+  select coalesce(p_sources, '{}'::jsonb)
     || jsonb_build_object(p_tab::text, jsonb_build_object('seq', p_sequence, 'at', p_at));
 $$;
 
@@ -494,20 +492,30 @@ $$;
 --     the network, or a retry of an applied one), and neither does a request with no changes (a sync);
 --   * otherwise the tab's changed questions are laid over the sheet the database holds, the revision advances by
 --     one, and the tab's sequence is recorded. A question two tabs changed takes the change that reaches the database
---     last: the student's later action on either tab stands, and every tab is answered with the sheet that stands.
--- Returns the sheet that results (not yet written), with whether anything is to be written.
+--     last: the student's later action on either tab stands, and every tab is answered with the sheet that stands;
+--   * a tab identity not yet in the ledger is refused (o_refusal = 'too-many-tabs', nothing applied) once the ledger
+--     holds discovery_exam_tabs identities, so no watermark is ever evicted. A request with no changes from such a
+--     tab (a sync, or a submission with nothing pending) needs no entry and is not refused.
+-- Returns the sheet that results (not yet written), with whether anything is to be written, or the refusal.
 create function private.discovery_reconcile_sheet(p_preview private.discovery_previews, p_tab uuid, p_sequence integer,
-  p_base_revision integer, p_changes jsonb, out o_apply boolean, out o_sheet jsonb)
+  p_base_revision integer, p_changes jsonb, out o_apply boolean, out o_sheet jsonb, out o_refusal text)
 language plpgsql
 set search_path = ''
 as $$
 declare
+  v_known boolean := p_preview.saved_sources ? p_tab::text;
   v_applied integer := coalesce((p_preview.saved_sources -> p_tab::text ->> 'seq')::integer, 0);
 begin
   if not private.discovery_changes_valid(p_preview.content, p_changes) or p_base_revision > p_preview.saved_revision then
     raise exception 'Invalid exam answers' using errcode = '22023';
   end if;
   o_apply := p_sequence > v_applied and p_changes <> '{}'::jsonb;
+  o_refusal := null;
+  if o_apply and not v_known and (select count(*) from jsonb_object_keys(p_preview.saved_sources))
+      >= (select discovery_exam_tabs from private.entitlement_policy) then
+    o_apply := false;
+    o_refusal := 'too-many-tabs';
+  end if;
   o_sheet := case when o_apply then private.discovery_apply_changes(p_preview.saved_answers, p_changes)
     else coalesce(p_preview.saved_answers, '{}'::jsonb) end;
 end;
@@ -515,7 +523,8 @@ $$;
 
 -- The answer to a save or sync while the exam is open: the sheet that stands, its revision and the deadline, so the
 -- tab continues from it. "saved" means everything this tab sent up to its sequence is in that sheet; "stale" means
--- the request was older than one already applied from this tab and changed nothing.
+-- the request was older than one already applied from this tab and changed nothing; "too-many-tabs" means this tab
+-- identity cannot save on this exam (the ledger is full) and nothing was applied.
 create function private.discovery_sheet_answer(p_state text, p_preview private.discovery_previews) returns jsonb
 language sql
 stable
@@ -532,7 +541,8 @@ $$;
 -- changed since (p_changes) and its own change sequence (p_sequence); the database reconciles them under the account
 -- lock and the row lock (discovery_reconcile_sheet) and answers with the whole sheet that now stands and its
 -- revision, so a question changed on another tab is never overwritten by a tab that did not touch it. A request
--- with no changes (a sync) only reads the clock, the deadline and the sheet.
+-- with no changes (a sync) only reads the clock, the deadline and the sheet. A tab identity beyond the exam's
+-- capacity is answered too-many-tabs and applies nothing.
 create function public.save_discovery_cbt(p_session_id uuid, p_course_id uuid, p_tab uuid, p_sequence integer,
   p_base_revision integer, p_changes jsonb)
 returns jsonb
@@ -563,6 +573,9 @@ begin
       'preview', private.discovery_preview_view(v_preview));
   end if;
   select * into v_merge from private.discovery_reconcile_sheet(v_preview, p_tab, p_sequence, p_base_revision, p_changes);
+  if v_merge.o_refusal is not null then
+    return private.discovery_sheet_answer(v_merge.o_refusal, v_preview);
+  end if;
   if not v_merge.o_apply then
     return private.discovery_sheet_answer(case when p_changes <> '{}'::jsonb
       and p_sequence < coalesce((v_preview.saved_sources -> p_tab::text ->> 'seq')::integer, 0) then 'stale'
@@ -622,6 +635,11 @@ begin
   -- Still unsubmitted here means the deadline has not passed (and so neither has the pass end).
   if v_preview.submitted_at is null then
     select * into v_merge from private.discovery_reconcile_sheet(v_preview, p_tab, p_sequence, p_base_revision, p_changes);
+    if v_merge.o_refusal is not null then
+      -- A tab identity the exam cannot take changes from: the exam stays open for an existing tab to submit, or for
+      -- this one to submit with nothing pending.
+      return private.discovery_sheet_answer(v_merge.o_refusal, v_preview);
+    end if;
     v_score := private.discovery_exam_score(v_preview.content, v_merge.o_sheet);
     v_grant_id := v_preview.grant_id;
     update private.discovery_previews set

@@ -541,11 +541,57 @@ select is((select jsonb_build_object('graded_is_saved', answers = saved_answers,
   'the pending changes were written with the grading (revision 3, tab A at sequence 2), so the saved and graded sheets agree');
 select is((select detail->'pending_applied' from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000008'
     and event = 'discovery.exam-submitted' order by id desc limit 1), 'true'::jsonb, 'audited as graded with pending changes');
--- The exam ledger remembers at most the policy's number of tabs; the one seen least recently is dropped.
-select is((select discovery_exam_tabs from private.entitlement_policy), 64, 'an exam remembers 64 tabs');
-select is((select count(*)::integer from jsonb_object_keys(private.discovery_sources_with(
-    (select jsonb_object_agg(gen_random_uuid()::text, jsonb_build_object('seq', n, 'at', now() - make_interval(secs => n)))
-      from generate_series(1, 64) n), pg_temp.t(9), 1, now()))), 64, 'a 65th tab replaces the least recently seen one');
+-- 4f. The tab ledger never forgets a watermark (review of 1620315, finding 4): after 64 identities, a tab's delayed
+-- older request is still refused, a 65th identity with changes is refused explicitly, existing identities keep
+-- saving, and submissions are unaffected. Capacity stays 64.
+select is((select discovery_exam_tabs from private.entitlement_policy), 64, 'an exam accepts changes from 64 tab identities');
+delete from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02'))->>'state', 'ready', 'a fresh exam opens for the ledger cases');
+-- Tab A applies sequence 2 (answer B for Q1): its sequence 1 (answer A) is still somewhere on the network.
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 2, 0,
+  (select jsonb_build_object(item, 1) from pg_temp.q('71000000-0000-4000-8000-000000000008', 1)))->>'revision', '1',
+  'tab A saves Q1 = B at its sequence 2');
+-- 63 other tab identities each save once: the ledger reaches capacity.
+select is((select count(*)::integer from generate_series(2, 64) n,
+    lateral (select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(n), 1, 1,
+      (select jsonb_build_object(item, 2) from pg_temp.q('71000000-0000-4000-8000-000000000008', 2))) r) s
+    where s.r->>'state' = 'saved'), 63, '63 more tab identities save (64 in the ledger)');
+reset role;
+select is((select jsonb_build_object('tabs', (select count(*) from jsonb_object_keys(saved_sources)),
+    'a_seq', (saved_sources -> pg_temp.t(1)::text ->> 'seq')::integer) from private.discovery_previews
+    where user_id = '71000000-0000-4000-8000-000000000008'), '{"tabs":64,"a_seq":2}'::jsonb,
+  'the ledger holds all 64 identities, tab A''s watermark (sequence 2) among them');
+set local role service_role;
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1, 1,
+  (select jsonb_build_object(item, 0) from pg_temp.q('71000000-0000-4000-8000-000000000008', 1)))->>'state', 'stale',
+  'tab A''s delayed sequence 1 is refused as stale after 63 other identities saved');
+reset role;
+select is((select saved_answers -> (select item from pg_temp.q('71000000-0000-4000-8000-000000000008', 1)) from private.discovery_previews
+    where user_id = '71000000-0000-4000-8000-000000000008'), '1'::jsonb, 'Q1 is still B: the older request did not overwrite the newer answer');
+set local role service_role;
+select is((select jsonb_build_object('state', r->>'state', 'revision', r->'revision',
+      'sheet_q3', r->'answers'->(select item from pg_temp.q('71000000-0000-4000-8000-000000000008', 3)))
+    from public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(65), 1, 64,
+      (select jsonb_build_object(item, 3) from pg_temp.q('71000000-0000-4000-8000-000000000008', 3))) r),
+  '{"state":"too-many-tabs","revision":64,"sheet_q3":null}'::jsonb,
+  'a 65th identity with changes is refused explicitly, and is told the sheet that stands');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(65), 0, 64, '{}')->>'state', 'saved',
+  'a 65th identity with no changes (a sync) is not refused: it reads the sheet');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 2, 64,
+  (select jsonb_build_object(item, 3) from pg_temp.q('71000000-0000-4000-8000-000000000008', 3)))->>'revision', '65',
+  'an existing identity keeps saving at capacity');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 3, 65,
+  (select jsonb_build_object(item, 2) from pg_temp.q('71000000-0000-4000-8000-000000000008', 1)))->>'revision', '66', 'so does tab A');
+select is((select jsonb_build_object('state', r->>'state', 'score', r->'preview'->'result'->'score')
+    from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(66), 1, 66,
+      (select jsonb_build_object(item, correct) from pg_temp.q('71000000-0000-4000-8000-000000000008', 4))) r),
+  '{"state":"too-many-tabs","score":null}'::jsonb, 'a 66th identity submitting WITH pending changes is refused, and the exam stays open');
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(66), 0, 66, '{}')
+    ->'preview'->'result'->>'total', '50', 'a new identity submitting with nothing pending grades the sheet the database holds');
+reset role;
+select is((select count(*)::integer from jsonb_object_keys((select saved_sources from private.discovery_previews
+    where user_id = '71000000-0000-4000-8000-000000000008'))), 64, 'the ledger never grew past capacity and never evicted');
 
 -- 4c. An exam is exactly 50 valid questions, or it does not open -------------------------------------------------------
 -- Course 01 publishes exactly 50 questions. One malformed revision leaves 49 valid ones.

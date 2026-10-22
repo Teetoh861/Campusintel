@@ -6,7 +6,9 @@
 // read its clock the moment the request left, so the cutoff here is never later than the real deadline. Until an
 // exchange has succeeded there is no trustworthy reading and answers cannot change; the same happens again whenever
 // the device may have slept (the page hidden, or the wall clock drifting from the monotonic one), until a fresh
-// exchange lands. The server's reading is also refreshed after a failed exchange, with bounded backoff.
+// exchange lands. Every invalidation starts a new generation: an exchange that began before it is discarded when it
+// answers, whatever it says, so only an exchange started after the latest invalidation can enable answering again.
+// The server's reading is also refreshed after a failed exchange, with bounded backoff.
 export type ClockReading = {
   /** The server's clock when it answered, in epoch milliseconds. */
   serverNow: number
@@ -52,6 +54,8 @@ export class ExamClock {
   private attempts = 0
   private syncing = false
   private wanted = false
+  /** Advanced by every invalidation; an exchange publishes only if it started in the current generation. */
+  private generation = 0
   private stopped = false
   private timer: unknown = null
 
@@ -80,8 +84,12 @@ export class ExamClock {
     this.resync()
   }
 
-  /** The reading can no longer be trusted (the page was hidden, the device may have slept): read the server again. */
+  /**
+   * The reading can no longer be trusted (the page was hidden, the device may have slept): read the server again.
+   * Any exchange already in flight belongs to the old generation and will be discarded when it answers.
+   */
   invalidate(): void {
+    this.generation += 1
     if (this.deadlineAt !== null) {
       this.deadlineAt = null
       this.options.onChange('unsynced')
@@ -104,12 +112,20 @@ export class ExamClock {
 
   private async exchange(): Promise<void> {
     this.syncing = true
+    const generation = this.generation
     const sentAt = this.options.monotonic()
     let reading: ClockReading | null
     try { reading = await this.options.sync() } catch { reading = null }
     const receivedAt = this.options.monotonic()
     this.syncing = false
     if (this.stopped) return
+    if (generation !== this.generation) {
+      // Started before the latest invalidation: its reading says nothing about now. Nothing is published, and the
+      // exchange the invalidation asked for goes next.
+      this.wanted = false
+      void this.exchange()
+      return
+    }
     const roundTrip = receivedAt - sentAt
     if (reading !== null && roundTrip >= 0 && roundTrip <= EXAM_CLOCK.maxRoundTripMs) {
       // As if the server read its clock when the request left: the whole round trip counts as elapsed.

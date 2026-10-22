@@ -28,7 +28,7 @@ const previewRow = z.discriminatedUnion('state', [
     topics: z.array(z.object({ item_id: z.string().uuid(), title: z.string() }).strict()).nullable() }),
   z.object({ state: z.literal('used-elsewhere'), ends_at: timestamp, content_key: z.string().nullable() }),
   z.object({ state: z.literal('not-enough-time'), now: timestamp, ends_at: timestamp }),
-  z.object({ state: z.enum(['saved', 'stale']), now: timestamp, deadline_at: timestamp,
+  z.object({ state: z.enum(['saved', 'stale', 'too-many-tabs']), now: timestamp, deadline_at: timestamp,
     revision: z.number().int().nonnegative(), answers: sampleAnswers }),
   z.object({ state: z.enum(['signed-out', 'invalid-course', 'not-offered', 'invalid-request', 'free-course',
     'full-access', 'no-pass', 'expired', 'nothing-to-preview', 'not-opened']) }),
@@ -61,7 +61,7 @@ export function discoveryResultFrom(data: unknown): DiscoveryResult {
   if (row.state === 'ready') return { status: 'ready', now: row.now, endsAt: row.ends_at, preview: row.preview }
   if (row.state === 'available') return { status: 'available', now: row.now, endsAt: row.ends_at, topics: row.topics }
   if (row.state === 'not-enough-time') return { status: 'not-enough-time', now: row.now, endsAt: row.ends_at }
-  if (row.state === 'saved' || row.state === 'stale') {
+  if (row.state === 'saved' || row.state === 'stale' || row.state === 'too-many-tabs') {
     return { status: row.state, now: row.now, deadlineAt: row.deadline_at, revision: row.revision, answers: row.answers }
   }
   if (row.state === 'used-elsewhere') {

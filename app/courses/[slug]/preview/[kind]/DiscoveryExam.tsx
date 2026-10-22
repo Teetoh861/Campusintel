@@ -9,9 +9,10 @@
 // at the moment of the tap, not from the once-a-second countdown, and a refused tap changes nothing on screen.
 // Answers are saved as the student goes through lib/entitlements/exam-autosave.ts: only the questions this tab
 // changed, over the revision it last received, so another tab's answers are never overwritten; the database answers
-// with the sheet that stands and this tab shows it. Submission carries the same pending changes, and the database
-// grades the sheet it holds once they are laid over it. "Saved" is shown only once the server confirmed this tab's
-// latest change.
+// with the sheet that stands and this tab shows it. Submission is sent at once and carries the same pending changes
+// (no wait for a save in flight), and the database grades the sheet it holds once they are laid over it; while a
+// submission is in flight the answer controls are inert, so the screen cannot drift from what is being graded.
+// "Saved" is shown only once the server confirmed this tab's latest change.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -31,15 +32,20 @@ const TICK_MS = 1000
 const RETRY_MS = 10_000
 const MAX_AUTO_RETRIES = 10
 const LOW_TIME_MS = 5 * 60_000
-// How long a submission waits for the save in flight before sending the same changes itself.
-const FLUSH_WAIT_MS = 3_000
 
 const REFUSAL: Record<string, string> = {
   'expired': 'Your Discovery Pass has ended, so this exam’s result can no longer be shown.',
+  // This tab identity cannot save on this exam (the exam already takes changes from as many tabs as it allows).
+  // Saving stops in this tab only; every other tab, and everything already saved, is untouched.
+  'too-many-tabs': 'You have too many exam tabs open. Continue in one of your existing tabs — nothing you’ve answered there is lost.',
   'session-changed': 'You signed in on another tab. Refresh this page to continue.',
   'signed-out': 'You’ve been signed out. Sign in again before time runs out.',
 }
 const RETRY = 'We couldn’t send your answers. They’re still here. Try again.'
+// A submission that did not go through with time left: what was confirmed stays saved, the rest stays on this device.
+const SUBMIT_RETRY_SAVED = 'Your answers are saved. Submission didn’t go through — try again.'
+const SUBMIT_RETRY_UNSAVED = 'Your answers are kept on this device. Submission didn’t go through — try again.'
+const SUBMITTING = 'Submitting…'
 const DEADLINE_RULE = 'Only answers saved before time runs out count.'
 const CHECKING_CLOCK = 'Checking the time left…'
 const RECONNECTING = 'Reconnecting… Answers can’t be changed until the connection is back.'
@@ -117,13 +123,17 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [message, setMessage] = useState<string | null>(null)
   const answersRef = useRef(answers)
   const autosave = useRef<ExamAutosave | null>(null)
+  // The sheet the database holds, once it refused this tab's changes: what a reload of this tab starts from.
+  const refusedSheet = useRef<SampleAnswers | null>(null)
   const examClock = useRef<ExamClock | null>(null)
   // The page clock when the exam mounted, for the display-only countdown before the first exchange lands.
   const mounted = useRef<number | null>(null)
   const sending = useRef(false)
   const autoRetries = useRef(0)
   const timeUp = remaining <= 0
-  const canAnswer = clockState === 'synced' && !timeUp
+  // Answers can change only with a trustworthy clock reading, before the cutoff, and while no submission is in
+  // flight: once Submit is tapped the sheet on screen is the sheet being graded.
+  const canAnswer = clockState === 'synced' && !timeUp && !busy && save?.refusal !== 'too-many-tabs'
   const answered = Object.keys(answers).length
 
   // The trustworthy reading when there is one; otherwise the display-only estimate from the rendered values.
@@ -142,7 +152,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     mounted.current = performance.now()
     const sync = async (): Promise<ClockReading | null> => {
       const outcome = await postDiscoveryCommand({ action: 'sync-exam', courseSlug, tab }, continuityToken)
-      if (outcome.status === 'saved' || outcome.status === 'stale') {
+      if (outcome.status === 'saved' || outcome.status === 'stale' || outcome.status === 'too-many-tabs') {
         // The sheet that stands, from every tab, laid under this tab's unconfirmed changes.
         autosave.current?.adopt({ revision: outcome.revision, answers: validAnswers(outcome.answers, questions) })
         return { serverNow: Date.parse(outcome.now), deadline: Date.parse(outcome.deadlineAt) }
@@ -187,6 +197,15 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       if (outcome.status === 'saved' || outcome.status === 'stale') {
         return { kind: outcome.status, revision: outcome.revision, answers: validAnswers(outcome.answers, questions) }
       }
+      if (outcome.status === 'too-many-tabs') {
+        // The database will take no changes from this tab, now or later: its unsent choices are dropped, the sheet
+        // that stands is shown (nothing refused may look chosen), and saving stops in this tab only.
+        const standing = validAnswers(outcome.answers, questions)
+        refusedSheet.current = standing
+        answersRef.current = standing
+        setAnswers(standing)
+        return { kind: 'refused', status: outcome.status }
+      }
       if (outcome.status === 'unavailable') return { kind: 'failed' }
       if (outcome.status === 'ready') {
         // The deadline passed and the database marked the sheet it had: show that result now.
@@ -201,7 +220,11 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       tab, server, restored: readStored(storageKey, questions),
       remaining: () => examClock.current?.remaining() ?? null, send,
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
-      onChange: snapshot => { setSave(snapshot); if (controller !== null) store(storageKey, controller.unsent()) },
+      onChange: snapshot => {
+        setSave(snapshot)
+        if (snapshot.refusal === 'too-many-tabs' && refusedSheet.current !== null) store(storageKey, { answers: refusedSheet.current, dirty: [] })
+        else if (controller !== null) store(storageKey, controller.unsent())
+      },
       onRebase: merged => { answersRef.current = merged; setAnswers(merged) },
     })
     autosave.current = controller
@@ -226,30 +249,35 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     sending.current = true
     setBusy(true)
     setMessage(null)
-    // Anything unsaved goes first and is given a moment to land; the submission then carries the same pending
-    // changes, and the database grades the sheet it holds once those still in time are laid over it.
-    await Promise.race([autosave.current?.flush() ?? Promise.resolve(),
-      new Promise(resolve => window.setTimeout(resolve, FLUSH_WAIT_MS))])
+    // Sent at once, carrying this tab's pending changes under the same contract as a save: nothing waits for a save
+    // in flight. The database lays the changes still in time over the sheet it holds, under its lock, and grades that.
     const delta: SheetDelta = autosave.current?.delta() ?? { tab, sequence: 0, baseRevision: 0, changes: {} }
     const outcome = await postDiscoveryCommand({ action: 'submit-exam', courseSlug, ...delta }, continuityToken)
-    sending.current = false
-    setBusy(false)
-    setConfirming(false)
     if (outcome.status === 'ready' && outcome.preview.kind === 'cbt' && outcome.preview.result !== null) {
+      // Accepted: no save answer arriving from now on may touch the sheet on screen.
       autosave.current?.stop()
+      sending.current = false
+      setBusy(false)
+      setConfirming(false)
       setResult(outcome.preview.result)
       try { window.sessionStorage.removeItem(storageKey) } catch { /* Nothing to clear. */ }
       return true
     }
+    sending.current = false
+    setBusy(false)
+    setConfirming(false)
+    if (outcome.status === 'unavailable') {
+      setMessage(autosave.current?.snapshot().state === 'saved' ? SUBMIT_RETRY_SAVED : SUBMIT_RETRY_UNSAVED)
+      return false
+    }
     setMessage(REFUSAL[outcome.status] ?? RETRY)
-    return outcome.status !== 'unavailable'
+    return true
   }, [continuityToken, courseSlug, storageKey, tab])
 
-  // At the deadline any unsaved changes are sent at once, then the exam submits itself and keeps trying briefly if
-  // the network drops. The database marks the sheet it accepted in time, never a later one.
+  // At the deadline the exam submits itself at once, with any unsaved changes in the submission, and keeps trying
+  // briefly if the network drops. The database marks the sheet it accepted in time, never a later one.
   useEffect(() => {
     if (!timeUp || result !== null) return
-    void autosave.current?.flush()
     let cancelled = false
     async function attempt(): Promise<void> {
       if (cancelled || await submit() || autoRetries.current >= MAX_AUTO_RETRIES) return
@@ -261,6 +289,8 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   }, [timeUp, result, submit])
 
   function choose(itemId: string, option: number): void {
+    // Inert while a submission is in flight: the sheet being graded is the one on screen.
+    if (sending.current) return
     const next = { ...answersRef.current, [itemId]: option }
     // The controller reads the clock now, not the countdown shown a moment ago: a tap after the cutoff, or without a
     // trustworthy reading, is refused before anything on screen changes, and the countdown is brought up to date.
@@ -274,7 +304,8 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const question = questions[index]!
   const unanswered = questions.length - answered
   const saving = saveLine(save, timeUp)
-  const clockLine = canAnswer || timeUp ? null : clockFailures > 1 ? RECONNECTING : CHECKING_CLOCK
+  const clockLine = busy && !timeUp ? SUBMITTING
+    : canAnswer || timeUp || save?.refusal === 'too-many-tabs' ? null : clockFailures > 1 ? RECONNECTING : CHECKING_CLOCK
   return <div className="grid gap-4">
     <div className="student-surface grid gap-1" role="timer" aria-live="off"
       data-urgency={remaining <= LOW_TIME_MS ? 'low' : undefined} data-clock-state={clockState}>
@@ -288,7 +319,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       {saving.retry && <div><button type="button" onClick={() => autosave.current?.retry()}
         className={studentAction(btnGhost, 'bg-student-surface')}>Save now</button></div>}
     </div>
-    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer}>
+    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer} aria-busy={busy || undefined}>
       <legend className="student-detail-kicker">Question {index + 1} of {questions.length}</legend>
       <p className="student-practice-prompt mt-2">{question.prompt}</p>
       <div className="student-practice-options mt-3">
@@ -331,13 +362,13 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
             <button type="button" onClick={() => setConfirming(false)} className={studentAction(btnGhost, 'bg-student-surface')}>
               Keep going</button>
             <button type="button" disabled={busy} onClick={() => void submit()}
-              className={studentAction(btnNavy, studentFocusDark)}>{busy ? 'Marking…' : 'Submit'}</button>
+              className={studentAction(btnNavy, studentFocusDark)}>{busy ? SUBMITTING : 'Submit'}</button>
           </div>
         </>
         : <button type="button" disabled={busy}
           onClick={() => { if (unanswered > 0 && !timeUp) setConfirming(true); else void submit() }}
           className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:w-auto')}>
-          {busy ? 'Marking…' : timeUp ? 'See my result' : 'Submit exam'}
+          {busy ? SUBMITTING : timeUp ? 'See my result' : 'Submit exam'}
         </button>}
       {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message}</p>}
     </div>
