@@ -25,6 +25,7 @@ const HTTP_STATUS: Partial<Record<AiPracticeResult['status'], number>> = {
   'busy': 409,
   'capacity': 429,
   'upload-limit': 429,
+  'pass-upload-limit': 429,
   'allowance-exhausted': 402,
   'allowance-expired': 402,
 }

@@ -140,9 +140,9 @@ loaded at run time, outside the bundle, so `next.config.mjs` lists them in
 
 ## AI entitlement (server-issued grants)
 
-AI generation **consumes** a grant; it never creates one. PRD v1.4 requires a
-one-time phone-OTP activation for the seven-day trial (PRD 4.5), so first AI
-use must not start a trial.
+AI generation **consumes** a grant; it never creates one. A trial grant (today
+the Discovery Pass) starts only when the student explicitly activates it on Plan
+& Access, so first AI use must not start one.
 
 - A grant is one row in `ai_allowance_windows` with a `source`: `trial`,
   `early_access` or `test`. It is created only by
@@ -159,8 +159,8 @@ use must not start a trial.
   `NEXT_PUBLIC_SUPABASE_URL` is a loopback address, and `VERCEL_ENV` is unset or
   `development`. Anything missing or unrecognised rejects. Local end-to-end runs
   that need a test grant therefore use `next dev`, not `next start`.
-- **Nothing in this branch issues trial or Early Access grants.** Until the shared
-  entitlement service and OTP activation exist, every production request is
+- **Nothing in this module issues trial or Early Access grants.** Without the
+  shared entitlement service (`lib/entitlements`) every production request is
   refused (fail closed). Locally, issue a test grant with
   `scripts/ai-practice/grant-test-allowance.cjs`, which refuses non-local URLs.
 - The trial grant is the shared fixed allowance from `private.ai_practice_policy`
@@ -175,9 +175,9 @@ use must not start a trial.
   or replaces it. Whether Early Access should upgrade a trial grant is an open
   owner decision and is not implemented.
 
-Integration for the entitlement/OTP owner: after a verified OTP activation, call
-`issue_ai_allowance_grant(<user>, 'trial')` with the service role, once. Early
-Access calls it with `'early_access'` and explicit units and days.
+Since `20261017100000_trial_entitlements.sql` production AI comes only from an
+`entitlement_grants` row (Discovery Pass activation or Early Access enrollment);
+`issue_ai_allowance_grant` issues test grants only.
 
 Other server-side controls: one generation in flight per student, 20 uploads
 per student per rolling day, a platform-wide cap of 500 generations per UTC
@@ -300,8 +300,8 @@ a fact, not as proof that the key is invalid.
   the hosted project that it is private, with the 5 MB limit and three MIME types.
 - Server-only secrets as listed above, in encrypted hosting settings.
 - Schedule the cleanup route at least hourly (no cron entry is committed).
-- Entitlement service and OTP trial activation issuing grants. Until then,
-  production fails closed.
+- Hosted migrations for the entitlement service (`lib/entitlements`,
+  `docs/entitlements-operations.md`). Until then, production fails closed.
 - Provider privacy: confirm Anthropic's retention and DPA terms (and whether
   zero-data-retention is needed), and name Anthropic in the privacy notice.
 - Genuine model-quality evaluation: the fixture and mock runs prove plumbing

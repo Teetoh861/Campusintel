@@ -39,6 +39,8 @@ export type AiPracticeCommand = z.infer<typeof aiPracticeCommandSchema>
 /** Why an uploaded file was refused. Matches the database's rejection_reason values. */
 export type UploadRejection =
   | 'missing-upload' | 'too-large' | 'unsupported-type' | 'corrupt' | 'encrypted' | 'empty' | 'too-short' | 'too-much-text'
+  // Discovery Pass only: the pass's one accepted upload was used by another file first.
+  | 'pass-upload-limit'
 
 /** Where an AI grant came from. Only trusted server code issues grants; AI use never creates one. */
 export type AiGrantSource = 'trial' | 'early_access' | 'test'
@@ -51,6 +53,17 @@ export type AllowanceSummary = {
   total: number | null
   used: number
   endsAt: string | null
+  /** Discovery Pass only: the most extracted text one upload may carry, decided by the database. */
+  sourceCharLimit?: number
+}
+
+// Average English word plus its space, used only to tell a student roughly how much to upload.
+const CHARS_PER_WORD = 6
+const WORD_ROUNDING = 500
+
+/** A cautious "about N words" for a character limit, rounded down so the advice is always safe to follow. */
+export function approximateWords(chars: number): number {
+  return Math.max(WORD_ROUNDING, Math.floor(chars / CHARS_PER_WORD / WORD_ROUNDING) * WORD_ROUNDING)
 }
 
 /** Student-safe question shape: personal and unverified, with the quote that grounds the answer. */
@@ -80,7 +93,7 @@ export type AiPracticeResult =
   | { status: 'insufficient-source' | 'flagged-for-review' | 'generation-failed'; allowance: AllowanceSummary | null }
   | { status: 'allowance-exhausted' | 'allowance-expired'; allowance: AllowanceSummary | null }
   | { status: 'not-entitled' }
-  | { status: 'busy' | 'capacity' | 'upload-limit' | 'not-eligible' | 'disabled' | 'not-found' | 'signed-out'
+  | { status: 'busy' | 'capacity' | 'upload-limit' | 'pass-upload-limit' | 'not-eligible' | 'disabled' | 'not-found' | 'signed-out'
       | 'session-changed' | 'invalid-request' | 'unavailable' }
 
 export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
@@ -92,4 +105,5 @@ export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
   'empty': 'We could not find any text in this file. Upload a file with selectable text; scanned images are not supported.',
   'too-short': 'There is not enough text here to write fair questions. Upload fuller notes (at least about 150 words).',
   'too-much-text': 'This file has more text than we can use at once. Upload one topic or chapter at a time.',
+  'pass-upload-limit': 'Your Discovery Pass includes one AI upload, and another file already used it.',
 }

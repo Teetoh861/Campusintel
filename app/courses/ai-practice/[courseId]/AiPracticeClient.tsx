@@ -5,9 +5,11 @@ import { FileUp, LoaderCircle } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { UPLOAD_ACCEPT_ATTRIBUTE } from '@/lib/ai-practice/upload-contract'
+import { UPLOAD_ACCEPT_ATTRIBUTE, approximateWords } from '@/lib/ai-practice/upload-contract'
 import type { AllowanceSummary, PersonalSetView } from '@/lib/ai-practice/upload-contract'
-import { NOT_ENTITLED_MESSAGE, NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName,
+import { NEUTRAL_TRIAL_WORDING } from '@/lib/entitlements/presentation'
+import type { TrialWording } from '@/lib/entitlements/presentation'
+import { NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName, notEntitledMessage,
   runUploadJourney } from './journey'
 import type { JourneyOutcome, JourneyPhase } from './journey'
 import { PersonalDisclaimer, PersonalPractice } from './PersonalPractice'
@@ -20,12 +22,15 @@ const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
 }
 
 /** One honest sentence about the student's AI grant; nothing when there is none or it cannot be read. */
-export function allowanceLine(allowance: AllowanceSummary | null): string | null {
+export function allowanceLine(allowance: AllowanceSummary | null, trial: TrialWording = NEUTRAL_TRIAL_WORDING): string | null {
   if (!allowance || allowance.state === 'not-entitled') return null
-  if (allowance.state === 'expired') return `Your ${grantName(allowance)} has ended.`
+  if (allowance.state === 'expired') return `Your ${grantName(allowance, trial)} has ended.`
   if (allowance.total === null) return 'Your AI access includes question sets without a set limit while it lasts.'
   const left = Math.max(0, allowance.total - allowance.used)
-  return `${left} of ${allowance.total} AI question sets left in your ${grantName(allowance)}.`
+  const sets = `${left} of ${allowance.total} AI question ${allowance.total === 1 ? 'set' : 'sets'} left`
+  if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance, trial)}.`
+  return `${sets} on your ${grantName(allowance, trial)}. Upload notes of up to about ` +
+    `${approximateWords(allowance.sourceCharLimit).toLocaleString('en-GB')} words.`
 }
 
 /** Progress for the current step. Generation repeats the unverified label next to the status it announces. */
@@ -43,9 +48,13 @@ type Props = {
   continuityToken: string
   initialAllowance: AllowanceSummary | null
   recentSets: PersonalSetView[]
+  /** The student's own trial grant and whether a pass can still be started; the copy names what they actually hold. */
+  trial?: TrialWording
 }
 
-export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets }: Props): ReactElement {
+export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets,
+  trial = NEUTRAL_TRIAL_WORDING }: Props):
+  ReactElement {
   const input = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<JourneyPhase | null>(null)
   const [outcome, setOutcome] = useState<Extract<JourneyOutcome, { kind: 'problem' }> | null>(null)
@@ -69,7 +78,7 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     setOutcome(result)
   }
 
-  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, onPhase: setPhase, requests })
+  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, onPhase: setPhase, requests })
 
   async function upload(file: File): Promise<void> {
     setOutcome(null)
@@ -85,12 +94,12 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
 
   if (active) return <PersonalPractice set={active} onClose={() => setActive(null)} />
   const busy = phase !== null
-  const line = allowanceLine(allowance)
+  const line = allowanceLine(allowance, trial)
   const entitled = allowance?.state !== 'not-entitled'
 
   return <div className="ai-practice-workspace">
     <PersonalDisclaimer />
-    {!entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{NOT_ENTITLED_MESSAGE}</Notice>}
+    {!entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial)}</Notice>}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
       <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter

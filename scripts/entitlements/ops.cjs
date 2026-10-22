@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // scripts/entitlements/ops.cjs — Operator tool for entitlements: status, recovery and the trusted Early Access list.
 // Explicit invocation only. Every change requires --actor and --reason and is written to the audit trail by the
-// database function it calls. Phone numbers are hashed here with ENTITLEMENT_PHONE_HASH_KEY and never sent.
+// database function it calls. Early Access list phones are hashed here with ENTITLEMENT_PHONE_HASH_KEY and never
+// sent; the Discovery Pass itself collects no phone number and has no operator command (students activate it).
 //   node scripts/entitlements/ops.cjs status --user <uuid>
 //   node scripts/entitlements/ops.cjs grant --user <uuid> --days <n> --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs change-grant --grant <uuid> --action extend|revoke|restore|set-ai-units
 //       [--until <ISO time>] [--units <n>] --actor <name> --reason <text>
-//   node scripts/entitlements/ops.cjs release-phone --phone <number> --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs import-early-access --file <csv> --batch <label> --actor <name> [--dry-run]
 //       CSV header: email,full_name,phone,joined_at  (phone may be empty; joined_at is an ISO time before launch)
 //   node scripts/entitlements/ops.cjs member --email <email> --action exclude|include|mark-duplicate|clear-duplicate
@@ -18,7 +18,10 @@
 //       Records the ACTUAL public launch (once, now) and enrolls eligible confirmed accounts in bounded batches until
 //       none remain.
 //   node scripts/entitlements/ops.cjs reconcile-early-access --actor <name> --reason <text>
-//   node scripts/entitlements/ops.cjs purge-otp
+//   node scripts/entitlements/ops.cjs purge-claims
+//       Removes expired Discovery Pass email claims (past discovery_claim_retention).
+//   node scripts/entitlements/ops.cjs claim-keys
+//       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
 const fs = require('node:fs')
 const { normalizeNigerianMobile, phoneHash } = require('../../lib/entitlements/phone.cjs')
 
@@ -215,13 +218,6 @@ async function run(args, env = process.env, transport = fetch, write = text => p
         p_ends_at: action === 'extend' ? isoTime(required(opts, 'until'), '--until') : null,
         p_ai_units: action === 'set-ai-units' ? integer(opts, 'units') : null, ...note() }))
     }
-    case 'release-phone': {
-      const key = phoneKey(env)
-      if (key === null) throw new Error('ENTITLEMENT_PHONE_HASH_KEY is required')
-      const phone = normalizeNigerianMobile(required(opts, 'phone'))
-      if (phone === null) throw new Error('--phone must be a Nigerian mobile number')
-      return print(await rpc('admin_release_trial_phone', { p_phone_hash: phoneHash(key, phone.e164), ...note() }))
-    }
     case 'member': {
       const action = required(opts, 'action', /^(exclude|include|mark-duplicate|clear-duplicate)$/)
       const changed = await rpc('admin_change_early_access_member', { p_email: required(opts, 'email'), p_action: action,
@@ -249,7 +245,8 @@ async function run(args, env = process.env, transport = fetch, write = text => p
       return print({ ...launched, ...await sweepAll(rpc, note(), launched) })
     }
     case 'reconcile-early-access': return print(await sweepAll(rpc, note(), null))
-    case 'purge-otp': return print({ removed: await rpc('purge_trial_otp_challenges', {}) })
+    case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
+    case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
     default: throw new Error('usage: see the header of scripts/entitlements/ops.cjs')
   }
 }

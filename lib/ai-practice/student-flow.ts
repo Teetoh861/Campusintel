@@ -41,7 +41,7 @@ export type BeginResult =
 
 export type ReserveResult =
   | { status: 'created'; documentId: string; storagePath: string }
-  | { status: 'upload-limit' | 'invalid-course' | 'signed-out' | 'not-entitled' | 'allowance-exhausted' | 'allowance-expired' }
+  | { status: 'upload-limit' | 'pass-upload-limit' | 'invalid-course' | 'signed-out' | 'not-entitled' | 'allowance-exhausted' | 'allowance-expired' }
 
 /** The extraction lease: only the holder of claimId may settle the document. */
 export type ClaimResult = { state: 'claimed'; claimId: string } | { state: 'busy' | 'settled' | 'not-found' | 'signed-out' }
@@ -181,7 +181,15 @@ async function processUpload(env: AiPracticeEnv, documentId: string): Promise<Ai
     if (outcome === 'unavailable') await env.releaseExtraction(document.id, claim.claimId)
   }
   if (outcome === 'unavailable') return { status: 'unavailable' }
-  if (outcome === null) return currentState(env, documentId)
+  if (outcome === null) {
+    // Settled by another request, or by the database overriding this one (a Discovery Pass limit). Either way the
+    // stored outcome is what the student sees, and the raw file is no longer needed.
+    const current = await currentState(env, documentId)
+    if (current.status === 'upload-ready' || current.status === 'upload-rejected') {
+      await env.removeUpload(document.id, document.storagePath)
+    }
+    return current
+  }
   await env.removeUpload(document.id, document.storagePath)
   return 'rejection' in outcome.settled
     ? { status: 'upload-rejected', reason: outcome.settled.rejection }

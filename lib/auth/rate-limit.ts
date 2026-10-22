@@ -7,7 +7,8 @@ import { AUTH_MESSAGES, RATE_LIMIT_POLICIES, AUTH_INTERNAL_SECRET_MIN_BYTES } fr
 import { AuthRequestError } from './request'
 import type { AuthAction } from './constants'
 
-function getBucket(action: AuthAction, purpose: 'account' | 'origin', value: string): string {
+/** The keyed bucket name for one action, purpose and value; the raw email or address never leaves the server. */
+export function getBucket(action: AuthAction | 'DISCOVERY_ACTIVATION', purpose: 'account' | 'origin', value: string): string {
   const secret = process.env.AUTH_INTERNAL_SECRET
   if (!secret || Buffer.byteLength(secret) < AUTH_INTERNAL_SECRET_MIN_BYTES) throw new Error('Auth configuration unavailable')
   return createHmac('sha256', secret).update(JSON.stringify(['campusintell:auth-rate-limit:v1', action, purpose, value])).digest('hex')
