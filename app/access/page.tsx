@@ -13,7 +13,7 @@ import { approximateWords } from '@/lib/ai-practice/upload-contract'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCourseByContentKey } from '@/lib/data/courses'
 import { DISCOVERY_KINDS } from '@/lib/entitlements/discovery-contract'
-import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, DISCOVERY_PREVIEW_LABEL, formatAccessDate }
+import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, DISCOVERY_PREVIEW_LABEL, formatAccessDate, trialWording }
   from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -59,7 +59,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
       </div>
       <div className="grid min-w-0 content-start gap-4">
         <EarlyAccessSection entitlement={entitlement} />
-        <AiSection allowance={allowance} passOffered={discoveryOffered(entitlement)} />
+        <AiSection allowance={allowance} passAvailable={trialWording(entitlement).passAvailable} />
       </div>
     </div>
   </StudentPage>
@@ -172,9 +172,9 @@ function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }
   </section>
 }
 
-function AiSection({ allowance, passOffered }: { allowance: AllowanceSummary | null; passOffered: boolean }): ReactElement {
+function AiSection({ allowance, passAvailable }: { allowance: AllowanceSummary | null; passAvailable: boolean }): ReactElement {
   const line = allowance === null || allowance.state === 'not-entitled'
-    ? `AI practice from your own notes comes with ${passOffered ? 'a Discovery Pass or ' : ''}Early Access.`
+    ? `AI practice from your own notes comes with ${passAvailable ? 'a Discovery Pass or ' : ''}Early Access.`
     : allowance.state === 'expired' ? 'Your AI practice access has ended.'
       : allowance.total === null ? 'Your AI practice has no set limit during Early Access. Fair-use limits apply.'
         : `${Math.max(0, allowance.total - allowance.used)} of ${allowance.total} AI question ` +

@@ -2,22 +2,27 @@
 // app/courses/[slug]/preview/[kind]/DiscoveryExam.tsx — The Discovery Pass CBT exam. The browser holds only the
 // questions; the database fixed the deadline when the exam opened, keeps the sheet saved before it, and grades the
 // answers once, and only then returns the correct options and explanations. Nothing sent after the deadline is marked.
-// The countdown is display only: it starts from the server's own `now` and deadline and runs on the monotonic page
-// clock. The device's clock can only shorten it, by at most the bounded time the page took to load (so a tap after the
-// real deadline is refused here before the server has to), never extend it. Answers are saved as the student goes through
-// lib/entitlements/exam-autosave.ts: in revision order, at once near the deadline, retried after a failure, re-based
-// over another tab's sheet without losing either tab's answers, and reported as saved only once the server confirmed
-// this tab's latest change. A choice is shown only once the controller accepted it: after the deadline on the page
-// clock, read at the moment of the tap rather than from the once-a-second countdown, a tap changes nothing.
+// Whether a tap may still change an answer is decided by lib/entitlements/exam-clock.ts: a fresh exchange with the
+// server on mount (and again whenever the page comes back into view), with the whole round trip charged as elapsed
+// and the time since measured on the monotonic clock, so the cutoff here is never later than the real deadline and
+// the device's wall clock is never the authority. Until that exchange lands, answers cannot change. The clock is read
+// at the moment of the tap, not from the once-a-second countdown, and a refused tap changes nothing on screen.
+// Answers are saved as the student goes through lib/entitlements/exam-autosave.ts: only the questions this tab
+// changed, over the revision it last received, so another tab's answers are never overwritten; the database answers
+// with the sheet that stands and this tab shows it. Submission carries the same pending changes, and the database
+// grades the sheet it holds once they are laid over it. "Saved" is shown only once the server confirmed this tab's
+// latest change.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { postDiscoveryCommand } from '@/lib/entitlements/client'
-import { MAX_SAVE_REVISION, sampleAnswers } from '@/lib/entitlements/discovery-contract'
+import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
-import type { SampleAnswers, SampleQuestion, SampleResult, SavedSheet } from '@/lib/entitlements/discovery-contract'
-import type { AutosaveSnapshot, SaveOutcome } from '@/lib/entitlements/exam-autosave'
+import { ExamClock } from '@/lib/entitlements/exam-clock'
+import type { SampleAnswers, SampleQuestion, SampleResult, SavedSheet, SheetDelta } from '@/lib/entitlements/discovery-contract'
+import type { AutosaveSnapshot, SaveOutcome, UnsentSheet } from '@/lib/entitlements/exam-autosave'
+import type { ClockReading, ClockState } from '@/lib/entitlements/exam-clock'
 import type { ReactElement } from 'react'
 
 const optionLetter = (index: number) => String.fromCharCode(65 + index)
@@ -26,12 +31,8 @@ const TICK_MS = 1000
 const RETRY_MS = 10_000
 const MAX_AUTO_RETRIES = 10
 const LOW_TIME_MS = 5 * 60_000
-// How long a submission waits for the save in flight before sending the same sheet itself.
+// How long a submission waits for the save in flight before sending the same changes itself.
 const FLUSH_WAIT_MS = 3_000
-// The page clock starts when the exam mounts, some time after the server read its `now`. That load delay is taken off
-// the countdown when the device clock makes it measurable, up to this bound: a device clock far ahead of the server
-// can cost at most this much of the countdown, and a device clock behind it costs nothing. The server still decides.
-const MAX_LOAD_DELAY_MS = 15_000
 
 const REFUSAL: Record<string, string> = {
   'expired': 'Your Discovery Pass has ended, so this exam’s result can no longer be shown.',
@@ -40,6 +41,8 @@ const REFUSAL: Record<string, string> = {
 }
 const RETRY = 'We couldn’t send your answers. They’re still here. Try again.'
 const DEADLINE_RULE = 'Only answers saved before time runs out count.'
+const CHECKING_CLOCK = 'Checking the time left…'
+const RECONNECTING = 'Reconnecting… Answers can’t be changed until the connection is back.'
 
 function clock(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000))
@@ -47,23 +50,26 @@ function clock(ms: number): string {
   return `${minutes}:${String(total % 60).padStart(2, '0')}`
 }
 
-// The sheet kept for this tab, with the revision it reached, so a reload continues from the newest of the browser's
-// and the database's copies. Never trusted: re-validated against the pinned questions.
-const storedSheet = z.object({ revision: z.number().int().min(0).max(MAX_SAVE_REVISION), answers: sampleAnswers }).strict()
+// What this tab keeps for a reload: its sheet and the questions it changed but has not had confirmed. Only those are
+// laid over the database's sheet, so a reload never reverts another tab's answers. Never trusted: re-validated
+// against the pinned questions.
+const storedSheet = z.object({ answers: sampleAnswers, dirty: z.array(z.string().uuid()).max(100) }).strict()
 
 function validAnswers(answers: SampleAnswers, questions: ReadonlyArray<SampleQuestion>): SampleAnswers {
   const options = new Map(questions.map(question => [question.item_id, question.options.length]))
   return Object.fromEntries(Object.entries(answers).filter(([id, index]) => index < (options.get(id) ?? 0)))
 }
 
-function readStored(key: string, questions: ReadonlyArray<SampleQuestion>): SavedSheet | null {
+function readStored(key: string, questions: ReadonlyArray<SampleQuestion>): UnsentSheet | null {
   try {
     const parsed = storedSheet.safeParse(JSON.parse(window.sessionStorage.getItem(key) ?? 'null'))
-    return parsed.success ? { revision: parsed.data.revision, answers: validAnswers(parsed.data.answers, questions) } : null
+    if (!parsed.success) return null
+    const pinned = new Set(questions.map(question => question.item_id))
+    return { answers: validAnswers(parsed.data.answers, questions), dirty: parsed.data.dirty.filter(item => pinned.has(item)) }
   } catch { return null }
 }
 
-function store(key: string, sheet: SavedSheet): void {
+function store(key: string, sheet: UnsentSheet): void {
   try { window.sessionStorage.setItem(key, JSON.stringify(sheet)) } catch { /* Storage may be unavailable. */ }
 }
 
@@ -97,51 +103,90 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   initialResult: SampleResult | null
 }): ReactElement {
   const storageKey = `discovery-exam:${courseSlug}:${deadlineAt}`
+  // Display only until the clock's own exchange lands: the page's reading of the server clock, as it was rendered.
   const initialRemaining = Date.parse(deadlineAt) - Date.parse(serverNow)
   const [answers, setAnswers] = useState<SampleAnswers>(() => validAnswers(savedSheet?.answers ?? {}, questions))
   const [index, setIndex] = useState(0)
   const [result, setResult] = useState<SampleResult | null>(initialResult)
   const [remaining, setRemaining] = useState(initialRemaining)
+  const [clockState, setClockState] = useState<ClockState>('unsynced')
+  const [clockFailures, setClockFailures] = useState(0)
   const [save, setSave] = useState<AutosaveSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const answersRef = useRef(answers)
   const autosave = useRef<ExamAutosave | null>(null)
-  // The page clock the moment the server's `now` was shown; every remaining-time reading counts from it, less the
-  // bounded delay between the server's `now` and that moment.
-  const started = useRef<number | null>(null)
-  const loadDelay = useRef(0)
+  const examClock = useRef<ExamClock | null>(null)
+  // The page clock when the exam mounted, for the display-only countdown before the first exchange lands.
+  const mounted = useRef<number | null>(null)
   const sending = useRef(false)
   const autoRetries = useRef(0)
   const timeUp = remaining <= 0
+  const canAnswer = clockState === 'synced' && !timeUp
   const answered = Object.keys(answers).length
 
-  const remainingMs = useCallback(() => started.current === null ? initialRemaining
-    : initialRemaining - loadDelay.current - (performance.now() - started.current), [initialRemaining])
+  // The trustworthy reading when there is one; otherwise the display-only estimate from the rendered values.
+  const remainingMs = useCallback((): number => {
+    const trusted = examClock.current?.remaining() ?? null
+    if (trusted !== null) return trusted
+    return mounted.current === null ? initialRemaining : initialRemaining - (performance.now() - mounted.current)
+  }, [initialRemaining])
 
-  useEffect(() => {
-    if (result !== null) return
-    loadDelay.current = Math.min(MAX_LOAD_DELAY_MS, Math.max(0, Date.now() - Date.parse(serverNow)))
-    started.current = performance.now()
-    const timer = window.setInterval(() => setRemaining(remainingMs()), TICK_MS)
-    return () => window.clearInterval(timer)
-  }, [result, remainingMs, serverNow])
+  // One tab identity for the database's sequence ledger, new on every mount and never shared between tabs.
+  const [tab] = useState(() => crypto.randomUUID())
 
-  // One save at a time, numbered, retried and reported. The sheet starts from the newer of the database's copy and
-  // the one this tab kept; a newer tab copy is saved at once.
+  // The clock: a fresh exchange on mount, again whenever the page comes back into view, and retried after a failure.
   useEffect(() => {
     if (initialResult !== null) return
-    const server: SavedSheet = { revision: savedSheet?.revision ?? 0, answers: validAnswers(savedSheet?.answers ?? {}, questions) }
-    const restored = readStored(storageKey, questions)
-    const sheet = restored !== null && restored.revision > server.revision ? restored : server
-    answersRef.current = sheet.answers
-    setAnswers(sheet.answers)
-    const send = async (current: SampleAnswers, revision: number): Promise<SaveOutcome> => {
-      const outcome = await postDiscoveryCommand({ action: 'save-answers', courseSlug, answers: current, revision },
-        continuityToken)
-      if (outcome.status === 'saved') return { kind: 'saved', revision: outcome.revision }
-      if (outcome.status === 'stale') return { kind: 'stale', revision: outcome.revision, answers: outcome.answers }
+    mounted.current = performance.now()
+    const sync = async (): Promise<ClockReading | null> => {
+      const outcome = await postDiscoveryCommand({ action: 'sync-exam', courseSlug, tab }, continuityToken)
+      if (outcome.status === 'saved' || outcome.status === 'stale') {
+        // The sheet that stands, from every tab, laid under this tab's unconfirmed changes.
+        autosave.current?.adopt({ revision: outcome.revision, answers: validAnswers(outcome.answers, questions) })
+        return { serverNow: Date.parse(outcome.now), deadline: Date.parse(outcome.deadlineAt) }
+      }
+      if (outcome.status === 'ready') {
+        if (outcome.preview.kind === 'cbt' && outcome.preview.result !== null) setResult(outcome.preview.result)
+        return null
+      }
+      if (outcome.status !== 'unavailable') setMessage(REFUSAL[outcome.status] ?? RETRY)
+      return null
+    }
+    const controller = new ExamClock({
+      monotonic: () => performance.now(), wall: () => Date.now(), sync,
+      schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
+      onChange: state => {
+        setClockState(state)
+        setClockFailures(failures => state === 'synced' ? 0 : failures + 1)
+        setRemaining(remainingMs())
+      },
+    })
+    examClock.current = controller
+    controller.start()
+    const timer = window.setInterval(() => setRemaining(remainingMs()), TICK_MS)
+    // Back into view after being hidden: the device may have slept, so the reading is read again before any tap.
+    const visible = () => { if (document.visibilityState === 'visible') controller.invalidate() }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      controller.stop()
+      examClock.current = null
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [initialResult, courseSlug, tab, continuityToken, questions, remainingMs])
+
+  // Saves: numbered, only the questions this tab changed, retried and reported. The sheet starts from the database's
+  // copy with any changes this tab kept before a reload laid over it; those are saved at once.
+  useEffect(() => {
+    if (initialResult !== null) return
+    const server = { revision: savedSheet?.revision ?? 0, answers: validAnswers(savedSheet?.answers ?? {}, questions) }
+    const send = async (delta: SheetDelta): Promise<SaveOutcome> => {
+      const outcome = await postDiscoveryCommand({ action: 'save-answers', courseSlug, ...delta }, continuityToken)
+      if (outcome.status === 'saved' || outcome.status === 'stale') {
+        return { kind: outcome.status, revision: outcome.revision, answers: validAnswers(outcome.answers, questions) }
+      }
       if (outcome.status === 'unavailable') return { kind: 'failed' }
       if (outcome.status === 'ready') {
         // The deadline passed and the database marked the sheet it had: show that result now.
@@ -150,14 +195,19 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       }
       return { kind: 'refused', status: outcome.status }
     }
-    const controller = new ExamAutosave({
-      answers: sheet.answers, revision: sheet.revision, savedRevision: server.revision, saved: server.answers,
-      remaining: remainingMs, send,
+    // Every report also refreshes what this tab keeps for a reload, so a confirmed change is no longer "unsent" there.
+    let controller: ExamAutosave | null = null
+    controller = new ExamAutosave({
+      tab, server, restored: readStored(storageKey, questions),
+      remaining: () => examClock.current?.remaining() ?? null, send,
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
-      onChange: setSave,
+      onChange: snapshot => { setSave(snapshot); if (controller !== null) store(storageKey, controller.unsent()) },
       onRebase: merged => { answersRef.current = merged; setAnswers(merged) },
     })
     autosave.current = controller
+    const sheet = controller.unsent().answers
+    answersRef.current = sheet
+    setAnswers(sheet)
     // Leaving the page or switching apps sends whatever is unsaved (with keepalive, so it completes).
     const flush = () => { void controller.flush() }
     const hidden = () => { if (document.visibilityState === 'hidden') void controller.flush() }
@@ -169,19 +219,19 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', hidden)
     }
-  }, [initialResult, savedSheet, storageKey, questions, courseSlug, continuityToken, remainingMs])
+  }, [initialResult, savedSheet, storageKey, questions, courseSlug, continuityToken, tab])
 
   const submit = useCallback(async (): Promise<boolean> => {
     if (sending.current) return false
     sending.current = true
     setBusy(true)
     setMessage(null)
-    // Anything unsaved goes first and is given a moment to land; the submission then carries the same sheet, and the
-    // server marks whichever reached it in time.
+    // Anything unsaved goes first and is given a moment to land; the submission then carries the same pending
+    // changes, and the database grades the sheet it holds once those still in time are laid over it.
     await Promise.race([autosave.current?.flush() ?? Promise.resolve(),
       new Promise(resolve => window.setTimeout(resolve, FLUSH_WAIT_MS))])
-    const outcome = await postDiscoveryCommand({ action: 'submit-exam', courseSlug, answers: answersRef.current },
-      continuityToken)
+    const delta: SheetDelta = autosave.current?.delta() ?? { tab, sequence: 0, baseRevision: 0, changes: {} }
+    const outcome = await postDiscoveryCommand({ action: 'submit-exam', courseSlug, ...delta }, continuityToken)
     sending.current = false
     setBusy(false)
     setConfirming(false)
@@ -193,10 +243,10 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     }
     setMessage(REFUSAL[outcome.status] ?? RETRY)
     return outcome.status !== 'unavailable'
-  }, [continuityToken, courseSlug, storageKey])
+  }, [continuityToken, courseSlug, storageKey, tab])
 
-  // At the deadline any unsaved sheet is sent at once, then the exam submits itself and keeps trying briefly if the
-  // network drops. The database marks the sheet it accepted in time, never a later one.
+  // At the deadline any unsaved changes are sent at once, then the exam submits itself and keeps trying briefly if
+  // the network drops. The database marks the sheet it accepted in time, never a later one.
   useEffect(() => {
     if (!timeUp || result !== null) return
     void autosave.current?.flush()
@@ -212,33 +262,33 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
 
   function choose(itemId: string, option: number): void {
     const next = { ...answersRef.current, [itemId]: option }
-    // The controller reads the page clock now, not the countdown shown a moment ago: a tap after the deadline is
-    // refused before anything on screen changes, and the countdown is brought up to date at once.
-    const revision = autosave.current?.change(next) ?? null
-    if (revision === null) { setRemaining(remainingMs()); return }
+    // The controller reads the clock now, not the countdown shown a moment ago: a tap after the cutoff, or without a
+    // trustworthy reading, is refused before anything on screen changes, and the countdown is brought up to date.
+    const sequence = autosave.current?.change(next) ?? null
+    if (sequence === null) { setRemaining(remainingMs()); return }
     answersRef.current = next
     setAnswers(next)
-    store(storageKey, { revision, answers: next })
   }
 
   if (result !== null) return <ExamReview questions={questions} result={result} />
   const question = questions[index]!
   const unanswered = questions.length - answered
   const saving = saveLine(save, timeUp)
+  const clockLine = canAnswer || timeUp ? null : clockFailures > 1 ? RECONNECTING : CHECKING_CLOCK
   return <div className="grid gap-4">
     <div className="student-surface grid gap-1" role="timer" aria-live="off"
-      data-urgency={remaining <= LOW_TIME_MS ? 'low' : undefined}>
+      data-urgency={remaining <= LOW_TIME_MS ? 'low' : undefined} data-clock-state={clockState}>
       <p className="student-detail-kicker">Time left</p>
       <p className={`text-2xl font-bold tabular-nums ${remaining <= LOW_TIME_MS ? 'text-student-error'
         : 'text-student-text-primary'}`}>{timeUp ? 'Time is up' : clock(remaining)}</p>
       <p className="student-meta">{answered} of {questions.length} answered</p>
       <p className="student-meta" role="status" data-save-state={save?.state ?? 'idle'}>
-        {saving.text} {DEADLINE_RULE}
+        {clockLine ?? saving.text} {DEADLINE_RULE}
       </p>
       {saving.retry && <div><button type="button" onClick={() => autosave.current?.retry()}
         className={studentAction(btnGhost, 'bg-student-surface')}>Save now</button></div>}
     </div>
-    <fieldset className="student-surface" key={question.item_id} disabled={timeUp}>
+    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer}>
       <legend className="student-detail-kicker">Question {index + 1} of {questions.length}</legend>
       <p className="student-practice-prompt mt-2">{question.prompt}</p>
       <div className="student-practice-options mt-3">

@@ -22,12 +22,14 @@ select is((select count(*)::integer from unnest(array['anon', 'authenticated', '
   where has_table_privilege(api_role, 'private.discovery_previews', privilege)), 0,
   'no API role can read or write previews directly, so the pinned answer key never leaves through PostgREST');
 select is((select count(*)::integer from unnest(array['public.discovery_preview(uuid,uuid,text,boolean,uuid,integer)',
-    'public.save_discovery_cbt(uuid,uuid,jsonb,integer)', 'public.submit_discovery_cbt(uuid,uuid,jsonb)']) fn
+    'public.save_discovery_cbt(uuid,uuid,uuid,integer,integer,jsonb)',
+    'public.submit_discovery_cbt(uuid,uuid,uuid,integer,integer,jsonb)']) fn
   where has_function_privilege('authenticated', fn, 'EXECUTE') or has_function_privilege('anon', fn, 'EXECUTE')
     or not has_function_privilege('service_role', fn, 'EXECUTE')), 0, 'preview functions are service-role only');
 select is((select count(*)::integer from unnest(array['private.discovery_preview_content(uuid,text,uuid)',
     'private.discovery_topic_titles(uuid)', 'private.discovery_preview_view(private.discovery_previews)',
-    'private.close_overdue_discovery_exam(uuid)']) fn,
+    'private.close_overdue_discovery_exam(uuid)', 'private.discovery_apply_changes(jsonb,jsonb)',
+    'private.discovery_reconcile_sheet(private.discovery_previews,uuid,integer,integer,jsonb)']) fn,
     unnest(array['anon', 'authenticated', 'service_role']) api_role
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'preview helpers are not callable by any API role');
 -- No entitlement function accepts a timestamp from its caller: the database clock decides every start and end.
@@ -43,8 +45,10 @@ select is((select jsonb_build_object('hours', discovery_hours, 'cbt', discovery_
   '{"hours":72,"cbt":50,"grace":120,"ai_sets":1,"ai_attempts":3,"ai_uploads":1,"ai_chars":20000}'::jsonb,
   'approved Discovery Pass limits');
 select hasnt_column('private', 'entitlement_policy', 'discovery_theory_questions', 'there is no theory preview');
-select ok(to_regprocedure('public.save_discovery_cbt(uuid,uuid,jsonb)') is null,
-  'every exam save names its revision: there is no save without one');
+select ok(to_regprocedure('public.save_discovery_cbt(uuid,uuid,jsonb)') is null
+  and to_regprocedure('public.save_discovery_cbt(uuid,uuid,jsonb,integer)') is null
+  and to_regprocedure('public.submit_discovery_cbt(uuid,uuid,jsonb)') is null,
+  'no save or submission takes a whole sheet: each names its tab, sequence, base revision and changed questions only');
 select is((select count(*)::integer from public.entitlement_grants where trial_policy = 'discovery'
   and ends_at - starts_at > interval '72 hours'), 0, 'no Discovery Pass outlasts 72 hours');
 
@@ -206,24 +210,39 @@ select ok(exists (select 1 from private.entitlement_events where user_id = '7100
   and event = 'discovery.preview-opened'), 'opening it is audited');
 
 -- 4. Grading happens on the server, once ------------------------------------------------------------------------------
-create function pg_temp.answers(p_user uuid, p_correct integer) returns jsonb language sql as $$
+create function pg_temp.answers(p_user uuid, p_correct integer) returns jsonb language sql security definer as $$
   -- Answers the first p_correct pinned questions correctly and the rest incorrectly.
   select jsonb_object_agg(q->>'item_id', case when position <= p_correct then (q->>'correct_option')::integer
     else ((q->>'correct_option')::integer + 1) % jsonb_array_length(q->'options') end)
   from private.discovery_previews p, jsonb_array_elements(p.content) with ordinality as t(q, position)
   where p.user_id = p_user and p.kind = 'cbt' $$;
+-- The pinned question at one position, its correct option and a wrong one, for a student's open exam.
+create function pg_temp.q(p_user uuid, p_position integer, out item text, out correct integer, out wrong integer)
+  language sql security definer as $$
+  select q->>'item_id', (q->>'correct_option')::integer, ((q->>'correct_option')::integer + 1) % jsonb_array_length(q->'options')
+  from private.discovery_previews p, jsonb_array_elements(p.content) with ordinality as t(q, position)
+  where p.user_id = p_user and p.kind = 'cbt' and position = p_position $$;
+-- Browser tabs: each names itself, so the database applies its requests in sequence order.
+create function pg_temp.t(p_n integer) returns uuid language sql immutable as
+  $$ select ('a0000000-0000-4000-8000-0000000000' || lpad(p_n::text, 2, '0'))::uuid $$;
+grant execute on function pg_temp.t(integer), pg_temp.answers(uuid, integer), pg_temp.q(uuid, integer)
+  to authenticated, service_role;
 insert into outcome values ('answers-37', pg_temp.answers('71000000-0000-4000-8000-000000000001', 37)),
   ('answers-50', pg_temp.answers('71000000-0000-4000-8000-000000000001', 50));
 set local role service_role;
-select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'),
+select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 1, 0,
   jsonb_build_object(gen_random_uuid()::text, 0)) $$, '22023', null, 'an answer to a question outside the exam is refused');
-select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'),
+select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 1, 0,
   (select jsonb_build_object(key, 99) from outcome, jsonb_each(result) where step = 'answers-37' limit 1)) $$, '22023',
   null, 'an option that does not exist is refused');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('03'), '{}'),
+select throws_ok($$ select public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 1, 7, '{}') $$, '22023',
+  null, 'a tab cannot claim a revision the database never issued');
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('03'), pg_temp.t(1), 0, 0, '{}'),
   '{"state":"not-opened"}'::jsonb, 'a course with no opened exam cannot be graded');
+-- P answered in one tab that never managed to save: its submission carries the whole sheet as that tab's pending
+-- changes over revision 0, and those are laid over the (empty) saved sheet and graded.
 insert into outcome values ('p-submit', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001',
-  pg_temp.c('02'), (select result from outcome where step = 'answers-37')));
+  pg_temp.c('02'), pg_temp.t(1), 1, 0, (select result from outcome where step = 'answers-37')));
 select is((select result->'preview'->'result'->>'score' || '/' || (result->'preview'->'result'->>'total')
   from outcome where step = 'p-submit'), '37/50', 'the server grades from the pinned key');
 select is((select (result->'preview'->'result'->>'timed_out')::boolean from outcome where step = 'p-submit'), false,
@@ -231,12 +250,21 @@ select is((select (result->'preview'->'result'->>'timed_out')::boolean from outc
 select ok((select bool_and(a ? 'correct_option' and a ? 'selected') from outcome,
   jsonb_array_elements(result->'preview'->'result'->'answers') a where step = 'p-submit'),
   'the answer key is revealed only with the result');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'),
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 2, 0,
   (select result from outcome where step = 'answers-50'))->'preview'->'result'->>'score', '37',
   'resubmitting better answers cannot change the score: the first grading stands');
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(2), 0, 0, '{}') - 'now',
+  (select result - 'now' from outcome where step = 'p-submit'), 'a replay from any tab returns the first grading unchanged');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false)->'preview'->'result',
   (select result->'preview'->'result' from outcome where step = 'p-submit'), 'a reload shows the same result');
 reset role;
+select is((select jsonb_build_object('graded_is_saved', answers = saved_answers, 'revision', saved_revision,
+    'tab_sequence', (saved_sources -> pg_temp.t(1)::text ->> 'seq')::integer)
+  from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000001'),
+  '{"graded_is_saved":true,"revision":1,"tab_sequence":1}'::jsonb,
+  'the submission laid the pending changes over the saved sheet in the same write (revision 1) and graded that sheet');
+select is((select detail->'pending_applied' from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000001'
+    and event = 'discovery.exam-submitted'), 'true'::jsonb, 'and the audit says the pending changes were applied');
 
 -- 4b. The exam clock: the whole duration or nothing, answers saved until the deadline, nothing accepted after it ------
 -- S has ten minutes (and a little, for the time this suite takes) of pass left on the wall clock.
@@ -262,61 +290,115 @@ insert into outcome values ('answers-s-saved', pg_temp.answers('71000000-0000-40
   ('answers-s-30', pg_temp.answers('71000000-0000-4000-8000-000000000008', 30)),
   ('answers-s-all', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
 set local role service_role;
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-saved'), 1) - 'now', '{"state":"saved","revision":1}'::jsonb,
-  'choices are saved while the exam is open, and the answer names the revision now saved');
-select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  jsonb_build_object(gen_random_uuid()::text, 0), 2) $$, '22023', null, 'a saved answer outside the exam is refused');
-select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}', 0) $$,
-  '22023', null, 'revision zero is not a save');
-select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}', null) $$,
-  '22023', null, 'nor is a save without a revision');
-select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}',
-  1000001) $$, '22023', null, 'nor one beyond the bound');
--- Saves arrive out of order: revision 3 lands first, then the delayed revision 2 with better answers.
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-20'), 3) - 'now', '{"state":"saved","revision":3}'::jsonb,
-  'the third revision is saved');
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-all'), 2) - 'now',
-  (select jsonb_build_object('state', 'stale', 'revision', 3, 'answers', result) from outcome where step = 'answers-s-20'),
-  'an older revision arriving later is answered as stale with the newer sheet that stands, not applied');
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-20'), 3) - 'now', '{"state":"saved","revision":3}'::jsonb,
-  'a duplicate retry of the saved sheet is acknowledged as saved');
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-saved'), 3)->>'state', 'stale',
-  'the same revision with other answers (another tab) is stale, never applied');
+-- Tab A saves its first ten answers: its changes over revision 0, at its own sequence 1.
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1, 0,
+  (select result from outcome where step = 'answers-s-saved')) - 'now' - 'deadline_at',
+  (select jsonb_build_object('state', 'saved', 'revision', 1, 'answers', result) from outcome where step = 'answers-s-saved'),
+  'changes are saved while the exam is open, and the answer carries the revision and the whole sheet that now stands');
+select ok(pg_temp.near((public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 0, 0, '{}')
+  ->>'deadline_at')::timestamptz, interval '10 minutes'), 'a sync (no changes) answers with the deadline too, for the countdown');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(3), 0, 0, '{}') - 'now' - 'deadline_at',
+  (select jsonb_build_object('state', 'saved', 'revision', 1, 'answers', result) from outcome where step = 'answers-s-saved'),
+  'and changes nothing: the sheet and its revision stand');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 2, 1,
+  jsonb_build_object(gen_random_uuid()::text, 0)) $$, '22023', null, 'a change to a question outside the exam is refused');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 2, 1,
+  (select jsonb_build_object(key, 'x') from outcome, jsonb_each(result) where step = 'answers-s-saved' limit 1)) $$, '22023',
+  null, 'a change that is not an option is refused');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), null, 1, '{}') $$,
+  '22023', null, 'a save without a sequence is refused');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1000001, 1, '{}') $$,
+  '22023', null, 'nor one beyond the bound');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 2, 5, '{}') $$,
+  '22023', null, 'nor one based on a revision the database never issued');
+select throws_ok($$ select public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), null, 2, 1, '{}') $$,
+  '22023', null, 'nor one from no tab');
+-- Requests of one tab arrive out of order: sequence 3 (twenty correct) lands first, then the delayed sequence 2 with
+-- better answers.
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 3, 1,
+  (select result from outcome where step = 'answers-s-20')) - 'now' - 'deadline_at',
+  (select jsonb_build_object('state', 'saved', 'revision', 2, 'answers', result) from outcome where step = 'answers-s-20'),
+  'the third change is applied over revision 1: revision 2');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 2, 1,
+  (select result from outcome where step = 'answers-s-all')) - 'now' - 'deadline_at',
+  (select jsonb_build_object('state', 'stale', 'revision', 2, 'answers', result) from outcome where step = 'answers-s-20'),
+  'an older request of the same tab arriving later is answered as stale with the sheet that stands, not applied');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 3, 1,
+  (select result from outcome where step = 'answers-s-20')) - 'now' - 'deadline_at',
+  (select jsonb_build_object('state', 'saved', 'revision', 2, 'answers', result) from outcome where step = 'answers-s-20'),
+  'a retry of the applied request is acknowledged as saved without another write');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 3, 2,
+  (select result from outcome where step = 'answers-s-saved'))->>'state', 'saved',
+  'a request at the applied sequence is a replay: acknowledged');
+reset role;
+select is((select jsonb_build_object('revision', saved_revision, 'sheet', saved_answers = result)
+    from private.discovery_previews, outcome where user_id = '71000000-0000-4000-8000-000000000008' and step = 'answers-s-20'),
+  '{"revision":2,"sheet":true}'::jsonb, 'and never applied: the sheet and its revision are unchanged');
+-- Regression (Codex review, unresolved at 2cc9300): tab A changes Q1 and saves. Tab B, still holding the sheet at
+-- revision 2 with the old Q1, changes Q2 twice before it saves: one request naming Q2 only. Q1 must not revert.
+insert into outcome select 'q1', to_jsonb(item) from pg_temp.q('71000000-0000-4000-8000-000000000008', 1);
+insert into outcome select 'q2', to_jsonb(item) from pg_temp.q('71000000-0000-4000-8000-000000000008', 2);
+insert into outcome select 'q3', to_jsonb(item) from pg_temp.q('71000000-0000-4000-8000-000000000008', 3);
+set local role service_role;
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 4, 2,
+    (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q1'))->'answers'
+    -> (select result #>> '{}' from outcome where step = 'q1'), '1'::jsonb,
+  'tab A changes Q1 to option B: revision 3');
+insert into outcome values ('b-save', public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 2, 2,
+  (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q2')));
+select is((select jsonb_build_object('state', b.result->>'state', 'revision', b.result->'revision',
+    'q1', b.result->'answers'->(q1.result #>> '{}'), 'q2', b.result->'answers'->(q2.result #>> '{}'))
+  from outcome b, outcome q1, outcome q2 where b.step = 'b-save' and q1.step = 'q1' and q2.step = 'q2'),
+  '{"state":"saved","revision":4,"q1":1,"q2":1}'::jsonb,
+  'tab B''s save (revision 4) keeps tab A''s Q1 and adds its own Q2: a question a tab never touched is never overwritten');
+reset role;
+select is((select jsonb_build_object('q1', p.saved_answers->(q1.result #>> '{}'), 'q2', p.saved_answers->(q2.result #>> '{}'),
+    'revision', p.saved_revision, 'tabs', (select count(*) from jsonb_object_keys(p.saved_sources)))
+  from private.discovery_previews p, outcome q1, outcome q2 where p.user_id = '71000000-0000-4000-8000-000000000008'
+    and q1.step = 'q1' and q2.step = 'q2'),
+  '{"q1":1,"q2":1,"revision":4,"tabs":2}'::jsonb, 'the database holds both tabs'' answers and each tab''s sequence');
+-- Policy: a question changed on two tabs takes the change that reaches the database last; every tab is answered
+-- with the sheet that stands.
+set local role service_role;
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 5, 3,
+    (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q3'))->'answers'
+    -> (select result #>> '{}' from outcome where step = 'q3'), '1'::jsonb, 'tab A chooses B for Q3 (revision 5)');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 3, 4,
+    (select jsonb_build_object(result #>> '{}', 2) from outcome where step = 'q3'))->'answers'
+    -> (select result #>> '{}' from outcome where step = 'q3'), '2'::jsonb,
+  'tab B then chooses C for Q3 (revision 6): the change that reaches the database last stands');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 6, 5,
+    (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q1'))->'answers'
+    -> (select result #>> '{}' from outcome where step = 'q3'), '2'::jsonb,
+  'and tab A''s next save (revision 7) is answered with that sheet, so it shows C too');
 -- Regression (Codex finding 1): answer 0, then answer 1, with the older request completing last. 1 must remain.
-insert into outcome select 'q-first', to_jsonb(result->'preview'->'questions'->0->>'item_id') from outcome where step = 's-cbt';
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q-first'), 5)->>'state', 'saved',
-  'the newer save (answer 1, revision 5) lands first');
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select jsonb_build_object(result #>> '{}', 0) from outcome where step = 'q-first'), 4)->>'state', 'stale',
-  'the older save (answer 0, revision 4) completes last and is refused');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 8, 7,
+  (select jsonb_build_object(result #>> '{}', 1) from outcome where step = 'q1'))->>'state', 'saved',
+  'the newer change (answer 1, sequence 8) lands first: revision 8');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 7, 7,
+  (select jsonb_build_object(result #>> '{}', 0) from outcome where step = 'q1'))->>'state', 'stale',
+  'the older change (answer 0, sequence 7) completes last and is refused');
 reset role;
-select is((select saved_answers -> (select result #>> '{}' from outcome where step = 'q-first') from private.discovery_previews
+select is((select saved_answers -> (select result #>> '{}' from outcome where step = 'q1') from private.discovery_previews
     where user_id = '71000000-0000-4000-8000-000000000008'), '1'::jsonb, 'the final saved answer remains 1');
+select is((select jsonb_build_object('revision', saved_revision, 'applied', (saved_sources -> pg_temp.t(1)::text ->> 'seq')::integer)
+    from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'),
+  '{"revision":8,"applied":8}'::jsonb, 'the newest accepted change stands: an older request never overwrites it');
+insert into outcome select 's-sheet-8', jsonb_build_object('revision', 8, 'answers', saved_answers)
+  from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
-reset role;
-select is((select jsonb_build_object('revision', saved_revision, 'sheet', saved_answers) from private.discovery_previews
-    where user_id = '71000000-0000-4000-8000-000000000008'),
-  (select jsonb_build_object('revision', 5, 'sheet', jsonb_build_object(result #>> '{}', 1)) from outcome where step = 'q-first'),
-  'the newest accepted sheet stands: an older save never overwrites it');
-set local role service_role;
-select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false)
-    ->'preview'->'saved', (select jsonb_build_object('revision', 5, 'answers', jsonb_build_object(result #>> '{}', 1))
-    from outcome where step = 'q-first'),
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false)->'preview'->'saved',
+  (select result from outcome where step = 's-sheet-8'),
   'a reload or another device is given the saved sheet and its revision to continue from');
 reset role;
 -- A change seconds before the deadline is saved: the deadline is the only cut-off.
 update private.discovery_previews set deadline_at = clock_timestamp() + interval '10 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-30'), 6) - 'now', '{"state":"saved","revision":6}'::jsonb,
-  'a sheet saved seconds before the deadline is accepted');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 9, 8,
+  (select result from outcome where step = 'answers-s-30')) - 'now' - 'deadline_at',
+  (select jsonb_build_object('state', 'saved', 'revision', 9, 'answers', result) from outcome where step = 'answers-s-30'),
+  'changes saved seconds before the deadline are accepted');
 reset role;
 -- Regression (Codex F6): the cutoff is the wall clock at the write, never the transaction's start time. This
 -- transaction began long before the deadline set here, as a request that queued behind a lock across the deadline
@@ -327,33 +409,33 @@ select pg_sleep(1.5);
 select ok((select deadline_at > now() from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'),
   'on the transaction-start clock the deadline has not passed');
 set local role service_role;
-insert into outcome values ('s-after-lock', public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-all'), 7));
+insert into outcome values ('s-after-lock', public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 10, 9,
+  (select result from outcome where step = 'answers-s-all')));
 select is((select jsonb_build_object('state', result->>'state', 'score', (result->'preview'->'result'->>'score')::integer,
     'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 's-after-lock'),
   '{"state":"ready","score":30,"timed_out":true}'::jsonb,
   'a perfect sheet whose request began before the deadline but reached the row after it is not saved: the exam closed on the wall clock from the sheet saved in time');
 reset role;
-select is((select saved_revision from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'), 6,
-  'the late sheet was not written');
+select is((select saved_revision from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'), 9,
+  'the late changes were not written');
 -- Deadline plus 60 seconds: the deadline passed a minute ago, and with it the pass.
 update private.discovery_previews set deadline_at = now() - interval '60 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 update public.entitlement_grants set ends_at = now() - interval '60 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-all'), 8)->'preview'->'result'->>'score', '30',
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 11, 9,
+  (select result from outcome where step = 'answers-s-all'))->'preview'->'result'->>'score', '30',
   'a save 60 seconds after the deadline changes nothing: the exam was marked from the sheet saved in time');
 insert into outcome values ('s-late', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008',
-  pg_temp.c('02'), (select result from outcome where step = 'answers-s-all')));
+  pg_temp.c('02'), pg_temp.t(1), 11, 9, (select result from outcome where step = 'answers-s-all')));
 select is((select jsonb_build_object('score', (result->'preview'->'result'->>'score')::integer,
     'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 's-late'),
   '{"score":30,"timed_out":true}'::jsonb,
   'a perfect sheet submitted 60 seconds after the deadline is not marked: only the answers saved before it count');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}')
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 0, 0, '{}')
     ->'preview'->>'saved', null, 'a graded exam carries its result, not an open sheet');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}') - 'now',
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 0, 0, '{}') - 'now',
   (select result - 'now' from outcome where step = 's-late'),
   'inside the network grace a lost response replays the committed result, even just after the pass ended');
 reset role;
@@ -362,7 +444,7 @@ select ok(exists (select 1 from private.entitlement_events where user_id = '7100
 update private.discovery_previews set deadline_at = now() - interval '121 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}'),
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 0, 0, '{}'),
   '{"state":"expired"}'::jsonb, 'after the grace, with the pass over, nothing more is served, not even a replay');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false),
   '{"state":"expired"}'::jsonb, 'and the exam page fails closed');
@@ -381,7 +463,7 @@ insert into outcome values ('answers-s-in-time', pg_temp.answers('71000000-0000-
 set local role service_role;
 select is((select jsonb_build_object('score', (r->'preview'->'result'->>'score')::integer,
     'timed_out', (r->'preview'->'result'->>'timed_out')::boolean)
-  from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1, 0,
     (select result from outcome where step = 'answers-s-in-time')) r),
   '{"score":50,"timed_out":false}'::jsonb, 'a sheet that arrives before the deadline is marked in full');
 reset role;
@@ -396,13 +478,74 @@ insert into outcome values ('answers-s-unsaved', pg_temp.answers('71000000-0000-
 set local role service_role;
 select is((select jsonb_build_object('score', (r->'preview'->'result'->>'score')::integer,
     'timed_out', (r->'preview'->'result'->>'timed_out')::boolean)
-  from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  from public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1, 0,
     (select result from outcome where step = 'answers-s-unsaved')) r),
   '{"score":0,"timed_out":true}'::jsonb,
   'one second after the deadline nothing is accepted: with nothing saved, the exam closes unanswered');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), 'cbt', false)
   ->'preview'->'result'->>'timed_out', 'true', 'the closed exam shows its review');
 reset role;
+
+-- 4e. A submission reconciles pending changes exactly as a save does (Codex review, unresolved at 2cc9300) ------------
+-- Tab A saves an older sheet; tab B saves a newer answer; tab A submits without another edit. The grading must
+-- include tab B's answer: the database grades the sheet it holds, never the stale copy a tab happens to have.
+delete from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02'))->>'state', 'ready', 'a fresh exam opens for the submission cases');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1, 0,
+  pg_temp.answers('71000000-0000-4000-8000-000000000008', 10))->>'revision', '1', 'tab A saves ten correct answers (revision 1)');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 1, 1,
+  (select jsonb_build_object(item, correct) from pg_temp.q('71000000-0000-4000-8000-000000000008', 11)))->>'revision', '2',
+  'tab B, holding revision 1, saves the correct answer to Q11 (revision 2)');
+insert into outcome values ('a-stale-submit', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  pg_temp.t(1), 1, 1, '{}'));
+select is((select jsonb_build_object('score', (result->'preview'->'result'->>'score')::integer,
+    'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 'a-stale-submit'),
+  '{"score":11,"timed_out":false}'::jsonb,
+  'tab A, still holding revision 1 with nothing pending, submits: the sheet graded includes tab B''s Q11 (11, not 10)');
+select is((select a->'selected' from outcome, jsonb_array_elements(result->'preview'->'result'->'answers') a
+    where step = 'a-stale-submit' and a->>'item_id' = (select item from pg_temp.q('71000000-0000-4000-8000-000000000008', 11))),
+  (select to_jsonb(correct) from pg_temp.q('71000000-0000-4000-8000-000000000008', 11)), 'and names tab B''s answer as the one marked');
+reset role;
+select is((select jsonb_build_object('graded_is_saved', answers = saved_answers, 'revision', saved_revision)
+    from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'), '{"graded_is_saved":true,"revision":2}'::jsonb,
+  'nothing was applied: the sheet graded is the saved sheet at revision 2');
+select is((select detail->'pending_applied' from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000008'
+    and event = 'discovery.exam-submitted' order by id desc limit 1), 'false'::jsonb, 'audited as graded without pending changes');
+-- A submission with valid pending changes, one of them to a question another tab changed since: the new change
+-- counts, the conflicting one stands over the other tab's (the change that reaches the database last), and the
+-- other tab's untouched answer is kept. Score: ten from tab A, Q12 from tab B, Q13 from tab A; Q11 wrong again.
+delete from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008';
+set local role service_role;
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02'))->>'state', 'ready', 'another fresh exam opens');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(1), 1, 0,
+  pg_temp.answers('71000000-0000-4000-8000-000000000008', 10))->>'revision', '1', 'tab A saves ten correct answers');
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 1, 1,
+  (select jsonb_build_object(q11.item, q11.correct, q12.item, q12.correct)
+    from pg_temp.q('71000000-0000-4000-8000-000000000008', 11) q11, pg_temp.q('71000000-0000-4000-8000-000000000008', 12) q12))->>'revision', '2',
+  'tab B saves correct answers to Q11 and Q12 (revision 2)');
+insert into outcome values ('a-dirty-submit', public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  pg_temp.t(1), 2, 1, (select jsonb_build_object(q13.item, q13.correct, q11.item, q11.wrong)
+    from pg_temp.q('71000000-0000-4000-8000-000000000008', 11) q11, pg_temp.q('71000000-0000-4000-8000-000000000008', 13) q13)));
+select is((select jsonb_build_object('score', (result->'preview'->'result'->>'score')::integer,
+    'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 'a-dirty-submit'),
+  '{"score":12,"timed_out":false}'::jsonb,
+  'tab A''s pending Q13 counts, its later Q11 stands over tab B''s, and tab B''s Q12 is kept: 12');
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), pg_temp.t(2), 2, 2,
+  (select jsonb_build_object(item, correct) from pg_temp.q('71000000-0000-4000-8000-000000000008', 11)))->'preview'->'result'->>'score', '12',
+  'a later submission with better pending changes cannot change the first grading');
+reset role;
+select is((select jsonb_build_object('graded_is_saved', answers = saved_answers, 'revision', saved_revision,
+    'applied', (saved_sources -> pg_temp.t(1)::text ->> 'seq')::integer)
+    from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'), '{"graded_is_saved":true,"revision":3,"applied":2}'::jsonb,
+  'the pending changes were written with the grading (revision 3, tab A at sequence 2), so the saved and graded sheets agree');
+select is((select detail->'pending_applied' from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000008'
+    and event = 'discovery.exam-submitted' order by id desc limit 1), 'true'::jsonb, 'audited as graded with pending changes');
+-- The exam ledger remembers at most the policy's number of tabs; the one seen least recently is dropped.
+select is((select discovery_exam_tabs from private.entitlement_policy), 64, 'an exam remembers 64 tabs');
+select is((select count(*)::integer from jsonb_object_keys(private.discovery_sources_with(
+    (select jsonb_object_agg(gen_random_uuid()::text, jsonb_build_object('seq', n, 'at', now() - make_interval(secs => n)))
+      from generate_series(1, 64) n), pg_temp.t(9), 1, now()))), 64, 'a 65th tab replaces the least recently seen one');
 
 -- 4c. An exam is exactly 50 valid questions, or it does not open -------------------------------------------------------
 -- Course 01 publishes exactly 50 questions. One malformed revision leaves 49 valid ones.
@@ -453,9 +596,9 @@ update public.academic_periods set is_active = false
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false),
   '{"state":"not-offered"}'::jsonb, 'an exam already opened on a course no longer offered is not served');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}'),
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 0, 0, '{}'),
   '{"state":"not-offered"}'::jsonb, 'nor graded');
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}', 1),
+select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 1, 0, '{}'),
   '{"state":"not-offered"}'::jsonb, 'nor saved');
 reset role;
 select ok(exists (select 1 from public.institutional_courses where repository_course_id = pg_temp.c('02'))
@@ -536,7 +679,7 @@ update private.discovery_previews set deadline_at = now() - interval '1 day'
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'study_guide', false),
   '{"state":"expired"}'::jsonb, 'at the end instant every preview fails closed, including one already opened');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), '{}'),
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 0, 0, '{}'),
   '{"state":"expired"}'::jsonb, 'and a graded exam is no longer shown');
 reset role;
 set local role authenticated;

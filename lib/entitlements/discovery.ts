@@ -16,7 +16,7 @@ import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
 import { createClient } from '@/lib/supabase/server'
 import { discoveryCommandSchema, discoveryPreviewSchema, sampleAnswers } from './discovery-contract'
 import type { NextResponse } from 'next/server'
-import type { DiscoveryKind, DiscoveryResult, SampleAnswers } from './discovery-contract'
+import type { DiscoveryKind, DiscoveryResult, SheetDelta } from './discovery-contract'
 
 type StudentClient = Awaited<ReturnType<typeof createClient>>
 
@@ -28,8 +28,8 @@ const previewRow = z.discriminatedUnion('state', [
     topics: z.array(z.object({ item_id: z.string().uuid(), title: z.string() }).strict()).nullable() }),
   z.object({ state: z.literal('used-elsewhere'), ends_at: timestamp, content_key: z.string().nullable() }),
   z.object({ state: z.literal('not-enough-time'), now: timestamp, ends_at: timestamp }),
-  z.object({ state: z.literal('saved'), now: timestamp, revision: z.number().int().nonnegative() }),
-  z.object({ state: z.literal('stale'), now: timestamp, revision: z.number().int().nonnegative(), answers: sampleAnswers }),
+  z.object({ state: z.enum(['saved', 'stale']), now: timestamp, deadline_at: timestamp,
+    revision: z.number().int().nonnegative(), answers: sampleAnswers }),
   z.object({ state: z.enum(['signed-out', 'invalid-course', 'not-offered', 'invalid-request', 'free-course',
     'full-access', 'no-pass', 'expired', 'nothing-to-preview', 'not-opened']) }),
 ])
@@ -48,8 +48,9 @@ export type DiscoveryEnv = {
   /** examSeconds lets the database say whether the whole exam still fits before the pass ends. */
   read(courseId: string, kind: DiscoveryKind, examSeconds: number | null): Promise<unknown>
   open(courseId: string, target: DiscoveryOpen): Promise<unknown>
-  save(courseId: string, answers: SampleAnswers, revision: number): Promise<unknown>
-  submit(courseId: string, answers: SampleAnswers): Promise<unknown>
+  /** One tab's changed questions over the revision it last received; an empty delta only reads clock and sheet. */
+  save(courseId: string, delta: SheetDelta): Promise<unknown>
+  submit(courseId: string, delta: SheetDelta): Promise<unknown>
 }
 
 /** Map the database answer to the client contract. Anything missing or malformed is `unavailable`. */
@@ -60,8 +61,9 @@ export function discoveryResultFrom(data: unknown): DiscoveryResult {
   if (row.state === 'ready') return { status: 'ready', now: row.now, endsAt: row.ends_at, preview: row.preview }
   if (row.state === 'available') return { status: 'available', now: row.now, endsAt: row.ends_at, topics: row.topics }
   if (row.state === 'not-enough-time') return { status: 'not-enough-time', now: row.now, endsAt: row.ends_at }
-  if (row.state === 'saved') return { status: 'saved', now: row.now, revision: row.revision }
-  if (row.state === 'stale') return { status: 'stale', now: row.now, revision: row.revision, answers: row.answers }
+  if (row.state === 'saved' || row.state === 'stale') {
+    return { status: row.state, now: row.now, deadlineAt: row.deadline_at, revision: row.revision, answers: row.answers }
+  }
   if (row.state === 'used-elsewhere') {
     const course = row.content_key === null ? undefined : getCourseByContentKey(row.content_key)
     return { status: 'used-elsewhere', endsAt: row.ends_at, courseCode: course?.code ?? null,
@@ -87,14 +89,14 @@ function createSupabaseDiscoveryEnv(sessionId: string): DiscoveryEnv {
         p_exam_seconds: target.kind === 'cbt' ? target.examSeconds : null })
       return rpcAnswer(data, error)
     },
-    async save(courseId, answers, revision) {
-      const { data, error } = await service.rpc('save_discovery_cbt', { p_session_id: sessionId,
-        p_course_id: courseId, p_answers: answers, p_revision: revision })
+    async save(courseId, delta) {
+      const { data, error } = await service.rpc('save_discovery_cbt', { p_session_id: sessionId, p_course_id: courseId,
+        p_tab: delta.tab, p_sequence: delta.sequence, p_base_revision: delta.baseRevision, p_changes: delta.changes })
       return rpcAnswer(data, error)
     },
-    async submit(courseId, answers) {
-      const { data, error } = await service.rpc('submit_discovery_cbt', { p_session_id: sessionId,
-        p_course_id: courseId, p_answers: answers })
+    async submit(courseId, delta) {
+      const { data, error } = await service.rpc('submit_discovery_cbt', { p_session_id: sessionId, p_course_id: courseId,
+        p_tab: delta.tab, p_sequence: delta.sequence, p_base_revision: delta.baseRevision, p_changes: delta.changes })
       return rpcAnswer(data, error)
     },
   }
@@ -147,10 +149,15 @@ export async function runDiscoveryRequest(input: unknown, response: NextResponse
     const course = await courseFor(client, command.courseSlug)
     if (course.status !== 'ok') return { status: course.status }
     const env = createSupabaseDiscoveryEnv(context.sessionId)
-    if (command.action === 'save-answers') {
-      return discoveryResultFrom(await env.save(course.courseId, command.answers, command.revision))
+    if (command.action === 'save-answers' || command.action === 'submit-exam') {
+      const { action, courseSlug: _slug, ...delta } = command
+      const call = action === 'save-answers' ? env.save : env.submit
+      return discoveryResultFrom(await call(course.courseId, delta))
     }
-    if (command.action === 'submit-exam') return discoveryResultFrom(await env.submit(course.courseId, command.answers))
+    if (command.action === 'sync-exam') {
+      // A delta with nothing in it: the database answers with its clock, the deadline and the sheet that stands.
+      return discoveryResultFrom(await env.save(course.courseId, { tab: command.tab, sequence: 0, baseRevision: 0, changes: {} }))
+    }
     if (command.action === 'open-topic') {
       return discoveryResultFrom(await env.open(course.courseId, { kind: 'study_guide', itemId: command.itemId }))
     }

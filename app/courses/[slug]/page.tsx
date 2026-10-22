@@ -17,6 +17,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
+import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -50,7 +51,8 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
   // Read only for a locked course that is offered now: an active Discovery Pass offers previews in place of the locked
   // notice. Repository-only and retired courses have no previews.
   let pass: DiscoveryPass | null = null
-  // Mentioned only when the database affirmatively offers a pass (a database from before the pass offers none).
+  // Mentioned only when this account can still start a pass: the database offers one (a database from before the
+  // pass offers none) and the account has not had its one trial.
   let passOffered = false
   try {
     const client = await createClient()
@@ -59,7 +61,7 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
     if (result.status === 'ok' && result.course.content.state === 'locked' && hasActiveCourseOffering(result.course)) {
       const read = await readEntitlementForVerifiedStudent(client)
       const entitlement = read.status === 'ok' ? read.entitlement : null
-      passOffered = discoveryOffered(entitlement)
+      passOffered = trialWording(entitlement).passAvailable
       pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
     }

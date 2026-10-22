@@ -2,7 +2,7 @@
 // Every comparison uses the database's `now`, so the notice never depends on the viewer's clock.
 import { discoveryOffered } from './contract'
 import { DISCOVERY_KINDS } from './discovery-contract'
-import type { AccessSource, EntitlementSummary } from './contract'
+import type { AccessSource, EntitlementSummary, TrialPolicy } from './contract'
 import type { DiscoveryKind } from './discovery-contract'
 
 const HOUR_MS = 3_600_000
@@ -34,6 +34,27 @@ export const DISCOVERY_PASS_LABEL = 'Discovery Pass'
 /** What the student's own trial is called: a Discovery Pass, or the seven-day trial they were issued earlier. */
 export function trialLabel(summary: EntitlementSummary): string {
   return summary.trial.policy === 'seven-day' ? 'free trial' : DISCOVERY_PASS_LABEL
+}
+
+/**
+ * What a surface may say about the student's trial, from their own grant rather than from what the database could
+ * issue: `policy` names the grant they actually hold (a Discovery Pass, a seven-day trial issued before the pass, or
+ * null when there is none or the plan could not be read), and `passAvailable` says whether a pass can still be
+ * started from Plan & Access (the database offers one and this account has not had its trial).
+ */
+export type TrialWording = { policy: TrialPolicy | null; passAvailable: boolean }
+
+/** Neutral: no pass is advertised and the grant is called a trial, never a Discovery Pass. */
+export const NEUTRAL_TRIAL_WORDING: TrialWording = Object.freeze({ policy: null, passAvailable: false })
+
+export function trialWording(summary: EntitlementSummary | null | undefined): TrialWording {
+  if (summary == null) return NEUTRAL_TRIAL_WORDING
+  return { policy: summary.trial.policy, passAvailable: discoveryOffered(summary) && summary.trial.status === 'available' }
+}
+
+/** The name of a trial grant in running copy ("your …"): accurate for the grant held, neutral when unknown. */
+export function trialGrantName(policy: TrialPolicy | null): string {
+  return policy === 'discovery' ? DISCOVERY_PASS_LABEL : policy === 'seven-day' ? 'free trial' : 'trial access'
 }
 
 /** The preview names a student sees, in the order the course page offers them. */

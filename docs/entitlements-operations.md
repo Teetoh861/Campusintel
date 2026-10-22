@@ -92,22 +92,43 @@ is made; an expired claim blocks nothing even before it is removed, and `ops.cjs
 Changing the policy value affects new claims only. No hosted database ever held the earlier unkeyed shape of this
 table, so there are no rows to migrate; the migration is edited in place before its first hosted run.
 
-### Exam answers are saved in revision order
+### Exam answers are saved as each tab's changed questions
 
-The exam page numbers every change; `save_discovery_cbt` accepts a sheet only when its revision is above the one
-already saved (compare-and-swap under the account lock), acknowledges an identical retry as saved, and answers `stale`
-with the sheet that stands for anything else, so a save delayed on the network or sent from another tab can never
-overwrite newer answers. The page normally keeps one save in flight, but a newer sheet overtakes a slow one (in
-parallel) inside the last 15 seconds, after 5 seconds of waiting, and whenever the page is left or the exam
-submitted; revision order makes the overtaking safe. When another tab's sheet is found ahead, only the questions this
-tab changed since its last acknowledged sheet are laid over the server's copy (a question both tabs changed keeps this
-tab's most recent choice, explicitly), so two tabs never lose each other's answers. A failed save is retried with
-bounded backoff (2 s doubling to 15 s, 8 times) without waiting for another change, and "All answers saved" is shown
-only once the server confirmed this tab's latest revision. A tap after the deadline on the page clock changes nothing
-on screen. The database decides every cutoff on its wall clock at the write (`clock_timestamp()`, re-read after the
-account lock and in the update itself), never on the transaction's start time, so a request that queued across the
-deadline cannot land late answers; a change the server did not receive in time is reported as possibly not saved,
-never as saved.
+Every browser tab of an open exam names itself (a fresh id per mount, never shared) and numbers its own changes. A
+save sends only the questions that tab changed since the sheet it last received from the database, with that sheet's
+revision and the tab's change sequence; `save_discovery_cbt` lays those changes over the sheet it holds, under the
+account lock and the row lock, advances the sheet's revision by one, records the tab's sequence, and answers with the
+whole sheet that now stands, its revision and the deadline. A question a tab never touched therefore always keeps
+whatever another tab saved, and two tabs cannot overwrite each other's answers. A question changed on two tabs takes
+the change that reaches the database last; every tab then shows the sheet the database returned. Requests of one tab
+are applied in sequence order only: one delayed on the network behind a newer request of the same tab is answered
+`stale` and changes nothing, and a retry of an applied request is acknowledged without a second write. The page
+normally keeps one save in flight, but newer changes overtake a slow request inside the last 15 seconds, after 5
+seconds of waiting, and whenever the page is left or the exam submitted; sequence order makes the overtaking safe. A
+failed save is retried with bounded backoff (2 s doubling to 15 s, 8 times) without waiting for another change, and
+"All answers saved" is shown only once the server confirmed this tab's latest change. A reload lays only the tab's
+unconfirmed changes over the database's sheet.
+
+`submit_discovery_cbt` takes the same delta and applies the same rule: the tab's pending changes still in time are
+laid over the sheet the database holds in the grading write itself, and the sheet that results is graded. A tab with
+nothing pending grades the database's sheet, never the stale copy it happens to hold, so an answer saved from another
+tab is always marked; the audit row says whether pending changes were applied. The first grading is immutable and a
+replay returns it unchanged. The database decides every cutoff on its wall clock at the write (`clock_timestamp()`,
+re-read after the account lock and in the update itself), never on the transaction's start time, so a request that
+queued across the deadline cannot land late answers; a change the server did not receive in time is reported as
+possibly not saved, never as saved. An exam remembers the sequence of at most `discovery_exam_tabs` tabs (64); the one
+seen least recently is dropped.
+
+### The exam clock on the device is conservative, and the database deadline is the only authority
+
+Whether a tap may still change an answer is decided by `lib/entitlements/exam-clock.ts`, never by the device's wall
+clock. On mount the page asks the server for a fresh reading (`sync-exam`: the database clock, the deadline and the
+sheet that stands), charges the whole round trip as elapsed, and from then on measures time on the monotonic clock,
+so the cutoff on the device is never later than the real deadline. Until that exchange lands, and again whenever the
+page comes back into view or the wall clock drifts from the monotonic one (the device may have slept), answers are
+disabled and the exchange is repeated with bounded backoff. The clock is read at the moment of each tap, not from the
+once-a-second countdown, and a refused tap changes nothing on screen. The database still refuses anything after its
+deadline regardless.
 
 ## Early Access: automatic, from the actual launch
 

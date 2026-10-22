@@ -15,8 +15,8 @@ export function kindFromSegment(segment: string): DiscoveryKind | null {
   return DISCOVERY_KINDS.find(kind => PREVIEW_SEGMENT[kind] === segment) ?? null
 }
 
-// Mirrors the database bounds: at most 100 pinned questions of at most 8 options, and a save revision of at most a
-// million changes to one sheet.
+// Mirrors the database bounds: at most 100 pinned questions of at most 8 options, and at most a million changes to
+// one sheet from one tab.
 const MAX_SAMPLE_QUESTIONS = 100
 const MAX_OPTION_INDEX = 7
 export const MAX_SAVE_REVISION = 1_000_000
@@ -27,19 +27,35 @@ const uuid = z.string().uuid()
 export const sampleAnswers = z.record(uuid, z.number().int().min(0).max(MAX_OPTION_INDEX))
   .refine(answers => Object.keys(answers).length <= MAX_SAMPLE_QUESTIONS)
 export type SampleAnswers = z.infer<typeof sampleAnswers>
-// The client's count of changes to its sheet. The database accepts a sheet only when its revision is higher than the
-// one it already holds, so saves delayed on the network can never overwrite newer answers. Zero means nothing saved.
-export const saveRevision = z.number().int().min(1).max(MAX_SAVE_REVISION)
+// The questions one tab changed since the sheet it last received from the database: a chosen option, or null for a
+// choice cleared. Untouched questions are never sent, so another tab's answers to them can never be overwritten.
+export const sheetChanges = z.record(uuid, z.number().int().min(0).max(MAX_OPTION_INDEX).nullable())
+  .refine(changes => Object.keys(changes).length <= MAX_SAMPLE_QUESTIONS)
+export type SheetChanges = z.infer<typeof sheetChanges>
+// The database numbers the saved sheet (its revision) and each tab numbers its own changes (its sequence). A tab
+// identifies itself so the database applies its requests in sequence order only: a request delayed on the network
+// behind a newer one from the same tab is ignored, and a retry of an applied request is acknowledged, not reapplied.
+const examTab = uuid
+const changeSequence = z.number().int().min(0).max(MAX_SAVE_REVISION)
 const savedRevision = z.number().int().min(0).max(MAX_SAVE_REVISION)
+
+// What a save or submission carries about the tab's sheet. `baseRevision` is the database revision the tab's sheet is
+// based on (its expected server revision); `changes` are its questions changed since then, at change `sequence`.
+const sheetDelta = { tab: examTab, sequence: changeSequence, baseRevision: savedRevision, changes: sheetChanges }
+export type SheetDelta = { tab: string; sequence: number; baseRevision: number; changes: SheetChanges }
 
 export const discoveryCommandSchema = z.discriminatedUnion('action', [
   // The study guide names the topic the student chose; the exam names nothing else. Duration never comes from here.
   z.object({ action: z.literal('open'), courseSlug, kind: z.literal('cbt') }).strict(),
   z.object({ action: z.literal('open-topic'), courseSlug, itemId: uuid }).strict(),
-  // Saved while the exam is open, so time running out marks what the student had chosen. Refused after the deadline,
-  // and ignored when a newer revision of the sheet has already been saved.
-  z.object({ action: z.literal('save-answers'), courseSlug, answers: sampleAnswers, revision: saveRevision }).strict(),
-  z.object({ action: z.literal('submit-exam'), courseSlug, answers: sampleAnswers }).strict(),
+  // Saved while the exam is open, so time running out marks what the student had chosen. Only the questions this tab
+  // changed are sent; the database lays them over the sheet it holds and answers with the sheet that now stands.
+  z.object({ action: z.literal('save-answers'), courseSlug, ...sheetDelta, sequence: changeSequence.min(1),
+    changes: sheetChanges.refine(changes => Object.keys(changes).length > 0) }).strict(),
+  // A fresh reading of the database clock and the deadline, with the sheet that stands. Changes nothing.
+  z.object({ action: z.literal('sync-exam'), courseSlug, tab: examTab }).strict(),
+  // Grades the sheet the database holds once this tab's pending changes (if any are still in time) are laid over it.
+  z.object({ action: z.literal('submit-exam'), courseSlug, ...sheetDelta }).strict(),
 ])
 export type DiscoveryCommand = z.infer<typeof discoveryCommandSchema>
 
@@ -85,11 +101,14 @@ export const discoveryResultSchema = z.discriminatedUnion('status', [
     courseSlug: z.string().nullable() }).strict(),
   // The exam runs for the course's whole duration or not at all: less than that is left on the pass.
   z.object({ status: z.literal('not-enough-time'), now: timestamp, endsAt: timestamp }).strict(),
-  // `revision` is the sheet now saved: the one sent (or an identical retry of it).
-  z.object({ status: z.literal('saved'), now: timestamp, revision: savedRevision }).strict(),
-  // The database already holds a sheet at or above this revision (an older save delayed on the network, or another
-  // tab): nothing changed, and the sheet that stands is returned so the client continues from it.
-  z.object({ status: z.literal('stale'), now: timestamp, revision: savedRevision, answers: sampleAnswers }).strict(),
+  // The tab's changes up to the sequence it sent are in the database's sheet, which is returned at its revision with
+  // the deadline, so the tab continues from the sheet that stands. A sync answers the same way without a change.
+  z.object({ status: z.literal('saved'), now: timestamp, deadlineAt: timestamp, revision: savedRevision,
+    answers: sampleAnswers }).strict(),
+  // A request older than one this tab already had applied (delayed on the network behind it): nothing changed, and
+  // the sheet that stands is returned so the tab continues from it.
+  z.object({ status: z.literal('stale'), now: timestamp, deadlineAt: timestamp, revision: savedRevision,
+    answers: sampleAnswers }).strict(),
   ...PLAIN_STATUSES.map(status => z.object({ status: z.literal(status) }).strict()),
 ])
 export type DiscoveryResult = z.infer<typeof discoveryResultSchema>

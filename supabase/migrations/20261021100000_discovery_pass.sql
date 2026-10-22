@@ -136,9 +136,14 @@ create table private.discovery_previews (
   -- CBT only: the latest answer sheet saved before the deadline. If time runs out, this is what is marked.
   saved_answers jsonb check (saved_answers is null or jsonb_typeof(saved_answers) = 'object'),
   saved_at timestamptz,
-  -- CBT only: the client's revision of that sheet. Saves are serialized under the account lock and accepted only in
-  -- increasing revision order, so a save delayed on the network can never overwrite a newer sheet already accepted.
+  -- CBT only: the database's own count of the sheets it has accepted. Each accepted save lays one tab's changed
+  -- questions over the sheet held here and advances it by one, so a tab can tell when the sheet moved under it.
   saved_revision integer not null default 0 check (saved_revision >= 0),
+  -- CBT only: per browser tab, the last change sequence applied ({"<tab>": {"seq": n, "at": time}}). Requests of one
+  -- tab are applied in sequence order only: one delayed on the network behind a newer request of the same tab is
+  -- ignored, and a retry of an applied request is acknowledged, not reapplied. At most discovery_exam_tabs entries;
+  -- the one least recently seen is dropped.
+  saved_sources jsonb not null default '{}'::jsonb check (jsonb_typeof(saved_sources) = 'object'),
   answers jsonb check (answers is null or jsonb_typeof(answers) = 'object'),
   score integer check (score >= 0),
   -- The exam closed at its deadline before the student submitted it.
@@ -438,15 +443,98 @@ begin
 end;
 $$;
 
--- Save the answer sheet while the exam is open, so time running out marks what the student had chosen. Nothing is
--- saved after the deadline: close_overdue_discovery_exam marks the exam first, and the write itself re-reads the wall
--- clock, so a sheet whose request began before the deadline but reached this row after it is never applied.
--- p_revision is the client's count of changes to its sheet, starting after the revision the exam was opened or
--- reloaded with. Saves of one exam are serialized (the account lock, then the row lock in discovery_exam_for) and a
--- sheet is accepted only when its revision is higher than the one already saved (compare-and-swap), so requests that
--- arrive out of order, duplicate retries and a second tab can never replace newer answers with older ones. The answer
--- always names the revision now saved, so the client can tell whether its latest sheet has been accepted.
-create function public.save_discovery_cbt(p_session_id uuid, p_course_id uuid, p_answers jsonb, p_revision integer)
+-- Changes one tab sends: every key a pinned question, every value one of its options or null (choice cleared).
+create function private.discovery_changes_valid(p_content jsonb, p_changes jsonb) returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_typeof(p_changes) = 'object' and not exists (select 1 from jsonb_each(p_changes) c
+    where not exists (select 1 from jsonb_array_elements(p_content) q
+      where q ->> 'item_id' = c.key and (jsonb_typeof(c.value) = 'null' or (jsonb_typeof(c.value) = 'number'
+        and c.value::text ~ '^[0-9]+$' and (c.value::text)::integer < jsonb_array_length(q -> 'options')))));
+$$;
+
+-- The sheet with one tab's changed questions laid over it: chosen options replace, cleared ones are removed, and
+-- every question the tab did not touch keeps the answer the sheet holds, whichever tab saved it.
+create function private.discovery_apply_changes(p_sheet jsonb, p_changes jsonb) returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce((select jsonb_object_agg(key, value) from (
+    select key, value from jsonb_each(coalesce(p_sheet, '{}'::jsonb)) where not p_changes ? key
+    union all
+    select key, value from jsonb_each(p_changes) where jsonb_typeof(value) <> 'null') merged), '{}'::jsonb);
+$$;
+
+-- How many browser tabs one exam remembers a change sequence for (saved_sources). Beyond it the entry seen least
+-- recently is dropped: a tab that saved nothing while that many other tabs did starts its sequence afresh.
+alter table private.entitlement_policy add column discovery_exam_tabs integer not null default 64
+  check (discovery_exam_tabs between 1 and 1000);
+
+-- The sequence ledger after one tab's request is applied. Entries for other tabs are kept, bounded by the policy.
+create function private.discovery_sources_with(p_sources jsonb, p_tab uuid, p_sequence integer, p_at timestamptz)
+returns jsonb
+language sql
+stable
+set search_path = ''
+as $$
+  with kept as (
+    select key, value from jsonb_each(coalesce(p_sources, '{}'::jsonb)) where key <> p_tab::text
+      order by (value ->> 'at')::timestamptz desc
+      limit (select discovery_exam_tabs - 1 from private.entitlement_policy))
+  select coalesce((select jsonb_object_agg(key, value) from kept), '{}'::jsonb)
+    || jsonb_build_object(p_tab::text, jsonb_build_object('seq', p_sequence, 'at', p_at));
+$$;
+
+-- Reconcile one tab's pending changes with the open exam's sheet. Called with the account lock and the row lock
+-- held, by the save and by the submission, so both apply exactly the same rule:
+--   * a request at or below the sequence this tab already had applied changes nothing (an older request delayed on
+--     the network, or a retry of an applied one), and neither does a request with no changes (a sync);
+--   * otherwise the tab's changed questions are laid over the sheet the database holds, the revision advances by
+--     one, and the tab's sequence is recorded. A question two tabs changed takes the change that reaches the database
+--     last: the student's later action on either tab stands, and every tab is answered with the sheet that stands.
+-- Returns the sheet that results (not yet written), with whether anything is to be written.
+create function private.discovery_reconcile_sheet(p_preview private.discovery_previews, p_tab uuid, p_sequence integer,
+  p_base_revision integer, p_changes jsonb, out o_apply boolean, out o_sheet jsonb)
+language plpgsql
+set search_path = ''
+as $$
+declare
+  v_applied integer := coalesce((p_preview.saved_sources -> p_tab::text ->> 'seq')::integer, 0);
+begin
+  if not private.discovery_changes_valid(p_preview.content, p_changes) or p_base_revision > p_preview.saved_revision then
+    raise exception 'Invalid exam answers' using errcode = '22023';
+  end if;
+  o_apply := p_sequence > v_applied and p_changes <> '{}'::jsonb;
+  o_sheet := case when o_apply then private.discovery_apply_changes(p_preview.saved_answers, p_changes)
+    else coalesce(p_preview.saved_answers, '{}'::jsonb) end;
+end;
+$$;
+
+-- The answer to a save or sync while the exam is open: the sheet that stands, its revision and the deadline, so the
+-- tab continues from it. "saved" means everything this tab sent up to its sequence is in that sheet; "stale" means
+-- the request was older than one already applied from this tab and changed nothing.
+create function private.discovery_sheet_answer(p_state text, p_preview private.discovery_previews) returns jsonb
+language sql
+stable
+set search_path = ''
+as $$
+  select jsonb_build_object('state', p_state, 'now', clock_timestamp(), 'deadline_at', p_preview.deadline_at,
+    'revision', p_preview.saved_revision, 'answers', coalesce(p_preview.saved_answers, '{}'::jsonb));
+$$;
+
+-- Save one tab's changed questions while the exam is open, so time running out marks what the student had chosen.
+-- Nothing is saved after the deadline: close_overdue_discovery_exam marks the exam first, and the write itself
+-- re-reads the wall clock, so changes whose request began before the deadline but reached this row after it are
+-- never applied. The tab sends the database revision its sheet is based on (p_base_revision), only the questions it
+-- changed since (p_changes) and its own change sequence (p_sequence); the database reconciles them under the account
+-- lock and the row lock (discovery_reconcile_sheet) and answers with the whole sheet that now stands and its
+-- revision, so a question changed on another tab is never overwritten by a tab that did not touch it. A request
+-- with no changes (a sync) only reads the clock, the deadline and the sheet.
+create function public.save_discovery_cbt(p_session_id uuid, p_course_id uuid, p_tab uuid, p_sequence integer,
+  p_base_revision integer, p_changes jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -456,10 +544,12 @@ declare
   v_user_id uuid;
   v_exam record;
   v_preview private.discovery_previews;
+  v_merge record;
   v_grant_id uuid;
 begin
-  if p_course_id is null or p_answers is null or jsonb_typeof(p_answers) <> 'object'
-      or octet_length(p_answers::text) > 8192 or p_revision is null or p_revision not between 1 and 1000000 then
+  if p_course_id is null or p_tab is null or p_changes is null or jsonb_typeof(p_changes) <> 'object'
+      or octet_length(p_changes::text) > 8192 or p_sequence is null or p_sequence not between 0 and 1000000
+      or p_base_revision is null or p_base_revision not between 0 and 1000000 then
     raise exception 'Invalid exam answers' using errcode = '22023';
   end if;
   v_user_id := private.ai_practice_session_user(p_session_id);
@@ -468,45 +558,44 @@ begin
   select * into v_exam from private.discovery_exam_for(v_user_id, p_course_id);
   if v_exam.o_state <> 'ok' then return jsonb_build_object('state', v_exam.o_state); end if;
   v_preview := v_exam.o_preview;
-  if v_preview.submitted_at is null then
-    if not private.discovery_answers_valid(v_preview.content, p_answers) then
-      raise exception 'Invalid exam answers' using errcode = '22023';
-    end if;
-    if p_revision > v_preview.saved_revision then
-      v_grant_id := v_preview.grant_id;
-      -- The deadline is re-read from the wall clock in the write itself: the last check before the sheet is accepted.
-      update private.discovery_previews set saved_answers = p_answers, saved_at = clock_timestamp(), saved_revision = p_revision
-        where grant_id = v_grant_id and kind = 'cbt' and submitted_at is null and deadline_at > clock_timestamp()
-        returning * into v_preview;
-      if found then
-        return jsonb_build_object('state', 'saved', 'now', clock_timestamp(), 'revision', v_preview.saved_revision);
-      end if;
-      -- The deadline passed between the check above and the write: the exam closes now, from the sheet saved in time.
-      perform private.close_overdue_discovery_exam(v_grant_id);
-      select * into v_preview from private.discovery_previews where grant_id = v_grant_id and kind = 'cbt';
-      return jsonb_build_object('state', 'ready', 'now', clock_timestamp(), 'ends_at', (v_exam.o_grant).ends_at,
-        'preview', private.discovery_preview_view(v_preview));
-    end if;
-    -- A retry of the sheet already saved is acknowledged as saved. Anything else at or below the saved revision is
-    -- stale (an older save delayed on the network, or another tab numbering its own changes): it changes nothing, and
-    -- the answer carries the sheet that stands so the client can continue from it.
-    if p_revision = v_preview.saved_revision and v_preview.saved_answers = p_answers then
-      return jsonb_build_object('state', 'saved', 'now', clock_timestamp(), 'revision', v_preview.saved_revision);
-    end if;
-    return jsonb_build_object('state', 'stale', 'now', clock_timestamp(), 'revision', v_preview.saved_revision,
-      'answers', coalesce(v_preview.saved_answers, '{}'::jsonb));
+  if v_preview.submitted_at is not null then
+    return jsonb_build_object('state', 'ready', 'now', clock_timestamp(), 'ends_at', (v_exam.o_grant).ends_at,
+      'preview', private.discovery_preview_view(v_preview));
   end if;
+  select * into v_merge from private.discovery_reconcile_sheet(v_preview, p_tab, p_sequence, p_base_revision, p_changes);
+  if not v_merge.o_apply then
+    return private.discovery_sheet_answer(case when p_changes <> '{}'::jsonb
+      and p_sequence < coalesce((v_preview.saved_sources -> p_tab::text ->> 'seq')::integer, 0) then 'stale'
+      else 'saved' end, v_preview);
+  end if;
+  v_grant_id := v_preview.grant_id;
+  -- The deadline is re-read from the wall clock in the write itself: the last check before the changes are accepted.
+  update private.discovery_previews set saved_answers = v_merge.o_sheet, saved_at = clock_timestamp(),
+      saved_revision = saved_revision + 1,
+      saved_sources = private.discovery_sources_with(saved_sources, p_tab, p_sequence, clock_timestamp())
+    where grant_id = v_grant_id and kind = 'cbt' and submitted_at is null and deadline_at > clock_timestamp()
+    returning * into v_preview;
+  if found then return private.discovery_sheet_answer('saved', v_preview); end if;
+  -- The deadline passed between the check above and the write: the exam closes now, from the sheet saved in time.
+  perform private.close_overdue_discovery_exam(v_grant_id);
+  select * into v_preview from private.discovery_previews where grant_id = v_grant_id and kind = 'cbt';
   return jsonb_build_object('state', 'ready', 'now', clock_timestamp(), 'ends_at', (v_exam.o_grant).ends_at,
-    'preview', private.discovery_preview_view(v_exam.o_preview));
+    'preview', private.discovery_preview_view(v_preview));
 end;
 $$;
 
--- Grade the exam once, on the server, from the pinned answer key, and only up to its deadline. A replay returns the
--- first grading unchanged, so a lost response never costs the exam and a second submission can never improve the
--- score. A sheet that arrives after the deadline is never marked: the exam has already closed with the last sheet
--- saved in time, and that committed result is what is returned. The grading write re-reads the wall clock, so a
--- submission that queued behind another request across the deadline is marked from the saved sheet, not its own.
-create function public.submit_discovery_cbt(p_session_id uuid, p_course_id uuid, p_answers jsonb) returns jsonb
+-- Grade the exam once, on the server, from the pinned answer key, and only up to its deadline. The submission carries
+-- the same delta as a save (this tab's pending changes over the revision it last received) and is reconciled by the
+-- same rule under the same locks: changes still in time are laid over the sheet the database holds, and the sheet
+-- that results is what is graded. A tab with nothing pending grades the database's sheet, never its own copy, so an
+-- answer saved from another tab is always marked. A replay returns the first grading unchanged, so a lost response
+-- never costs the exam and a second submission can never improve the score. A sheet that arrives after the deadline
+-- is never marked: the exam has already closed with the last sheet saved in time, and that committed result is what
+-- is returned. The grading write re-reads the wall clock, so a submission that queued behind another request across
+-- the deadline is marked from the saved sheet, not its own.
+create function public.submit_discovery_cbt(p_session_id uuid, p_course_id uuid, p_tab uuid, p_sequence integer,
+  p_base_revision integer, p_changes jsonb)
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -515,11 +604,13 @@ declare
   v_user_id uuid;
   v_exam record;
   v_preview private.discovery_previews;
+  v_merge record;
   v_score integer;
   v_grant_id uuid;
 begin
-  if p_course_id is null or p_answers is null or jsonb_typeof(p_answers) <> 'object'
-      or octet_length(p_answers::text) > 8192 then
+  if p_course_id is null or p_tab is null or p_changes is null or jsonb_typeof(p_changes) <> 'object'
+      or octet_length(p_changes::text) > 8192 or p_sequence is null or p_sequence not between 0 and 1000000
+      or p_base_revision is null or p_base_revision not between 0 and 1000000 then
     raise exception 'Invalid exam answers' using errcode = '22023';
   end if;
   v_user_id := private.ai_practice_session_user(p_session_id);
@@ -530,17 +621,22 @@ begin
   v_preview := v_exam.o_preview;
   -- Still unsubmitted here means the deadline has not passed (and so neither has the pass end).
   if v_preview.submitted_at is null then
-    if not private.discovery_answers_valid(v_preview.content, p_answers) then
-      raise exception 'Invalid exam answers' using errcode = '22023';
-    end if;
-    v_score := private.discovery_exam_score(v_preview.content, p_answers);
+    select * into v_merge from private.discovery_reconcile_sheet(v_preview, p_tab, p_sequence, p_base_revision, p_changes);
+    v_score := private.discovery_exam_score(v_preview.content, v_merge.o_sheet);
     v_grant_id := v_preview.grant_id;
-    update private.discovery_previews set answers = p_answers, score = v_score, submitted_at = clock_timestamp()
+    update private.discovery_previews set
+        saved_answers = case when v_merge.o_apply then v_merge.o_sheet else saved_answers end,
+        saved_at = case when v_merge.o_apply then clock_timestamp() else saved_at end,
+        saved_revision = saved_revision + case when v_merge.o_apply then 1 else 0 end,
+        saved_sources = case when v_merge.o_apply
+          then private.discovery_sources_with(saved_sources, p_tab, p_sequence, clock_timestamp()) else saved_sources end,
+        answers = v_merge.o_sheet, score = v_score, submitted_at = clock_timestamp()
       where grant_id = v_grant_id and kind = 'cbt' and submitted_at is null and deadline_at > clock_timestamp()
       returning * into v_preview;
     if found then
       perform private.log_entitlement_event(v_user_id, v_grant_id, 'discovery.exam-submitted', 'student',
-        jsonb_build_object('course_id', p_course_id, 'score', v_score, 'total', jsonb_array_length(v_preview.content)));
+        jsonb_build_object('course_id', p_course_id, 'score', v_score, 'total', jsonb_array_length(v_preview.content),
+          'pending_applied', v_merge.o_apply));
     else
       -- The deadline passed between the check and the grading: the exam closes from the sheet saved in time.
       perform private.close_overdue_discovery_exam(v_grant_id);
@@ -1339,13 +1435,19 @@ revoke all on function private.discovery_claim_hashes_valid(jsonb), private.disc
   private.discovery_preview_view(private.discovery_previews), private.discovery_answers_valid(jsonb, jsonb),
   private.discovery_exam_score(jsonb, jsonb), private.close_overdue_discovery_exam(uuid),
   private.discovery_exam_for(uuid, uuid), private.discovery_ai_set_complete(jsonb),
+  private.discovery_changes_valid(jsonb, jsonb), private.discovery_apply_changes(jsonb, jsonb),
+  private.discovery_sources_with(jsonb, uuid, integer, timestamptz),
+  private.discovery_reconcile_sheet(private.discovery_previews, uuid, integer, integer, jsonb),
+  private.discovery_sheet_answer(text, private.discovery_previews),
   public.discovery_preview(uuid, uuid, text, boolean, uuid, integer),
-  public.save_discovery_cbt(uuid, uuid, jsonb, integer), public.submit_discovery_cbt(uuid, uuid, jsonb)
+  public.save_discovery_cbt(uuid, uuid, uuid, integer, integer, jsonb),
+  public.submit_discovery_cbt(uuid, uuid, uuid, integer, integer, jsonb)
   from public, anon, authenticated, service_role;
 grant execute on function public.activate_discovery_pass(uuid, jsonb), public.purge_discovery_pass_claims(),
   public.admin_discovery_claim_keys(), public.admin_entitlement_status(uuid),
   public.discovery_preview(uuid, uuid, text, boolean, uuid, integer),
-  public.save_discovery_cbt(uuid, uuid, jsonb, integer), public.submit_discovery_cbt(uuid, uuid, jsonb)
+  public.save_discovery_cbt(uuid, uuid, uuid, integer, integer, jsonb),
+  public.submit_discovery_cbt(uuid, uuid, uuid, integer, integer, jsonb)
   to service_role;
 
 comment on table public.entitlement_grants is

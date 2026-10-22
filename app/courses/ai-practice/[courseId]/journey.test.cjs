@@ -3,6 +3,8 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { checkFile, createGenerationRequests, describeResult, generateFromDocument, runUploadJourney } = require('./journey.ts')
 const { AUTH_CONTINUITY_HEADER } = require('../../../../lib/auth/constants.ts')
+const { entitlementSummarySchema } = require('../../../../lib/entitlements/contract.ts')
+const { trialWording } = require('../../../../lib/entitlements/presentation.ts')
 
 const COURSE = '41111111-1111-4111-8111-111111111111'
 const DOC = '51111111-1111-4111-8111-111111111111'
@@ -22,7 +24,7 @@ function harness(responses) {
     return { ok: next.status >= 200 && next.status < 300, status: next.status, json: async () => next.json }
   }
   return { requests, phases, deps: { fetch, continuityToken: 'token-1', courseId: COURSE,
-    requests: createGenerationRequests(sequence()), onPhase: phase => phases.push(phase) } }
+    requests: createGenerationRequests(sequence()), onPhase: phase => phases.push(phase), trial: trialWording(null) } }
 }
 
 /**
@@ -165,15 +167,46 @@ test('every server result has student-safe copy; unknown or broken replies degra
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
   assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['AI practice is not included in your account', 'none', 'info'])
-  // A trial grant is named as the Discovery Pass only where the database offers one (otherwise it is the free trial
-  // it was issued as); Early Access copy stays neutral; a closed account never hears of a pass that is not offered.
+  // Regression F4: a trial grant is named by the policy the student's own grant was issued under, from the plan
+  // summary, never by whether the database could issue a Discovery Pass. A historical seven-day trial stays a free
+  // trial on a database from before the pass and on one that offers it; a pass is offered only to an account that
+  // can still start one; without policy data the wording is neutral.
   const allowance = source => ({ state: 'expired', source, total: 10, used: 10, endsAt: null })
-  assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('trial') }, true).message, /Discovery Pass has ended/)
-  assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('trial') }, false).message, /free trial has ended/)
-  assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('early_access') }, true).message,
-    /AI access has ended/)
-  assert.match(describeResult({ status: 'not-entitled' }, true).message, /Discovery Pass or Early Access/)
-  assert.doesNotMatch(describeResult({ status: 'not-entitled' }, false).message, /Discovery|pass/i)
+  const summary = { now: '2026-10-22T12:00:00+00:00', planned_launch_at: '2026-10-25T00:00:00+00:00', actual_launch_at: null,
+    expiry_notice_hours: 24, tier: 'free', access: null,
+    trial: { status: 'ended', starts_at: '2026-10-10T12:00:00+00:00', ends_at: '2026-10-17T12:00:00+00:00', available_from: null },
+    early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: null } }
+  const pre = { ...summary, trial_days: 7 }
+  const post = { ...summary, trial_hours: 72, discovery: { cbt_questions: 50, ai_sets: 1, previews: [] } }
+  const expired = describe => describeResult({ status: 'allowance-expired', allowance: allowance('trial') }, describe).message
+  const exhausted = describe => describeResult({ status: 'allowance-exhausted', allowance: allowance('trial') }, describe).message
+  for (const [label, wire] of [['pre-migration', pre], ['post-migration', post]]) {
+    for (const status of ['ended', 'active']) {
+      const sevenDay = trialWording(entitlementSummarySchema.parse({ ...wire, trial: { ...wire.trial, status,
+        ...(wire === post ? { policy: 'seven-day' } : {}) } }))
+      assert.deepEqual(sevenDay, { policy: 'seven-day', passAvailable: false }, `${label} ${status}: a seven-day grant`)
+      assert.match(expired(sevenDay), /free trial has ended/, `${label} ${status}`)
+      assert.doesNotMatch(expired(sevenDay), /Discovery/, `${label} ${status}: a seven-day trial is never a Discovery Pass`)
+      assert.match(exhausted(sevenDay), /included in your free trial\./, `${label} ${status}`)
+      assert.doesNotMatch(describeResult({ status: 'not-entitled' }, sevenDay).message, /Discovery|pass/i,
+        `${label} ${status}: an account that had its trial is not offered a pass`)
+    }
+  }
+  const pass = trialWording(entitlementSummarySchema.parse({ ...post, trial: { ...post.trial, status: 'active', policy: 'discovery' } }))
+  assert.deepEqual(pass, { policy: 'discovery', passAvailable: false })
+  assert.match(expired(pass), /Discovery Pass has ended/)
+  assert.match(exhausted(pass), /included in your Discovery Pass\./)
+  const offered = trialWording(entitlementSummarySchema.parse({ ...post, trial: { status: 'available', policy: null,
+    starts_at: null, ends_at: null, available_from: null } }))
+  assert.deepEqual(offered, { policy: null, passAvailable: true })
+  assert.match(describeResult({ status: 'not-entitled' }, offered).message, /Discovery Pass or Early Access/)
+  const neutral = trialWording(null)
+  assert.deepEqual(neutral, { policy: null, passAvailable: false }, 'no plan summary: neutral')
+  assert.match(expired(neutral), /Your trial access has ended/, 'without policy data the grant is named neutrally')
+  assert.doesNotMatch(describeResult({ status: 'not-entitled' }, neutral).message, /Discovery|pass/i)
+  assert.doesNotMatch(describeResult({ status: 'not-entitled' }).message, /Discovery|pass/i, 'the default is the neutral wording')
+  assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('early_access') }, pass).message,
+    /AI access has ended/, 'Early Access copy stays neutral')
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)
   assert.equal(broken.title, 'Something went wrong')
 })

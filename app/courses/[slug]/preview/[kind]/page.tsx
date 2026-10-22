@@ -16,7 +16,7 @@ import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } fro
 import { examSecondsFor, readDiscoveryPreview } from '@/lib/entitlements/discovery'
 import { kindFromSegment, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
 import { discoveryOffered } from '@/lib/entitlements/contract'
-import { DISCOVERY_PASS_LABEL, formatAccessDate } from '@/lib/entitlements/presentation'
+import { DISCOVERY_PASS_LABEL, formatAccessDate, trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -75,7 +75,8 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   ])
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (result.status === 'free-course' || result.status === 'full-access') redirect(route.href)
-  const offered = plan.status === 'ok' && discoveryOffered(plan.entitlement)
+  // A pass is named as something to start only when this account can still start one.
+  const offered = plan.status === 'ok' && trialWording(plan.entitlement).passAvailable
   const examQuestions = plan.status === 'ok' && discoveryOffered(plan.entitlement) ? plan.entitlement.discovery.cbt_questions : null
   const endsAt = 'endsAt' in result ? result.endsAt : null
   const band = <PageBand title={TITLE[kind]} lede={`${course.code} · ${course.title}`}
@@ -95,7 +96,7 @@ const SECONDS_PER_MINUTE = 60
 
 function PreviewBody({ result, kind, course, examQuestions, offered, continuityToken }: {
   result: DiscoveryResult; kind: DiscoveryKind; course: CourseIdentity; examQuestions: number | null
-  /** Whether the database offers a pass at all; without one the pass is never named, only full access. */
+  /** Whether this student can still start a pass; otherwise the pass is never named, only full access. */
   offered: boolean
   continuityToken: string
 }): ReactElement {
