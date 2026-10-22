@@ -25,8 +25,12 @@ export type SaveOutcome =
   | { kind: 'stale'; revision: number; answers: SampleAnswers }
   /** The save did not reach the database (network, timeout, outage). Worth retrying. */
   | { kind: 'failed' }
-  /** The server will not take saves for this exam any more (signed out, pass ended, exam closed). */
-  | { kind: 'refused'; status: string }
+  /**
+   * The server will not take saves for this exam any more (signed out, pass ended, exam closed). When it will never
+   * apply anything from this tab (too many tabs) it also returns the sheet that stands as `sheet`: this tab's
+   * unconfirmed changes are dropped and that sheet is shown, so nothing refused can look chosen or be sent again.
+   */
+  | { kind: 'refused'; status: string; sheet?: SheetAnswer }
 
 export type AutosaveSnapshot = {
   state: SaveState
@@ -107,6 +111,8 @@ export class ExamAutosave {
   private readonly dirty = new Map<string, number>()
   private attempts = 0
   private refusal: string | null = null
+  /** The database refused this tab for good and its unconfirmed changes were dropped (see forfeit). */
+  private forfeited = false
   private readonly inFlight = new Map<number, InFlight>()
   private stopped = false
   private timer: unknown = null
@@ -265,12 +271,29 @@ export class ExamAutosave {
     }
   }
 
+  /**
+   * The database will never apply anything from this tab: its unconfirmed changes are dropped in the same step as the
+   * sheet that stands is taken as the base and shown, so no later sync, flush or submission can carry or show them.
+   */
+  private forfeit(sheet: SheetAnswer): void {
+    this.forfeited = true
+    this.dirty.clear()
+    if (sheet.revision >= this.base.revision) this.base = sheet
+    if (!sameSheet(this.base.answers, this.answers)) {
+      this.answers = this.base.answers
+      this.options.onRebase?.(this.answers)
+    }
+  }
+
   private async deliver(sequence: number, delta: SheetDelta): Promise<void> {
     let outcome: SaveOutcome
     try { outcome = await this.options.send(delta) }
     catch { outcome = { kind: 'failed' } }
     this.inFlight.delete(sequence)
     if (this.stopped) return
+    // Once the database refused this tab for good, a reply still on its way changes nothing: the refusal stands, and
+    // the sheet adopted with it is never overlaid with a choice the refusal dropped.
+    if (this.forfeited) { this.notify(); return }
     if (outcome.kind === 'saved') {
       // Everything changed up to this sequence is in the database's sheet. The confirmation never goes backwards,
       // whatever order responses arrive in.
@@ -293,6 +316,7 @@ export class ExamAutosave {
     }
     if (outcome.kind === 'refused') {
       this.refusal = outcome.status
+      if (outcome.sheet !== undefined) this.forfeit(outcome.sheet)
       this.notify()
       return
     }

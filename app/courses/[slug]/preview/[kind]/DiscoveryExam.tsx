@@ -123,8 +123,6 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [message, setMessage] = useState<string | null>(null)
   const answersRef = useRef(answers)
   const autosave = useRef<ExamAutosave | null>(null)
-  // The sheet the database holds, once it refused this tab's changes: what a reload of this tab starts from.
-  const refusedSheet = useRef<SampleAnswers | null>(null)
   const examClock = useRef<ExamClock | null>(null)
   // The page clock when the exam mounted, for the display-only countdown before the first exchange lands.
   const mounted = useRef<number | null>(null)
@@ -198,13 +196,11 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
         return { kind: outcome.status, revision: outcome.revision, answers: validAnswers(outcome.answers, questions) }
       }
       if (outcome.status === 'too-many-tabs') {
-        // The database will take no changes from this tab, now or later: its unsent choices are dropped, the sheet
-        // that stands is shown (nothing refused may look chosen), and saving stops in this tab only.
-        const standing = validAnswers(outcome.answers, questions)
-        refusedSheet.current = standing
-        answersRef.current = standing
-        setAnswers(standing)
-        return { kind: 'refused', status: outcome.status }
+        // The database will take no changes from this tab, now or later. The controller drops its unsent choices and
+        // adopts the sheet that stands in one step (the screen follows through onRebase, so nothing refused can look
+        // chosen, come back at a sync, or go with the submission), and saving stops in this tab only.
+        return { kind: 'refused', status: outcome.status,
+          sheet: { revision: outcome.revision, answers: validAnswers(outcome.answers, questions) } }
       }
       if (outcome.status === 'unavailable') return { kind: 'failed' }
       if (outcome.status === 'ready') {
@@ -222,8 +218,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
       onChange: snapshot => {
         setSave(snapshot)
-        if (snapshot.refusal === 'too-many-tabs' && refusedSheet.current !== null) store(storageKey, { answers: refusedSheet.current, dirty: [] })
-        else if (controller !== null) store(storageKey, controller.unsent())
+        if (controller !== null) store(storageKey, controller.unsent())
       },
       onRebase: merged => { answersRef.current = merged; setAnswers(merged) },
     })
