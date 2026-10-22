@@ -62,9 +62,8 @@ export const RATE_LIMIT_POLICIES = {
   PASSWORD_RESET_SUBMIT: { account: [5, 900], origin: [20, 900] },
   CONFIRM_EMAIL: { account: [5, 900], origin: [20, 900] },
   ACCOUNT_DELETION: { account: [5, 900], origin: [20, 900] },
-  // Discovery Pass activation (lib/entitlements/server.ts): a replay is harmless, so the limit only bounds abuse. The
-  // origin bucket is wide because campus networks put many students behind one address.
-  DISCOVERY_ACTIVATION: { account: [5, 900], origin: [60, 900] },
+  // Discovery Pass activation has its own limiter (lib/entitlements/server.ts): a hard per-account limit and
+  // per-address monitoring only, because campus networks put many students behind one address.
 } as const
 export type AuthAction = keyof typeof RATE_LIMIT_POLICIES
 

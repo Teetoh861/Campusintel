@@ -2,7 +2,10 @@
 // The database stores only this HMAC (private.discovery_pass_claims), never the address, and never holds the key.
 // Keys are versioned so they can be rotated: the first configured key signs new claims, every configured key is used
 // to look up existing ones, and a retired key is dropped only once no live claim references its version
-// (admin_discovery_claim_keys). Without a valid configuration activation is unavailable: fail closed.
+// (admin_discovery_claim_keys). Each key also carries a check value, the HMAC of a fixed purpose string under it, so the
+// database can tell when a version it has already written claims with is presented with a different secret, or when a
+// version live claims need is no longer configured; it then refuses to activate (private.discovery_claim_keys_check).
+// Without a valid configuration activation is unavailable: fail closed.
 import 'server-only'
 import { createHmac } from 'node:crypto'
 
@@ -10,7 +13,7 @@ type Env = Readonly<Record<string, string | undefined>>
 
 export type ClaimKey = { version: number; key: string }
 export type ClaimKeys = { current: ClaimKey; all: ReadonlyArray<ClaimKey> }
-export type ClaimHash = { version: number; hash: string }
+export type ClaimHash = { version: number; hash: string; check: string }
 
 // ENTITLEMENT_CLAIM_HASH_KEYS="<version>:<secret>,<version>:<secret>" with the current key first. A secret is at least
 // 32 characters (openssl rand -base64 32); versions are distinct integers from 1 to 1000; at most 8 keys at once.
@@ -20,6 +23,8 @@ const MAX_VERSION = 1000
 const MAX_KEYS = 8
 // Purpose-specific domain separation: a key reused elsewhere by mistake still cannot produce or verify a claim hash.
 const PURPOSE = 'campusintell:discovery-pass-claim:v1'
+// The check value commits to the key without revealing it, under its own purpose so it can never equal a claim hash.
+const KEY_CHECK_PURPOSE = 'campusintell:discovery-pass-claim-key-check:v1'
 
 /** Parse the configured keys, or null when anything is missing or malformed. */
 export function readClaimHashKeys(env: Env = process.env): ClaimKeys | null {
@@ -45,9 +50,15 @@ export function normalizeClaimEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
-/** One hash per configured key, current first. The database inserts the first and matches any. */
+/** The commitment to one key's secret that the database keeps per version. */
+export function claimKeyCheck(key: string): string {
+  return createHmac('sha256', key).update(KEY_CHECK_PURPOSE, 'utf8').digest('hex')
+}
+
+/** One hash per configured key, current first, each with its key's check value. The database inserts the first and
+ *  matches any, after verifying every version against the checks it has registered. */
 export function claimHashes(keys: ClaimKeys, email: string): ClaimHash[] {
   const normalized = normalizeClaimEmail(email)
   return keys.all.map(({ version, key }) => ({ version,
-    hash: createHmac('sha256', key).update(`${PURPOSE}:${normalized}`, 'utf8').digest('hex') }))
+    hash: createHmac('sha256', key).update(`${PURPOSE}:${normalized}`, 'utf8').digest('hex'), check: claimKeyCheck(key) }))
 }

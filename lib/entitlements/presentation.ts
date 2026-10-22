@@ -1,5 +1,6 @@
 // lib/entitlements/presentation.ts — Plan copy and the one access notice a student sees, from the server summary.
 // Every comparison uses the database's `now`, so the notice never depends on the viewer's clock.
+import { discoveryOffered } from './contract'
 import { DISCOVERY_KINDS } from './discovery-contract'
 import type { AccessSource, EntitlementSummary } from './contract'
 import type { DiscoveryKind } from './discovery-contract'
@@ -49,7 +50,7 @@ function msUntil(summary: EntitlementSummary, iso: string | null): number {
 
 /** The previews this pass has not used yet, by their student-facing names. */
 export function unusedPreviews(summary: EntitlementSummary): DiscoveryKind[] {
-  if (summary.discovery === null) return []
+  if (!discoveryOffered(summary)) return []
   const used = new Set(summary.discovery.previews.map(preview => preview.kind))
   return DISCOVERY_KINDS.filter(kind => !used.has(kind))
 }
@@ -94,7 +95,7 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     }
     return null
   }
-  if (trial.status === 'available' && summary.discovery !== null) {
+  if (trial.status === 'available' && discoveryOffered(summary)) {
     return { id: 'trial-available', tone: 'info', title: 'Preview your department courses',
       body: `A free ${summary.trial_hours}-hour ${DISCOVERY_PASS_LABEL} includes one full ` +
         `${summary.discovery.cbt_questions}-question CBT exam and one complete study guide topic, from courses you ` +

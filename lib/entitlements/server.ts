@@ -9,10 +9,10 @@ import type { NextResponse } from 'next/server'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { PRODUCT_EVENTS } from '@/lib/analytics/product-events'
 import { getAuthSecretKey, getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
-import { consumeAuthLimit } from '@/lib/auth/rate-limit'
-import { AuthRequestError } from '@/lib/auth/request'
+import { getBucket } from '@/lib/auth/rate-limit'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
 import { claimHashes, readClaimHashKeys } from './claim-hash'
 import { entitlementCommandSchema, entitlementSummarySchema } from './contract'
 import { activationRow, executeEntitlementCommand } from './service'
@@ -24,7 +24,12 @@ type StudentClient = Awaited<ReturnType<typeof createClient>>
 
 // private.require_live_account() and get_my_entitlement() raise this when the session is no longer live.
 const LIVE_SESSION_REQUIRED_CODE = '42501'
-const RATE_LIMITED_STATUS = 429
+// Activation requests: a hard limit per account (keyed by the confirmed email), and per-address monitoring only. The
+// database holds the same figures and refuses any others (consume_discovery_activation_limit). A shared campus address
+// is never a barrier: one noisy account can add at most its own five requests to the address's count, and crossing
+// the notice threshold writes an audit row for the operator instead of refusing anyone.
+export const ACTIVATION_LIMIT = { account: [5, 900], originNotice: [60, 900] } as const
+const activationLimitRow = z.object({ allowed: z.boolean(), origin_requests: z.number().int().nonnegative() })
 
 export type EntitlementRead =
   | { status: 'ok'; entitlement: EntitlementSummary }
@@ -57,12 +62,16 @@ function createSupabaseEntitlementEnv(sessionId: string, email: string, address:
   return {
     async limit() {
       // The same purpose-separated buckets as the auth routes: the raw address and email never enter the database.
-      try { await consumeAuthLimit('DISCOVERY_ACTIVATION', email.toLowerCase(), address) }
-      catch (error) {
-        if (error instanceof AuthRequestError && error.status === RATE_LIMITED_STATUS) return 'limited'
-        throw error
-      }
-      return 'allowed'
+      const { data, error } = await service.rpc('consume_discovery_activation_limit', {
+        p_account: getBucket('DISCOVERY_ACTIVATION', 'account', email.toLowerCase()),
+        p_origin: getBucket('DISCOVERY_ACTIVATION', 'origin', address),
+        p_account_limit: ACTIVATION_LIMIT.account[0], p_account_window: ACTIVATION_LIMIT.account[1],
+        p_origin_notice: ACTIVATION_LIMIT.originNotice[0], p_origin_window: ACTIVATION_LIMIT.originNotice[1],
+      })
+      const parsed = activationLimitRow.safeParse(data)
+      // A limiter outage fails closed: the request is not admitted without the limit.
+      if (error || !parsed.success) throw new Error('Activation rate limit unavailable')
+      return parsed.data.allowed ? 'allowed' : 'limited'
     },
     async activate() {
       // Only keyed hashes of the confirmed address reach the database, current key first.

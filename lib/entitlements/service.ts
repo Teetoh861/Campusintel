@@ -15,11 +15,14 @@ export const activationRow = z.discriminatedUnion('state', [
   z.object({ state: z.literal('early-access-active'), available_from: timestamp }),
   z.object({ state: z.literal('already-claimed'), retention_months: z.number().int().positive() }),
   z.object({ state: z.enum(['signed-out', 'capacity', 'trial-not-offered']) }),
+  // The claim-key configuration cannot verify every unexpired claim: nothing was decided (fail closed).
+  z.object({ state: z.enum(['claim-key-missing', 'claim-key-replaced']) }),
 ])
 export type ActivationRow = z.infer<typeof activationRow>
 
 export type EntitlementEnv = {
-  /** The per-account and per-origin request limit. `limited` means the database is not asked at all. */
+  /** The per-account request limit (the requester address is monitored, never a barrier). `limited` means the
+   *  database is not asked at all. */
   limit(): Promise<'allowed' | 'limited'>
   /** Null when the database answer was missing or malformed. */
   activate(): Promise<ActivationRow | null>
@@ -33,6 +36,12 @@ async function activatePass(env: EntitlementEnv): Promise<EntitlementResult> {
   if (row.state === 'already-activated') return { status: 'already-activated', endsAt: row.ends_at }
   if (row.state === 'early-access-active') return { status: row.state, availableFrom: row.available_from }
   if (row.state === 'already-claimed') return { status: row.state, retentionMonths: row.retention_months }
+  if (row.state === 'claim-key-missing' || row.state === 'claim-key-replaced') {
+    // An operations fault, never the student's: ENTITLEMENT_CLAIM_HASH_KEYS dropped or changed a version that live
+    // claims were written with. Surfaced for the operator; the student sees a plain "not available right now".
+    console.error(`entitlements: activation refused, ${row.state} (see ops.cjs claim-keys)`)
+    return { status: 'unavailable' }
+  }
   return { status: row.state }
 }
 

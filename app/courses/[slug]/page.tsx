@@ -16,6 +16,7 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
+import { discoveryOffered } from '@/lib/entitlements/contract'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -58,9 +59,8 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
     if (result.status === 'ok' && result.course.content.state === 'locked' && hasActiveCourseOffering(result.course)) {
       const read = await readEntitlementForVerifiedStudent(client)
       const entitlement = read.status === 'ok' ? read.entitlement : null
-      passOffered = entitlement !== null && entitlement.discovery !== null
-      pass = entitlement !== null && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
-        && entitlement.discovery !== null
+      passOffered = discoveryOffered(entitlement)
+      pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
     }
   } catch { result = { status: 'unavailable' } }

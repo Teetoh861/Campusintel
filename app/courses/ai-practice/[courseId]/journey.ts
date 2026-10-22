@@ -49,17 +49,27 @@ export type JourneyDeps = {
   fetch: typeof fetch
   continuityToken: string
   courseId: string
+  /** Whether the database offers the Discovery Pass (lib/entitlements/contract.ts discoveryOffered); copy never names
+   *  a pass otherwise. */
+  passOffered: boolean
   onPhase(phase: JourneyPhase): void
   requests: GenerationRequests
 }
 
 export const NOT_ENTITLED_TITLE = 'AI practice is not included in your account'
-export const NOT_ENTITLED_MESSAGE = 'AI practice opens with a Discovery Pass or Early Access. ' +
-  'Get your pass from Plan & Access. GST courses stay free.'
 
-/** How the student's grant is named in copy. A trial grant is the Discovery Pass. */
-export function grantName(allowance: AllowanceSummary | null | undefined): string {
-  return allowance?.source === 'trial' ? 'Discovery Pass' : 'AI access'
+/** Why AI practice is closed and where it opens. The pass is named only where the database offers one. */
+export function notEntitledMessage(passOffered: boolean): string {
+  return passOffered
+    ? 'AI practice opens with a Discovery Pass or Early Access. Get your pass from Plan & Access. GST courses stay free.'
+    : 'AI practice opens with Early Access. GST courses stay free.'
+}
+
+/** How the student's grant is named in copy. A trial grant is the Discovery Pass where the database offers one, and
+ *  otherwise the free trial it was issued as. */
+export function grantName(allowance: AllowanceSummary | null | undefined, passOffered: boolean): string {
+  if (allowance?.source !== 'trial') return 'AI access'
+  return passOffered ? 'Discovery Pass' : 'free trial'
 }
 
 const problem = (title: string, message: string, retry: 'same-file' | 'new-file' | 'none' = 'new-file',
@@ -67,7 +77,7 @@ const problem = (title: string, message: string, retry: 'same-file' | 'new-file'
   ({ kind: 'problem', tone, title, message, retry })
 
 /** Map any non-success result to what the student should read and do next. */
-export function describeResult(result: AiPracticeResult): JourneyOutcome {
+export function describeResult(result: AiPracticeResult, passOffered = false): JourneyOutcome {
   switch (result.status) {
     case 'generated': return { kind: 'generated', set: result.set, allowance: result.allowance }
     case 'upload-rejected': return problem('We could not use this file', UPLOAD_REJECTION_MESSAGES[result.reason])
@@ -81,12 +91,12 @@ export function describeResult(result: AiPracticeResult): JourneyOutcome {
       'Something went wrong while writing your questions. This did not use any of your AI allowance. Try again.',
       'same-file'), allowance: result.allowance }
     case 'allowance-exhausted': return { ...problem('AI allowance used up',
-      `You have used all of the AI practice included in your ${grantName(result.allowance)}. ` +
+      `You have used all of the AI practice included in your ${grantName(result.allowance, passOffered)}. ` +
       'Verified CampusIntell content stays available.', 'none', 'info'), allowance: result.allowance }
     case 'allowance-expired': return { ...problem('AI access has ended',
-      `Your ${grantName(result.allowance)} has ended. Verified CampusIntell content stays available.`, 'none', 'info'),
+      `Your ${grantName(result.allowance, passOffered)} has ended. Verified CampusIntell content stays available.`, 'none', 'info'),
       allowance: result.allowance }
-    case 'not-entitled': return problem(NOT_ENTITLED_TITLE, NOT_ENTITLED_MESSAGE, 'none', 'info')
+    case 'not-entitled': return problem(NOT_ENTITLED_TITLE, notEntitledMessage(passOffered), 'none', 'info')
     case 'busy': return problem('Your questions are still being prepared',
       'Please wait a moment, then try again.', 'same-file', 'info')
     case 'capacity': return problem('AI practice is busy',
@@ -134,7 +144,7 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
   deps.onPhase('uploading')
   const reserved = await command(deps, { operation: 'reserve-upload', courseId: deps.courseId,
     fileName: file.name, mediaType, byteSize: file.size })
-  if (reserved.status !== 'upload-reserved') return describeResult(reserved)
+  if (reserved.status !== 'upload-reserved') return describeResult(reserved, deps.passOffered)
   try {
     // Straight to private Storage: the file never passes through an application function.
     const put = await deps.fetch(reserved.uploadUrl, { method: 'PUT', cache: 'no-store',
@@ -146,7 +156,7 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
   }
   deps.onPhase('reading')
   const processed = await command(deps, { operation: 'process-upload', documentId: reserved.documentId })
-  if (processed.status !== 'upload-ready') return describeResult(processed)
+  if (processed.status !== 'upload-ready') return describeResult(processed, deps.passOffered)
   return generateFromDocument(reserved.documentId, deps)
 }
 
@@ -156,6 +166,6 @@ export async function generateFromDocument(documentId: string, deps: JourneyDeps
   const result = await command(deps, { operation: 'generate', documentId,
     requestId: deps.requests.requestIdFor(documentId) })
   deps.requests.settle(documentId, result)
-  const outcome = describeResult(result)
+  const outcome = describeResult(result, deps.passOffered)
   return outcome.kind === 'problem' && outcome.retry === 'same-file' ? { ...outcome, documentId } : outcome
 }

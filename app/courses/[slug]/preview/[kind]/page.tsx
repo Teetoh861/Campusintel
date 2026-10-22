@@ -15,6 +15,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { examSecondsFor, readDiscoveryPreview } from '@/lib/entitlements/discovery'
 import { kindFromSegment, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
+import { discoveryOffered } from '@/lib/entitlements/contract'
 import { DISCOVERY_PASS_LABEL, formatAccessDate } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -54,7 +55,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   if (lookup.status === 'not-found') return notFound()
   if (lookup.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (lookup.status !== 'ok' && lookup.status !== 'repository-only') {
-    return <StudentPage band={<PageBand title={TITLE[kind]} lede="Part of a department course, with your Discovery Pass." />}>
+    return <StudentPage band={<PageBand title={TITLE[kind]} lede="Part of a department course." />}>
       <ResultNotice state="course-unavailable" retryHref={returnPath} />
     </StudentPage>
   }
@@ -74,13 +75,14 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   ])
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (result.status === 'free-course' || result.status === 'full-access') redirect(route.href)
-  const examQuestions = plan.status === 'ok' ? plan.entitlement.discovery?.cbt_questions ?? null : null
+  const offered = plan.status === 'ok' && discoveryOffered(plan.entitlement)
+  const examQuestions = plan.status === 'ok' && discoveryOffered(plan.entitlement) ? plan.entitlement.discovery.cbt_questions : null
   const endsAt = 'endsAt' in result ? result.endsAt : null
   const band = <PageBand title={TITLE[kind]} lede={`${course.code} · ${course.title}`}
     context={endsAt !== null && <p>{DISCOVERY_PASS_LABEL} · ends {formatAccessDate(endsAt)}</p>} />
   return <StudentPage band={band}>
     <div className="grid min-w-0 max-w-3xl gap-4">
-      <PreviewBody result={result} kind={kind} course={course} examQuestions={examQuestions}
+      <PreviewBody result={result} kind={kind} course={course} examQuestions={examQuestions} offered={offered}
         continuityToken={continuityToken} />
       <Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
         Back to {course.code}
@@ -91,8 +93,10 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
 
 const SECONDS_PER_MINUTE = 60
 
-function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
+function PreviewBody({ result, kind, course, examQuestions, offered, continuityToken }: {
   result: DiscoveryResult; kind: DiscoveryKind; course: CourseIdentity; examQuestions: number | null
+  /** Whether the database offers a pass at all; without one the pass is never named, only full access. */
+  offered: boolean
   continuityToken: string
 }): ReactElement {
   const plan = <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
@@ -150,6 +154,11 @@ function PreviewBody({ result, kind, course, examQuestions, continuityToken }: {
         This is no longer available. GST courses stay free.
       </Notice>
     case 'no-pass':
+      if (!offered) {
+        return <Notice tone="info" title="Included with full access" action={plan}>
+          Department courses open fully with Early Access. GST courses stay free.
+        </Notice>
+      }
       return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_LABEL}`} action={plan}>
         Start your free pass from Plan & Access to try a department course. It takes one tap.
       </Notice>

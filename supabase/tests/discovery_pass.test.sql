@@ -3,9 +3,16 @@
 -- study-guide topic from actively offered courses, pinned and served by the server only, answers withheld until grading
 -- and refused after the deadline, one AI upload with one complete set of five questions, no theory preview and no
 -- replenishment. Seven-day trials issued before the migration keep their full access and allowance.
--- Time is simulated by moving grant and deadline timestamps: now() is fixed for the whole transaction.
+-- Time is simulated by moving grant and deadline timestamps: now() is fixed for the whole transaction, but the exam
+-- functions decide on clock_timestamp() (the wall clock at the statement), so a deadline that must still be open is set
+-- from clock_timestamp() with seconds to spare, and values the functions take from their clock are compared with a
+-- tolerance (pg_temp.near).
 begin;
 select no_plan();
+-- Claims and the claim-key registry are global: this transaction starts from an empty ledger (rolled back at the end),
+-- so what other sessions of this database have activated with their own keys cannot change these outcomes.
+delete from private.discovery_pass_claims;
+delete from private.discovery_claim_keys;
 
 -- Structure, privileges and policy ----------------------------------------------------------------------------------
 select has_table('private', 'discovery_previews', 'previews table exists');
@@ -74,9 +81,18 @@ grant all on outcome to authenticated, service_role;
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
 grant execute on function pg_temp.h(text) to authenticated, service_role;
-create function pg_temp.claim(p_email text) returns jsonb language sql immutable as
-  $$ select jsonb_build_array(jsonb_build_object('version', 1, 'hash', pg_temp.h('claim-v1:' || p_email))) $$;
-grant execute on function pg_temp.claim(text) to authenticated, service_role;
+-- The keyed claim hashes and key checks the application sends (lib/entitlements/claim-hash.ts), current version first;
+-- plain digests stand in for the HMACs. p_replaced lists versions presented under another secret (a different check).
+create function pg_temp.claim(p_email text, p_versions integer[] default array[1],
+  p_replaced integer[] default array[]::integer[]) returns jsonb language sql immutable as
+  $$ select jsonb_agg(jsonb_build_object('version', v, 'hash', pg_temp.h('claim-v' || v || ':' || p_email),
+       'check', pg_temp.h('claim-key-check-v' || v || case when v = any(p_replaced) then ':replaced' else '' end))
+       order by ordinality) from unnest(p_versions) with ordinality as t(v, ordinality) $$;
+grant execute on function pg_temp.claim(text, integer[], integer[]) to authenticated, service_role;
+-- A time the functions took from their own clock: at most the suite's running time before now, never after.
+create function pg_temp.near(p_actual timestamptz, p_offset interval) returns boolean language sql as
+  $$ select p_actual between clock_timestamp() + p_offset - interval '10 minutes'
+       and clock_timestamp() + p_offset + interval '1 second' $$;
 -- Course fixtures: 02 has 390 CBT questions and notes, 03 is another offered course, 11 has CBT only, 08 is a free GST
 -- course, and 07 (notes, theory, 150 questions) is repository-only, so it is offered in no active catalogue.
 create function pg_temp.c(p_n text) returns uuid language sql immutable as
@@ -157,19 +173,20 @@ insert into outcome values ('p-cbt', pg_temp.open_exam('72000000-0000-4000-8000-
 select is((select result->>'state' from outcome where step = 'p-cbt'), 'ready', 'the exam opens');
 select is((select jsonb_array_length(result->'preview'->'questions') from outcome where step = 'p-cbt'), 50,
   'it is a complete 50-question exam from the 390-question bank');
-select is((select (result->'preview'->>'deadline_at')::timestamptz from outcome where step = 'p-cbt'),
-  now() + interval '30 minutes', 'the deadline is set by the database: thirty minutes from opening');
-select is((select (result->>'now')::timestamptz from outcome where step = 'p-cbt'), now(),
-  'the server clock is sent for the countdown display');
+select ok(pg_temp.near((select (result->'preview'->>'deadline_at')::timestamptz from outcome where step = 'p-cbt'),
+  interval '30 minutes'), 'the deadline is set by the database: thirty minutes from opening, on its wall clock');
+select ok(pg_temp.near((select (result->>'now')::timestamptz from outcome where step = 'p-cbt'), interval '0')
+  and (select (result->>'now')::timestamptz > now() from outcome where step = 'p-cbt'),
+  'the server clock sent for the countdown display is the wall clock, not the transaction start');
 select is((select (result->'preview'->>'result') from outcome where step = 'p-cbt'), null, 'with no result yet');
 select is((select result->'preview'->'saved' from outcome where step = 'p-cbt'), '{"revision":0,"answers":{}}'::jsonb,
   'and no sheet saved yet, at revision zero');
 select ok((select result::text !~ '(correct_option|correctOption|explanation)' from outcome where step = 'p-cbt'),
   'no answer key or explanation is sent before grading');
-select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000001', pg_temp.c('02')),
-  (select result from outcome where step = 'p-cbt'), 'a retry or refresh returns the identical exam and deadline');
-select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false),
-  (select result from outcome where step = 'p-cbt'), 'as does a plain read, from any device or session');
+select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000001', pg_temp.c('02')) - 'now',
+  (select result - 'now' from outcome where step = 'p-cbt'), 'a retry or refresh returns the identical exam and deadline');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'cbt', false) - 'now',
+  (select result - 'now' from outcome where step = 'p-cbt'), 'as does a plain read, from any device or session');
 reset role;
 -- Twenty-five minutes later (simulated), reopening from a brand-new session must not restart the clock.
 update private.discovery_previews set deadline_at = now() + interval '5 minutes'
@@ -222,7 +239,9 @@ select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_te
 reset role;
 
 -- 4b. The exam clock: the whole duration or nothing, answers saved until the deadline, nothing accepted after it ------
--- S has ten minutes of pass left.
+-- S has ten minutes (and a little, for the time this suite takes) of pass left on the wall clock.
+update public.entitlement_grants set ends_at = clock_timestamp() + interval '10 minutes 30 seconds'
+  where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02')) - 'now' - 'ends_at',
   '{"state":"not-enough-time"}'::jsonb,
@@ -235,8 +254,8 @@ select is((select count(*)::integer from private.discovery_previews where user_i
 set local role service_role;
 insert into outcome values ('s-cbt', public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
   'cbt', true, null, 600));
-select is((select (result->'preview'->>'deadline_at')::timestamptz from outcome where step = 's-cbt'),
-  now() + interval '10 minutes', 'a ten-minute exam that exactly fits opens with its whole duration');
+select ok(pg_temp.near((select (result->'preview'->>'deadline_at')::timestamptz from outcome where step = 's-cbt'),
+  interval '10 minutes'), 'a ten-minute exam that fits opens with its whole duration');
 reset role;
 insert into outcome values ('answers-s-saved', pg_temp.answers('71000000-0000-4000-8000-000000000008', 10)),
   ('answers-s-20', pg_temp.answers('71000000-0000-4000-8000-000000000008', 20)),
@@ -291,21 +310,32 @@ select is(public.discovery_preview('72000000-0000-4000-8000-000000000008', pg_te
     from outcome where step = 'q-first'),
   'a reload or another device is given the saved sheet and its revision to continue from');
 reset role;
--- A change half a second before the deadline is saved: the deadline is the only cut-off.
-update private.discovery_previews set deadline_at = now() + interval '500 milliseconds'
+-- A change seconds before the deadline is saved: the deadline is the only cut-off.
+update private.discovery_previews set deadline_at = clock_timestamp() + interval '10 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 set local role service_role;
 select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
   (select result from outcome where step = 'answers-s-30'), 6) - 'now', '{"state":"saved","revision":6}'::jsonb,
-  'a sheet saved 500 milliseconds before the deadline is accepted');
+  'a sheet saved seconds before the deadline is accepted');
 reset role;
-update private.discovery_previews set deadline_at = now() + interval '300 milliseconds'
+-- Regression (Codex F6): the cutoff is the wall clock at the write, never the transaction's start time. This
+-- transaction began long before the deadline set here, as a request that queued behind a lock across the deadline
+-- does; once the deadline has passed, the save must not be applied, and the exam closes from the sheet saved in time.
+update private.discovery_previews set deadline_at = clock_timestamp() + interval '1 second'
   where user_id = '71000000-0000-4000-8000-000000000008';
+select pg_sleep(1.5);
+select ok((select deadline_at > now() from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'),
+  'on the transaction-start clock the deadline has not passed');
 set local role service_role;
-select is(public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
-  (select result from outcome where step = 'answers-s-30'), 7) - 'now', '{"state":"saved","revision":7}'::jsonb,
-  'and 300 milliseconds before it');
+insert into outcome values ('s-after-lock', public.save_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'),
+  (select result from outcome where step = 'answers-s-all'), 7));
+select is((select jsonb_build_object('state', result->>'state', 'score', (result->'preview'->'result'->>'score')::integer,
+    'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 's-after-lock'),
+  '{"state":"ready","score":30,"timed_out":true}'::jsonb,
+  'a perfect sheet whose request began before the deadline but reached the row after it is not saved: the exam closed on the wall clock from the sheet saved in time');
 reset role;
+select is((select saved_revision from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'), 6,
+  'the late sheet was not written');
 -- Deadline plus 60 seconds: the deadline passed a minute ago, and with it the pass.
 update private.discovery_previews set deadline_at = now() - interval '60 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
@@ -323,8 +353,8 @@ select is((select jsonb_build_object('score', (result->'preview'->'result'->>'sc
   'a perfect sheet submitted 60 seconds after the deadline is not marked: only the answers saved before it count');
 select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}')
     ->'preview'->>'saved', null, 'a graded exam carries its result, not an open sheet');
-select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}'),
-  (select result from outcome where step = 's-late'),
+select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000008', pg_temp.c('02'), '{}') - 'now',
+  (select result - 'now' from outcome where step = 's-late'),
   'inside the network grace a lost response replays the committed result, even just after the pass ended');
 reset role;
 select ok(exists (select 1 from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000008'
@@ -345,7 +375,7 @@ set local role service_role;
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000008', pg_temp.c('02'))->>'state', 'ready',
   'a fresh exam opens');
 reset role;
-update private.discovery_previews set deadline_at = now() + interval '1 microsecond'
+update private.discovery_previews set deadline_at = clock_timestamp() + interval '10 seconds'
   where user_id = '71000000-0000-4000-8000-000000000008';
 insert into outcome values ('answers-s-in-time', pg_temp.answers('71000000-0000-4000-8000-000000000008', 50));
 set local role service_role;
@@ -475,8 +505,8 @@ select is((select result->'preview'->'items'->0->'note' from outcome where step 
   'complete, exactly as published');
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'study_guide', true,
-  (select (result->'topics'->0->>'item_id')::uuid from outcome where step = 'p-topics')),
-  (select result from outcome where step = 'p-guide'), 'asking for a second topic returns the first: every other topic stays locked');
+  (select (result->'topics'->0->>'item_id')::uuid from outcome where step = 'p-topics')) - 'now',
+  (select result - 'now' from outcome where step = 'p-guide'), 'asking for a second topic returns the first: every other topic stays locked');
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('03'), 'study_guide', false)
   - 'ends_at' - 'now', '{"state":"used-elsewhere","content_key":"principles-business-administration"}'::jsonb,
   'and no topic of another course can be opened');
@@ -490,13 +520,14 @@ select throws_ok($$ select * from public.read_published_managed_content(pg_temp.
   'previews never unlock the course itself');
 reset role;
 
--- 6. Expiry on the database clock, to the microsecond ------------------------------------------------------------------
-update public.entitlement_grants set starts_at = now() - interval '72 hours' + interval '1 microsecond',
-  ends_at = now() + interval '1 microsecond' where user_id = '71000000-0000-4000-8000-000000000001';
+-- 6. Expiry on the database wall clock -------------------------------------------------------------------------------
+update public.entitlement_grants set starts_at = clock_timestamp() - interval '72 hours' + interval '10 seconds',
+  ends_at = clock_timestamp() + interval '10 seconds' where user_id = '71000000-0000-4000-8000-000000000001';
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), 'study_guide', false)->>'state',
-  'ready', 'one microsecond before the end the pass still serves');
+  'ready', 'seconds before the end the pass still serves');
 reset role;
+-- At the end instant (this transaction's start, already behind every wall-clock reading) nothing is served.
 update public.entitlement_grants set starts_at = now() - interval '72 hours', ends_at = now()
   where user_id = '71000000-0000-4000-8000-000000000001';
 -- The exam was taken a day earlier, so its replay grace is long over.
@@ -566,6 +597,51 @@ insert into auth.sessions (id, user_id, created_at, updated_at) values
 set local role service_role;
 select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test'))->>'state', 'already-claimed',
   're-registering with the same email cannot buy a second pass');
+reset role;
+
+-- 8b. Key rotation (Codex F5): the ledger remembers the secret each version was written with, and activation fails
+-- closed, audited, whenever the configuration cannot verify every unexpired claim. Nothing is granted or claimed then,
+-- and no claim is reset: a dropped or replaced key never quietly re-opens the addresses claimed under it.
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now(),
+  '{"provider":"email","providers":["email"]}', '{}', now(), now()
+from (values ('71000000-0000-4000-8000-000000000012', 'disc-t@example.test'),
+  ('71000000-0000-4000-8000-000000000013', 'disc-u@example.test')) fixture_users(id, email);
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('72000000-0000-4000-8000-000000000012', '71000000-0000-4000-8000-000000000012', now(), now()),
+  ('72000000-0000-4000-8000-000000000013', '71000000-0000-4000-8000-000000000013', now(), now());
+set local role service_role;
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000012', pg_temp.claim('disc-t@example.test', array[2, 1]))->>'state',
+  'activated', 'a rotation puts version 2 in front of version 1: new claims are written under 2, which is now registered');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000013', pg_temp.claim('disc-u@example.test', array[2]))->>'state',
+  'claim-key-missing', 'dropping version 1 while unexpired claims were written under it fails closed');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000013', pg_temp.claim('disc-u@example.test', array[2, 1], array[1]))->>'state',
+  'claim-key-replaced', 'presenting version 1 under another secret fails closed');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000013', pg_temp.claim('disc-u@example.test', array[3, 2, 1], array[2]))->>'state',
+  'claim-key-replaced', 'so does a replaced current key, even behind a newer version');
+select throws_ok($$ select public.activate_discovery_pass('72000000-0000-4000-8000-000000000013',
+  jsonb_build_array(jsonb_build_object('version', 1, 'hash', repeat('a', 64)))) $$, '22023', null,
+  'a claim without its key check is malformed');
+reset role;
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '71000000-0000-4000-8000-000000000013')
+  and not exists (select 1 from private.discovery_pass_claims where user_id = '71000000-0000-4000-8000-000000000013'),
+  'a refused activation grants and claims nothing');
+select is((select count(*)::integer from (values ('missing', '[1]'::jsonb), ('replaced', '[1]'::jsonb), ('replaced', '[2]'::jsonb)) r(reason, versions)
+  where exists (select 1 from private.entitlement_events e where e.event = 'discovery.claim-key-rejected'
+    and e.actor = 'system:claim-keys' and e.detail->>'reason' = r.reason and e.detail->'versions' = r.versions)), 3,
+  'each refusal is audited with the versions at fault, and no hash, check or address');
+select is((select jsonb_agg(key_version order by key_version) from private.discovery_claim_keys), '[1, 2]'::jsonb,
+  'the ledger registered versions 1 and 2 on first use; version 3 was never accepted, so it is not registered');
+set local role service_role;
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000013', pg_temp.claim('disc-u@example.test', array[2, 1]))->>'state',
+  'activated', 'with version 1 retained beside version 2 the activation proceeds');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test', array[2, 1]))->>'state',
+  'already-claimed', 'a claim written under version 1 is still verified, and still blocks its address, while version 2 leads');
+select is((select jsonb_agg(r->'key_version' order by r->'key_version') from jsonb_array_elements(public.admin_discovery_claim_keys()->'registered') r),
+  '[1, 2]'::jsonb, 'the operator sees which versions are registered');
+select ok((select bool_and(r ? 'key_version' and r ? 'claims' and r ? 'last_expires_at' and not r ? 'hash' and not r ? 'check')
+  from jsonb_array_elements(public.admin_discovery_claim_keys()->'live') r), 'and which versions live claims need, with counts only');
 reset role;
 
 -- 9. AI on a pass: one accepted upload, one delivered set of five, bounded attempts and text -------------------------------------

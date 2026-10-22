@@ -61,3 +61,23 @@ test('with a database from before the pass, the page shows a neutral plan: no pa
   assert.match(html, /Department courses open fully with Early Access\. GST courses stay free for every student\./)
   assert.doesNotMatch(html, /7-day|seven-day|full access for 7/i, 'nor is the seven-day trial that database would issue advertised')
 })
+
+test('regression F4: on a database from before the pass, no trial status names a pass or a reserved allowance', async () => {
+  const later = '2026-11-20T12:00:00.000+00:00'
+  const activeEarly = { status: 'active', starts_at: '2026-10-25T00:00:00+00:00', ends_at: later, enrollment_closes_at: null }
+  const cases = {
+    'after-early-access': { ...preDiscoveryDatabase, tier: 'full', access: { source: 'early_access', ends_at: later },
+      trial: { ...trial, status: 'after-early-access', available_from: later }, early_access: activeEarly },
+    'not-offered': { ...preDiscoveryDatabase, tier: 'full', access: { source: 'early_access', ends_at: later },
+      trial: { ...trial, status: 'not-offered' }, early_access: activeEarly },
+    'ended seven-day trial': { ...preDiscoveryDatabase,
+      trial: { ...trial, status: 'ended', starts_at: '2026-10-10T12:00:00+00:00', ends_at: '2026-10-17T12:00:00+00:00' } },
+  }
+  for (const [label, wire] of Object.entries(cases)) {
+    const html = await render(wire)
+    assert.doesNotMatch(html, /Discovery Pass|data-activation|Start my|72 hours|CBT exam|study guide topic|your pass|a pass/i, label)
+  }
+  assert.match(await render(cases['ended seven-day trial']), /Free trial/, 'a trial that was issued is still described as what it was')
+  // The same statuses on a database that offers the pass do name it: the check is the database answer, not the status.
+  assert.match(await render({ ...discoveryDatabase, trial: { ...trial, status: 'not-offered', policy: null } }), /Discovery Pass/)
+})

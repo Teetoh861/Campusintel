@@ -3,9 +3,12 @@
 // questions; the database fixed the deadline when the exam opened, keeps the sheet saved before it, and grades the
 // answers once, and only then returns the correct options and explanations. Nothing sent after the deadline is marked.
 // The countdown is display only: it starts from the server's own `now` and deadline and runs on the monotonic page
-// clock, so the device's time or timezone never changes it. Answers are saved as the student goes through
-// lib/entitlements/exam-autosave.ts: in revision order, one request at a time, at once near the deadline, retried
-// after a failure, and reported as saved, saving or not saved.
+// clock. The device's clock can only shorten it, by at most the bounded time the page took to load (so a tap after the
+// real deadline is refused here before the server has to), never extend it. Answers are saved as the student goes through
+// lib/entitlements/exam-autosave.ts: in revision order, at once near the deadline, retried after a failure, re-based
+// over another tab's sheet without losing either tab's answers, and reported as saved only once the server confirmed
+// this tab's latest change. A choice is shown only once the controller accepted it: after the deadline on the page
+// clock, read at the moment of the tap rather than from the once-a-second countdown, a tap changes nothing.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -25,6 +28,10 @@ const MAX_AUTO_RETRIES = 10
 const LOW_TIME_MS = 5 * 60_000
 // How long a submission waits for the save in flight before sending the same sheet itself.
 const FLUSH_WAIT_MS = 3_000
+// The page clock starts when the exam mounts, some time after the server read its `now`. That load delay is taken off
+// the countdown when the device clock makes it measurable, up to this bound: a device clock far ahead of the server
+// can cost at most this much of the countdown, and a device clock behind it costs nothing. The server still decides.
+const MAX_LOAD_DELAY_MS = 15_000
 
 const REFUSAL: Record<string, string> = {
   'expired': 'Your Discovery Pass has ended, so this exam’s result can no longer be shown.',
@@ -64,8 +71,9 @@ function store(key: string, sheet: SavedSheet): void {
 function saveLine(save: AutosaveSnapshot | null, timeUp: boolean): { text: string; retry: boolean } {
   if (save === null) return { text: 'Answers save automatically as you go.', retry: false }
   if (timeUp || save.state === 'closed') {
-    return { text: save.savedRevision >= save.revision ? 'Your answers were saved before time ran out.'
-      : 'Your last change may not have been saved before time ran out.', retry: false }
+    return { text: save.revision === 0 ? 'No answers were chosen before time ran out.'
+      : save.savedRevision >= save.revision ? 'Your answers were saved before time ran out.'
+        : 'Your last change may not have been saved before time ran out.', retry: false }
   }
   switch (save.state) {
     case 'saved': return { text: save.savedRevision === 0 ? 'Answers save automatically as you go.' : 'All answers saved.',
@@ -100,22 +108,25 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [message, setMessage] = useState<string | null>(null)
   const answersRef = useRef(answers)
   const autosave = useRef<ExamAutosave | null>(null)
-  // The page clock the moment the server's `now` was shown; every remaining-time reading counts from it.
+  // The page clock the moment the server's `now` was shown; every remaining-time reading counts from it, less the
+  // bounded delay between the server's `now` and that moment.
   const started = useRef<number | null>(null)
+  const loadDelay = useRef(0)
   const sending = useRef(false)
   const autoRetries = useRef(0)
   const timeUp = remaining <= 0
   const answered = Object.keys(answers).length
 
   const remainingMs = useCallback(() => started.current === null ? initialRemaining
-    : initialRemaining - (performance.now() - started.current), [initialRemaining])
+    : initialRemaining - loadDelay.current - (performance.now() - started.current), [initialRemaining])
 
   useEffect(() => {
     if (result !== null) return
+    loadDelay.current = Math.min(MAX_LOAD_DELAY_MS, Math.max(0, Date.now() - Date.parse(serverNow)))
     started.current = performance.now()
     const timer = window.setInterval(() => setRemaining(remainingMs()), TICK_MS)
     return () => window.clearInterval(timer)
-  }, [result, remainingMs])
+  }, [result, remainingMs, serverNow])
 
   // One save at a time, numbered, retried and reported. The sheet starts from the newer of the database's copy and
   // the one this tab kept; a newer tab copy is saved at once.
@@ -140,7 +151,8 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       return { kind: 'refused', status: outcome.status }
     }
     const controller = new ExamAutosave({
-      answers: sheet.answers, revision: sheet.revision, savedRevision: server.revision, remaining: remainingMs, send,
+      answers: sheet.answers, revision: sheet.revision, savedRevision: server.revision, saved: server.answers,
+      remaining: remainingMs, send,
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
       onChange: setSave,
       onRebase: merged => { answersRef.current = merged; setAnswers(merged) },
@@ -199,12 +211,14 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   }, [timeUp, result, submit])
 
   function choose(itemId: string, option: number): void {
-    if (timeUp) return
     const next = { ...answersRef.current, [itemId]: option }
+    // The controller reads the page clock now, not the countdown shown a moment ago: a tap after the deadline is
+    // refused before anything on screen changes, and the countdown is brought up to date at once.
+    const revision = autosave.current?.change(next) ?? null
+    if (revision === null) { setRemaining(remainingMs()); return }
     answersRef.current = next
     setAnswers(next)
-    const revision = autosave.current?.change(next) ?? null
-    if (revision !== null) store(storageKey, { revision, answers: next })
+    store(storageKey, { revision, answers: next })
   }
 
   if (result !== null) return <ExamReview questions={questions} result={result} />

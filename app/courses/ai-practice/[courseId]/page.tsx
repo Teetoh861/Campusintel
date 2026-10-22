@@ -17,6 +17,8 @@ import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supa
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLockedStudentCourse }
   from '@/lib/courses/read-model'
+import { discoveryOffered } from '@/lib/entitlements/contract'
+import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AiPracticeClient } from './AiPracticeClient'
@@ -66,11 +68,14 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
   if (!isAiPracticeEligible(course)) {
     return <Unavailable title="This course is temporarily unavailable" message="Try again in a few minutes." />
   }
-  const [allowance, sets] = await Promise.all([readAllowance(client),
-    listPersonalSetsForCourse(client, context.user.id, course.institutionalCourseId)])
+  // The pass is named in AI copy only when the database offers one; a read failure stays neutral.
+  const [allowance, sets, plan] = await Promise.all([readAllowance(client),
+    listPersonalSetsForCourse(client, context.user.id, course.institutionalCourseId),
+    readEntitlementForVerifiedStudent(client).catch(() => null)])
+  const passOffered = plan !== null && plan.status === 'ok' && discoveryOffered(plan.entitlement)
   return <StudentPage band={<PageBand title="Practise from your notes" lede={LEDE}
     context={<p className="ai-practice-context"><b>{course.code}</b> · {course.title}</p>} />}>
     <AiPracticeClient courseId={course.institutionalCourseId} continuityToken={continuityToken}
-      initialAllowance={allowance} recentSets={sets} />
+      initialAllowance={allowance} recentSets={sets} passOffered={passOffered} />
   </StudentPage>
 }

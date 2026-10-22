@@ -43,8 +43,8 @@ protections are deliberately proportionate: no NIN, BVN, device fingerprint or p
 
 | Limit | Where | Default |
 | --- | --- | --- |
-| Activation requests per account | `consume_auth_rate_limit('DISCOVERY_ACTIVATION')`, applied by the API route (account bucket keyed by the confirmed email, origin bucket by the trusted requester address, both as HMACs) | 5 per 15 minutes |
-| Activation requests per requester address | same. Wide on purpose: campus Wi-Fi puts many students behind one address, and a replay costs nothing | 60 per 15 minutes |
+| Activation requests per account | `consume_discovery_activation_limit`, applied by the API route (account bucket keyed by the confirmed email, address bucket by the trusted requester address, both as HMACs) | 5 per 15 minutes, a hard limit |
+| Activation requests per requester address | same function, **monitoring only, never a barrier**: campus Wi-Fi puts a whole lecture hall behind one address. The address bucket counts only requests the account bucket admitted (so one noisy account adds at most its own five), and crossing the notice threshold writes one `discovery.origin-notice` audit row (bucket prefix and counts, no address) | notice at 60 admitted requests per 15 minutes |
 | Passes per account, ever | `entitlement_grants_one_trial_idx` | 1 |
 | Passes per confirmed email address within the claim retention period | `private.discovery_pass_claims` | 1 per 24 months (**proposed**) |
 | Activations per UTC day, platform-wide | `private.entitlement_policy.discovery_activations_per_day` | **off** (null). Set only with the founder's approval; it bounds how fast a farm of confirmed accounts could sample the banks, never what one student may do |
@@ -53,10 +53,11 @@ protections are deliberately proportionate: no NIN, BVN, device fingerprint or p
 Everything a pass can spend (one exam, one topic, one accepted upload, one delivered set, three provider attempts) is
 unchanged and listed above.
 
-Shared campus addresses: on launch day watch `public.auth_rate_limit_events` for `action = 'DISCOVERY_ACTIVATION'`
-and `kind = 'origin'`. A bucket reaching 60 in 15 minutes means a whole lecture hall activating behind one NAT address
-was refused with `rate-limited` (nothing is lost: they tap again a few minutes later), and the limit should be widened
-in `lib/auth/constants.ts` and `consume_auth_rate_limit` together.
+Shared campus addresses: nobody is refused by address. On launch day watch `private.entitlement_events` for
+`discovery.origin-notice`: a lecture hall activating behind one NAT address is expected and needs no action; a run of
+notices from one address with no matching registrations is worth a look at the grants created in that window
+(`status`, `change-grant --action revoke`). The figures live in `lib/entitlements/server.ts` (`ACTIVATION_LIMIT`) and
+`consume_discovery_activation_limit` together; the database refuses any other values.
 
 ### Email claims
 
@@ -70,8 +71,21 @@ version and an expiry. It never holds the address, and nothing in the database c
 
 Rotation: prepend a new version (`3:<new>,2:<old>`). New claims are written under version 3; lookups try every listed
 version, so claims under version 2 keep blocking their addresses. Drop version 2 from the list only when
-`ops.cjs claim-keys` shows no live claim under it (at the latest 24 months after the rotation). A key dropped early
-makes its claims unmatchable, which quietly re-opens those addresses; the database cannot re-key rows it cannot read.
+`ops.cjs claim-keys` shows no live claim under it (at the latest 24 months after the rotation).
+
+The database checks the configuration on every activation and **fails closed** (`claim-key-missing`,
+`claim-key-replaced`, shown to the student as "not available right now", logged by the server and audited as
+`discovery.claim-key-rejected`) rather than quietly re-opening claimed addresses:
+
+- each configured key sends a check value (the HMAC of a fixed purpose string under that key, never the secret), and
+  the first activation that presents a version registers it in `private.discovery_claim_keys`;
+- a registered version presented with a different check is a replaced secret: refused. A compromised key is retired
+  by adding a **new version** and keeping the old one listed until its claims expire; a version is never re-used;
+- a version that unexpired claims were written under but the configuration no longer carries is refused, so a key
+  dropped early stops activation instead of making those claims unmatchable. Put it back; nothing was reset.
+
+`ops.cjs claim-keys` reports `live` (versions unexpired claims still reference, with counts and the last expiry) and
+`registered` (versions the ledger has been written with). No key, hash or check value is ever printed.
 
 Retention: each claim expires `discovery_claim_retention` (**24 months, proposed pending privacy approval**) after it
 is made; an expired claim blocks nothing even before it is removed, and `ops.cjs purge-claims` removes expired rows.
@@ -80,13 +94,20 @@ table, so there are no rows to migrate; the migration is edited in place before 
 
 ### Exam answers are saved in revision order
 
-The exam page numbers every change and sends one save at a time; `save_discovery_cbt` accepts a sheet only when its
-revision is above the one already saved (compare-and-swap under the account lock), acknowledges an identical retry as
-saved, and answers `stale` with the sheet that stands for anything else, so a save delayed on the network or sent from
-another tab can never overwrite newer answers. A failed save is retried with bounded backoff (2 s doubling to 15 s, 8
-times) without waiting for another change, the student sees saving / saved / not saved, and a change made near the
-deadline is sent at once and still sent after the clock runs out: the database's own deadline is the only cutoff, and
-a change it did not receive in time is reported as possibly not saved, never as saved.
+The exam page numbers every change; `save_discovery_cbt` accepts a sheet only when its revision is above the one
+already saved (compare-and-swap under the account lock), acknowledges an identical retry as saved, and answers `stale`
+with the sheet that stands for anything else, so a save delayed on the network or sent from another tab can never
+overwrite newer answers. The page normally keeps one save in flight, but a newer sheet overtakes a slow one (in
+parallel) inside the last 15 seconds, after 5 seconds of waiting, and whenever the page is left or the exam
+submitted; revision order makes the overtaking safe. When another tab's sheet is found ahead, only the questions this
+tab changed since its last acknowledged sheet are laid over the server's copy (a question both tabs changed keeps this
+tab's most recent choice, explicitly), so two tabs never lose each other's answers. A failed save is retried with
+bounded backoff (2 s doubling to 15 s, 8 times) without waiting for another change, and "All answers saved" is shown
+only once the server confirmed this tab's latest revision. A tap after the deadline on the page clock changes nothing
+on screen. The database decides every cutoff on its wall clock at the write (`clock_timestamp()`, re-read after the
+account lock and in the update itself), never on the transaction's start time, so a request that queued across the
+deadline cannot land late answers; a change the server did not receive in time is reported as possibly not saved,
+never as saved.
 
 ## Early Access: automatic, from the actual launch
 
@@ -228,7 +249,7 @@ this.
    phone hashes, imported list data (names, emails, phone hashes), used list entries and de-identified audit rows are
    currently kept indefinitely. A retention period and privacy-notice wording are needed.
 5. Whether to set the platform-wide daily activation guard (`discovery_activations_per_day`, off by default) and
-   whether the per-account and per-address request limits (5 and 60 per 15 minutes) suit launch day.
+   whether the per-account request limit (5 per 15 minutes) and the per-address notice threshold (60) suit launch day.
 6. The moment to run `activate-launch`, which is irreversible.
 
 ## Payments

@@ -20,6 +20,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { TrialActivation } from './TrialActivation'
 import type { AllowanceSummary } from '@/lib/ai-practice/upload-contract'
+import { discoveryOffered } from '@/lib/entitlements/contract'
 import type { DiscoverySummary, EntitlementSummary } from '@/lib/entitlements/contract'
 import type { ReactElement } from 'react'
 
@@ -58,7 +59,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
       </div>
       <div className="grid min-w-0 content-start gap-4">
         <EarlyAccessSection entitlement={entitlement} />
-        <AiSection allowance={allowance} passOffered={entitlement.discovery !== null} />
+        <AiSection allowance={allowance} passOffered={discoveryOffered(entitlement)} />
       </div>
     </div>
   </StudentPage>
@@ -106,13 +107,15 @@ function PassUsage({ discovery }: { discovery: DiscoverySummary }): ReactElement
 
 function TrialSection({ entitlement, continuityToken }: { entitlement: EntitlementSummary; continuityToken: string }):
   ReactElement | null {
-  const { trial, discovery } = entitlement
+  const { trial } = entitlement
   const sevenDay = trial.policy === 'seven-day'
   // A seven-day trial issued before the pass is full access, already shown as the current plan.
   if (sevenDay && trial.status === 'active') return null
   // A database from before the Discovery Pass offers no pass: what it would issue is not the pass described here, so
-  // nothing is offered or advertised. The plan stays accurate and neutral.
-  if (discovery === null && trial.status === 'available') {
+  // nothing is offered, advertised or named, whatever the trial status. Only a seven-day trial that has ended is still
+  // described, as the trial it was. The plan stays accurate and neutral.
+  const discovery = discoveryOffered(entitlement) ? entitlement.discovery : null
+  if (discovery === null && !sevenDay) {
     return <section aria-labelledby="trial-heading" className="student-surface">
       <h2 id="trial-heading" className="student-section-title">Department courses</h2>
       <p className="mt-2 text-sm text-student-text-secondary">Department courses open fully with Early Access. GST courses

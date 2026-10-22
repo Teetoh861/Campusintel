@@ -7,7 +7,7 @@ import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { UPLOAD_ACCEPT_ATTRIBUTE, approximateWords } from '@/lib/ai-practice/upload-contract'
 import type { AllowanceSummary, PersonalSetView } from '@/lib/ai-practice/upload-contract'
-import { NOT_ENTITLED_MESSAGE, NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName,
+import { NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName, notEntitledMessage,
   runUploadJourney } from './journey'
 import type { JourneyOutcome, JourneyPhase } from './journey'
 import { PersonalDisclaimer, PersonalPractice } from './PersonalPractice'
@@ -20,14 +20,14 @@ const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
 }
 
 /** One honest sentence about the student's AI grant; nothing when there is none or it cannot be read. */
-export function allowanceLine(allowance: AllowanceSummary | null): string | null {
+export function allowanceLine(allowance: AllowanceSummary | null, passOffered = false): string | null {
   if (!allowance || allowance.state === 'not-entitled') return null
-  if (allowance.state === 'expired') return `Your ${grantName(allowance)} has ended.`
+  if (allowance.state === 'expired') return `Your ${grantName(allowance, passOffered)} has ended.`
   if (allowance.total === null) return 'Your AI access includes question sets without a set limit while it lasts.'
   const left = Math.max(0, allowance.total - allowance.used)
   const sets = `${left} of ${allowance.total} AI question ${allowance.total === 1 ? 'set' : 'sets'} left`
-  if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance)}.`
-  return `${sets} on your ${grantName(allowance)}. Upload notes of up to about ` +
+  if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance, passOffered)}.`
+  return `${sets} on your ${grantName(allowance, passOffered)}. Upload notes of up to about ` +
     `${approximateWords(allowance.sourceCharLimit).toLocaleString('en-GB')} words.`
 }
 
@@ -46,9 +46,12 @@ type Props = {
   continuityToken: string
   initialAllowance: AllowanceSummary | null
   recentSets: PersonalSetView[]
+  /** The database offers the Discovery Pass (discoveryOffered); otherwise no copy here names one. */
+  passOffered?: boolean
 }
 
-export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets }: Props): ReactElement {
+export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets, passOffered = false }: Props):
+  ReactElement {
   const input = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<JourneyPhase | null>(null)
   const [outcome, setOutcome] = useState<Extract<JourneyOutcome, { kind: 'problem' }> | null>(null)
@@ -72,7 +75,7 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     setOutcome(result)
   }
 
-  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, onPhase: setPhase, requests })
+  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, passOffered, onPhase: setPhase, requests })
 
   async function upload(file: File): Promise<void> {
     setOutcome(null)
@@ -88,12 +91,12 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
 
   if (active) return <PersonalPractice set={active} onClose={() => setActive(null)} />
   const busy = phase !== null
-  const line = allowanceLine(allowance)
+  const line = allowanceLine(allowance, passOffered)
   const entitled = allowance?.state !== 'not-entitled'
 
   return <div className="ai-practice-workspace">
     <PersonalDisclaimer />
-    {!entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{NOT_ENTITLED_MESSAGE}</Notice>}
+    {!entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(passOffered)}</Notice>}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
       <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter

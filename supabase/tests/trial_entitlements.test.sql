@@ -4,11 +4,21 @@
 -- Time is simulated by moving grant timestamps: now() is fixed for the whole transaction.
 begin;
 select no_plan();
+-- Claims and the claim-key registry are global: this transaction starts from an empty ledger (rolled back at the end),
+-- so what other sessions of this database have activated with their own keys cannot change these outcomes.
+delete from private.discovery_pass_claims;
+delete from private.discovery_claim_keys;
 
 -- Structure and deny-by-default access ------------------------------------------------------------------------
 select has_table('public', 'entitlement_grants', 'grants table exists');
 select has_table('private', 'trial_phone_claims', 'the historical phone claims of seven-day trials remain');
 select has_table('private', 'discovery_pass_claims', 'pass claims by confirmed email exist');
+select has_table('private', 'discovery_claim_keys', 'the claim signing-key registry exists');
+select ok(not exists (select 1 from information_schema.columns where table_schema = 'private'
+  and table_name = 'discovery_claim_keys' and column_name not in ('key_version', 'key_check', 'first_seen_at', 'last_seen_at')),
+  'the registry holds a check value per version, never a secret');
+select has_function('public', 'consume_discovery_activation_limit', array['text', 'text', 'integer', 'integer', 'integer', 'integer'],
+  'activation requests have their own limiter');
 select ok(not exists (select 1 from information_schema.columns where table_schema = 'private'
   and table_name = 'discovery_pass_claims' and column_name = 'email_hash')
   and exists (select 1 from information_schema.columns where table_schema = 'private'
@@ -57,9 +67,17 @@ select is((select count(*)::integer from unnest(array['private.can_read_course_c
     'private.reconcile_early_access(uuid,text)', 'private.reconcile_all_early_access(text,integer)',
     'private.early_access_sweep_candidates()', 'private.retire_legacy_ai_windows(text)', 'private.lock_early_access_accounts(text)',
     'private.lock_early_access_groups(text[],uuid[],boolean)',
-    'private.resolve_early_access_duplicates(uuid,text,text)', 'private.discovery_claim_hashes_valid(jsonb)']) fn,
+    'private.resolve_early_access_duplicates(uuid,text,text)', 'private.discovery_claim_hashes_valid(jsonb)',
+    'private.discovery_claim_keys_check(jsonb)']) fn,
     unnest(array['anon', 'authenticated', 'service_role']) api_role
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'access helpers are not callable by any API role');
+select ok(has_function_privilege('service_role', 'public.consume_discovery_activation_limit(text,text,integer,integer,integer,integer)', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.consume_discovery_activation_limit(text,text,integer,integer,integer,integer)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.consume_discovery_activation_limit(text,text,integer,integer,integer,integer)', 'EXECUTE'),
+  'the activation request limiter is service-role only');
+select is((select count(*)::integer from unnest(array['private.discovery_claim_keys']) tbl,
+    unnest(array['anon', 'authenticated', 'service_role']) api_role, unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) privilege
+  where has_table_privilege(api_role, tbl, privilege)), 0, 'no API role can touch the key registry directly');
 select is((select string_agg(conrelid::regclass::text || '=' || confdeltype::text, ',' order by conrelid::regclass::text)
   from pg_constraint where contype = 'f' and confrelid = 'auth.users'::regclass and conrelid in (
     'public.entitlement_grants'::regclass, 'private.trial_phone_claims'::regclass, 'private.discovery_pass_claims'::regclass,
@@ -105,9 +123,12 @@ create function pg_temp.h(p_value text) returns text language sql immutable as
 grant execute on function pg_temp.h(text) to authenticated, service_role;
 -- The keyed claim hashes the application sends for an address (lib/entitlements/claim-hash.ts); the current key is
 -- listed first. Any 64-hex value stands in for the HMAC here.
+-- The keyed claim hashes and key checks the application sends (lib/entitlements/claim-hash.ts), current version first;
+-- plain digests stand in for the HMACs.
 create function pg_temp.claim(p_email text, p_versions integer[] default array[1]) returns jsonb language sql immutable as
-  $$ select jsonb_agg(jsonb_build_object('version', v, 'hash', pg_temp.h('claim-v' || v || ':' || lower(btrim(p_email))))
-       order by ordinality) from unnest(p_versions) with ordinality as t(v, ordinality) $$;
+  $$ select jsonb_agg(jsonb_build_object('version', v, 'hash', pg_temp.h('claim-v' || v || ':' || lower(btrim(p_email))),
+       'check', pg_temp.h('claim-key-check-v' || v)) order by ordinality)
+     from unnest(p_versions) with ordinality as t(v, ordinality) $$;
 grant execute on function pg_temp.claim(text, integer[]) to authenticated, service_role;
 
 -- 1. Permanent free GST access, no activation or payment --------------------------------------------------------
@@ -199,23 +220,29 @@ select throws_ok($$ insert into public.entitlement_grants (user_id, source, tria
 select throws_ok($$ insert into private.discovery_pass_claims (claim_hash, key_version, user_id, expires_at) values
   (pg_temp.claim('ent-f@example.test') -> 0 ->> 'hash', 1, '61000000-0000-4000-8000-000000000002', now() + interval '1 year') $$,
   '23505', null, 'a confirmed email is claimed once, even for direct writes');
--- Key rotation: a claim recorded under key 1 is still found when the application now sends key 2 first.
+-- Key rotation: a claim recorded under key 1 is still found when the application now sends key 2 first, and dropping
+-- key 1 while its claims live fails closed instead of re-opening the address (Codex F5; the full set of rotation cases
+-- is in discovery_pass.test.sql).
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000002', pg_temp.claim('ent-f@example.test', array[2, 1]))
   ->>'state', 'already-claimed', 'a claim under a retired key version still blocks the address after rotation');
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000002', pg_temp.claim('ent-f@example.test', array[2]))
-  ->>'state', 'activated', 'without the retired key the old claim cannot be matched: keys are dropped only once their claims expire');
+  ->>'state', 'claim-key-missing', 'without the retired key the old claims cannot be verified: activation fails closed, and nothing is re-opened');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000002', pg_temp.claim('ent-b@example.test', array[2, 1]))
+  ->>'state', 'activated', 'with both keys present B activates under version 2');
 insert into outcome values ('claim-keys', public.admin_discovery_claim_keys());
 reset role;
 -- Counted against the table itself, so claims other sessions of this database hold do not change the outcome.
-select is((select result from outcome where step = 'claim-keys'), (select jsonb_agg(jsonb_build_object('key_version', key_version,
+select is((select result->'live' from outcome where step = 'claim-keys'), (select jsonb_agg(jsonb_build_object('key_version', key_version,
     'claims', claims, 'last_expires_at', last_expires_at) order by key_version) from (select key_version, count(*) as claims,
     max(expires_at) as last_expires_at from private.discovery_pass_claims where expires_at > now() group by key_version) v),
   'the operator sees which key versions live claims still reference');
-select ok((select (e->>'claims')::integer >= 2 from outcome, jsonb_array_elements(result) e
+select ok((select (e->>'claims')::integer >= 2 from outcome, jsonb_array_elements(result->'live') e
     where step = 'claim-keys' and (e->>'key_version')::integer = 1)
-  and (select (e->>'claims')::integer from outcome, jsonb_array_elements(result) e
+  and (select (e->>'claims')::integer from outcome, jsonb_array_elements(result->'live') e
     where step = 'claim-keys' and (e->>'key_version')::integer = 2) = 1, 'version 1 holds A and F, version 2 holds B');
+select is((select jsonb_agg(e->'key_version' order by e->'key_version') from outcome, jsonb_array_elements(result->'registered') e
+    where step = 'claim-keys'), '[1, 2]'::jsonb, 'and which versions the ledger has been written with');
 -- B's pass is not part of the later sections: it is revoked and its claim removed so B stays the account without a pass.
 delete from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000002';
 delete from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000002';
@@ -236,11 +263,36 @@ update private.entitlement_policy set discovery_activations_per_day = null;
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000008', pg_temp.claim('ent-g@example.test'))->>'state', 'activated',
   'G activates once the guard is off again');
-select is(public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 5, 900, 60, 900), true,
-  'the activation request limit policy exists in the database: 5 per account, 60 per shared campus address');
-select throws_ok($$ select public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 500, 900, 60, 900) $$,
-  '22023', null, 'the caller cannot weaken the activation request limit');
+-- The activation request limit (Codex F7): five per account per 15 minutes is a hard limit; the shared requester
+-- address is monitored, never a barrier, and a noisy account charges the address only for the requests it was admitted.
+select throws_ok($$ select public.consume_auth_rate_limit('DISCOVERY_ACTIVATION', repeat('7', 64), repeat('8', 64), 5, 900, 60, 900) $$,
+  '22023', null, 'the shared auth limiter no longer carries a per-address activation ceiling');
+-- A noisy account taps seven times from one campus address.
+insert into outcome select 'limit-' || n, public.consume_discovery_activation_limit(repeat('7', 64), repeat('8', 64), 5, 900, 60, 900)
+  from generate_series(1, 7) n;
+select is((select jsonb_agg(result->'allowed' order by step) from outcome where step like 'limit-%'),
+  '[true, true, true, true, true, false, false]'::jsonb, 'five requests per account in fifteen minutes, then refused');
+select is((select (result->>'origin_requests')::integer from outcome where step = 'limit-7'), 5,
+  'the address is charged only for the requests the account was admitted: a noisy account cannot run up the address');
+-- Seventy other students behind the same address each tap once.
+insert into outcome select 'hall-' || lpad(n::text, 3, '0'),
+  public.consume_discovery_activation_limit(pg_temp.h('hall-account-' || n), repeat('8', 64), 5, 900, 60, 900)
+  from generate_series(1, 70) n;
+select is((select count(*)::integer from outcome where step like 'hall-%' and (result->>'allowed')::boolean), 70,
+  'every one of them is admitted: a shared campus address is never a barrier, well past the old ceiling of sixty');
+select is((select (result->>'origin_requests')::integer from outcome where step = 'hall-070'), 75,
+  'the address count is still kept, for monitoring');
+select throws_ok($$ select public.consume_discovery_activation_limit(repeat('7', 64), repeat('8', 64), 500, 900, 60, 900) $$,
+  '22023', null, 'the caller cannot weaken the account limit or the notice threshold');
+select throws_ok($$ select public.consume_discovery_activation_limit('raw@example.test', repeat('8', 64), 5, 900, 60, 900) $$,
+  '22023', null, 'raw identifiers are refused: only keyed buckets enter the database');
 reset role;
+select is((select count(*)::integer from private.entitlement_events where event = 'discovery.origin-notice'
+    and actor = 'system:rate-limit' and detail->>'origin' = left(repeat('8', 64), 12)), 1,
+  'crossing sixty admitted requests from one address writes exactly one notice for the operator');
+select ok((select detail - 'origin' - 'requests' - 'window_seconds' = '{}'::jsonb and (detail->>'requests')::integer = 60
+    and user_id is null from private.entitlement_events where event = 'discovery.origin-notice'
+    and detail->>'origin' = left(repeat('8', 64), 12)), 'the notice carries a bucket prefix and counts only: no address, no account');
 
 -- 5. The Discovery AI allowance is one fixed total; exhausting it restricts AI only --------------------------------
 update public.entitlement_grants set starts_at = now() - interval '30 hours', ends_at = now() + interval '42 hours'

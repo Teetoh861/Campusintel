@@ -67,6 +67,17 @@ export const entitlementSummarySchema = summaryWire.transform((wire, context) =>
 
 export type EntitlementSummary = z.output<typeof entitlementSummarySchema>
 export type DiscoverySummary = z.infer<typeof discoverySummary>
+
+/**
+ * The one check every student-facing surface uses before it mentions the Discovery Pass: the database affirmatively
+ * offers one (it answered with `discovery`). A database from before 20261021100000 would issue a seven-day full-access
+ * trial instead, so nothing may advertise a pass, a 72-hour allowance, an exam or a topic preview against it; those
+ * surfaces stay neutral. Activation itself is enforced in the database and fails closed regardless of this check.
+ */
+export function discoveryOffered(summary: EntitlementSummary | null | undefined):
+  summary is EntitlementSummary & { discovery: DiscoverySummary } {
+  return summary != null && summary.discovery !== null
+}
 export type AccessSource = NonNullable<EntitlementSummary['access']>['source']
 
 /** What one course offers this student now. `unknown` means the entitlement read failed: fail closed. */

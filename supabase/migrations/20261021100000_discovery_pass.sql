@@ -20,8 +20,10 @@
 --   * AI: one accepted upload and one delivered set of exactly five valid questions, at most discovery_ai_attempts
 --     provider attempts and discovery_ai_source_chars of extracted text.
 --   * Nothing replenishes. There is no theory preview; it is not part of the approved pass.
--- Free courses never consume anything. Every decision reads now() inside the deciding transaction; no browser clock,
--- duration or balance is accepted anywhere.
+-- Free courses never consume anything. Every decision reads the database clock inside the deciding transaction; no
+-- browser clock, duration or balance is accepted anywhere. Exam decisions (opening, saving, closing at the deadline,
+-- grading) read clock_timestamp(), the wall clock at that statement, never now(): now() is the transaction's start, so a
+-- request that began before the deadline and then waited on the account lock would otherwise still count as in time.
 
 -- ---------------------------------------------------------------------------
 -- Policy. Initial limits; configurable, never a reset schedule.
@@ -292,7 +294,7 @@ $$;
 
 -- An exam still unsubmitted when its deadline passes is closed and marked from the last sheet saved before the
 -- deadline. Run under the account lock before any exam is shown, saved or graded, so nothing sent after the deadline
--- can ever be marked.
+-- can ever be marked. The cutoff is the wall clock at this statement (clock_timestamp()), not the transaction start.
 create function private.close_overdue_discovery_exam(p_grant_id uuid) returns void
 language sql
 security definer
@@ -303,7 +305,7 @@ as $$
       set answers = coalesce(p.saved_answers, '{}'::jsonb),
           score = private.discovery_exam_score(p.content, coalesce(p.saved_answers, '{}'::jsonb)),
           submitted_at = p.deadline_at, timed_out = true
-      where p.grant_id = p_grant_id and p.kind = 'cbt' and p.submitted_at is null and now() > p.deadline_at
+      where p.grant_id = p_grant_id and p.kind = 'cbt' and p.submitted_at is null and clock_timestamp() > p.deadline_at
       returning p.user_id, p.grant_id, p.course_id, p.score, jsonb_array_length(p.content) as total
   )
   insert into private.entitlement_events (user_id, grant_id, event, actor, detail)
@@ -317,7 +319,9 @@ $$;
 -- replays of the same open return the same preview.
 -- p_item_id is the chosen topic (study guide only). p_exam_seconds is the course's own CBT duration from the server's
 -- quiz configuration (CBT only; required to open, optional on a read); the browser never supplies it. The database
--- bounds it and opens the exam only when the whole duration fits before the pass ends.
+-- bounds it and opens the exam only when the whole duration fits before the pass ends. Every time decision, and the
+-- deadline itself, is taken from the wall clock once the account lock is held (v_now), so a request that queued behind
+-- another cannot open or serve on the time it was sent.
 -- ---------------------------------------------------------------------------
 create function public.discovery_preview(p_session_id uuid, p_course_id uuid, p_kind text, p_claim boolean,
   p_item_id uuid default null, p_exam_seconds integer default null)
@@ -332,6 +336,7 @@ declare
   v_grant public.entitlement_grants;
   v_preview private.discovery_previews;
   v_content jsonb;
+  v_now timestamptz;
 begin
   if p_course_id is null or p_claim is null or p_kind is null or p_kind not in ('cbt', 'study_guide')
       or (p_exam_seconds is not null and (p_kind <> 'cbt' or p_exam_seconds not between 300 and 10800))
@@ -341,8 +346,9 @@ begin
   end if;
   v_user_id := private.ai_practice_session_user(p_session_id);
   if v_user_id is null then return jsonb_build_object('state', 'signed-out'); end if;
-  -- Same per-account lock as trial activation and Early Access enrollment.
+  -- Same per-account lock as trial activation and Early Access enrollment. The clock is read only once it is held.
   perform pg_advisory_xact_lock(hashtextextended('entitlement-account:' || v_user_id::text, 0));
+  v_now := clock_timestamp();
   select * into strict v_policy from private.entitlement_policy;
   if not exists (select 1 from public.courses where id = p_course_id) then
     return jsonb_build_object('state', 'invalid-course');
@@ -359,8 +365,8 @@ begin
   if v_grant.id is null then return jsonb_build_object('state', 'no-pass'); end if;
   -- Fail closed the instant the pass ends or is revoked, whatever was opened before. A seven-day trial that has
   -- ended was this account's one trial, so it never becomes a pass.
-  if v_grant.trial_policy <> 'discovery' or v_grant.revoked_at is not null or v_grant.ends_at <= now()
-      or v_grant.starts_at > now() then
+  if v_grant.trial_policy <> 'discovery' or v_grant.revoked_at is not null or v_grant.ends_at <= v_now
+      or v_grant.starts_at > v_now then
     return jsonb_build_object('state', 'expired');
   end if;
   if not private.course_has_active_offering(p_course_id) then
@@ -370,7 +376,7 @@ begin
   perform private.close_overdue_discovery_exam(v_grant.id);
   select * into v_preview from private.discovery_previews where grant_id = v_grant.id and kind = p_kind;
   if v_preview.grant_id is not null and v_preview.course_id <> p_course_id then
-    return jsonb_build_object('state', 'used-elsewhere', 'now', now(), 'ends_at', v_grant.ends_at,
+    return jsonb_build_object('state', 'used-elsewhere', 'now', v_now, 'ends_at', v_grant.ends_at,
       'content_key', (select content_key from public.courses where id = v_preview.course_id));
   end if;
   if v_preview.grant_id is null then
@@ -380,40 +386,42 @@ begin
     end if;
     -- The exam runs for the course's whole duration or not at all: it is never shortened to fit the pass.
     if p_kind = 'cbt' and p_exam_seconds is not null
-        and now() + make_interval(secs => p_exam_seconds) > v_grant.ends_at then
-      return jsonb_build_object('state', 'not-enough-time', 'now', now(), 'ends_at', v_grant.ends_at);
+        and v_now + make_interval(secs => p_exam_seconds) > v_grant.ends_at then
+      return jsonb_build_object('state', 'not-enough-time', 'now', v_now, 'ends_at', v_grant.ends_at);
     end if;
     if not p_claim then
-      return jsonb_build_object('state', 'available', 'now', now(), 'ends_at', v_grant.ends_at,
+      return jsonb_build_object('state', 'available', 'now', v_now, 'ends_at', v_grant.ends_at,
         'topics', case when p_kind = 'study_guide' then private.discovery_topic_titles(p_course_id) end);
     end if;
     v_content := private.discovery_preview_content(p_course_id, p_kind, p_item_id);
     if jsonb_array_length(v_content) = 0 then return jsonb_build_object('state', 'nothing-to-preview'); end if;
     insert into private.discovery_previews (grant_id, user_id, kind, course_id, content, deadline_at)
       values (v_grant.id, v_user_id, p_kind, p_course_id, v_content, case when p_kind = 'cbt'
-        then now() + make_interval(secs => p_exam_seconds) end)
+        then v_now + make_interval(secs => p_exam_seconds) end)
       returning * into v_preview;
     perform private.log_entitlement_event(v_user_id, v_grant.id, 'discovery.preview-opened', 'student',
       jsonb_build_object('kind', p_kind, 'course_id', p_course_id, 'items', jsonb_array_length(v_content)));
   end if;
-  return jsonb_build_object('state', 'ready', 'now', now(), 'ends_at', v_grant.ends_at,
+  return jsonb_build_object('state', 'ready', 'now', v_now, 'ends_at', v_grant.ends_at,
     'preview', private.discovery_preview_view(v_preview));
 end;
 $$;
 
 -- The pass and the open exam a save or submission acts on, after closing it if its deadline has passed. Null grant:
--- the state to return instead.
+-- the state to return instead. Called with the account lock held; reads the wall clock, not the transaction start.
 create function private.discovery_exam_for(p_user_id uuid, p_course_id uuid,
   out o_state text, out o_grant public.entitlement_grants, out o_preview private.discovery_previews)
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_now timestamptz := clock_timestamp();
 begin
   select * into o_grant from public.entitlement_grants
     where user_id = p_user_id and source = 'trial' and trial_policy = 'discovery';
   if o_grant.id is null then o_state := 'no-pass'; return; end if;
-  if o_grant.revoked_at is not null or o_grant.starts_at > now() then o_state := 'expired'; return; end if;
+  if o_grant.revoked_at is not null or o_grant.starts_at > v_now then o_state := 'expired'; return; end if;
   if not private.course_has_active_offering(p_course_id) then o_state := 'not-offered'; return; end if;
   perform private.close_overdue_discovery_exam(o_grant.id);
   select * into o_preview from private.discovery_previews
@@ -421,8 +429,8 @@ begin
   if o_preview.grant_id is null then o_state := 'not-opened'; return; end if;
   -- A graded exam (submitted, or closed at its deadline) is replayed while the pass lasts, and for the network grace
   -- after its deadline. Everything else after the pass ends fails closed.
-  if o_preview.submitted_at is not null and o_grant.ends_at <= now()
-      and now() > o_preview.deadline_at + make_interval(secs =>
+  if o_preview.submitted_at is not null and o_grant.ends_at <= v_now
+      and v_now > o_preview.deadline_at + make_interval(secs =>
         (select discovery_cbt_grace_seconds from private.entitlement_policy)) then
     o_state := 'expired'; return;
   end if;
@@ -431,7 +439,8 @@ end;
 $$;
 
 -- Save the answer sheet while the exam is open, so time running out marks what the student had chosen. Nothing is
--- saved after the deadline: by then close_overdue_discovery_exam has already marked the exam.
+-- saved after the deadline: close_overdue_discovery_exam marks the exam first, and the write itself re-reads the wall
+-- clock, so a sheet whose request began before the deadline but reached this row after it is never applied.
 -- p_revision is the client's count of changes to its sheet, starting after the revision the exam was opened or
 -- reloaded with. Saves of one exam are serialized (the account lock, then the row lock in discovery_exam_for) and a
 -- sheet is accepted only when its revision is higher than the one already saved (compare-and-swap), so requests that
@@ -447,6 +456,7 @@ declare
   v_user_id uuid;
   v_exam record;
   v_preview private.discovery_previews;
+  v_grant_id uuid;
 begin
   if p_course_id is null or p_answers is null or jsonb_typeof(p_answers) <> 'object'
       or octet_length(p_answers::text) > 8192 or p_revision is null or p_revision not between 1 and 1000000 then
@@ -463,21 +473,30 @@ begin
       raise exception 'Invalid exam answers' using errcode = '22023';
     end if;
     if p_revision > v_preview.saved_revision then
-      update private.discovery_previews set saved_answers = p_answers, saved_at = now(), saved_revision = p_revision
-        where grant_id = v_preview.grant_id and kind = 'cbt'
+      v_grant_id := v_preview.grant_id;
+      -- The deadline is re-read from the wall clock in the write itself: the last check before the sheet is accepted.
+      update private.discovery_previews set saved_answers = p_answers, saved_at = clock_timestamp(), saved_revision = p_revision
+        where grant_id = v_grant_id and kind = 'cbt' and submitted_at is null and deadline_at > clock_timestamp()
         returning * into v_preview;
-      return jsonb_build_object('state', 'saved', 'now', now(), 'revision', v_preview.saved_revision);
+      if found then
+        return jsonb_build_object('state', 'saved', 'now', clock_timestamp(), 'revision', v_preview.saved_revision);
+      end if;
+      -- The deadline passed between the check above and the write: the exam closes now, from the sheet saved in time.
+      perform private.close_overdue_discovery_exam(v_grant_id);
+      select * into v_preview from private.discovery_previews where grant_id = v_grant_id and kind = 'cbt';
+      return jsonb_build_object('state', 'ready', 'now', clock_timestamp(), 'ends_at', (v_exam.o_grant).ends_at,
+        'preview', private.discovery_preview_view(v_preview));
     end if;
     -- A retry of the sheet already saved is acknowledged as saved. Anything else at or below the saved revision is
     -- stale (an older save delayed on the network, or another tab numbering its own changes): it changes nothing, and
     -- the answer carries the sheet that stands so the client can continue from it.
     if p_revision = v_preview.saved_revision and v_preview.saved_answers = p_answers then
-      return jsonb_build_object('state', 'saved', 'now', now(), 'revision', v_preview.saved_revision);
+      return jsonb_build_object('state', 'saved', 'now', clock_timestamp(), 'revision', v_preview.saved_revision);
     end if;
-    return jsonb_build_object('state', 'stale', 'now', now(), 'revision', v_preview.saved_revision,
+    return jsonb_build_object('state', 'stale', 'now', clock_timestamp(), 'revision', v_preview.saved_revision,
       'answers', coalesce(v_preview.saved_answers, '{}'::jsonb));
   end if;
-  return jsonb_build_object('state', 'ready', 'now', now(), 'ends_at', (v_exam.o_grant).ends_at,
+  return jsonb_build_object('state', 'ready', 'now', clock_timestamp(), 'ends_at', (v_exam.o_grant).ends_at,
     'preview', private.discovery_preview_view(v_exam.o_preview));
 end;
 $$;
@@ -485,7 +504,8 @@ $$;
 -- Grade the exam once, on the server, from the pinned answer key, and only up to its deadline. A replay returns the
 -- first grading unchanged, so a lost response never costs the exam and a second submission can never improve the
 -- score. A sheet that arrives after the deadline is never marked: the exam has already closed with the last sheet
--- saved in time, and that committed result is what is returned.
+-- saved in time, and that committed result is what is returned. The grading write re-reads the wall clock, so a
+-- submission that queued behind another request across the deadline is marked from the saved sheet, not its own.
 create function public.submit_discovery_cbt(p_session_id uuid, p_course_id uuid, p_answers jsonb) returns jsonb
 language plpgsql
 security definer
@@ -496,6 +516,7 @@ declare
   v_exam record;
   v_preview private.discovery_previews;
   v_score integer;
+  v_grant_id uuid;
 begin
   if p_course_id is null or p_answers is null or jsonb_typeof(p_answers) <> 'object'
       or octet_length(p_answers::text) > 8192 then
@@ -513,13 +534,20 @@ begin
       raise exception 'Invalid exam answers' using errcode = '22023';
     end if;
     v_score := private.discovery_exam_score(v_preview.content, p_answers);
-    update private.discovery_previews set answers = p_answers, score = v_score, submitted_at = now()
-      where grant_id = v_preview.grant_id and kind = 'cbt'
+    v_grant_id := v_preview.grant_id;
+    update private.discovery_previews set answers = p_answers, score = v_score, submitted_at = clock_timestamp()
+      where grant_id = v_grant_id and kind = 'cbt' and submitted_at is null and deadline_at > clock_timestamp()
       returning * into v_preview;
-    perform private.log_entitlement_event(v_user_id, v_preview.grant_id, 'discovery.exam-submitted', 'student',
-      jsonb_build_object('course_id', p_course_id, 'score', v_score, 'total', jsonb_array_length(v_preview.content)));
+    if found then
+      perform private.log_entitlement_event(v_user_id, v_grant_id, 'discovery.exam-submitted', 'student',
+        jsonb_build_object('course_id', p_course_id, 'score', v_score, 'total', jsonb_array_length(v_preview.content)));
+    else
+      -- The deadline passed between the check and the grading: the exam closes from the sheet saved in time.
+      perform private.close_overdue_discovery_exam(v_grant_id);
+      select * into v_preview from private.discovery_previews where grant_id = v_grant_id and kind = 'cbt';
+    end if;
   end if;
-  return jsonb_build_object('state', 'ready', 'now', now(), 'ends_at', (v_exam.o_grant).ends_at,
+  return jsonb_build_object('state', 'ready', 'now', clock_timestamp(), 'ends_at', (v_exam.o_grant).ends_at,
     'preview', private.discovery_preview_view(v_preview));
 end;
 $$;
@@ -534,13 +562,14 @@ $$;
 --     account deletion, so deleting the account and registering the same address again cannot start a second pass
 --     until the claim expires (as an Early Access claim survives). The ledger holds only an HMAC of the address, keyed
 --     with a server secret the application holds (ENTITLEMENT_CLAIM_HASH_KEYS, versioned so the key can be rotated);
---     the database never sees the address or the key;
+--     the database never sees the address or the key, and activation fails closed (claim-key-replaced,
+--     claim-key-missing) when the key configuration cannot verify every unexpired claim (discovery_claim_keys_check);
 --   * no pass while Early Access is active, and none afterwards unless trial_after_early_access allows it;
 --   * an optional platform-wide activation guard per UTC day (discovery_activations_per_day, off until the founder
 --     sets it);
 --   * start and end fixed from this transaction's clock; nothing is accepted from the browser.
--- Per-account and per-origin request limits apply before this function is reached (consume_auth_rate_limit, action
--- DISCOVERY_ACTIVATION). Nothing here is a NIN, a BVN, a device fingerprint or a phone number.
+-- A per-account request limit applies before this function is reached (consume_discovery_activation_limit), with
+-- per-address monitoring only. Nothing here is a NIN, a BVN, a device fingerprint or a phone number.
 -- ---------------------------------------------------------------------------
 alter table private.entitlement_policy
   -- Platform-wide guard against account farming, per UTC day. Null (the default) means no guard: it bounds how fast
@@ -570,9 +599,25 @@ create index discovery_pass_claims_expiry_idx on private.discovery_pass_claims (
 alter table private.discovery_pass_claims enable row level security;
 revoke all on table private.discovery_pass_claims from public, anon, authenticated, service_role;
 
--- The hashes the application computed for this session's confirmed address: one per key version it still holds, the
--- current key first. Lookups match any version (so a rotated key keeps old claims effective until they expire); the
--- insert uses the first.
+-- The signing keys the ledger has been written with, by version, each committed to by a check value: the keyed HMAC of
+-- a fixed purpose string under that key, which the application computes and the database compares. It reveals nothing
+-- about the secret (an HMAC is one-way) and lets activation fail closed, instead of quietly re-opening claimed
+-- addresses, when the configuration (a) no longer carries a version that unexpired claims were written under, or
+-- (b) carries a different secret under a version already used. A version is registered the first time an activation
+-- presents it; the secret under a registered version can never change, so a compromised key is retired by adding a new
+-- version and keeping the old one until its claims have expired.
+create table private.discovery_claim_keys (
+  key_version integer primary key check (key_version between 1 and 1000),
+  key_check text not null check (key_check ~ '^[0-9a-f]{64}$'),
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+alter table private.discovery_claim_keys enable row level security;
+revoke all on table private.discovery_claim_keys from public, anon, authenticated, service_role;
+
+-- The hashes the application computed for this session's confirmed address: one per key version it holds, the current
+-- key first, each with that key's check value. Lookups match any version (so a rotated key keeps old claims effective
+-- until they expire); the insert uses the first.
 create function private.discovery_claim_hashes_valid(p_hashes jsonb) returns boolean
 language sql
 immutable
@@ -580,17 +625,60 @@ set search_path = ''
 as $$
   select coalesce(jsonb_typeof(p_hashes) = 'array' and jsonb_array_length(p_hashes) between 1 and 8
     and not exists (select 1 from jsonb_array_elements(p_hashes) h
-      where jsonb_typeof(h) <> 'object' or (select count(*) from jsonb_object_keys(h)) <> 2
+      where jsonb_typeof(h) <> 'object' or (select count(*) from jsonb_object_keys(h)) <> 3
+        or not (h ? 'version' and h ? 'hash' and h ? 'check')
         or jsonb_typeof(h -> 'version') <> 'number'
         or (h ->> 'version') !~ '^[0-9]{1,4}$' or (h ->> 'version')::integer not between 1 and 1000
-        or jsonb_typeof(h -> 'hash') <> 'string' or (h ->> 'hash') !~ '^[0-9a-f]{64}$')
+        or jsonb_typeof(h -> 'hash') <> 'string' or (h ->> 'hash') !~ '^[0-9a-f]{64}$'
+        or jsonb_typeof(h -> 'check') <> 'string' or (h ->> 'check') !~ '^[0-9a-f]{64}$')
     and (select count(distinct h ->> 'version') = count(*) from jsonb_array_elements(p_hashes) h), false);
+$$;
+
+-- Fail closed unless every key version this configuration presents matches the secret the ledger was written with, and
+-- every version an unexpired claim still needs is present. Registers versions seen for the first time. Serialized on
+-- its own lock (taken after the account lock, before the claim lock). Returns null when the keys are sound, else the
+-- state to return and the audit event to write.
+create function private.discovery_claim_keys_check(p_hashes jsonb) returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_versions integer[];
+begin
+  perform pg_advisory_xact_lock(hashtextextended('discovery-claim-keys', 0));
+  -- (b) A registered version presented with another check value: the secret under it was replaced.
+  select array_agg(k.key_version order by k.key_version) into v_versions
+    from private.discovery_claim_keys k
+    join jsonb_array_elements(p_hashes) h on k.key_version = (h ->> 'version')::integer
+    where k.key_check <> h ->> 'check';
+  if v_versions is not null then
+    perform private.log_entitlement_event(null, null, 'discovery.claim-key-rejected', 'system:claim-keys',
+      jsonb_build_object('reason', 'replaced', 'versions', to_jsonb(v_versions)));
+    return 'claim-key-replaced';
+  end if;
+  -- (a) A version unexpired claims were written under that the configuration no longer carries.
+  select array_agg(distinct c.key_version order by c.key_version) into v_versions
+    from private.discovery_pass_claims c
+    where c.expires_at > now()
+      and not exists (select 1 from jsonb_array_elements(p_hashes) h where (h ->> 'version')::integer = c.key_version);
+  if v_versions is not null then
+    perform private.log_entitlement_event(null, null, 'discovery.claim-key-rejected', 'system:claim-keys',
+      jsonb_build_object('reason', 'missing', 'versions', to_jsonb(v_versions)));
+    return 'claim-key-missing';
+  end if;
+  insert into private.discovery_claim_keys (key_version, key_check)
+    select (h ->> 'version')::integer, h ->> 'check' from jsonb_array_elements(p_hashes) h
+    on conflict (key_version) do update set last_seen_at = now();
+  return null;
+end;
 $$;
 
 -- Service role only; identity from the verified session id, as for every other entitlement write. Replays answer the
 -- same way, so a double tap or a lost response never costs anything.
--- Lock order: account row share lock (inside ai_practice_session_user), the per-account advisory lock, the per-claim
--- lock, then the global day lock. No Early Access path takes the last two, and this path takes no group lock.
+-- Lock order: account row share lock (inside ai_practice_session_user), the per-account advisory lock, the claim-keys
+-- lock, the per-claim lock, then the global day lock. No Early Access path takes the last three, and this path takes no
+-- group lock.
 create function public.activate_discovery_pass(p_session_id uuid, p_claim_hashes jsonb) returns jsonb
 language plpgsql
 security definer
@@ -605,6 +693,7 @@ declare
   v_early public.entitlement_grants;
   v_grant public.entitlement_grants;
   v_today integer;
+  v_key_state text;
 begin
   if not private.discovery_claim_hashes_valid(p_claim_hashes) then
     raise exception 'Invalid activation request' using errcode = '22023';
@@ -614,6 +703,9 @@ begin
   if v_user_id is null then return jsonb_build_object('state', 'signed-out'); end if;
   select * into strict v_policy from private.entitlement_policy;
   perform pg_advisory_xact_lock(hashtextextended('entitlement-account:' || v_user_id::text, 0));
+  -- Nothing is decided on a key configuration that cannot verify every unexpired claim: fail closed, audited.
+  v_key_state := private.discovery_claim_keys_check(p_claim_hashes);
+  if v_key_state is not null then return jsonb_build_object('state', v_key_state); end if;
 
   select * into v_existing from public.entitlement_grants where user_id = v_user_id and source = 'trial';
   if v_existing.id is not null then
@@ -687,82 +779,82 @@ begin
 end;
 $$;
 
--- Which key versions live claims still reference, and until when, so a retired key is dropped from
--- ENTITLEMENT_CLAIM_HASH_KEYS only once nothing can need it. Counts only; never a hash.
+-- Which key versions live claims still reference, and until when (`live`), and which versions the ledger has been
+-- written with (`registered`), so a retired key is dropped from ENTITLEMENT_CLAIM_HASH_KEYS only once nothing can need
+-- it, and a version is never re-used with another secret. Counts and dates only; never a hash or a check value.
 create function public.admin_discovery_claim_keys() returns jsonb
 language sql
 security definer
 set search_path = ''
 as $$
-  select coalesce((select jsonb_agg(jsonb_build_object('key_version', key_version, 'claims', claims,
-      'last_expires_at', last_expires_at) order by key_version)
-    from (select key_version, count(*) as claims, max(expires_at) as last_expires_at
-      from private.discovery_pass_claims where expires_at > now() group by key_version) versions), '[]'::jsonb);
+  select jsonb_build_object(
+    'live', coalesce((select jsonb_agg(jsonb_build_object('key_version', key_version, 'claims', claims,
+        'last_expires_at', last_expires_at) order by key_version)
+      from (select key_version, count(*) as claims, max(expires_at) as last_expires_at
+        from private.discovery_pass_claims where expires_at > now() group by key_version) versions), '[]'::jsonb),
+    'registered', coalesce((select jsonb_agg(jsonb_build_object('key_version', key_version, 'first_seen_at', first_seen_at,
+        'last_seen_at', last_seen_at) order by key_version) from private.discovery_claim_keys), '[]'::jsonb));
 $$;
 
--- The request limiter of 20260912090000 learns the activation action: 5 requests per account and 60 per origin
--- address in 15 minutes, applied by the API route before the database is asked. The origin limit is wide because
--- campus networks put many students behind one address; a replay costs nothing, so it only bounds abuse. Every other
--- policy is unchanged.
-create or replace function public.consume_auth_rate_limit(
-  p_action text, p_account text, p_origin text,
+-- Activation requests. The account bucket (keyed by the confirmed email, as an HMAC) is a hard limit: 5 in 15 minutes.
+-- The address bucket is monitoring only. Campus networks put a whole lecture hall behind one NAT address, so a hard
+-- per-address ceiling would let one noisy account, or simply a busy hall, lock dozens of students out of admission;
+-- instead the address bucket is charged only for requests the account bucket admitted (so one account can add at most
+-- its own five per window), and crossing p_origin_notice admitted requests in the window writes one audit row
+-- (discovery.origin-notice) for the operator to look at. Nothing is refused by address. Abuse that the account limit
+-- does not bound is bounded by what a pass costs to obtain and what it can spend: one pass per account and per
+-- confirmed email, and the optional platform-wide daily guard. Same bucket table, cleanup and lock discipline as
+-- consume_auth_rate_limit (action 'DISCOVERY_ACTIVATION'), which no longer knows this action.
+create function public.consume_discovery_activation_limit(
+  p_account text, p_origin text,
   p_account_limit integer, p_account_window integer,
-  p_origin_limit integer, p_origin_window integer
-) returns boolean
+  p_origin_notice integer, p_origin_window integer
+) returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
   v_now timestamptz;
   v_account_count integer;
   v_origin_count integer;
-  v_expected integer[];
+  v_allowed boolean;
 begin
-  v_expected := case p_action
-    when 'LOGIN' then array[20,900,30,300]
-    when 'REGISTER' then array[3,3600,20,3600]
-    when 'RESEND_CONFIRMATION' then array[3,3600,20,3600]
-    when 'PASSWORD_RESET_REQUEST' then array[3,3600,20,3600]
-    when 'PASSWORD_RESET_SUBMIT' then array[5,900,20,900]
-    when 'ACCOUNT_DELETION' then array[5,900,20,900]
-    when 'CONFIRM_EMAIL' then array[5,900,20,900]
-    when 'DISCOVERY_ACTIVATION' then array[5,900,60,900]
-    else null end;
-  if v_expected is null or p_account is null or p_origin is null
-    or p_account !~ '^[a-f0-9]{64}$' or p_origin !~ '^[a-f0-9]{64}$'
-    or array[p_account_limit,p_account_window,p_origin_limit,p_origin_window] is distinct from v_expected
-  then raise exception using errcode = '22023', message = 'Invalid auth rate-limit arguments'; end if;
+  if p_account is null or p_origin is null or p_account !~ '^[a-f0-9]{64}$' or p_origin !~ '^[a-f0-9]{64}$'
+    or array[p_account_limit, p_account_window, p_origin_notice, p_origin_window] is distinct from array[5, 900, 60, 900]
+  then raise exception using errcode = '22023', message = 'Invalid activation rate-limit arguments'; end if;
 
-  -- Every call locks account then origin. Kind is part of the lock namespace, so no cycles.
-  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_action || ':account:' || p_account, 0));
-  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_action || ':origin:' || p_origin, 1));
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('DISCOVERY_ACTIVATION:account:' || p_account, 0));
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('DISCOVERY_ACTIVATION:origin:' || p_origin, 1));
   v_now := pg_catalog.clock_timestamp();
-  -- Maximum window is one hour. Opportunistic cleanup bounds retention without a new scheduler.
-  -- SKIP LOCKED avoids cleanup deadlocks across unrelated concurrent buckets.
   delete from public.auth_rate_limit_events where id in (
     select id from public.auth_rate_limit_events
     where created_at <= v_now - interval '1 hour'
     for update skip locked
   );
   select count(*) into v_account_count from public.auth_rate_limit_events
-    where action = p_action and kind = 'account' and bucket = p_account
+    where action = 'DISCOVERY_ACTIVATION' and kind = 'account' and bucket = p_account
       and created_at > v_now - pg_catalog.make_interval(secs => p_account_window);
+  v_allowed := v_account_count < p_account_limit;
+  if v_allowed then
+    insert into public.auth_rate_limit_events(action, kind, bucket, created_at)
+      values ('DISCOVERY_ACTIVATION', 'account', p_account, v_now);
+    insert into public.auth_rate_limit_events(action, kind, bucket, created_at)
+      values ('DISCOVERY_ACTIVATION', 'origin', p_origin, v_now);
+  end if;
   select count(*) into v_origin_count from public.auth_rate_limit_events
-    where action = p_action and kind = 'origin' and bucket = p_origin
+    where action = 'DISCOVERY_ACTIVATION' and kind = 'origin' and bucket = p_origin
       and created_at > v_now - pg_catalog.make_interval(secs => p_origin_window);
-
-  -- Charge each bucket that still has capacity even when its partner is exhausted:
-  -- repeated attempts at one exhausted account must not bypass the origin limit.
-  if v_account_count < p_account_limit then
-    insert into public.auth_rate_limit_events(action,kind,bucket,created_at)
-      values(p_action,'account',p_account,v_now);
+  -- One notice as the address crosses the threshold; a prefix of the keyed bucket identifies it, never an address.
+  if v_allowed and v_origin_count = p_origin_notice then
+    perform private.log_entitlement_event(null, null, 'discovery.origin-notice', 'system:rate-limit',
+      jsonb_build_object('origin', left(p_origin, 12), 'requests', v_origin_count, 'window_seconds', p_origin_window));
   end if;
-  if v_origin_count < p_origin_limit then
-    insert into public.auth_rate_limit_events(action,kind,bucket,created_at)
-      values(p_action,'origin',p_origin,v_now);
-  end if;
-  return v_account_count < p_account_limit and v_origin_count < p_origin_limit;
+  return jsonb_build_object('allowed', v_allowed, 'origin_requests', v_origin_count);
 end;
 $$;
+revoke all on function public.consume_discovery_activation_limit(text, text, integer, integer, integer, integer)
+  from public, anon, authenticated;
+grant execute on function public.consume_discovery_activation_limit(text, text, integer, integer, integer, integer)
+  to service_role;
 
 -- ---------------------------------------------------------------------------
 -- The phone-code activation of 20261017100000 is retired: its functions, its challenge table and its policy go, and
@@ -1239,8 +1331,8 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Privileges. Activation and previews are written only by the service role with a verified session id.
 -- ---------------------------------------------------------------------------
-revoke all on function private.discovery_claim_hashes_valid(jsonb), public.activate_discovery_pass(uuid, jsonb),
-  public.purge_discovery_pass_claims(), public.admin_discovery_claim_keys(),
+revoke all on function private.discovery_claim_hashes_valid(jsonb), private.discovery_claim_keys_check(jsonb),
+  public.activate_discovery_pass(uuid, jsonb), public.purge_discovery_pass_claims(), public.admin_discovery_claim_keys(),
   private.is_discovery_grant(uuid), private.course_has_active_offering(uuid),
   private.discovery_cbt_question_valid(jsonb), private.discovery_cbt_pool(uuid),
   private.discovery_preview_content(uuid, text, uuid), private.discovery_topic_titles(uuid),
@@ -1262,5 +1354,7 @@ comment on table private.discovery_previews is
   'One pinned preview per Discovery Pass and kind (one timed CBT exam, one complete study-guide topic). Never replenished.';
 comment on table private.discovery_ai_uploads is
   'Uploads a Discovery Pass accepted (at most discovery_ai_uploads). Only these documents can use the pass''s AI.';
+comment on table private.discovery_claim_keys is
+  'Claim signing-key versions the ledger has been written with, each committed to by the keyed HMAC of a fixed purpose string (never the secret). Activation fails closed when a registered version is presented with another secret or a version live claims need is absent.';
 comment on table private.discovery_pass_claims is
   'One row per confirmed email address that has started a Discovery Pass (server-keyed HMAC only, with its key version), kept for discovery_claim_retention. Survives account deletion, so the same address cannot start a second pass until the claim expires. One pass per account is enforced by entitlement_grants_one_trial_idx; neither is a guarantee of one pass per person.';
