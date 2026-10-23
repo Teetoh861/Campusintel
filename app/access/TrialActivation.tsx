@@ -1,7 +1,7 @@
 'use client'
 // app/access/TrialActivation.tsx — Starting the Discovery Pass: one tap to ask, one to confirm. Nothing is asked for: no
 // phone number and no code. The server verifies the session and the database decides everything else.
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Feedback } from '@/components/chrome/Feedback'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -9,9 +9,24 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { postEntitlementCommand } from '@/lib/entitlements/client'
 import { describeResult } from './trial-flow'
 import type { FlowMessage } from './trial-flow'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
 type Step = 'ask' | 'confirm' | 'closed'
+
+// Whether the pass is still on offer on this page. A refusal withdraws it at once, so nothing on the page keeps
+// describing or advertising a pass this account cannot start; the next render no longer offers it at all.
+const PassOffer = createContext<{ withdrawn: boolean; withdraw(): void } | null>(null)
+
+/** The part of the page that may mention the offer. */
+export function PassOfferScope({ children }: { children: ReactNode }): ReactElement {
+  const [withdrawn, setWithdrawn] = useState(false)
+  return <PassOffer.Provider value={{ withdrawn, withdraw: () => setWithdrawn(true) }}>{children}</PassOffer.Provider>
+}
+
+/** Offer text: shown until a refusal withdraws the offer. */
+export function WhileOffered({ children }: { children: ReactNode }): ReactNode {
+  return useContext(PassOffer)?.withdrawn ? null : children
+}
 
 export function TrialActivation({ continuityToken, passHours }: {
   continuityToken: string
@@ -25,6 +40,7 @@ export function TrialActivation({ continuityToken, passHours }: {
   const notNow = useRef<HTMLButtonElement>(null)
   const start = useRef<HTMLButtonElement>(null)
   const asked = useRef(false)
+  const offer = useContext(PassOffer)
 
   // Focus follows the step, so a keyboard or screen-reader user lands on the safe choice and returns where they were.
   useEffect(() => {
@@ -39,7 +55,7 @@ export function TrialActivation({ continuityToken, passHours }: {
     setBusy(false)
     const { message: next, next: after } = describeResult(result)
     setMessage(next)
-    if (after === 'close') setStep('closed')
+    if (after === 'close') { setStep('closed'); offer?.withdraw() }
     if (after === 'refresh') router.refresh()
   }
 

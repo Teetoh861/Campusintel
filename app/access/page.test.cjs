@@ -36,7 +36,9 @@ async function render(wire, eligible = true) {
         if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () =>
           ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse(wire), discovery_eligible: eligible } }) }
         if (name === '@/lib/ai-practice/supabase-env') return { readAllowance: async () => null }
-        if (name === './TrialActivation') return { TrialActivation }
+        // WhileOffered marks the offer text a refusal withdraws (rendered here as <withdrawable>).
+        if (name === './TrialActivation') return { TrialActivation, PassOfferScope: props => props.children,
+          WhileOffered: props => React.createElement('withdrawable', null, props.children) }
         return original.call(this, name, ...args)
       }
       const page = require('./page.tsx').default
@@ -53,7 +55,7 @@ test('an eligible student is offered the pass with its activation', async () => 
   assert.match(html, /Discovery Pass/)
   assert.match(html, /data-activation="72"/)
   assert.match(html, /50-question CBT exam/)
-  assert.match(html, /comes with a Discovery Pass or Early Access/)
+  assert.match(html.replace(/<\/?withdrawable>/g, ''), /comes with a Discovery Pass or Early Access/)
   assert.doesNotMatch(html, /phone|SMS|per person/i)
 })
 
@@ -94,4 +96,16 @@ test('regression F4: on a database from before the pass, no trial status names a
     const html = await render({ ...discoveryDatabase, trial: { ...trial, status, policy: null } })
     assert.doesNotMatch(html, /Discovery Pass|data-activation|not offered|kept for later|becomes available/i, status)
   }
+})
+
+test('a refusal can withdraw every piece of offer text: the description, what is included and the AI line', async () => {
+  const html = await render(discoveryDatabase)
+  const withdrawable = [...html.matchAll(/<withdrawable>([\s\S]*?)<\/withdrawable>/g)].map(match => match[1]).join(' ')
+  assert.match(withdrawable, /Try department courses free for 72 hours/)
+  assert.match(withdrawable, /50-question CBT exam/)
+  assert.match(withdrawable, /a Discovery Pass or /)
+  const kept = html.replace(/<withdrawable>[\s\S]*?<\/withdrawable>/g, '')
+  assert.doesNotMatch(kept, /Try department|CBT exam|study guide topic|AI upload|a Discovery Pass or/,
+    'nothing describing the offer stays outside it')
+  assert.match(kept, /AI practice from your own notes comes with Early Access\./)
 })

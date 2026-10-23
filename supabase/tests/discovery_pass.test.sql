@@ -843,7 +843,7 @@ select ok(exists (select 1 from cron.job where jobname = 'campusintell-discovery
   'expired claims are purged daily, independently of traffic');
 select is((select count(*)::integer from unnest(array['anon', 'authenticated']) api_role
   where has_function_privilege(api_role, 'public.discovery_pass_eligibility(uuid,jsonb)', 'EXECUTE'))
-  + (select count(*)::integer from unnest(array['private.discovery_had_early_access(uuid)',
+  + (select count(*)::integer from unnest(array['private.discovery_early_access_bars(uuid)',
       'private.discovery_claim_keys_sound(jsonb)']) fn, unnest(array['anon', 'authenticated', 'service_role']) api_role
     where has_function_privilege(api_role, fn, 'EXECUTE')), 0,
   'eligibility is service-role only and its helpers are callable by no API role');
@@ -855,7 +855,8 @@ select ok((select every(c.expires_at = c.claimed_at + interval '5 years') from p
   'every claim expires five years after its activation');
 
 -- Fixtures. V: eligible. W: Early Access active. X: Early Access ended. Y: Early Access revoked. Z: registered with an
--- address whose list place a since-deleted account claimed. K: scheduled for deletion.
+-- address whose list place a since-deleted account claimed. K: scheduled for deletion. L1: listed, unclaimed, joined
+-- before launch. L2: listed, unclaimed, joined after launch. LX: listed but excluded. LC: claimed, then excluded.
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now(),
@@ -865,10 +866,14 @@ from (values ('71000000-0000-4000-8000-000000000041', 'disc-v@example.test'),
   ('71000000-0000-4000-8000-000000000043', 'disc-x@example.test'),
   ('71000000-0000-4000-8000-000000000044', 'disc-y@example.test'),
   ('71000000-0000-4000-8000-000000000045', ' Disc-Z@Example.test'),
-  ('71000000-0000-4000-8000-000000000046', 'disc-k@example.test')) fixture_users(id, email);
+  ('71000000-0000-4000-8000-000000000046', 'disc-k@example.test'),
+  ('71000000-0000-4000-8000-000000000047', 'disc-l1@example.test'),
+  ('71000000-0000-4000-8000-000000000048', 'Disc-L2@example.test'),
+  ('71000000-0000-4000-8000-000000000049', 'disc-lx@example.test'),
+  ('71000000-0000-4000-8000-000000000050', 'disc-lc@example.test')) fixture_users(id, email);
 insert into auth.sessions (id, user_id, created_at, updated_at)
 select ('72000000-0000-4000-8000-0000000000' || n)::uuid, ('71000000-0000-4000-8000-0000000000' || n)::uuid, now(), now()
-from unnest(array[41, 42, 43, 44, 45, 46]) n;
+from unnest(array[41, 42, 43, 44, 45, 46, 47, 48, 49, 50]) n;
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by, revoked_at, revoked_by,
   revoke_reason) values
   ('71000000-0000-4000-8000-000000000042', 'early_access', now() - interval '3 days', now() + interval '27 days', 'uncapped',
@@ -879,6 +884,15 @@ insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_t
     'test', now() - interval '1 day', 'ops', 'duplicate person');
 insert into private.early_access_members (email, full_name, joined_at, source, batch, added_by, claimed_at)
   values ('disc-z@example.test', 'Z Member', now() - interval '60 days', 'import', 'google-form', 'test',
+    now() - interval '20 days');
+-- List places that were never claimed. With no actual launch recorded, L1 is awaiting launch; L2 joined after the
+-- planned launch (the database checks the actual one, so either way it is listed and not excluded).
+insert into private.early_access_members (email, full_name, joined_at, source, batch, added_by, excluded_at,
+    excluded_reason, claimed_at) values
+  ('disc-l1@example.test', 'L1 Member', now() - interval '10 days', 'import', 'google-form', 'test', null, null, null),
+  ('disc-l2@example.test', 'L2 Member', now() + interval '30 days', 'manual', 'whatsapp', 'test', null, null, null),
+  ('disc-lx@example.test', 'LX Member', now() - interval '10 days', 'import', 'google-form', 'test', now(), 'duplicate person', null),
+  ('disc-lc@example.test', 'LC Member', now() - interval '60 days', 'import', 'google-form', 'test', now(), 'misuse',
     now() - interval '20 days');
 insert into private.account_deletion_jobs (user_id, requested_at, deadline, retry_at)
   values ('71000000-0000-4000-8000-000000000046', now(), now() + interval '720 hours', now());
@@ -930,17 +944,32 @@ insert into outcome select 'ea-' || label, jsonb_build_object(
   from (values ('active', '72000000-0000-4000-8000-000000000042'::uuid, 'disc-w@example.test'),
     ('ended', '72000000-0000-4000-8000-000000000043'::uuid, 'disc-x@example.test'),
     ('revoked', '72000000-0000-4000-8000-000000000044'::uuid, 'disc-y@example.test'),
-    ('claimed-list-place', '72000000-0000-4000-8000-000000000045'::uuid, 'disc-z@example.test')) cases(label, session_id, email);
+    ('claimed-list-place', '72000000-0000-4000-8000-000000000045'::uuid, 'disc-z@example.test'),
+    ('listed-unclaimed', '72000000-0000-4000-8000-000000000047'::uuid, 'disc-l1@example.test'),
+    ('listed-after-launch', '72000000-0000-4000-8000-000000000048'::uuid, 'disc-l2@example.test'),
+    ('claimed-then-excluded', '72000000-0000-4000-8000-000000000050'::uuid, 'disc-lc@example.test')) cases(label, session_id, email);
 reset role;
 select is((select jsonb_object_agg(step, result) from outcome where step like 'ea-%'),
-  '{"ea-active":{"eligible":false,"activation":"early-access-active"},"ea-ended":{"eligible":false,"activation":"trial-not-offered"},"ea-revoked":{"eligible":false,"activation":"trial-not-offered"},"ea-claimed-list-place":{"eligible":false,"activation":"trial-not-offered"}}'::jsonb,
-  'no account that has ever had Early Access is eligible or can activate (the running month keeps its older state)');
+  '{"ea-active":{"eligible":false,"activation":"early-access-active"},"ea-ended":{"eligible":false,"activation":"trial-not-offered"},"ea-revoked":{"eligible":false,"activation":"trial-not-offered"},"ea-claimed-list-place":{"eligible":false,"activation":"trial-not-offered"},"ea-listed-unclaimed":{"eligible":false,"activation":"trial-not-offered"},"ea-listed-after-launch":{"eligible":false,"activation":"trial-not-offered"},"ea-claimed-then-excluded":{"eligible":false,"activation":"trial-not-offered"}}'::jsonb,
+  'no account that has had Early Access, or holds a list place that is not excluded, is eligible or can activate');
+select is((select jsonb_build_object('l1', private.early_access_status('71000000-0000-4000-8000-000000000047')->>'status',
+    'l2', private.early_access_status('71000000-0000-4000-8000-000000000048')->>'status')),
+  '{"l1":"awaiting-launch","l2":"awaiting-launch"}'::jsonb, 'L1 and L2 are list members who have claimed nothing');
+-- An excluded list place does not bar the pass.
+set local role service_role;
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000049', pg_temp.claim('disc-lx@example.test', array[2, 1])),
+  '{"eligible":true}'::jsonb, 'LX, whose list place is excluded, is eligible');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000049', pg_temp.claim('disc-lx@example.test', array[2, 1]))->>'state',
+  'activated', 'and can start a pass');
+reset role;
 select ok(not exists (select 1 from public.entitlement_grants where source = 'trial' and user_id in
     ('71000000-0000-4000-8000-000000000042', '71000000-0000-4000-8000-000000000043', '71000000-0000-4000-8000-000000000044',
-     '71000000-0000-4000-8000-000000000045'))
+     '71000000-0000-4000-8000-000000000045', '71000000-0000-4000-8000-000000000047', '71000000-0000-4000-8000-000000000048',
+     '71000000-0000-4000-8000-000000000050'))
   and not exists (select 1 from private.discovery_pass_claims where user_id in
     ('71000000-0000-4000-8000-000000000042', '71000000-0000-4000-8000-000000000043', '71000000-0000-4000-8000-000000000044',
-     '71000000-0000-4000-8000-000000000045')), 'nothing is granted or claimed');
+     '71000000-0000-4000-8000-000000000045', '71000000-0000-4000-8000-000000000047', '71000000-0000-4000-8000-000000000048',
+     '71000000-0000-4000-8000-000000000050')), 'nothing is granted or claimed');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000044","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000044"}';
 select is((select (e->'trial'->>'status') || '/' || coalesce(e->'trial'->>'available_from', 'none') from public.get_my_entitlement() e),
@@ -948,6 +977,9 @@ select is((select (e->'trial'->>'status') || '/' || coalesce(e->'trial'->>'avail
 set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000045","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000045"}';
 select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'not-offered',
   'nor does the summary of an account whose address claimed Early Access before');
+set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000047","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000047"}';
+select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'not-offered',
+  'nor that of an unclaimed list member');
 set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000041","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000041"}';
 select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'available', 'while V''s summary offers one');
 reset role;

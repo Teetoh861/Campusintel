@@ -43,13 +43,25 @@ function createServiceRoleClient() {
   })
 }
 
+// One eligibility read per request: the request-scoped client is the key, so every surface of one page shares it.
+const eligibilityByRequest = new WeakMap<StudentClient, Promise<boolean>>()
+
 /**
  * Whether this student may be offered a Discovery Pass: the same rules activation applies (one pass per account, one
- * per confirmed address within the retention period, never after any Early Access, a key configuration that can
- * verify every claim), read without a lock. Missing keys, a session that cannot be verified, an error or a malformed
- * answer all mean false: no offer is shown that activation might refuse.
+ * per confirmed address within the retention period, never with any Early Access or a list place that is not
+ * excluded, a key configuration that can verify every claim), read without a lock. Missing keys, a session that
+ * cannot be verified, an error or a malformed answer all mean false: no offer is shown that activation might refuse.
  */
-async function readDiscoveryEligibility(client: StudentClient): Promise<boolean> {
+function readDiscoveryEligibility(client: StudentClient): Promise<boolean> {
+  let pending = eligibilityByRequest.get(client)
+  if (pending === undefined) {
+    pending = askDiscoveryEligibility(client)
+    eligibilityByRequest.set(client, pending)
+  }
+  return pending
+}
+
+async function askDiscoveryEligibility(client: StudentClient): Promise<boolean> {
   const keys = readClaimHashKeys()
   if (keys === null) return false
   try {
@@ -68,15 +80,20 @@ async function readDiscoveryEligibility(client: StudentClient): Promise<boolean>
   }
 }
 
-/** The verified student's entitlement, read on the same client as the content it decides. */
-export async function readEntitlementForVerifiedStudent(client: StudentClient): Promise<EntitlementRead> {
+/**
+ * The verified student's entitlement, read on the same client as the content it decides. Surfaces that can render a
+ * Discovery offer read eligibility too (at most once per request); a caller that only needs course access (course
+ * lists, lib/courses/read-model.ts) passes `discoveryEligibility: false` and gets `discovery_eligible: false`.
+ */
+export async function readEntitlementForVerifiedStudent(client: StudentClient,
+  { discoveryEligibility = true }: { discoveryEligibility?: boolean } = {}): Promise<EntitlementRead> {
   try {
     const { data, error } = await client.rpc('get_my_entitlement')
     if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
     const parsed = entitlementSummarySchema.safeParse(data)
     if (!parsed.success) return { status: 'unavailable' }
     // Only a student the database could still give a pass is asked about; everyone else is simply not eligible.
-    const askable = discoveryOffered(parsed.data) && parsed.data.trial.status === 'available'
+    const askable = discoveryEligibility && discoveryOffered(parsed.data) && parsed.data.trial.status === 'available'
     return { status: 'ok', entitlement: { ...parsed.data,
       discovery_eligible: askable && await readDiscoveryEligibility(client) } }
   } catch {

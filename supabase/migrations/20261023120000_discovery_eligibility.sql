@@ -1,8 +1,9 @@
 -- Discovery Pass eligibility and five-year claim retention (owner decisions, 23 October 2026).
 -- 1. A used email claim blocks the same address for five years from activation, also after the account is deleted.
 --    Expired claims are purged daily by pg_cron; the operator command (ops.cjs purge-claims) stays.
--- 2. No Discovery Pass for an account that has ever had Early Access: any early_access grant (active, ended or
---    revoked), or a claimed Early Access list row for the account's confirmed, normalised email (which covers an
+-- 2. No Discovery Pass for an account that has ever had, or is listed for, Early Access: any early_access grant
+--    (active, ended or revoked), or an Early Access list row for the account's confirmed, normalised email that is not
+--    excluded, claimed or not, before or after launch (owner decision, 23 Oct), and any claimed row (which covers an
 --    account deleted and registered again). trial_after_early_access is retired: it is set to false and no longer read.
 -- 3. Pages decide before render whether to offer a pass at all, through discovery_pass_eligibility(), a read-only
 --    service-role function that applies the same rules as activation (and fails closed on the same key faults) without
@@ -32,10 +33,12 @@ select cron.schedule('campusintell-discovery-claim-purge', '17 3 * * *', 'select
 -- ---------------------------------------------------------------------------
 -- Shared rules. Reads only: no lock, no write.
 -- ---------------------------------------------------------------------------
--- Whether this account has ever had Early Access: an early_access grant in any state (one per account; a revoked or
--- ended one still counts), or a claimed list row for its confirmed email, normalised as early_access_status() does, so
--- an address whose month was claimed by a since-deleted account is recognised on a new account.
-create function private.discovery_had_early_access(p_user_id uuid) returns boolean
+-- Whether Early Access bars this account from a pass: an early_access grant in any state (one per account; a revoked or
+-- ended one still counts), or a list row for its confirmed email, normalised as early_access_status() does, that is
+-- not excluded (claimed or not, joined before or after launch), or that was claimed (so an address whose month a
+-- since-deleted account claimed is recognised on a new account, even if the row was excluded later). An excluded,
+-- unclaimed row does not bar the pass.
+create function private.discovery_early_access_bars(p_user_id uuid) returns boolean
 language sql
 stable
 security definer
@@ -44,7 +47,8 @@ as $$
   select exists (select 1 from public.entitlement_grants where user_id = p_user_id and source = 'early_access')
     or exists (select 1 from auth.users u
       join private.early_access_members m on m.email = lower(btrim(u.email))
-      where u.id = p_user_id and u.email_confirmed_at is not null and m.claimed_at is not null);
+      where u.id = p_user_id and u.email_confirmed_at is not null
+        and (m.excluded_at is null or m.claimed_at is not null));
 $$;
 
 -- discovery_claim_keys_check() without its lock, its audit rows or its registration: true when every version presented
@@ -64,7 +68,8 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Activation. As in 20261021100000, except that any Early Access ever (decision 2) refuses with trial-not-offered;
+-- Activation. As in 20261021100000, except that any Early Access ever, or a list place (decision 2), refuses with
+-- trial-not-offered;
 -- an Early Access month still running keeps its early-access-active answer.
 -- Lock order (unchanged): account row share lock (inside ai_practice_session_user), the per-account advisory lock, the
 -- claim-keys lock, the per-claim lock, then the global day lock. No Early Access path takes the last three, and this
@@ -109,9 +114,10 @@ begin
   if v_early.id is not null and v_early.ends_at > now() then
     return jsonb_build_object('state', 'early-access-active', 'available_from', v_early.ends_at);
   end if;
-  -- Nor afterwards: any Early Access ever, on this account or for this confirmed email (owner decision, 23 Oct 2026).
-  -- Enrollment takes the account lock held here, so the answer cannot change before this transaction commits.
-  if private.discovery_had_early_access(v_user_id) then
+  -- Nor afterwards, nor for a listed address: any Early Access ever on this account, or a list place for this confirmed
+  -- email that is not excluded (owner decisions, 23 Oct 2026). Enrollment, imports and member changes take the account
+  -- lock held here, so the answer cannot change before this transaction commits.
+  if private.discovery_early_access_bars(v_user_id) then
     return jsonb_build_object('state', 'trial-not-offered');
   end if;
 
@@ -160,7 +166,8 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Eligibility before render. Service role only, given the verified session id and the keyed hashes of its confirmed
 -- address, exactly as activation is. Answers only {eligible}: never why not, so no page can explain a refusal. False
--- for a session that is not live and confirmed, an account with a trial grant, any Early Access ever, a configuration
+-- for a session that is not live and confirmed, an account with a trial grant, any Early Access ever or a list place
+-- that is not excluded, a configuration
 -- activation would refuse (claim-key-missing or claim-key-replaced), or an unexpired claim of the address. The daily
 -- guard is not consulted: it is a momentary refusal, not a property of the student. STABLE, so it cannot write.
 -- ---------------------------------------------------------------------------
@@ -185,7 +192,7 @@ begin
   if v_user_id is null then return jsonb_build_object('eligible', false); end if;
   return jsonb_build_object('eligible',
     not exists (select 1 from public.entitlement_grants where user_id = v_user_id and source = 'trial')
-    and not private.discovery_had_early_access(v_user_id)
+    and not private.discovery_early_access_bars(v_user_id)
     and private.discovery_claim_keys_sound(p_claim_hashes)
     and not exists (select 1 from private.discovery_pass_claims c
       join jsonb_array_elements(p_claim_hashes) h on c.claim_hash = h ->> 'hash'
@@ -195,8 +202,8 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Student summary. As in 20261021100000, except that the trial is not offered to an account that has ever had Early
--- Access (decision 2); after-early-access is no longer answered.
+-- Student summary. As in 20261021100000, except that the trial is not offered to an account Early Access bars
+-- (decision 2: any Early Access ever, or a list place that is not excluded); after-early-access is no longer answered.
 -- ---------------------------------------------------------------------------
 create or replace function public.get_my_entitlement() returns jsonb
 language plpgsql
@@ -234,7 +241,7 @@ begin
     when v_trial.id is not null then
       case when v_trial.revoked_at is null and v_trial.starts_at <= now() and v_trial.ends_at > now()
         then 'active' else 'ended' end
-    when private.discovery_had_early_access(v_user_id) then 'not-offered'
+    when private.discovery_early_access_bars(v_user_id) then 'not-offered'
     else 'available' end;
 
   return jsonb_build_object(
@@ -271,7 +278,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Privileges. create or replace keeps those of activate_discovery_pass() and get_my_entitlement().
 -- ---------------------------------------------------------------------------
-revoke all on function private.discovery_had_early_access(uuid), private.discovery_claim_keys_sound(jsonb),
+revoke all on function private.discovery_early_access_bars(uuid), private.discovery_claim_keys_sound(jsonb),
   public.discovery_pass_eligibility(uuid, jsonb)
   from public, anon, authenticated, service_role;
 grant execute on function public.discovery_pass_eligibility(uuid, jsonb) to service_role;
