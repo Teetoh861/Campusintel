@@ -565,6 +565,36 @@ select is((select count(*)::integer from private.entitlement_events where event 
   'each revocation is audited against the grant''s owner');
 select is((select array_agg(duplicate_of::text order by email) from private.early_access_members where email in ('m5-one@example.test', 'm5-four@example.test')),
   array['71000000-0000-4000-8000-000000000023', '71000000-0000-4000-8000-000000000022'], 'the members point at their new roots');
+-- M6: exclude, include and clear-duplicate audit against the member's claimed account, which after an Auth email change
+-- no longer carries the list email, so no account of the list email exists to lock. The claimed account is locked in the
+-- account pass, before the member row, or the audit row would reach its auth row after the member-row lock.
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now() - interval '40 days',
+  '{"provider":"email","providers":["email"]}', '{}', now() - interval '40 days', now()
+from (values ('61000000-0000-4000-8000-000000000025', 'm6-five-moved@example.test'),
+  ('61000000-0000-4000-8000-000000000026', 'm6-six-moved@example.test'),
+  ('61000000-0000-4000-8000-000000000027', 'm6-seven-moved@example.test')) m6_users(id, email);
+insert into private.early_access_members (id, email, full_name, joined_at, source, batch, added_by, claimed_at, claimed_by)
+select ('71000000-0000-4000-8000-0000000000' || n)::uuid, 'm6-' || name || '@example.test', 'Moved Person',
+  now() - interval '40 days', 'import', 'm6', 'test', now() - interval '2 days', ('61000000-0000-4000-8000-0000000000' || n)::uuid
+from (values ('25', 'five'), ('26', 'six'), ('27', 'seven')) m6_members(n, name);
+select is((select array_agg(pg_temp.account_locked(id) order by id) from auth.users where email like 'm6-%@example.test'),
+  array[false, false, false], 'before the changes, none of the claimed accounts is locked here');
+set local role service_role;
+select is(public.admin_change_early_access_member('m6-five@example.test', 'exclude', null, 'ops', 'moved person'),
+  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":0}'::jsonb, 'exclude on the list email changes the member');
+select is(public.admin_change_early_access_member('m6-six@example.test', 'include', null, 'ops', 'moved person'),
+  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":0}'::jsonb,
+  'include on the list email changes the member; no account carries that email, so nothing is enrolled');
+select is(public.admin_change_early_access_member('m6-seven@example.test', 'clear-duplicate', null, 'ops', 'moved person'),
+  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":0}'::jsonb, 'clear-duplicate on the list email changes the member');
+reset role;
+select is((select array_agg(pg_temp.account_locked(id) order by id) from auth.users where email like 'm6-%@example.test'),
+  array[true, true, true], 'each change locked the claimed account it audits against, although it carries another email');
+select is((select count(*)::integer from private.entitlement_events where event like 'operator.early-access-%'
+  and user_id in ('61000000-0000-4000-8000-000000000025', '61000000-0000-4000-8000-000000000026', '61000000-0000-4000-8000-000000000027')), 3,
+  'each change is audited against the claimed account');
 -- Expiry: the month ends on its own date and is never renewed.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access';
