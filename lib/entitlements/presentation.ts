@@ -40,7 +40,8 @@ export function trialLabel(summary: EntitlementSummary): string {
  * What a surface may say about the student's trial, from their own grant rather than from what the database could
  * issue: `policy` names the grant they actually hold (a Discovery Pass, a seven-day trial issued before the pass, or
  * null when there is none or the plan could not be read), and `passAvailable` says whether a pass can still be
- * started from Plan & Access (the database offers one and this account has not had its trial).
+ * started from Plan & Access (the database offers one, this account has not had its trial, and the server's eligibility
+ * read said yes). Nothing ever says why a pass is not available.
  */
 export type TrialWording = { policy: TrialPolicy | null; passAvailable: boolean }
 
@@ -49,7 +50,11 @@ export const NEUTRAL_TRIAL_WORDING: TrialWording = Object.freeze({ policy: null,
 
 export function trialWording(summary: EntitlementSummary | null | undefined): TrialWording {
   if (summary == null) return NEUTRAL_TRIAL_WORDING
-  return { policy: summary.trial.policy, passAvailable: discoveryOffered(summary) && summary.trial.status === 'available' }
+  return { policy: summary.trial.policy, passAvailable: passOfferable(summary) }
+}
+
+function passOfferable(summary: EntitlementSummary): boolean {
+  return discoveryOffered(summary) && summary.trial.status === 'available' && summary.discovery_eligible
 }
 
 /** The name of a trial grant in running copy ("your …"): accurate for the grant held, neutral when unknown. */
@@ -116,7 +121,7 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     }
     return null
   }
-  if (trial.status === 'available' && discoveryOffered(summary)) {
+  if (passOfferable(summary) && discoveryOffered(summary)) {
     return { id: 'trial-available', tone: 'info', title: 'Preview your department courses',
       body: `A free ${summary.trial_hours}-hour ${DISCOVERY_PASS_LABEL} includes one full ` +
         `${summary.discovery.cbt_questions}-question CBT exam and one complete study guide topic, from courses you ` +

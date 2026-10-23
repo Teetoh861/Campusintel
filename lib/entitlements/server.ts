@@ -1,5 +1,6 @@
 // lib/entitlements/server.ts — Server reads of the student's entitlement and the verified activation entry point.
-// get_my_entitlement() also enrolls an eligible Early Access member the database has not yet enrolled.
+// get_my_entitlement() also enrolls an eligible Early Access member the database has not yet enrolled. Whether a
+// Discovery Pass may be offered at all is read here too, before any page renders, and fails closed.
 // Reads use the student's own cookie-bound client; the activation write is a service-role function given the verified
 // session id, so the database derives the student itself (the same contract as AI practice and quiz attempts).
 import 'server-only'
@@ -14,8 +15,8 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 import { claimHashes, readClaimHashKeys } from './claim-hash'
-import { entitlementCommandSchema, entitlementSummarySchema } from './contract'
-import { activationRow, executeEntitlementCommand } from './service'
+import { discoveryOffered, entitlementCommandSchema, entitlementSummarySchema } from './contract'
+import { activationRow, eligibilityRow, executeEntitlementCommand } from './service'
 import type { ClaimKeys } from './claim-hash'
 import type { CourseAccess, EntitlementResult, EntitlementSummary } from './contract'
 import type { EntitlementEnv } from './service'
@@ -35,13 +36,49 @@ export type EntitlementRead =
   | { status: 'ok'; entitlement: EntitlementSummary }
   | { status: 'signed-out' | 'unavailable' }
 
+function createServiceRoleClient() {
+  // Server-only client for the service-role entitlement functions; mirrors lib/auth/rate-limit.ts.
+  return createServiceClient(getSupabaseConfig().url, getAuthSecretKey(), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  })
+}
+
+/**
+ * Whether this student may be offered a Discovery Pass: the same rules activation applies (one pass per account, one
+ * per confirmed address within the retention period, never after any Early Access, a key configuration that can
+ * verify every claim), read without a lock. Missing keys, a session that cannot be verified, an error or a malformed
+ * answer all mean false: no offer is shown that activation might refuse.
+ */
+async function readDiscoveryEligibility(client: StudentClient): Promise<boolean> {
+  const keys = readClaimHashKeys()
+  if (keys === null) return false
+  try {
+    const [{ data: userData, error: userError }, { data: claimsData, error: claimsError }] =
+      await Promise.all([client.auth.getUser(), client.auth.getClaims()])
+    const user = userData?.user
+    const claims = claimsData?.claims
+    if (userError || claimsError || !user?.email || claims?.sub !== user.id || typeof claims.session_id !== 'string'
+      || !claims.session_id) return false
+    const { data, error } = await createServiceRoleClient().rpc('discovery_pass_eligibility', {
+      p_session_id: claims.session_id, p_claim_hashes: claimHashes(keys, user.email) })
+    const parsed = eligibilityRow.safeParse(data)
+    return !error && parsed.success && parsed.data.eligible
+  } catch {
+    return false
+  }
+}
+
 /** The verified student's entitlement, read on the same client as the content it decides. */
 export async function readEntitlementForVerifiedStudent(client: StudentClient): Promise<EntitlementRead> {
   try {
     const { data, error } = await client.rpc('get_my_entitlement')
     if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
     const parsed = entitlementSummarySchema.safeParse(data)
-    return parsed.success ? { status: 'ok', entitlement: parsed.data } : { status: 'unavailable' }
+    if (!parsed.success) return { status: 'unavailable' }
+    // Only a student the database could still give a pass is asked about; everyone else is simply not eligible.
+    const askable = discoveryOffered(parsed.data) && parsed.data.trial.status === 'available'
+    return { status: 'ok', entitlement: { ...parsed.data,
+      discovery_eligible: askable && await readDiscoveryEligibility(client) } }
   } catch {
     return { status: 'unavailable' }
   }
@@ -55,10 +92,7 @@ export function courseAccessFrom(read: EntitlementRead): CourseAccess {
 
 function createSupabaseEntitlementEnv(sessionId: string, email: string, address: string, keys: ClaimKeys):
   EntitlementEnv {
-  // Server-only client for the activation RPC; mirrors lib/auth/rate-limit.ts.
-  const service = createServiceClient(getSupabaseConfig().url, getAuthSecretKey(), {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  })
+  const service = createServiceRoleClient()
   return {
     async limit() {
       // The same purpose-separated buckets as the auth routes: the raw address and email never enter the database.

@@ -10,7 +10,7 @@ hosted activation. No hosted migration, SMS send, Anthropic call or deployment w
 | Plan | How it starts | Courses | AI practice |
 | --- | --- | --- | --- |
 | Free (every account) | Registration and email confirmation | Courses with `institutional_courses.is_free` (GST111, GST102, GST112, GST212) | None |
-| Discovery Pass (`source = 'trial'`, `trial_policy = 'discovery'`, since `20261021100000_discovery_pass.sql`) | One tap on Plan & Access by the signed-in student (`activate_discovery_pass`), once per account and once per confirmed email address; never while Early Access is active. No phone number, SMS or code | **A restricted sample, never full access.** For `discovery_hours` (72) on database time: one CBT exam of exactly `discovery_cbt_questions` (50) valid questions from one actively offered course the student picks. It opens only if that course's whole CBT duration fits before the pass ends, and is never shortened. Answers are saved as the student goes; at the database deadline the exam closes and is marked from the last sheet saved in time. Nothing sent after the deadline is marked, and `discovery_cbt_grace_seconds` (120) only replays an already marked result. Plus one complete study-guide topic the student picks from one actively offered course. Every other topic stays locked. No theory preview. Nothing renews | One accepted upload (`discovery_ai_uploads`, 1, enforced when an upload becomes ready, however many were reserved; refused files cost nothing) of at most `discovery_ai_source_chars` (20,000) characters. Only that upload can use the pass. `discovery_ai_generations` (1) delivered set of exactly five valid questions; a short or malformed set is a failed attempt and is not charged. At most `discovery_ai_attempts` (3) provider attempts, failed ones included |
+| Discovery Pass (`source = 'trial'`, `trial_policy = 'discovery'`, since `20261021100000_discovery_pass.sql`) | One tap on Plan & Access by the signed-in student (`activate_discovery_pass`), once per account and once per confirmed email address (for 5 years); never for an account that has ever had Early Access. Offered only to students who are eligible, decided on the server before render. No phone number, SMS or code | **A restricted sample, never full access.** For `discovery_hours` (72) on database time: one CBT exam of exactly `discovery_cbt_questions` (50) valid questions from one actively offered course the student picks. It opens only if that course's whole CBT duration fits before the pass ends, and is never shortened. Answers are saved as the student goes; at the database deadline the exam closes and is marked from the last sheet saved in time. Nothing sent after the deadline is marked, and `discovery_cbt_grace_seconds` (120) only replays an already marked result. Plus one complete study-guide topic the student picks from one actively offered course. Every other topic stays locked. No theory preview. Nothing renews | One accepted upload (`discovery_ai_uploads`, 1, enforced when an upload becomes ready, however many were reserved; refused files cost nothing) of at most `discovery_ai_source_chars` (20,000) characters. Only that upload can use the pass. `discovery_ai_generations` (1) delivered set of exactly five valid questions; a short or malformed set is a failed attempt and is not charged. At most `discovery_ai_attempts` (3) provider attempts, failed ones included |
 | Seven-day trial (`source = 'trial'`, `trial_policy = 'seven-day'`) | Issued before `20261021100000`; no new ones | Every course until its own original end | Its original allowance under the shared AI rules |
 | Early Access | **Automatic**, once the founder activates the actual public launch | Every course for one calendar month from the student's own enrollment | No per-student cap; global and per-day guards still apply |
 | Operator grant | `scripts/entitlements/ops.cjs grant` | Every course for the stated days | None (course access only) |
@@ -20,19 +20,39 @@ AI units never closes courses. Revoking or expiring any grant ends its course ac
 
 ## Discovery Pass activation: one click, one per account
 
-A signed-in student with a confirmed email taps **Start my Discovery Pass** on Plan & Access. The route verifies the
-session and page continuity, applies the request limit, and calls `activate_discovery_pass(session_id)` with the
-service role. The database, under the same per-account lock Early Access enrollment and previews take:
+A signed-in, eligible student taps **Start my Discovery Pass** on Plan & Access and confirms: "Start your 72-hour
+Discovery Pass now? It can be used only once." (**Start now** / **Not now**; the hours come from the database). The
+route verifies the session and page continuity, applies the request limit, and calls
+`activate_discovery_pass(session_id, claim_hashes)` with the service role. The database, under the same per-account
+lock Early Access enrollment and previews take:
 
 - refuses an account that already has a trial grant of any kind, active, ended or revoked (`already-activated`, a
   harmless replay for a double tap or a lost response);
-- refuses while Early Access is active (`early-access-active`, with the date the pass opens) or, after it, when
-  `trial_after_early_access` is false (`trial-not-offered`);
+- refuses while Early Access is active (`early-access-active`) and, from `20261023120000_discovery_eligibility.sql`,
+  for any account that has ever had Early Access (`trial-not-offered`): an `early_access` grant in any state (active,
+  ended or revoked), or a claimed list entry for the account's confirmed, normalised email, which covers an account
+  deleted and registered again. `trial_after_early_access` is retired: pinned to false and no longer read;
 - refuses a confirmed email address that has started a pass on any account, including one since deleted, within the
-  claim retention period (`already-claimed`, with the retention in months; see "Email claims" below);
+  claim retention period (`already-claimed`; see "Email claims" below);
 - refuses once the platform-wide guard for the UTC day is reached (`capacity`), when the owner has set one;
 - otherwise writes the grant with start and end from its own clock (`discovery_hours`), the fixed AI allowance
   (`discovery_ai_generations`), the claim row and the `discovery.activated` audit event, all in one transaction.
+
+Every refusal for this account (`already-claimed`, `trial-not-offered`, `early-access-active`) shows the student
+exactly: "Discovery Pass isn't available on this account. Free GST courses are still open to you." No email, period
+or Early Access wording is shown as a reason. The database still sends `retention_months` and the
+`early-access-active` state for application instances built before this change; the current application never shows
+either.
+
+### Eligibility before render
+
+Pages never offer a pass the database would refuse. `lib/entitlements/server.ts` (`readEntitlementForVerifiedStudent`)
+calls `discovery_pass_eligibility(session_id, claim_hashes)` with the service role whenever the plan says a pass could
+still be started. It applies the activation rules above (trial grant, Early Access history, key configuration, live
+email claim) without a lock, a write or key registration, and answers only `{eligible}`. A student who is not eligible
+sees normal free GST access: no offer on Plan & Access, the dashboard, My Courses, course, preview or AI practice
+pages, and no explanation. Missing `ENTITLEMENT_CLAIM_HASH_KEYS`, a session that cannot be verified, an error or a
+malformed answer all count as not eligible (fail closed). Activation stays authoritative.
 
 **What this does not guarantee.** Without phone verification there is no per-person identity: one person with several
 confirmed email addresses can start several accounts and several passes. The database enforces one pass per account
@@ -46,7 +66,7 @@ protections are deliberately proportionate: no NIN, BVN, device fingerprint or p
 | Activation requests per account | `consume_discovery_activation_limit`, applied by the API route (account bucket keyed by the confirmed email, address bucket by the trusted requester address, both as HMACs) | 5 per 15 minutes, a hard limit |
 | Activation requests per requester address | same function, **monitoring only, never a barrier**: campus Wi-Fi puts a whole lecture hall behind one address. The address bucket counts only requests the account bucket admitted (so one noisy account adds at most its own five), and crossing the notice threshold writes one `discovery.origin-notice` audit row (bucket prefix and counts, no address) | notice at 60 admitted requests per 15 minutes |
 | Passes per account, ever | `entitlement_grants_one_trial_idx` | 1 |
-| Passes per confirmed email address within the claim retention period | `private.discovery_pass_claims` | 1 per 24 months (**proposed**) |
+| Passes per confirmed email address within the claim retention period | `private.discovery_pass_claims` | 1 per 5 years from activation (approved 23 October 2026) |
 | Activations per UTC day, platform-wide | `private.entitlement_policy.discovery_activations_per_day` | **off** (null). Set only with the founder's approval; it bounds how fast a farm of confirmed accounts could sample the banks, never what one student may do |
 | Registration | existing `REGISTER` limit and email confirmation | 3 per account per hour, 20 per address per hour |
 
@@ -87,9 +107,11 @@ The database checks the configuration on every activation and **fails closed** (
 `ops.cjs claim-keys` reports `live` (versions unexpired claims still reference, with counts and the last expiry) and
 `registered` (versions the ledger has been written with). No key, hash or check value is ever printed.
 
-Retention: each claim expires `discovery_claim_retention` (**24 months, proposed pending privacy approval**) after it
-is made; an expired claim blocks nothing even before it is removed, and `ops.cjs purge-claims` removes expired rows.
-Changing the policy value affects new claims only. No hosted database ever held the earlier unkeyed shape of this
+Retention (owner decision, 23 October 2026): each claim expires `discovery_claim_retention` (**5 years**) after the
+pass was activated, and survives account deletion. `20261023120000_discovery_eligibility.sql` re-dated every live claim
+to `claimed_at + 5 years`; an already expired claim is not revived. An expired claim blocks nothing even before it is
+removed. pg_cron purges expired rows daily (job `campusintell-discovery-claim-purge`, 03:17 UTC), and
+`ops.cjs purge-claims` does the same at once. Changing the policy value later affects new claims only. No hosted database ever held the earlier unkeyed shape of this
 table, so there are no rows to migrate; the migration is edited in place before its first hosted run.
 
 ### Exam answers are saved as each tab's changed questions
@@ -156,8 +178,11 @@ account is enrolled automatically, with its own full month starting then, when:
 Eligibility is the trusted list only, matched to the account's **confirmed** email (case-insensitive): a typed or
 unconfirmed address proves nothing. Each list entry, and each duplicate group (same phone at import, or grouped by an
 operator), enrolls once. An existing grant is never reset or extended by logins, imports, sweeps or repeat
-reconciliation. Enrollment closes `early_access_enrollment_days` after the actual launch (**28, provisional**). No
-phone code and no per-student AI cap apply during the month.
+reconciliation. Enrollment closes `early_access_enrollment_days` after the actual launch (**28, approved by the owner on 23 October
+2026**: the 28-day window is for claiming after launch, and the list itself closes at launch, as `early_access_status()`
+already enforces for members who join on or after the actual launch). The PROVISIONAL marking in
+`20261017100000_trial_entitlements.sql` is a SQL source comment, not a database `COMMENT`, so that migration is left
+untouched and the approval is recorded here. No phone code and no per-student AI cap apply during the month.
 
 Concurrency: every Early Access path takes locks in one total order: policy row; account rows and account locks
 (ascending, all before anything below, so a sweep locks every account of its batch first); import identity locks
@@ -200,12 +225,12 @@ already made; revoke it explicitly with `change-grant`.
 
 ## Pass and Early Access never overlap
 
-A student whose Early Access is active cannot start a pass (`early-access-active`, with the date the pass opens). The
-check runs under the same account lock as enrollment, so a race cannot start a pass during Early Access, and nothing is
-consumed: no pass eligibility and no claim. After Early Access ends the student may start a Discovery Pass with its
-full 72 hours, if `trial_after_early_access` is true (**provisional**). AI used during Early Access never counts
-against a later pass's fixed allowance. A pass that was already running when Early Access began (for example a
-pre-launch pass) continues.
+A student whose Early Access is active cannot start a pass (`early-access-active`), and since
+`20261023120000_discovery_eligibility.sql` neither can any account that has ever had Early Access (`trial-not-offered`;
+owner decision, 23 October 2026). The checks run under the same account lock as enrollment, so a race cannot start a
+pass during Early Access, and nothing is consumed: no claim is written. A pass that was already running when Early
+Access began (for example a pre-launch pass) continues, and AI used during Early Access never counts against its fixed
+allowance.
 
 ## AI follows the entitlement
 
@@ -243,7 +268,7 @@ transaction. The audit trail never contains phone numbers, email addresses or co
 | Generations disputed during a trial | `change-grant --grant <uuid> --action set-ai-units --units <n>` |
 | Someone eligible was not enrolled | `reconcile-early-access` (bounded batches until nothing remains) |
 | Two enrolled accounts are the same person | `member --email <later> --action mark-duplicate --of <earlier>` (keeps the canonical month, revokes the other) |
-| Change the enrollment window, planned date or post-Early-Access trial rule | `configure-early-access [--enrollment-days n] [--planned-launch ISO] [--trial-after-early-access true\|false]` |
+| Change the enrollment window or planned date | `configure-early-access [--enrollment-days n] [--planned-launch ISO]` (`--trial-after-early-access` is retired and refused) |
 
 The tool needs `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SECRET_KEY` (an `sb_secret_` key over HTTPS when hosted) and,
 for list imports with a phone column, `ENTITLEMENT_PHONE_HASH_KEY`. A student who believes a pass claim is wrong (for
@@ -254,8 +279,8 @@ example an address they never controlled) is handled with `grant`, never by free
 A deletion-scheduled account cannot start a pass or be enrolled in Early Access. Purging an account removes its
 grants (and so its AI) and its previews. The keyed pass claim (for its retention period), the used Early Access entry,
 any historical phone hash and the audit rows are kept without the account link, so deleting and re-registering the same
-address cannot start a second pass within the retention period, or a second month. The deletion form tells students
-this.
+address cannot start a second pass within the retention period (5 years from activation), or a second month. The
+deletion form tells students that a protected record is kept; it does not state the period.
 
 ## Owner decisions required before production
 
@@ -264,9 +289,10 @@ this.
    full access and AI allowance (audited as `trial.seven-day-preserved`). `get_my_entitlement()` still returns
    `trial_days` (the pass length in whole days) beside `trial_hours`, so older application instances keep working
    during a rollout.
-2. Early Access enrollment window: 28 days after the actual launch is provisional (`configure-early-access`).
-3. Trial after Early Access: currently allowed once Early Access ends (`trial_after_early_access`).
-4. Retention and deletion: keyed pass claims expire after 24 months (proposed, pending privacy approval). Historical
+2. Early Access enrollment window: **decided 23 October 2026**, 28 days after the actual launch for claiming; the list
+   closes at launch.
+3. Trial after Early Access: **decided 23 October 2026**, never (`trial_after_early_access` retired, kept false).
+4. Retention and deletion: keyed pass claims expire 5 years after activation (**decided 23 October 2026**). Historical
    phone hashes, imported list data (names, emails, phone hashes), used list entries and de-identified audit rows are
    currently kept indefinitely. A retention period and privacy-notice wording are needed.
 5. Whether to set the platform-wide daily activation guard (`discovery_activations_per_day`, off by default) and

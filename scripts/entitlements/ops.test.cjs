@@ -132,14 +132,16 @@ test('the actual public launch needs an explicit confirmation flag, an actor and
     { p_actor: 'founder', p_reason: 'public launch', p_limit: 200 }]])
 })
 
-test('policy changes keep the enrollment window and the post-Early-Access trial configurable', async () => {
+test('policy changes keep the enrollment window configurable; the post-Early-Access trial is retired', async () => {
   const h = harness(() => ({ state: 'changed' }))
-  await assert.rejects(h.run(['configure-early-access', '--trial-after-early-access', 'maybe', '--actor', 'o', '--reason', 'r']),
-    /true or false/)
-  await h.run(['configure-early-access', '--enrollment-days', '42', '--trial-after-early-access', 'false',
-    '--actor', 'owner', '--reason', 'final policy'])
+  for (const value of ['true', 'false', 'maybe']) {
+    await assert.rejects(h.run(['configure-early-access', '--trial-after-early-access', value, '--actor', 'o', '--reason', 'r']),
+      /retired/)
+  }
+  assert.equal(h.requests.length, 0, 'a retired flag never reaches the database')
+  await h.run(['configure-early-access', '--enrollment-days', '42', '--actor', 'owner', '--reason', 'final policy'])
   assert.deepEqual(h.requests.at(-1).body, { p_planned_launch_at: null, p_enrollment_days: 42,
-    p_trial_after_early_access: false, p_actor: 'owner', p_reason: 'final policy' })
+    p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'final policy' })
   await h.run(['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery sweep'])
   assert.equal(h.requests.at(-1).fn, 'admin_reconcile_early_access')
 })

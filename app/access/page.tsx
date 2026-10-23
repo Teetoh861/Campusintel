@@ -122,13 +122,19 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
         stay free for every student.</p>
     </section>
   }
-  const body: Record<EntitlementSummary['trial']['status'], ReactElement> = {
-    'available': <>
+  if (trial.status !== 'active' && trial.status !== 'ended') {
+    // Offered only to a student who can actually start one (decided on the server before render). Everyone else sees
+    // no offer and no reason; the plan above already says what they have.
+    if (discovery === null || !trialWording(entitlement).passAvailable) return null
+    return <section aria-labelledby="trial-heading" className="student-surface">
+      <h2 id="trial-heading" className="student-section-title">{DISCOVERY_PASS_LABEL}</h2>
       <p className="mt-2 text-sm text-student-text-secondary">Try department courses free for {entitlement.trial_hours} hours.
         It’s a sample, not full access: each item can be used once, and nothing renews.</p>
-      {discovery !== null && <PassIncludes discovery={discovery} />}
+      <PassIncludes discovery={discovery} />
       <div className="mt-3"><TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours} /></div>
-    </>,
+    </section>
+  }
+  const body: Record<'active' | 'ended', ReactElement> = {
     'active': <>
       <p className="mt-2 text-sm text-student-text-secondary">Active until
         {trial.ends_at !== null && <> {formatAccessDate(trial.ends_at)}</>}. Open a department course to use what’s left.</p>
@@ -137,11 +143,6 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
     'ended': <p className="mt-2 text-sm text-student-text-secondary">Your {sevenDay ? 'trial' : 'pass'} has ended
       {trial.ends_at !== null && <> ({formatAccessDate(trial.ends_at)})</>}. Each account can have one
       {sevenDay ? ' trial' : ' pass'}.</p>,
-    'after-early-access': <p className="mt-2 text-sm text-student-text-secondary">You already have full access through Early
-      Access, so your pass is kept for later. It becomes available
-      {trial.available_from !== null && <> on {formatAccessDate(trial.available_from)}</>}, when Early Access ends.</p>,
-    'not-offered': <p className="mt-2 text-sm text-student-text-secondary">The {DISCOVERY_PASS_LABEL} is not offered to
-      accounts that have had Early Access.</p>,
   }
   return <section aria-labelledby="trial-heading" className="student-surface">
     <h2 id="trial-heading" className="student-section-title">{sevenDay ? 'Free trial' : DISCOVERY_PASS_LABEL}</h2>

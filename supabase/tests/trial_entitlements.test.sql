@@ -24,8 +24,8 @@ select ok(not exists (select 1 from information_schema.columns where table_schem
   and exists (select 1 from information_schema.columns where table_schema = 'private'
     and table_name = 'discovery_pass_claims' and column_name = 'key_version'), 'claims are keyed and versioned hashes');
 select is((select jsonb_build_object('guard', discovery_activations_per_day, 'retention', discovery_claim_retention::text)
-  from private.entitlement_policy), '{"guard":null,"retention":"2 years"}'::jsonb,
-  'the daily activation guard is off until the owner sets it; claims are kept 24 months (proposed)');
+  from private.entitlement_policy), '{"guard":null,"retention":"5 years"}'::jsonb,
+  'the daily activation guard is off until the owner sets it; claims are kept 5 years (approved)');
 select ok(not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.proname = 'discovery_email_hash'), 'the unkeyed email hash is gone');
 select hasnt_table('private', 'trial_otp_challenges', 'the phone-code challenges are gone');
@@ -176,7 +176,7 @@ select is((select jsonb_build_object('source', source, 'policy', trial_policy, '
     'created_by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'),
   '{"source":"trial","policy":"discovery","ai_terms":"capped","ai_units":1,"created_by":"student"}'::jsonb,
   'the pass carries the one-set Discovery AI allowance from policy');
-select is((select jsonb_build_object('user', user_id, 'version', key_version, 'expires', expires_at = now() + interval '24 months')
+select is((select jsonb_build_object('user', user_id, 'version', key_version, 'expires', expires_at = now() + interval '5 years')
     from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
   '{"user":"61000000-0000-4000-8000-000000000001","version":1,"expires":true}'::jsonb,
   'the keyed claim of the confirmed email is recorded under its key version, for the retention period');
@@ -616,35 +616,35 @@ reset role;
 select is((select (result->>'state') || '/' || ((result->>'available_from')::timestamptz = (select ends_at
     from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access'))::text
   from outcome where step = 'h-activate'), 'early-access-active/true',
-  'H, on active Early Access, cannot start a pass, and is told when it opens');
+  'H, on active Early Access, cannot start a pass (the state older builds parse is kept)');
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial')
   and not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000011'),
   'nothing is consumed: no pass and no claim');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000011","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000011"}';
-select is((select (e->'trial'->>'status') || '/' || ((e->'trial'->>'available_from') is not null)::text
-  from public.get_my_entitlement() e), 'after-early-access/true', 'the summary says when the trial becomes available');
+select is((select (e->'trial'->>'status') || '/' || ((e->'trial'->>'available_from') is null)::text
+  from public.get_my_entitlement() e), 'not-offered/true', 'the summary offers no pass and promises no date');
 reset role;
--- Early Access ends: the pass is available (provisional policy) with its full 72 hours.
+-- Early Access ends: still no pass (owner decision, 23 Oct 2026), and nothing is consumed.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000011' and source = 'early_access';
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000011', pg_temp.claim('ent-h@example.test'))->>'state', 'activated',
-  'after Early Access ends the pass activates');
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000011', pg_temp.claim('ent-h@example.test'))->>'state', 'trial-not-offered',
+  'after Early Access ends the pass is still refused');
 reset role;
-select is((select ends_at from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial'), now() + interval '72 hours',
-  'with its full 72 hours');
--- The owner may decide Early Access members never get a trial afterwards.
-update private.entitlement_policy set trial_after_early_access = false;
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000011' and source = 'trial'),
+  'with no trial grant');
+-- The retired trial_after_early_access cannot reopen it.
+update private.entitlement_policy set trial_after_early_access = true;
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000004', pg_temp.claim('early-d@example.test')), '{"state":"trial-not-offered"}'::jsonb,
-  'the post-Early-Access pass can be switched off');
+  'the post-Early-Access pass stays off even if the retired flag is set');
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000004"}';
 select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'not-offered', 'and the summary says so');
 reset role;
-update private.entitlement_policy set trial_after_early_access = true;
+update private.entitlement_policy set trial_after_early_access = false;
 -- Use made during Early Access never draws down a trial's fixed allowance. G started a trial, then got Early Access.
 set local role service_role;
 select is(public.admin_add_early_access_member('ent-g@example.test', 'G Member', null, now() - interval '40 days',
@@ -851,35 +851,39 @@ insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('62000000-0000-4000-8000-000000000015', '61000000-0000-4000-8000-000000000015', now(), now());
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test')),
-  '{"state":"already-claimed","retention_months":24}'::jsonb,
-  'deleting and re-registering the same address does not buy a second pass, and the student is told for how long');
+  '{"state":"trial-not-offered"}'::jsonb,
+  'deleting and re-registering the same address does not buy a second pass: A''s list place was claimed (Early Access ever)');
 reset role;
-select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000010')
-  and exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000010'
-    and event = 'discovery.claim-refused'), 'the refusal is audited and nothing is granted');
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000010'),
+  'nothing is granted (the claim-refused audit of a never-Early-Access address is in discovery_pass.test.sql)');
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000015')
   and private.early_access_status('61000000-0000-4000-8000-000000000015')->>'status' = 'unavailable',
   'nor does re-registering free the Early Access month for the same confirmed email');
--- Retention: once the claim expires the address may start a pass again on a new account, and expired rows are purged.
-update private.discovery_pass_claims set claimed_at = now() - interval '25 months', expires_at = now() - interval '1 month'
+-- Retention: an expired claim no longer blocks by itself, but Early Access history still does; expired rows are purged.
+-- (A never-Early-Access address starting again after expiry is covered in discovery_pass.test.sql.)
+update private.discovery_pass_claims set claimed_at = now() - interval '61 months', expires_at = now() - interval '1 month'
   where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash';
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test'))->>'state',
-  'activated', 'an expired claim no longer blocks the address, even before it is purged');
+  'trial-not-offered', 'once the claim has expired, A''s Early Access history still refuses the pass');
 reset role;
-select is((select jsonb_build_object('user', user_id, 'fresh', expires_at = now() + interval '24 months')
+select is((select jsonb_build_object('user', user_id, 'expired', expires_at <= now())
     from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
-  '{"user":"61000000-0000-4000-8000-000000000010","fresh":true}'::jsonb, 'the new claim replaces the expired one');
-update private.discovery_pass_claims set claimed_at = now() - interval '25 months', expires_at = now() - interval '1 day'
+  '{"user":null,"expired":true}'::jsonb, 'and the expired claim is left as it was, not renewed');
+-- A live claim (written as activation writes one) that the purge must leave alone.
+insert into private.discovery_pass_claims (claim_hash, key_version, expires_at)
+  values (pg_temp.claim('ent-live@example.test') -> 0 ->> 'hash', 1, now() + interval '5 years');
+update private.discovery_pass_claims set claimed_at = now() - interval '61 months', expires_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000008';
 set local role service_role;
 select is((public.admin_entitlement_status('61000000-0000-4000-8000-000000000008')->>'discovery_claimed')::boolean, false,
   'an expired claim is not reported as a live claim');
-select is(public.purge_discovery_pass_claims(), 1, 'purging removes exactly the expired claims');
+select is(public.purge_discovery_pass_claims(), 2, 'purging removes exactly the expired claims (A''s and G''s)');
 select is(public.purge_discovery_pass_claims(), 0, 'and nothing else');
 reset role;
-select ok(not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000008')
-  and exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000010'),
+select ok(not exists (select 1 from private.discovery_pass_claims where user_id = '61000000-0000-4000-8000-000000000008'
+    or claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash')
+  and exists (select 1 from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-live@example.test') -> 0 ->> 'hash'),
   'live claims stay');
 set local role service_role;
 

@@ -833,6 +833,156 @@ select ok((select bool_and(r ? 'key_version' and r ? 'claims' and r ? 'last_expi
   from jsonb_array_elements(public.admin_discovery_claim_keys()->'live') r), 'and which versions live claims need, with counts only');
 reset role;
 
+-- 8c. Eligibility before render, Early Access history and five-year retention (owner decisions, 23 Oct 2026) ---------
+-- Keys 2 and 1 are live from 8b, so the configuration that verifies every claim is array[2, 1].
+select is((select jsonb_build_object('retention', discovery_claim_retention::text, 'trial_after_early_access',
+    trial_after_early_access) from private.entitlement_policy), '{"retention":"5 years","trial_after_early_access":false}'::jsonb,
+  'claims are kept five years and the post-Early-Access pass is retired');
+select ok(exists (select 1 from cron.job where jobname = 'campusintell-discovery-claim-purge' and active
+  and schedule = '17 3 * * *' and command = 'select public.purge_discovery_pass_claims()'),
+  'expired claims are purged daily, independently of traffic');
+select is((select count(*)::integer from unnest(array['anon', 'authenticated']) api_role
+  where has_function_privilege(api_role, 'public.discovery_pass_eligibility(uuid,jsonb)', 'EXECUTE'))
+  + (select count(*)::integer from unnest(array['private.discovery_had_early_access(uuid)',
+      'private.discovery_claim_keys_sound(jsonb)']) fn, unnest(array['anon', 'authenticated', 'service_role']) api_role
+    where has_function_privilege(api_role, fn, 'EXECUTE')), 0,
+  'eligibility is service-role only and its helpers are callable by no API role');
+select ok(has_function_privilege('service_role', 'public.discovery_pass_eligibility(uuid,jsonb)', 'EXECUTE'),
+  'the server can read eligibility');
+select is((select provolatile::text from pg_proc where oid = 'public.discovery_pass_eligibility(uuid,jsonb)'::regprocedure), 's',
+  'eligibility is STABLE, so it cannot write');
+select ok((select every(c.expires_at = c.claimed_at + interval '5 years') from private.discovery_pass_claims c),
+  'every claim expires five years after its activation');
+
+-- Fixtures. V: eligible. W: Early Access active. X: Early Access ended. Y: Early Access revoked. Z: registered with an
+-- address whose list place a since-deleted account claimed. K: scheduled for deletion.
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now(),
+  '{"provider":"email","providers":["email"]}', '{}', now(), now()
+from (values ('71000000-0000-4000-8000-000000000041', 'disc-v@example.test'),
+  ('71000000-0000-4000-8000-000000000042', 'disc-w@example.test'),
+  ('71000000-0000-4000-8000-000000000043', 'disc-x@example.test'),
+  ('71000000-0000-4000-8000-000000000044', 'disc-y@example.test'),
+  ('71000000-0000-4000-8000-000000000045', ' Disc-Z@Example.test'),
+  ('71000000-0000-4000-8000-000000000046', 'disc-k@example.test')) fixture_users(id, email);
+insert into auth.sessions (id, user_id, created_at, updated_at)
+select ('72000000-0000-4000-8000-0000000000' || n)::uuid, ('71000000-0000-4000-8000-0000000000' || n)::uuid, now(), now()
+from unnest(array[41, 42, 43, 44, 45, 46]) n;
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by, revoked_at, revoked_by,
+  revoke_reason) values
+  ('71000000-0000-4000-8000-000000000042', 'early_access', now() - interval '3 days', now() + interval '27 days', 'uncapped',
+    'test', null, null, null),
+  ('71000000-0000-4000-8000-000000000043', 'early_access', now() - interval '40 days', now() - interval '10 days',
+    'uncapped', 'test', null, null, null),
+  ('71000000-0000-4000-8000-000000000044', 'early_access', now() - interval '3 days', now() + interval '27 days', 'uncapped',
+    'test', now() - interval '1 day', 'ops', 'duplicate person');
+insert into private.early_access_members (email, full_name, joined_at, source, batch, added_by, claimed_at)
+  values ('disc-z@example.test', 'Z Member', now() - interval '60 days', 'import', 'google-form', 'test',
+    now() - interval '20 days');
+insert into private.account_deletion_jobs (user_id, requested_at, deadline, retry_at)
+  values ('71000000-0000-4000-8000-000000000046', now(), now() + interval '720 hours', now());
+
+set local role service_role;
+-- The positive case: an eligible student is offered a pass, and reading that changes nothing.
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000041', pg_temp.claim('disc-v@example.test', array[2, 1])),
+  '{"eligible":true}'::jsonb, 'V, who has never had a pass or Early Access, is eligible');
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000041', pg_temp.claim('disc-v@example.test', array[4, 2, 1])),
+  '{"eligible":true}'::jsonb, 'a version not yet registered is accepted by the read');
+reset role;
+select ok(not exists (select 1 from private.discovery_claim_keys where key_version = 4)
+  and not exists (select 1 from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000041')
+  and not exists (select 1 from private.discovery_pass_claims where user_id = '71000000-0000-4000-8000-000000000041'),
+  'but the read registers no key, writes no audit row and claims nothing');
+set local role service_role;
+-- Fail closed on every fault the activation would refuse, and on anything it cannot verify.
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000041', pg_temp.claim('disc-v@example.test', array[2])),
+  '{"eligible":false}'::jsonb, 'a configuration missing a version live claims need is not eligible (claim-key-missing)');
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000041', pg_temp.claim('disc-v@example.test', array[2, 1], array[1])),
+  '{"eligible":false}'::jsonb, 'nor one presenting a registered version under another secret (claim-key-replaced)');
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000041', '[]'::jsonb), '{"eligible":false}'::jsonb,
+  'malformed hashes are not eligible, without an error');
+select is(public.discovery_pass_eligibility(null, pg_temp.claim('disc-v@example.test', array[2, 1])), '{"eligible":false}'::jsonb,
+  'no session is not eligible');
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000099', pg_temp.claim('disc-v@example.test', array[2, 1])),
+  '{"eligible":false}'::jsonb, 'an unknown session is not eligible');
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000046', pg_temp.claim('disc-k@example.test', array[2, 1])),
+  '{"eligible":false}'::jsonb, 'an account scheduled for deletion is not eligible');
+-- One pass per account, and per address for five years.
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000001', pg_temp.claim('disc-p@example.test', array[2, 1])),
+  '{"eligible":false}'::jsonb, 'P, who has had a pass, is not eligible');
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test', array[2, 1])),
+  '{"eligible":false}'::jsonb, 'R, deleted and registered again with a claimed address, is not eligible');
+insert into outcome values ('r-refused', public.activate_discovery_pass('72000000-0000-4000-8000-000000000006',
+  pg_temp.claim('disc-r@example.test', array[2, 1])));
+reset role;
+select is((select result from outcome where step = 'r-refused'), '{"state":"already-claimed","retention_months":60}'::jsonb,
+  'activating there anyway is refused (retention_months is kept for builds from before this change; no page shows it)');
+select ok(exists (select 1 from private.entitlement_events where user_id = '71000000-0000-4000-8000-000000000006'
+    and event = 'discovery.claim-refused')
+  and not exists (select 1 from public.entitlement_grants where user_id = '71000000-0000-4000-8000-000000000006'),
+  'the refusal is audited and nothing is granted');
+-- Any Early Access ever: active, ended, revoked, or a list place claimed for this address by a deleted account.
+set local role service_role;
+insert into outcome select 'ea-' || label, jsonb_build_object(
+    'eligible', public.discovery_pass_eligibility(session_id, pg_temp.claim(email, array[2, 1]))->'eligible',
+    'activation', public.activate_discovery_pass(session_id, pg_temp.claim(email, array[2, 1]))->'state')
+  from (values ('active', '72000000-0000-4000-8000-000000000042'::uuid, 'disc-w@example.test'),
+    ('ended', '72000000-0000-4000-8000-000000000043'::uuid, 'disc-x@example.test'),
+    ('revoked', '72000000-0000-4000-8000-000000000044'::uuid, 'disc-y@example.test'),
+    ('claimed-list-place', '72000000-0000-4000-8000-000000000045'::uuid, 'disc-z@example.test')) cases(label, session_id, email);
+reset role;
+select is((select jsonb_object_agg(step, result) from outcome where step like 'ea-%'),
+  '{"ea-active":{"eligible":false,"activation":"early-access-active"},"ea-ended":{"eligible":false,"activation":"trial-not-offered"},"ea-revoked":{"eligible":false,"activation":"trial-not-offered"},"ea-claimed-list-place":{"eligible":false,"activation":"trial-not-offered"}}'::jsonb,
+  'no account that has ever had Early Access is eligible or can activate (the running month keeps its older state)');
+select ok(not exists (select 1 from public.entitlement_grants where source = 'trial' and user_id in
+    ('71000000-0000-4000-8000-000000000042', '71000000-0000-4000-8000-000000000043', '71000000-0000-4000-8000-000000000044',
+     '71000000-0000-4000-8000-000000000045'))
+  and not exists (select 1 from private.discovery_pass_claims where user_id in
+    ('71000000-0000-4000-8000-000000000042', '71000000-0000-4000-8000-000000000043', '71000000-0000-4000-8000-000000000044',
+     '71000000-0000-4000-8000-000000000045')), 'nothing is granted or claimed');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000044","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000044"}';
+select is((select (e->'trial'->>'status') || '/' || coalesce(e->'trial'->>'available_from', 'none') from public.get_my_entitlement() e),
+  'not-offered/none', 'the summary of a revoked Early Access account offers no pass and promises no date');
+set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000045","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000045"}';
+select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'not-offered',
+  'nor does the summary of an account whose address claimed Early Access before');
+set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000041","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000041"}';
+select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'available', 'while V''s summary offers one');
+reset role;
+
+-- Retention: five years from activation. Once R's claim expires the address is eligible again and may start a pass,
+-- and the purge removes exactly the expired claims.
+update private.discovery_pass_claims set claimed_at = now() - interval '61 months', expires_at = now() - interval '1 month'
+  where claim_hash = pg_temp.claim('disc-r@example.test') -> 0 ->> 'hash';
+set local role service_role;
+select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test', array[2, 1])),
+  '{"eligible":true}'::jsonb, 'an expired claim no longer blocks the address');
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test', array[2, 1]))->>'state',
+  'activated', 'so the re-registered account may start a pass, even before the purge');
+reset role;
+select is((select jsonb_build_object('user', user_id, 'version', key_version, 'fresh', expires_at = now() + interval '5 years')
+    from private.discovery_pass_claims where claim_hash = pg_temp.claim('disc-r@example.test', array[2, 1]) -> 0 ->> 'hash'),
+  '{"user":"71000000-0000-4000-8000-000000000006","version":2,"fresh":true}'::jsonb,
+  'its new claim runs five years from this activation');
+insert into private.discovery_pass_claims (claim_hash, key_version, claimed_at, expires_at)
+  values (pg_temp.claim('disc-old@example.test') -> 0 ->> 'hash', 1, now() - interval '61 months', now() - interval '1 month'),
+    (pg_temp.claim('disc-live@example.test') -> 0 ->> 'hash', 1, now() - interval '59 months', now() + interval '1 month');
+insert into outcome select 'live-before-purge', to_jsonb(count(*)) from private.discovery_pass_claims where expires_at > now();
+insert into outcome select 'expired-before-purge', to_jsonb(count(*)) from private.discovery_pass_claims where expires_at <= now();
+set local role service_role;
+insert into outcome values ('purged', to_jsonb(public.purge_discovery_pass_claims()));
+reset role;
+select is((select result from outcome where step = 'purged'), (select result from outcome where step = 'expired-before-purge'),
+  'the purge removes exactly the expired claims');
+select ok(not exists (select 1 from private.discovery_pass_claims where expires_at <= now()
+    or claim_hash = pg_temp.claim('disc-old@example.test') -> 0 ->> 'hash'), 'including one five years and a month old');
+select is((select count(*)::integer from private.discovery_pass_claims),
+  (select (result #>> '{}')::integer from outcome where step = 'live-before-purge'), 'and every live claim stays');
+select ok(exists (select 1 from private.discovery_pass_claims where claim_hash = pg_temp.claim('disc-live@example.test') -> 0 ->> 'hash'),
+  'including one a month short of five years');
+
 -- 9. AI on a pass: one accepted upload, one delivered set of five, bounded attempts and text -------------------------------------
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
