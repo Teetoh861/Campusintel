@@ -140,7 +140,7 @@ select throws_ok($$ select * from public.read_published_managed_content('4000000
   'CI403', 'Course access requires an active plan', 'a department course is locked on the free tier');
 select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000001') $$,
   'CI403', null, 'a shared course is not a free course: shared ENT211 stays locked');
-select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000005') $$,
+select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000010') $$,
   'CI403', null, 'a repository-only course has no free flag and stays locked');
 select is((select jsonb_build_object('tier', e->>'tier', 'trial', e->'trial'->>'status', 'early', e->'early_access'->>'status')
   from public.get_my_entitlement() e), '{"tier":"free","trial":"available","early":"not-listed"}'::jsonb,

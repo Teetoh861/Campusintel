@@ -25,28 +25,28 @@ select is(
 
 select is(
   (select count(*)::int from public.institutional_courses),
-  101,
-  'direct upgrade installs 101 institutional catalogue identities'
+  154,
+  'direct upgrade installs 154 institutional catalogue identities'
 );
 
 select is(
   (select count(*)::int from public.institutional_courses
     where repository_course_id is not null),
-  11,
-  'direct upgrade installs exactly eleven confirmed content links'
+  14,
+  'direct upgrade installs exactly fourteen confirmed content links'
 );
 
 select is(
   (select count(*)::int from public.institutional_courses
     where repository_course_id is null),
-  90,
-  'direct upgrade permits ninety institutional identities without content'
+  140,
+  'direct upgrade permits 140 institutional identities without content'
 );
 
 select is(
   (select count(*)::int from public.course_applicability),
-  196,
-  'direct upgrade replaces the content-limited seed with 196 confirmed catalogue rows'
+  267,
+  'direct upgrade replaces the content-limited seed with 267 confirmed catalogue rows'
 );
 
 select is(
