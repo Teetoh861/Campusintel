@@ -100,3 +100,58 @@ export async function getPublishedManagedCourse(
     return { status: 'unavailable' }
   }
 }
+
+const bankSizeRow = z.object({ course_id: z.string().uuid(), bank_size: z.number().int().nonnegative() }).strict()
+const SUMMARY_MAX_COURSES = 200
+
+/** One course's practice bank size, or why it could not be read. */
+export type CbtBankSize = number | 'locked' | 'unavailable'
+export type CbtBankSizesResult = { status: 'ok'; sizes: Map<string, CbtBankSize> } | { status: 'signed-out' }
+
+async function readBankSizes(client: AccountClient, courseIds: ReadonlyArray<string>):
+  Promise<{ status: 'ok'; sizes: Map<string, number> } | { status: 'signed-out' | 'locked' | 'unavailable' }> {
+  const { data, error } = await client.rpc('published_cbt_summary', { p_course_ids: [...courseIds] })
+  if (error) {
+    return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out'
+      : error.code === COURSE_LOCKED_CODE ? 'locked' : 'unavailable' }
+  }
+  const parsed = bankSizeRow.array().safeParse(data)
+  if (!parsed.success) return { status: 'unavailable' }
+  const sizes = new Map(parsed.data.map(row => [row.course_id, row.bank_size]))
+  return courseIds.every(id => sizes.has(id)) ? { status: 'ok', sizes } : { status: 'unavailable' }
+}
+
+/** Practice bank sizes for the listed readable courses, in one read through the count-only summary
+ * (published_cbt_summary): never a question. The summary refuses the whole list (CI403) when any course is no longer
+ * readable, so a plan that ends mid-request falls back to one read per course and marks only those courses locked.
+ * Do not pass a service-role client here.
+ */
+export async function getPublishedCbtBankSizesWithVerifiedClient(
+  client: AccountClient, courseIds: ReadonlyArray<string>,
+): Promise<CbtBankSizesResult> {
+  const ids = [...new Set(courseIds)]
+  const sizes = new Map<string, CbtBankSize>()
+  if (ids.length === 0) return { status: 'ok', sizes }
+  if (!isStudentAuthEnabled() || ids.length > SUMMARY_MAX_COURSES || ids.some(id => !z.string().uuid().safeParse(id).success)) {
+    for (const id of ids) sizes.set(id, 'unavailable')
+    return { status: 'ok', sizes }
+  }
+  try {
+    const all = await readBankSizes(client, ids)
+    if (all.status === 'signed-out') return { status: 'signed-out' }
+    if (all.status === 'ok') return { status: 'ok', sizes: new Map(all.sizes) }
+    if (all.status === 'unavailable' || ids.length === 1) {
+      for (const id of ids) sizes.set(id, all.status)
+      return { status: 'ok', sizes }
+    }
+    const each = await Promise.all(ids.map(id => readBankSizes(client, [id])))
+    for (const [index, one] of each.entries()) {
+      if (one.status === 'signed-out') return { status: 'signed-out' }
+      sizes.set(ids[index]!, one.status === 'ok' ? one.sizes.get(ids[index]!)! : one.status)
+    }
+    return { status: 'ok', sizes }
+  } catch {
+    for (const id of ids) sizes.set(id, 'unavailable')
+    return { status: 'ok', sizes }
+  }
+}

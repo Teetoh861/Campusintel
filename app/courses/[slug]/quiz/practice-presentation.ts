@@ -9,16 +9,29 @@ export const PRACTICE_COPY = {
   notBuiltBody: 'Check the course page for other study materials, or request the material you need.',
   temporaryBody: 'We couldn’t load the practice questions just now. Your saved results are unaffected.',
   loading: 'Loading practice.',
-  leaveTitle: 'Leave practice?',
-  leaveBody: 'This attempt will end. It can’t be resumed, and your answers won’t be submitted.',
+  starting: 'Starting…',
+  startFailedTitle: 'We couldn’t start your practice.',
+  startFailedBody: 'Check your connection and try again.',
+  changedTitle: 'Your practice details have changed.',
+  changedBody: 'Review them and confirm you’re ready to start.',
+  // Exit never ends the attempt: the timer is the server's and keeps running.
+  exitTitle: 'Exit practice?',
+  exitSaved: 'Your answers are saved and the timer keeps running. Come back to this page before time runs out to continue.',
+  exitNothing: 'The timer keeps running. Come back to this page before time runs out to continue.',
+  exitSaving: 'Some answers are still saving on this device. The timer keeps running — come back to this page before time runs out to continue.',
   submitTitle: 'Submit practice?',
   submitBody: 'Submitting ends this attempt. You won’t be able to change your answers.',
+  submitPending: 'Your latest answers will be sent with your submission.',
+  resumeTitle: 'You have a practice attempt in progress',
+  resumeAction: 'Continue practice',
+  timeUp: 'Time is up. Getting your result…',
+  timeUpOffline: 'Time is up. We’ll show your result as soon as you’re back online.',
   timedOutTitle: 'Time is up. Your attempt has been submitted.',
-  timedOutBody: 'Questions you hadn’t answered are counted as missed.',
-  saveFailedTitle: 'This result couldn’t be saved.',
-  saveFailedBody: 'Your score and answer review are still available on this page until you leave it.',
-  saving: 'Saving your result.',
+  timedOutBody: 'Only answers saved before time ran out count. Unanswered questions count as missed.',
+  unsentAtDeadline: 'Some answers on this device didn’t reach us before time ran out, so they weren’t counted.',
   saved: 'Result saved to your account.',
+  lastResult: 'See your last result',
+  resultMissingTitle: 'This practice result isn’t available.',
   bandNote: 'Practice feedback for this attempt only. Not an official grade.',
 } as const
 
@@ -106,4 +119,35 @@ export function minutesUsed(durationSeconds: number, secondsLeft: number): numbe
 export const OPTION_LETTERS = 'ABCDEFGHIJ'
 export function optionLetter(index: number): string {
   return OPTION_LETTERS[index] ?? String(index + 1)
+}
+
+/** What the attempt screen says about time and this tab's answers: one line, and never "saved" before the server
+ * confirmed this tab's latest change. Earlier conditions win. */
+export function saveLineFor(state: {
+  timeUp: boolean; submitFailing: boolean; refusal: string | null; clockSynced: boolean; clockFailures: number
+  save: 'saved' | 'saving' | 'unsaved' | 'failed' | 'closed' | null; answered: number
+}): { text: string; retry: boolean } | null {
+  if (state.timeUp) return { text: state.submitFailing ? PRACTICE_COPY.timeUpOffline : PRACTICE_COPY.timeUp, retry: false }
+  if (state.refusal !== null) return { text: state.refusal, retry: false }
+  // A submission that did not go through with time left: what the server confirmed stays saved, the rest stays here.
+  if (state.submitFailing) {
+    return { text: state.save === 'saved' || state.save === null
+      ? 'Your answers are saved. Submission didn’t go through — try again.'
+      : 'Your answers are kept on this device. Submission didn’t go through — try again.', retry: false }
+  }
+  if (state.save === 'failed') return { text: 'Your answers couldn’t be saved. They’re still on this device.', retry: true }
+  if (!state.clockSynced) {
+    return { text: state.clockFailures > 0 ? 'Reconnecting… Answers can’t be changed until the connection is back.'
+      : 'Checking the time left…', retry: false }
+  }
+  if (state.save === 'saving') return { text: 'Saving…', retry: false }
+  if (state.save === 'unsaved') return { text: 'Not saved yet. We’ll keep trying.', retry: false }
+  if (state.save === 'saved' && state.answered > 0) return { text: 'All answers saved', retry: false }
+  return null
+}
+
+/** The Exit dialog's promise: "saved" only when the server confirmed every answer this tab gave. */
+export function exitBodyFor(save: 'saved' | 'saving' | 'unsaved' | 'failed' | 'closed' | null, answered: number): string {
+  if (save === 'saved' || save === null) return answered > 0 ? PRACTICE_COPY.exitSaved : PRACTICE_COPY.exitNothing
+  return PRACTICE_COPY.exitSaving
 }

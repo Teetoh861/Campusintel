@@ -1,38 +1,20 @@
 // Shared types for the quiz client + its screens. Kept separate so the
 // presentational screens don't have to import QuizClient.
-import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
+import type { GradedQuestion, PracticeQuestion } from '@/lib/practice/contract'
 
-export type Screen = 'intro' | 'active' | 'results' | 'review'
+export type { GradedQuestion, PracticeQuestion }
+export type Screen = 'intro' | 'resume' | 'active' | 'results' | 'review'
 export type ReviewFilter = 'all' | 'to-review' | 'correct'
 export type ReviewStatus = 'correct' | 'incorrect' | 'unanswered'
-// Derived from the recorder: saved only once the finished attempt row is confirmed.
-export type SaveState = 'pending' | 'saved' | 'failed'
 
-// qIndex (position in the attempt set) -> selected option index (0-based)
+// qIndex (position in the attempt) -> selected option index (0-based)
 export type AnswersMap = Record<number, number>
 export type MarkedMap = Record<number, boolean>
 
-export type QuizCoreProps = {
-  continuityToken: string
-  courseCode: string
-  courseTitle: string
-  courseSlug: string
-  // Central canonical course route; the client never reconstructs it.
-  courseHref: string
-  courseContentKey: string
-  // Repository course UUID: the course selector the report backend validates.
-  repositoryCourseId: string
-  // Repository-only identity is presented honestly, never as an institutional owner.
-  repositoryOnly: boolean
-  sections: ReadonlyArray<string>
-  // Full bank; QuizClient samples and freezes an attempt before answer entry.
-  questions: ReadonlyArray<ManagedQuizQuestion>
-  timerSeconds: number
-  maxQuestions: number
-  totalInBank: number
-}
+/** The brief a fresh start runs under: the server's question count and time, never worked out in the browser. */
+export type PracticeBrief = { questionCount: number; durationSeconds: number }
 
-/** The exact item/revision a completed attempt can report, plus the attempt it ran in when that attempt was saved. */
+/** The exact item/revision a graded attempt can report, and the attempt it ran in. */
 export type ReportTarget = {
   courseId: string
   itemId: string
@@ -40,3 +22,6 @@ export type ReportTarget = {
   questionId: string
   attemptId: string | null
 }
+
+/** One line under the question about this tab's answers; never "saved" before the server confirmed it. */
+export type SaveLine = { text: string; retry: boolean } | null

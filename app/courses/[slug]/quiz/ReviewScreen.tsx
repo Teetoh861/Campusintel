@@ -11,9 +11,8 @@ import { studentAction } from '@/components/student/ui'
 import { useIsDesktop } from '@/components/ui/use-mobile'
 import { ReviewCard, reviewStatus } from './ReviewCard'
 import { practiceIdentity } from './practice-presentation'
-import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
 import type { ReturnFocus } from './focus-return'
-import type { AnswersMap, ReviewFilter } from './types'
+import type { GradedQuestion, ReviewFilter } from './types'
 import type { ReactElement } from 'react'
 
 export const REVIEW_PAGE_SIZE = { compact: 5, desktop: 10 } as const
@@ -23,8 +22,8 @@ type Props = {
   courseCode: string
   courseTitle: string
   repositoryOnly: boolean
-  questions: ReadonlyArray<ManagedQuizQuestion>
-  answers: AnswersMap
+  // The graded attempt's questions: correct options and explanations exist only once the server has graded it.
+  questions: ReadonlyArray<GradedQuestion>
   correctCount: number
   reported: Readonly<Record<string, true>>
   // The question index whose report dialog is open, or null: that exact item must stay mounted through any re-paging.
@@ -35,7 +34,7 @@ type Props = {
 
 /** Filter, page and disclosure live here, so leaving and re-entering review always starts at All, page 1, collapsed. */
 export function ReviewScreen(props: Props): ReactElement {
-  const { questions, answers, correctCount, reported, reporting } = props
+  const { questions, correctCount, reported, reporting } = props
   const [filter, setFilter] = useState<ReviewFilter>('all')
   const [page, setPage] = useState(1)
   // Expansion order, oldest first; desktop may hold several, narrower viewports keep only the most recent.
@@ -50,7 +49,7 @@ export function ReviewScreen(props: Props): ReactElement {
   const id = useId()
   const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
 
-  const items = questions.map((question, index) => ({ question, index, status: reviewStatus(question, answers[index]) }))
+  const items = questions.map((question, index) => ({ question, index, status: reviewStatus(question) }))
   const total = items.length
   const toReview = items.filter(item => item.status !== 'correct').length
   const filtered = items.filter(item => filter === 'all' ? true : filter === 'correct' ? item.status === 'correct' : item.status !== 'correct')
@@ -103,7 +102,7 @@ export function ReviewScreen(props: Props): ReactElement {
     </div> : <>
       <h2 ref={rangeHeading} tabIndex={-1} className="sr-only">{rangeLine}</h2>
       <ol className="student-practice-review">
-        {visible.map(item => <ReviewCard key={item.index} question={item.question} n={item.index + 1} your={answers[item.index]}
+        {visible.map(item => <ReviewCard key={item.index} question={item.question} n={item.index + 1}
           status={item.status} open={open.includes(item.index)} reported={Boolean(reported[item.question.questionId])}
           onToggle={() => toggle(item.index)} onReport={returnFocusTo => props.onReport(item.index, returnFocusTo)} />)}
       </ol>

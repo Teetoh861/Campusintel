@@ -1,480 +1,219 @@
-// QuizClient — the state machine for the Practice screens. Owns answers, marks, current index, timer, save state and
-// screen. Screen components stay presentational; this file is the single source of behaviour.
+// QuizClient — the Practice screens around one server-run attempt: the briefing, the resume card, the attempt itself
+// (ActiveAttempt), the result and the review. The server owns every attempt; this file only moves between screens.
+// A start names a fresh attempt id kept on this device until the server answers, so a lost response is retried with
+// the same id and never starts a second attempt. Every attempt has a reloadable URL (?attempt=<id>).
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { postPracticeCommand } from '@/lib/practice/client'
+import { ActiveAttempt } from './ActiveAttempt'
 import { IntroScreen } from './IntroScreen'
-import { QuestionScreen } from './QuestionScreen'
-import { ResultsScreen } from './ResultsScreen'
-import { ReviewScreen } from './ReviewScreen'
 import { ReportQuestionDialog } from './ReportQuestionDialog'
-import { sampleQuestionsBySection } from './sampleQuestions'
-import { createQuizAttemptRecorder } from './attemptRecording'
-import { createAssessmentClock } from './assessmentClock'
-import { loadFreshQuiz } from './liveBank'
-import { AssessmentConfirmation } from './AssessmentConfirmation'
+import { ResultsScreen } from './ResultsScreen'
+import { ResumeScreen } from './ResumeScreen'
+import { ReviewScreen } from './ReviewScreen'
 import { focusFirst } from './focus-return'
-import { LOW_TIME_SECONDS, PRACTICE_COPY, minutesUsed } from './practice-presentation'
-import type { ReactElement } from 'react'
+import { PRACTICE_COPY } from './practice-presentation'
+import { clearPendingStart, markResultSeen, readPendingStart, resultSeen, writePendingStart } from './practice-storage'
+import type { GradedAttempt, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
-import type { AnswersMap, MarkedMap, QuizCoreProps, ReportTarget, SaveState, Screen } from './types'
-import type { RecordingStatus } from './attemptRecording'
+import type { PendingStart } from './practice-storage'
+import type { PracticeBrief, ReportTarget } from './types'
+import type { ReactElement } from 'react'
 
-const TICK_INTERVAL_MS = 1000
-const HISTORY_GUARD_KEY = '__campusintelQuizGuard'
-const BANK_CHANGED_NOTICE = 'Your practice details have changed. Review them and confirm you’re ready to start.'
-const BANK_UNAVAILABLE_NOTICE = 'We couldn’t load your practice questions. Please try again.'
-const QUESTIONS_CHANGED_NOTICE = 'These questions have changed. Retake with new questions instead.'
-type Completion = 'submitted' | 'timed_out'
-type Finish = { reason: Completion; secondsLeft: number }
-type Report = { index: number; target: ReportTarget; questionNumber: number }
-// Where focus returns when an overlay closes: the invoker first, then the stable control its screen named.
+const START_TRIES = 3
+const START_RETRY_MS = 1500
 const NO_RETURN_FOCUS: ReturnFocus = []
-
-/** The recorder's status, read as this result's save state; only a confirmed finished row counts as saved. */
-function saveStateFrom(status: RecordingStatus | null): SaveState {
-  if (status === 'saved') return 'saved'
-  if (status === 'signed-out' || status === 'session-changed' || status === 'unavailable' || status === 'content-changed') return 'failed'
-  return 'pending'
+type Problem = { title: string; body: string }
+const PROBLEMS: Record<string, Problem> = {
+  'start-failed': { title: PRACTICE_COPY.startFailedTitle, body: PRACTICE_COPY.startFailedBody },
+  'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
+  'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
+  'locked': { title: 'You can’t start a new attempt right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
+  'signed-out': { title: 'You’ve been signed out.', body: 'Sign in again to continue.' },
+  'session-changed': { title: 'You signed in on another tab.', body: 'Refresh this page to continue.' },
 }
 
-/** Run the existing quiz screens against the current managed bank and pinned attempt. */
-export function QuizClient(props: QuizCoreProps): ReactElement {
-  const { questions: questionBank, timerSeconds, courseSlug, courseHref, courseContentKey, maxQuestions } = props
+export type QuizInitial =
+  | { kind: 'intro' }
+  | { kind: 'resume'; attemptId: string; answered: number; total: number; minutesLeft: number }
+  | { kind: 'open'; attempt: OpenAttempt; now: string }
+  // `latest`: the course's most recent graded attempt, shown in place of the briefing only if this device has not
+  // shown it yet (time ran out while away, or a submission's response was lost).
+  | { kind: 'graded'; attempt: GradedAttempt; latest: boolean }
 
-  const [screen, setScreen] = useState<Screen>('intro')
-  const [pendingStartIntent, setPendingStartIntent] = useState<'new' | 'redo'>('new')
-  const [briefing, setBriefing] = useState(() => ({
-    questionCount: Math.min(maxQuestions, questionBank.length),
-    sectionCount: new Set(questionBank.map(question => question.section)).size,
-    bankSize: props.totalInBank,
-    timerSeconds,
-    version: 0,
-  }))
-  const [questions, setQuestions] = useState<QuizCoreProps['questions']>([])
-  const [current, setCurrent] = useState(0)
-  const [answers, setAnswers] = useState<AnswersMap>({})
-  const [marked, setMarked] = useState<MarkedMap>({})
-  const [attemptDuration, setAttemptDuration] = useState(timerSeconds)
-  const [timeLeft, setTimeLeft] = useState(timerSeconds)
-  const [finish, setFinish] = useState<Finish>({ reason: 'submitted', secondsLeft: timerSeconds })
-  const [navOpen, setNavOpen] = useState(false)
-  const [confirmingSubmit, setConfirmingSubmit] = useState(false)
-  const [confirmingLeave, setConfirmingLeave] = useState(false)
-  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus | null>(null)
-  const [attemptId, setAttemptId] = useState<string | null>(null)
+type Props = {
+  continuityToken: string
+  courseCode: string
+  courseTitle: string
+  courseSlug: string
+  courseHref: string
+  repositoryOnly: boolean
+  // Repository course UUID: the course selector the report backend validates.
+  repositoryCourseId: string
+  // The server's brief for a fresh attempt; null when no new attempt may start now (access or bank).
+  brief: PracticeBrief | null
+  bankSize: number
+  lastResultHref: string | null
+  initial: QuizInitial
+}
+
+type View =
+  | { screen: 'intro' }
+  | { screen: 'resume' }
+  | { screen: 'active'; attempt: OpenAttempt; now: string }
+  | { screen: 'results' | 'review'; attempt: GradedAttempt; unsent: boolean }
+
+function initialView(initial: QuizInitial): View {
+  if (initial.kind === 'resume') return { screen: 'resume' }
+  if (initial.kind === 'open') return { screen: 'active', attempt: initial.attempt, now: initial.now }
+  if (initial.kind === 'graded') return { screen: 'results', attempt: initial.attempt, unsent: false }
+  return { screen: 'intro' }
+}
+
+export function QuizClient(props: Props): ReactElement | null {
+  const { continuityToken, courseSlug, initial } = props
+  const [view, setView] = useState<View>(() => initialView(initial))
+  const [brief, setBrief] = useState(props.brief)
+  const [bankSize, setBankSize] = useState(props.bankSize)
+  const [briefingVersion, setBriefingVersion] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<Problem | null>(null)
+  const [report, setReport] = useState<{ index: number; target: ReportTarget } | null>(null)
   const [reported, setReported] = useState<Readonly<Record<string, true>>>({})
-  const [report, setReport] = useState<Report | null>(null)
-  const [bankError, setBankError] = useState<string | null>(null)
-  const [loadingBank, setLoadingBank] = useState(false)
-  const [recorder] = useState(() => createQuizAttemptRecorder(props.continuityToken, setRecordingStatus))
-  const [clock] = useState(() => createAssessmentClock())
-  const screenRef = useRef<Screen>('intro')
-  const startingRef = useRef(false)
-  const disarmHistoryGuard = useRef<(restoreEntry?: boolean) => void>(() => {})
-  const submitReturnFocus = useRef<ReturnFocus>(NO_RETURN_FOCUS)
-  const leaveReturnFocus = useRef<ReturnFocus>(NO_RETURN_FOCUS)
   const reportReturnFocus = useRef<ReturnFocus>(NO_RETURN_FOCUS)
+  const starting = useRef(false)
 
-  const finishAttempt = useCallback((completion: Completion) => {
-    if (screenRef.current !== 'active') return
-    screenRef.current = 'results'
-    const secondsLeft = completion === 'timed_out' ? 0 : clock.read().secondsLeft
-    clock.stop()
-    recorder.finish(completion)
-    disarmHistoryGuard.current()
-    setFinish({ reason: completion, secondsLeft })
-    setConfirmingSubmit(false)
-    setConfirmingLeave(false)
-    setNavOpen(false)
-    setScreen('results')
-  }, [clock, recorder])
-
-  // Global chrome is hidden only while the active assessment is mounted.
+  // Global chrome is hidden only while an attempt is on screen.
   useEffect(() => {
-    document.body.setAttribute('data-screen', screen)
-    return () => {
-      document.body.removeAttribute('data-screen')
-    }
-  }, [screen])
+    document.body.setAttribute('data-screen', view.screen)
+    return () => { document.body.removeAttribute('data-screen') }
+  }, [view.screen])
 
-  // Sample a deadline, including when a suspended tab resumes. Callback count
-  // cannot extend the assessment. The screen transition makes expiry one-shot.
+  const show = useCallback((outcome: Extract<PracticeResult, { attempt: unknown }>) => {
+    const { attempt } = outcome
+    window.history.replaceState(null, '', `${window.location.pathname}?attempt=${attempt.id}`)
+    setProblem(null)
+    if (attempt.status === 'in_progress') setView({ screen: 'active', attempt, now: outcome.now })
+    else setView({ screen: 'results', attempt, unsent: false })
+  }, [])
+
+  // A result this device has already shown is not shown again in place of the briefing. Decided once per mount, before
+  // this mount marks it seen (effects may run twice), so the result is never replaced by the briefing it just showed.
+  const decided = useRef(false)
   useEffect(() => {
-    if (screen !== 'active') return
-    clock.start(attemptDuration)
-    const update = () => {
-      const reading = clock.read()
-      setTimeLeft(reading.secondsLeft)
-      if (reading.expiredNow) finishAttempt('timed_out')
+    if (decided.current) return
+    decided.current = true
+    if (initial.kind === 'graded' && initial.latest && props.brief !== null && resultSeen(initial.attempt.id)) {
+      setView({ screen: 'intro' })
     }
-    const whenVisible = () => { if (document.visibilityState === 'visible') update() }
-    update()
-    const id = setInterval(update, TICK_INTERVAL_MS)
-    document.addEventListener('visibilitychange', whenVisible)
-    window.addEventListener('focus', update)
-    window.addEventListener('pageshow', update)
-    return () => {
-      clearInterval(id)
-      clock.stop()
-      document.removeEventListener('visibilitychange', whenVisible)
-      window.removeEventListener('focus', update)
-      window.removeEventListener('pageshow', update)
-    }
-  }, [screen, clock, finishAttempt, attemptDuration])
-
+  }, [initial, props.brief])
   useEffect(() => {
-    if (recordingStatus !== 'content-changed' || screenRef.current !== 'active') return
-    screenRef.current = 'intro'
-    clock.stop()
-    disarmHistoryGuard.current()
-    setScreen('intro')
-    setBankError('These practice questions have changed. Please try starting again.')
-  }, [recordingStatus, clock])
+    if (view.screen === 'results' && decided.current) markResultSeen(view.attempt.id)
+  }, [view])
 
-  // Guard against accidentally losing an in-progress attempt. Only while the
-  // quiz is active do we arm refresh/close and client-side Back protection.
+  const begin = useCallback(async (pending: PendingStart) => {
+    if (starting.current) return
+    starting.current = true
+    setBusy(true)
+    setProblem(null)
+    writePendingStart(courseSlug, pending)
+    let outcome: PracticeResult = { status: 'unavailable' }
+    for (let tries = 0; tries < START_TRIES; tries += 1) {
+      outcome = await postPracticeCommand({ action: 'start', courseSlug, attemptId: pending.attemptId,
+        intent: pending.intent, redoOf: pending.redoOf, expected: pending.expected }, continuityToken)
+      if (outcome.status !== 'unavailable') break
+      await new Promise(resolve => setTimeout(resolve, START_RETRY_MS * (tries + 1)))
+    }
+    starting.current = false
+    setBusy(false)
+    // Unanswered: the same attempt id is kept, so trying again (or reloading) can only find this start, never a second.
+    if (outcome.status === 'unavailable') { setProblem(PROBLEMS['start-failed']!); return }
+    clearPendingStart(courseSlug)
+    if (outcome.status === 'ready' || outcome.status === 'in-progress' || outcome.status === 'graded') { show(outcome); return }
+    if (outcome.status === 'policy-changed') {
+      setBrief({ questionCount: outcome.questionCount, durationSeconds: outcome.durationSeconds })
+      setBankSize(outcome.bankSize)
+      setBriefingVersion(version => version + 1)
+      setView({ screen: 'intro' })
+    }
+    setProblem(PROBLEMS[outcome.status] ?? PROBLEMS['start-failed']!)
+  }, [courseSlug, continuityToken, show])
+
+  const start = useCallback((intent: 'new' | 'redo', redoOf: string | null, expected: PracticeBrief) => {
+    const kept = readPendingStart(courseSlug)
+    const same = kept !== null && kept.intent === intent && kept.redoOf === redoOf
+    void begin(same ? kept : { attemptId: crypto.randomUUID(), intent, redoOf, expected })
+  }, [courseSlug, begin])
+
+  // A start whose response was lost before a reload: ask for that same attempt instead of offering a new one.
   useEffect(() => {
-    if (screen !== 'active') return
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-
-    const sentinelState = {
-      ...(window.history.state ?? {}),
-      [HISTORY_GUARD_KEY]: true,
-    }
-    if (!window.history.state?.[HISTORY_GUARD_KEY]) {
-      window.history.pushState(sentinelState, '', window.location.href)
-    }
-
-    const removeListeners = () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      window.removeEventListener('popstate', handlePopState)
-    }
-
-    const leaveForCourse = () => {
-      removeListeners()
-      disarmHistoryGuard.current = () => {}
-      clock.stop()
-      window.location.replace(courseHref)
-    }
-
-    const handlePopState = () => {
-      const shouldLeave = window.confirm(`${PRACTICE_COPY.leaveTitle} ${PRACTICE_COPY.leaveBody}`)
-      if (shouldLeave) {
-        leaveForCourse()
-        return
-      }
-      window.history.pushState(sentinelState, '', window.location.href)
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    window.addEventListener('popstate', handlePopState)
-
-    disarmHistoryGuard.current = (restoreEntry = true) => {
-      removeListeners()
-      disarmHistoryGuard.current = () => {}
-      if (restoreEntry && window.history.state?.[HISTORY_GUARD_KEY]) {
-        window.history.back()
-      }
-    }
-
-    return () => {
-      removeListeners()
-      disarmHistoryGuard.current = () => {}
-    }
-  }, [screen, courseHref, clock])
-
-  const leaveAssessment = useCallback(() => {
-    if (screenRef.current !== 'active') return
-    clock.stop()
-    disarmHistoryGuard.current(false)
-    window.location.replace(courseHref)
-  }, [clock, courseHref])
-
-  const resetAttempt = useCallback((acceptedDuration: number) => {
-    clock.stop()
-    setAnswers({})
-    setMarked({})
-    setCurrent(0)
-    setAttemptDuration(acceptedDuration)
-    setTimeLeft(acceptedDuration)
-    setNavOpen(false)
-    setConfirmingSubmit(false)
-    setConfirmingLeave(false)
-    setReport(null)
-    setReported({})
-  }, [clock])
-
-  const startNewAttempt = useCallback(() => {
-    if (screenRef.current === 'active' || startingRef.current) return
-    setPendingStartIntent('new')
-    startingRef.current = true
-    setLoadingBank(true)
-    setBankError(null)
+    if (initial.kind !== 'intro' && !(initial.kind === 'graded' && initial.latest)) return
+    const kept = readPendingStart(courseSlug)
+    if (kept === null) return
     void (async () => {
-      const fresh = await loadFreshQuiz(courseSlug)
-      startingRef.current = false
-      setLoadingBank(false)
-      if (!fresh || screenRef.current === 'active') {
-        setBankError(BANK_UNAVAILABLE_NOTICE)
-        return
-      }
-      const questionCount = Math.min(fresh.maxQuestions, fresh.questions.length)
-      const sectionCount = new Set(fresh.questions.map(question => question.section)).size
-      if (questionCount !== briefing.questionCount || sectionCount !== briefing.sectionCount ||
-          fresh.timerSeconds !== briefing.timerSeconds) {
-        setBriefing(current => ({ questionCount, sectionCount, bankSize: fresh.bankSize,
-          timerSeconds: fresh.timerSeconds, version: current.version + 1 }))
-        screenRef.current = 'intro'
-        setScreen('intro')
-        setBankError(BANK_CHANGED_NOTICE)
-        return
-      }
-      const nextQuestions = sampleQuestionsBySection(fresh.questions, fresh.sections, fresh.maxQuestions)
-      screenRef.current = 'active'
-      resetAttempt(fresh.timerSeconds)
-      setQuestions(nextQuestions)
-      setAttemptId(recorder.begin(courseContentKey, nextQuestions))
-      setScreen('active')
+      const outcome = await postPracticeCommand({ action: 'attempt', attemptId: kept.attemptId }, continuityToken)
+      if (outcome.status === 'ready' || outcome.status === 'graded') { clearPendingStart(courseSlug); show(outcome) }
+      else if (outcome.status === 'not-found') clearPendingStart(courseSlug)
     })()
-  }, [courseSlug, resetAttempt, recorder, courseContentKey, briefing])
+  }, [initial, courseSlug, continuityToken, show])
 
-  const submit = useCallback(() => {
-    const reading = clock.read()
-    finishAttempt(reading.secondsLeft === 0 ? 'timed_out' : 'submitted')
-  }, [clock, finishAttempt])
+  const resume = useCallback(async () => {
+    if (initial.kind !== 'resume') return
+    setBusy(true)
+    setProblem(null)
+    const outcome = await postPracticeCommand({ action: 'attempt', attemptId: initial.attemptId }, continuityToken)
+    setBusy(false)
+    if (outcome.status === 'ready' || outcome.status === 'graded') show(outcome)
+    else setProblem(PROBLEMS[outcome.status] ?? PROBLEMS['start-failed']!)
+  }, [initial, continuityToken, show])
 
-  // Manual submit is gated behind a confirmation to prevent an accidental early
-  // submission. The buttons open the confirmation; its confirm calls the real
-  // submit() above. The timer auto-submit does NOT go through here.
-  const requestSubmit = useCallback((returnFocusTo: ReturnFocus = NO_RETURN_FOCUS) => {
-    submitReturnFocus.current = returnFocusTo
-    setConfirmingSubmit(true)
+  const onGraded = useCallback((attempt: GradedAttempt, unsent: boolean) => {
+    setView({ screen: 'results', attempt, unsent })
   }, [])
-  const requestLeave = useCallback((returnFocusTo: ReturnFocus = NO_RETURN_FOCUS) => {
-    leaveReturnFocus.current = returnFocusTo
-    setConfirmingLeave(true)
-  }, [])
-  // One restore rule for every practice overlay: the first named control that still accepts focus wins. Once the
-  // overlay's screen has left, the next screen owns its own entry focus and the primitive must not reach back.
-  const restoreFocus = useCallback((event: Event, screen: Screen, targets: ReturnFocus) => {
-    if (screenRef.current !== screen || focusFirst(targets)) event.preventDefault()
-  }, [])
-
-  const redoAttempt = useCallback(() => {
-    const canRedo = screenRef.current === 'results' ||
-      (screenRef.current === 'intro' && pendingStartIntent === 'redo')
-    if (!canRedo || startingRef.current) return
-    setPendingStartIntent('redo')
-    startingRef.current = true
-    setLoadingBank(true)
-    setBankError(null)
-    void (async () => {
-      const fresh = await loadFreshQuiz(courseSlug)
-      startingRef.current = false
-      setLoadingBank(false)
-      if (!fresh) {
-        setBankError(BANK_UNAVAILABLE_NOTICE)
-        return
-      }
-      const currentRevisions = new Map(fresh.questions.map(question =>
-        [question.questionId, question.publishedRevision]))
-      if (questions.some(question => currentRevisions.get(question.questionId) !== question.publishedRevision)) {
-        screenRef.current = 'results'
-        setScreen('results')
-        setBankError(QUESTIONS_CHANGED_NOTICE)
-        return
-      }
-      if (fresh.timerSeconds !== briefing.timerSeconds) {
-        setBriefing(current => ({
-          questionCount: Math.min(fresh.maxQuestions, fresh.questions.length),
-          sectionCount: new Set(fresh.questions.map(question => question.section)).size,
-          bankSize: fresh.bankSize,
-          timerSeconds: fresh.timerSeconds,
-          version: current.version + 1,
-        }))
-        screenRef.current = 'intro'
-        setScreen('intro')
-        setBankError(BANK_CHANGED_NOTICE)
-        return
-      }
-      screenRef.current = 'active'
-      resetAttempt(fresh.timerSeconds)
-      setAttemptId(recorder.begin(courseContentKey, questions))
-      setScreen('active')
-    })()
-  }, [courseSlug, resetAttempt, recorder, courseContentKey, questions, briefing.timerSeconds, pendingStartIntent])
-
-  const selectOption = useCallback(
-    (optIdx: number) => {
-      if (screenRef.current !== 'active') return
-      if (clock.read().secondsLeft === 0) {
-        finishAttempt('timed_out')
-        return
-      }
-      recorder.select(current, optIdx)
-      setAnswers((a) => ({ ...a, [current]: optIdx }))
-    },
-    [current, recorder, clock, finishAttempt],
-  )
-
-  const toggleMark = useCallback(() => {
-    setMarked((m) => {
-      const next = { ...m }
-      if (next[current]) delete next[current]
-      else next[current] = true
-      return next
-    })
-  }, [current])
-
-  const goPrev = useCallback(() => {
-    setCurrent((c) => (c > 0 ? c - 1 : c))
-  }, [])
-
-  const goNext = useCallback(() => {
-    setCurrent((c) => (c < questions.length - 1 ? c + 1 : c))
-  }, [questions.length])
-
-  const jumpTo = useCallback((idx: number) => {
-    setCurrent(idx)
-    setNavOpen(false)
-  }, [])
-
-  const openNav = useCallback(() => setNavOpen(true), [])
-  const closeNav = useCallback(() => setNavOpen(false), [])
-
-  const openReview = useCallback(() => {
-    if (screenRef.current !== 'results') return
-    screenRef.current = 'review'
-    setScreen('review')
-  }, [])
-
-  const backToResults = useCallback(() => {
-    if (screenRef.current !== 'review') return
-    setReport(null)
-    screenRef.current = 'results'
-    setScreen('results')
-  }, [])
-
-  // The report names the exact item and revision this attempt showed; the attempt id only once that attempt is saved.
-  const openReport = useCallback((index: number, returnFocusTo: ReturnFocus = NO_RETURN_FOCUS) => {
-    const question = questions[index]
-    if (!question) return
-    reportReturnFocus.current = returnFocusTo
-    setReport({ index, questionNumber: index + 1, target: {
-      courseId: props.repositoryCourseId, itemId: question.itemId, revision: question.publishedRevision,
-      questionId: question.questionId, attemptId: recordingStatus === 'saved' ? attemptId : null,
-    } })
-  }, [questions, props.repositoryCourseId, recordingStatus, attemptId])
-
-  const markReported = useCallback((questionId: string) => {
-    setReported(previous => ({ ...previous, [questionId]: true }))
-  }, [])
-
-  // Per-question correctness, computed once from the current answers map; score and review share it.
-  const correctCount = useMemo(
-    () => questions.reduce((sum, question, index) => sum + (answers[index] === question.correctAnswer ? 1 : 0), 0),
-    [questions, answers],
-  )
 
   const identity = { courseCode: props.courseCode, courseTitle: props.courseTitle, repositoryOnly: props.repositoryOnly }
 
-  if (screen === 'intro') {
-    return (
-      <IntroScreen
-        {...identity}
-        courseHref={courseHref}
-        questionCount={briefing.questionCount}
-        bankSize={briefing.bankSize}
-        timerSeconds={briefing.timerSeconds}
-        briefingVersion={briefing.version}
-        preparing={loadingBank}
-        error={bankError}
-        onStart={pendingStartIntent === 'redo' ? redoAttempt : startNewAttempt}
-      />
-    )
+  if (view.screen === 'active') {
+    return <ActiveAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken} courseHref={props.courseHref}
+      attempt={view.attempt} serverNow={view.now} onGraded={onGraded} />
   }
-
-  if (screen === 'active') {
-    const q = questions[current]!
-    const answeredCount = Object.keys(answers).length
-    const unanswered = questions.length - answeredCount
-    return (
-      <>
-        <QuestionScreen
-          {...identity}
-          question={q}
-          current={current}
-          total={questions.length}
-          selected={answers[current]}
-          isMarked={Boolean(marked[current])}
-          timeLeft={timeLeft}
-          isLowTime={timeLeft <= LOW_TIME_SECONDS}
-          navOpen={navOpen}
-          answeredCount={answeredCount}
-          markedCount={Object.keys(marked).length}
-          answersMap={answers}
-          markedMap={marked}
-          onSelectOption={selectOption}
-          onToggleMark={toggleMark}
-          onPrev={goPrev}
-          onNext={goNext}
-          onJump={jumpTo}
-          onSubmit={requestSubmit}
-          onOpenNav={openNav}
-          onCloseNav={closeNav}
-          onLeave={requestLeave}
-        />
-
-        <AssessmentConfirmation kind="submit" open={confirmingSubmit} onOpenChange={setConfirmingSubmit}
-          answered={answeredCount} unanswered={unanswered} flagged={Object.keys(marked).length}
-          onConfirm={submit} onRestoreFocus={event => restoreFocus(event, 'active', submitReturnFocus.current)} />
-        <AssessmentConfirmation kind="leave" open={confirmingLeave} onOpenChange={setConfirmingLeave}
-          onConfirm={leaveAssessment} onRestoreFocus={event => restoreFocus(event, 'active', leaveReturnFocus.current)} />
-      </>
-    )
+  if (view.screen === 'resume' && initial.kind === 'resume') {
+    return <ResumeScreen {...identity} courseHref={props.courseHref} answered={initial.answered} total={initial.total}
+      minutesLeft={initial.minutesLeft} opening={busy} error={problem?.title ?? null} onContinue={() => { void resume() }} />
   }
-
-  if (screen === 'review') {
-    return (
-      <>
-        <ReviewScreen
-          {...identity}
-          questions={questions}
-          answers={answers}
-          correctCount={correctCount}
-          reported={reported}
-          reporting={report ? report.index : null}
-          onReport={openReport}
-          onBack={backToResults}
-        />
-        {report ? <ReportQuestionDialog key={report.target.itemId} target={report.target} questionNumber={report.questionNumber}
-          continuityToken={props.continuityToken} onClose={() => setReport(null)} onReported={markReported}
-          onRestoreFocus={event => restoreFocus(event, 'review', reportReturnFocus.current)} /> : null}
-      </>
-    )
+  if (view.screen === 'review') {
+    const { attempt } = view
+    return <>
+      <ReviewScreen {...identity} questions={attempt.questions} correctCount={attempt.result.score} reported={reported}
+        reporting={report ? report.index : null}
+        onReport={(index, returnFocusTo) => {
+          const question = attempt.questions[index]
+          if (!question) return
+          reportReturnFocus.current = returnFocusTo
+          setReport({ index, target: { courseId: props.repositoryCourseId, itemId: question.itemId,
+            revision: question.revision, questionId: question.questionId, attemptId: attempt.id } })
+        }}
+        onBack={() => { setReport(null); setView({ ...view, screen: 'results' }) }} />
+      {report ? <ReportQuestionDialog key={report.target.itemId} target={report.target} questionNumber={report.index + 1}
+        continuityToken={continuityToken} onClose={() => setReport(null)}
+        onReported={questionId => setReported(previous => ({ ...previous, [questionId]: true }))}
+        onRestoreFocus={event => { if (focusFirst(reportReturnFocus.current)) event.preventDefault() }} /> : null}
+    </>
   }
-
-  return (
-    <ResultsScreen
-      {...identity}
-      courseHref={courseHref}
-      questions={questions}
-      answers={answers}
-      correctCount={correctCount}
-      finishReason={finish.reason}
-      minutesUsed={minutesUsed(attemptDuration, finish.secondsLeft)}
-      attemptSeconds={attemptDuration}
-      saveState={saveStateFrom(recordingStatus)}
-      preparing={loadingBank}
-      error={bankError}
-      onReview={openReview}
-      onRetakeWithNewQuestions={startNewAttempt}
-      onRedoQuestions={redoAttempt}
-    />
-  )
+  if (view.screen === 'results') {
+    const { attempt } = view
+    return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={brief !== null}
+      unsentAtDeadline={view.unsent} starting={busy} error={problem}
+      onReview={() => setView({ ...view, screen: 'review' })}
+      onRetake={() => { if (brief !== null) start('new', null, brief) }}
+      onRedo={() => {
+        if (brief !== null) start('redo', attempt.id, { questionCount: attempt.questionCount, durationSeconds: brief.durationSeconds })
+      }} />
+  }
+  // The page renders the briefing only when a fresh attempt may start, so a missing brief renders nothing here.
+  if (brief === null) return null
+  return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief} wholeBank={bankSize <= brief.questionCount}
+    briefingVersion={briefingVersion} starting={busy} error={problem} lastResultHref={props.lastResultHref}
+    onStart={() => start('new', null, brief)} />
 }

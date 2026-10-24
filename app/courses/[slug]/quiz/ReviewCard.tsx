@@ -6,15 +6,13 @@ import { Check, ChevronDown, Info, X } from 'lucide-react'
 import { btnGhost } from '@/components/chrome/ui'
 import { studentAction } from '@/components/student/ui'
 import { optionLetter } from './practice-presentation'
-import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
 import type { ReturnFocus } from './focus-return'
-import type { ReviewStatus } from './types'
+import type { GradedQuestion, ReviewStatus } from './types'
 import type { ReactElement } from 'react'
 
 type Props = {
-  question: ManagedQuizQuestion
+  question: GradedQuestion
   n: number
-  your: number | undefined
   status: ReviewStatus
   open: boolean
   reported: boolean
@@ -31,13 +29,14 @@ const STATUS = {
 } as const
 
 /** Derive the one review status; an unanswered question is never presented as incorrect. */
-export function reviewStatus(question: ManagedQuizQuestion, your: number | undefined): ReviewStatus {
-  if (your === undefined) return 'unanswered'
-  return your === question.correctAnswer ? 'correct' : 'incorrect'
+export function reviewStatus(question: GradedQuestion): ReviewStatus {
+  if (question.selected === null) return 'unanswered'
+  return question.selected === question.correctOption ? 'correct' : 'incorrect'
 }
 
 /** The heading is the disclosure; the collapsed stem stays readable and truncation is visual only. */
-export function ReviewCard({ question, n, your, status, open, reported, onToggle, onReport }: Props): ReactElement {
+export function ReviewCard({ question, n, status, open, reported, onToggle, onReport }: Props): ReactElement {
+  const your = question.selected
   const panelId = `student-practice-review-${n}`
   const { label, Icon } = STATUS[status]
   const disclosure = useRef<HTMLButtonElement>(null)
@@ -50,15 +49,15 @@ export function ReviewCard({ question, n, your, status, open, reported, onToggle
           <span className="student-practice-position">Question {n}</span>
           <span className="student-practice-status" data-status={status}><Icon aria-hidden="true" size={18} strokeWidth={2.25} />{label}</span>
         </span>
-        {open ? null : <span className="student-practice-stem">{question.question}</span>}
+        {open ? null : <span className="student-practice-stem">{question.prompt}</span>}
         <span className="student-practice-review-action">{open ? 'Hide answer' : 'Review answer'}<ChevronDown aria-hidden="true" size={18} /></span>
       </button>
     </h3>
     {open ? <div className="student-practice-review-body" id={panelId}>
-      <p className="student-practice-prompt">{question.question}</p>
+      <p className="student-practice-prompt">{question.prompt}</p>
       <ul className="student-practice-review-options">
         {question.options.map((text, index) => {
-          const isAnswer = index === question.correctAnswer
+          const isAnswer = index === question.correctOption
           const isYours = index === your
           const mark = isAnswer ? 'correct' : isYours ? 'incorrect' : undefined
           const tag = isAnswer && isYours ? 'Your answer · Correct' : isAnswer ? 'Correct answer' : isYours ? 'Your answer' : null

@@ -9,14 +9,22 @@ const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const { withTsx } = require('../../lib/test/tsx-loader.cjs')
 const { elementNodes } = require('../../lib/test/element-walker.cjs')
-const { fixture: experience, nodes } = require('./quiz-experience.fixture.cjs')
 
 const QUIZ = './[slug]/quiz/'
 const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
 const count = (html, pattern) => (html.match(pattern) || []).length
-const question = (index, extra = {}) => ({ id: index + 1, questionId: `question-${index}`, itemId: `item-${index}`,
-  question: `Prompt ${index}`, options: ['Alpha', 'Beta', 'Gamma', 'Delta'], correctAnswer: 1,
-  section: index % 2 ? 'Two' : 'One', publishedRevision: 1, ...extra })
+// A graded question as the server returns it; an open attempt's question is its prompt, options and section only.
+const question = (index, extra = {}) => ({ questionId: `question-${index}`, prompt: `Prompt ${index}`,
+  options: ['Alpha', 'Beta', 'Gamma', 'Delta'], section: index % 2 ? 'Two' : 'One', itemId: `item-${index}`, revision: 1,
+  selected: null, correctOption: 1, explanation: null, ...extra })
+const openQuestion = index => { const { questionId, prompt, options, section } = question(index); return { questionId, prompt, options, section } }
+/** The graded questions with the given choices: index -> option. */
+const choose = (questions, answers) => questions.map((item, index) => ({ ...item, selected: answers[index] ?? null }))
+const gradedAttempt = (questions, extra = {}) => ({ status: 'submitted', id: 'attempt-1', courseId: 'course-1', intent: 'new',
+  redoOf: null, startedAt: '2026-10-24T10:00:00.000Z', deadlineAt: '2026-10-24T11:00:00.000Z', durationSeconds: 3600,
+  questionCount: questions.length, bankSize: 214, questions,
+  result: { score: questions.filter(item => item.selected === item.correctOption).length, total: questions.length,
+    timedOut: false, finishedAt: '2026-10-24T10:41:00.000Z' }, ...extra })
 const identity = { courseCode: 'BUA 216', courseTitle: 'Financial Management', courseHref: '/courses/bua-216', repositoryOnly: false }
 
 /** Controlled hook state for one client screen: effects run after render, matchMedia answers the desktop query. */
@@ -111,13 +119,14 @@ async function screenFixture(run) {
   }
 }
 
-test('results score this attempt only with the locked bands, truthful counts, save state and action hierarchy', async () => withTsx(async () => {
+test('results show the server grading with the locked bands, truthful counts and only the actions allowed now', async () => withTsx(async () => {
   const { ResultsScreen } = require(QUIZ + 'ResultsScreen.tsx')
-  const questions = Array.from({ length: 10 }, (_, index) => question(index))
-  const answers = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 0, 8: 0 }
-  const render = props => renderToStaticMarkup(React.createElement(ResultsScreen, { ...identity, questions, answers,
-    correctCount: 7, finishReason: 'submitted', minutesUsed: 41, attemptSeconds: 3600, saveState: 'saved',
-    preparing: false, error: null, onReview() {}, onRetakeWithNewQuestions() {}, onRedoQuestions() {}, ...props }))
+  const questions = choose(Array.from({ length: 10 }, (_, index) => question(index)),
+    { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 0, 8: 0 })
+  const render = (props, attempt = {}) => renderToStaticMarkup(React.createElement(ResultsScreen, { ...identity,
+    attempt: gradedAttempt(questions, attempt), canStartNew: true, unsentAtDeadline: false, starting: false, error: null,
+    onReview() {}, onRetake() {}, onRedo() {}, ...props }))
+  const actions = html => [...html.matchAll(/<(?:button|a)\b[^>]*>([^<]*)<\/(?:button|a)>/g)].map(match => match[1])
   const html = render({})
   assert.equal(count(html, /<h1\b/g), 1)
   assert.match(html, /<h1[^>]*>Practice result<\/h1>/)
@@ -129,59 +138,73 @@ test('results score this attempt only with the locked bands, truthful counts, sa
   assert.match(text(html), /Correct 7 .*Incorrect 2 .*Unanswered 1/)
   assert.match(html, /Result saved to your account\./)
   assert.doesNotMatch(html, /weakest|Mastered|Revisit|Section [A-Z]\b|history|best score/i)
-  const actions = [...html.matchAll(/<(?:button|a)\b[^>]*>([^<]*)<\/(?:button|a)>/g)].map(match => match[1])
-  assert.deepEqual(actions, ['Review answers', 'Retake with new questions', 'Redo these questions', 'Back to course'])
+  assert.deepEqual(actions(html), ['Review answers', 'Retake with new questions', 'Redo these questions', 'Back to course'])
+  assert.match(html, /Retake gives you a new set of questions\. Redo repeats these questions in the same order\./)
   assert.match(html, /href="\/courses\/bua-216"/)
   assert.match(text(html), /3 questions to review/)
-  assert.match(render({ correctCount: 5 }), /50%[\s\S]*Practice target met/)
-  assert.match(render({ correctCount: 6 }), /60%[\s\S]*Practice target met/)
-  assert.match(render({ correctCount: 4 }), /40%[\s\S]*Keep reviewing/)
-  const timedOut = render({ finishReason: 'timed_out', minutesUsed: 60 })
+  // D4: a bank no larger than the attempt offers one "Practise again".
+  const whole = render({}, { bankSize: 10 })
+  assert.deepEqual(actions(whole), ['Review answers', 'Practise again', 'Back to course'])
+  assert.doesNotMatch(whole, /Retake|Redo/)
+  // No new attempt may start now (access or bank): review only.
+  assert.deepEqual(actions(render({ canStartNew: false })), ['Review answers', 'Back to course'])
+  const timedOut = render({}, { status: 'timed_out', result: { score: 7, total: 10, timedOut: true,
+    finishedAt: '2026-10-24T11:00:00.000Z' } })
   assert.match(timedOut, /Submitted automatically when time ran out · 60 of 60 minutes used/)
   assert.match(timedOut, /Time is up\. Your attempt has been submitted\./)
-  assert.match(timedOut, /Questions you hadn’t answered are counted as missed\./)
-  const pending = render({ saveState: 'pending' })
-  assert.match(pending, /role="status"[^>]*aria-busy="true"/)
-  assert.match(pending, /Saving your result\./)
-  assert.doesNotMatch(pending, /Result saved/)
-  const failed = render({ saveState: 'failed' })
-  assert.match(failed, /This result couldn’t be saved\./)
-  assert.match(failed, /Your score and answer review are still available on this page until you leave it\./)
-  assert.doesNotMatch(failed, /Retry|Try again|Result saved/)
+  assert.match(timedOut, /Only answers saved before time ran out count\. Unanswered questions count as missed\./)
+  assert.doesNotMatch(timedOut, /didn’t reach us/)
+  const unsent = render({ unsentAtDeadline: true }, { status: 'timed_out', result: { score: 7, total: 10, timedOut: true,
+    finishedAt: '2026-10-24T11:00:00.000Z' } })
+  assert.match(unsent, /Some answers on this device didn’t reach us before time ran out, so they weren’t counted\./)
+  assert.match(render({ starting: true }), /role="status"[^>]*>Starting…/)
+  for (const out of [html, whole, timedOut, unsent]) {
+    assert.doesNotMatch(out, /couldn’t be saved|Saving your result|until you leave|timer has not started/)
+  }
 }))
 
-test('the briefing states this attempt only, requires readiness and names repository identity honestly', async () => withTsx(async () => {
+test('the briefing states the server brief, requires readiness and names repository identity honestly', async () => withTsx(async () => {
   const { IntroScreen } = require(QUIZ + 'IntroScreen.tsx')
-  const render = props => renderToStaticMarkup(React.createElement(IntroScreen, { ...identity, questionCount: 50, bankSize: 214,
-    timerSeconds: 3600, briefingVersion: 0, preparing: false, error: null, onStart() {}, ...props }))
+  const render = props => renderToStaticMarkup(React.createElement(IntroScreen, { ...identity,
+    brief: { questionCount: 50, durationSeconds: 3600 }, wholeBank: false, briefingVersion: 0, starting: false, error: null,
+    lastResultHref: null, onStart() {}, ...props }))
   const html = render({})
   assert.equal(count(html, /<h1\b/g), 1)
   assert.match(html, /<h1[^>]*>Practice<\/h1>/)
   assert.match(html, /CBT practice · One timed attempt/)
-  assert.match(text(html), /Questions 50 questions Each practice session gives you a fresh set of questions\./)
-  assert.match(text(html), /Time 60 minutes/)
+  assert.match(text(html), /Questions 50 questions Each attempt gives you a new set of questions\./)
+  assert.match(text(html), /Time 60 minutes The timer starts when you press Start practice and keeps running even if you leave this page\./)
+  assert.match(text(html), /Finishing Submit, or time runs out Your answers save as you go\. If you leave, come back before time runs out to continue\. When time runs out, your saved answers are submitted for you\./)
+  assert.doesNotMatch(html, /fresh set|can’t be resumed|ends the attempt/)
   assert.match(html, /role="checkbox"[^>]*aria-checked="false"/)
   assert.match(html, /I’m ready to start a 60-minute attempt of 50 questions\./)
   assert.match(html, /<button[^>]*disabled=""[^>]*>Start practice<\/button>/)
   assert.match(html, /Confirm you’re ready to start\./)
   assert.match(html, /href="\/courses\/bua-216"[^>]*>Back to course/)
-  assert.doesNotMatch(html, /practice target|Bank sections|study guide|BUA202/i)
+  assert.doesNotMatch(html, /practice target|Bank sections|study guide|BUA202|last result/i)
+  const whole = render({ brief: { questionCount: 50, durationSeconds: 1800 }, wholeBank: true })
+  assert.match(text(whole), /Questions 50 questions All 50 questions in this course, in a new order each time\./)
   const repository = render({ repositoryOnly: true, courseCode: 'INS 999', courseTitle: 'Principles of Insurance' })
   assert.match(repository, /Additional study material · Principles of Insurance/)
   assert.match(repository, /Check that this material matches your course and syllabus/)
   assert.doesNotMatch(repository, /INS 999 · Principles/)
-  const preparing = render({ preparing: true })
-  assert.match(preparing, /role="status"[^>]*>Getting your practice ready\. The timer has not started\./)
-  const changed = render({ error: 'Your practice details have changed. Review them and confirm you’re ready to start.' })
+  const starting = render({ starting: true })
+  assert.match(starting, /role="status"[^>]*>Starting…</)
+  const changed = render({ error: { title: 'Your practice details have changed.', body: 'Review them and confirm you’re ready to start.' } })
   assert.match(changed, /role="alert"[\s\S]*Your practice details have changed/)
-  assert.doesNotMatch(html + repository + preparing + changed, /repository|published|question bank|selected at random/i)
+  const last = render({ lastResultHref: '/courses/bua-216/quiz?attempt=a' })
+  assert.match(last, /href="\/courses\/bua-216\/quiz\?attempt=a"[^>]*>See your last result</)
+  for (const out of [html, whole, repository, starting, changed]) {
+    assert.doesNotMatch(out, /repository|published|question bank|selected at random|timer has not started/i)
+  }
 }))
 
 test('the attempt shows one question with native answers, one sr-only h1, a real timer and in-flow steps', async () => withTsx(async () => {
   const { QuestionScreen } = require(QUIZ + 'QuestionScreen.tsx')
-  const questions = Array.from({ length: 50 }, (_, index) => question(index))
+  const questions = Array.from({ length: 50 }, (_, index) => openQuestion(index))
   const render = props => renderToStaticMarkup(React.createElement(QuestionScreen, { ...identity, question: questions[11],
-    current: 11, total: 50, selected: undefined, isMarked: false, timeLeft: 2538, isLowTime: false, navOpen: false,
+    current: 11, total: 50, selected: undefined, isMarked: false, timeLeft: 2538, isLowTime: false, canAnswer: true,
+    saveLine: null, onRetrySave() {}, navOpen: false,
     answeredCount: 9, markedCount: 2, answersMap: { 0: 1, 1: 1 }, markedMap: { 5: true, 10: true },
     onSelectOption() {}, onToggleMark() {}, onPrev() {}, onNext() {}, onJump() {}, onSubmit() {}, onOpenNav() {}, onCloseNav() {}, onLeave() {}, ...props }))
   const html = render({})
@@ -214,16 +237,28 @@ test('the attempt shows one question with native answers, one sr-only h1, a real
   assert.match(last, /<button[^>]*aria-haspopup="dialog"[^>]*>Submit practice<\/button>/)
   assert.match(last, /data-selected="true"><input[^>]*checked=""[^>]*value="2"/)
   assert.match(last, />Selected</)
+  assert.match(html, /<button[^>]*aria-haspopup="dialog"[^>]*>Exit<\/button>/)
+  assert.doesNotMatch(html, /Leave practice/)
+  // Without a fresh reading of the server's clock there is no time to show and no answer can change.
+  const checking = render({ timeLeft: null, canAnswer: false, saveLine: { text: 'Checking the time left…', retry: false } })
+  assert.match(checking, /role="timer" aria-label="Checking the time left"/)
+  assert.match(checking, />––:––</)
+  assert.equal(count(checking, /type="radio"[^>]*disabled=""/g), 4)
+  assert.match(checking, /role="status"[^>]*>Checking the time left…/)
+  assert.equal(count(html, /type="radio"[^>]*disabled=""/g), 0)
+  const failed = render({ saveLine: { text: 'Your answers couldn’t be saved. They’re still on this device.', retry: true } })
+  assert.match(failed, /They’re still on this device\. <button[^>]*>Try again<\/button>/)
 }))
 
 test('review lists this attempt, never labels unanswered as incorrect, filters honestly and pages 5 or 10', async () => screenFixture(async f => {
   const { ReviewScreen } = require(QUIZ + 'ReviewScreen.tsx')
-  const questions = Array.from({ length: 23 }, (_, index) => question(index, index === 2 ? { explanation: 'Because.' } : {}))
+  const base = Array.from({ length: 23 }, (_, index) => question(index, index === 2 ? { explanation: 'Because.' } : {}))
   const answers = {}
   for (let index = 0; index < 23; index++) if (index % 5 !== 4) answers[index] = index % 3 === 0 ? 0 : 1
+  const questions = choose(base, answers)
   const correct = Object.values(answers).filter(value => value === 1).length
   const unanswered = 23 - Object.keys(answers).length
-  const props = { ...identity, questions, answers, correctCount: correct, reported: { 'question-3': true }, onReport() {}, onBack() {} }
+  const props = { ...identity, questions, correctCount: correct, reported: { 'question-3': true }, onReport() {}, onBack() {} }
   const ssr = f.html(React.createElement(ReviewScreen, props))
   assert.equal(count(ssr, /<h1\b/g), 1)
   assert.match(ssr, /<h1[^>]*>Answer review<\/h1>/)
@@ -272,13 +307,13 @@ test('review lists this attempt, never labels unanswered as incorrect, filters h
   desktopCards()[1].props.onToggle(); desktop.render()
   assert.deepEqual(desktopCards().slice(0, 3).map(card => card.props.open), [true, true, false], 'several open items at desktop')
 
-  const none = f.mount(ReviewScreen, { ...props, answers: { 0: 0 }, correctCount: 0 })
+  const none = f.mount(ReviewScreen, { ...props, questions: choose(base, { 0: 0 }), correctCount: 0 })
   none.render()
   f.all(none.render()).find(node => node.type === 'input' && node.props.value === 'correct').props.onChange()
   const empty = f.all(none.render()).find(node => node.type?.name === 'EmptyState')
   assert.equal(empty.props.title, 'No correct answers in this attempt.')
   assert.equal(f.all(none.render()).some(node => node.type?.name === 'Pagination'), false)
-  const perfect = f.mount(ReviewScreen, { ...props, answers: Object.fromEntries(questions.map((_, index) => [index, 1])), correctCount: 23 })
+  const perfect = f.mount(ReviewScreen, { ...props, questions: choose(base, Object.fromEntries(base.map((_, index) => [index, 1]))), correctCount: 23 })
   perfect.render()
   f.all(perfect.render()).find(node => node.type === 'input' && node.props.value === 'to-review').props.onChange()
   assert.equal(f.all(perfect.render()).find(node => node.type?.name === 'EmptyState').props.title, 'Nothing to review.')
@@ -286,11 +321,11 @@ test('review lists this attempt, never labels unanswered as incorrect, filters h
 
 test('a review item exposes its status and stem collapsed, and explanation only when authored', async () => withTsx(async () => {
   const { ReviewCard, reviewStatus } = require(QUIZ + 'ReviewCard.tsx')
-  const q = question(0, { explanation: 'Beta because of the rule.' })
-  assert.equal(reviewStatus(q, undefined), 'unanswered')
-  assert.equal(reviewStatus(q, 0), 'incorrect')
-  assert.equal(reviewStatus(q, 1), 'correct')
-  const render = props => renderToStaticMarkup(React.createElement('ol', null, React.createElement(ReviewCard, { question: q, n: 3, your: 0,
+  const q = question(0, { explanation: 'Beta because of the rule.', selected: 0 })
+  assert.equal(reviewStatus({ ...q, selected: null }), 'unanswered')
+  assert.equal(reviewStatus(q), 'incorrect')
+  assert.equal(reviewStatus({ ...q, selected: 1 }), 'correct')
+  const render = (props, item = q) => renderToStaticMarkup(React.createElement('ol', null, React.createElement(ReviewCard, { question: item, n: 3,
     status: 'incorrect', open: false, reported: false, onToggle() {}, onReport() {}, ...props })))
   const closed = render({})
   assert.match(closed, /<h3[^>]*><button[^>]*aria-expanded="false" aria-controls="student-practice-review-3"/)
@@ -303,11 +338,11 @@ test('a review item exposes its status and stem collapsed, and explanation only 
   assert.match(open, /data-mark="incorrect"[\s\S]*?Your answer</)
   assert.match(open, /Explanation[\s\S]*Beta because of the rule\./)
   assert.match(open, /<button[^>]*aria-haspopup="dialog"[^>]*>Report a question<\/button>/)
-  const unanswered = render({ open: true, your: undefined, status: 'unanswered' })
+  const unanswered = render({ open: true, status: 'unanswered' }, { ...q, selected: null })
   assert.match(unanswered, /data-status="unanswered"[\s\S]*?Unanswered</)
   assert.doesNotMatch(unanswered, /Incorrect|Your answer/)
   assert.match(unanswered, /You didn’t answer this question\./)
-  const plain = renderToStaticMarkup(React.createElement('ol', null, React.createElement(ReviewCard, { question: question(1), n: 2, your: 1,
+  const plain = renderToStaticMarkup(React.createElement('ol', null, React.createElement(ReviewCard, { question: question(1, { selected: 1 }), n: 2,
     status: 'correct', open: true, reported: true, onToggle() {}, onReport() {} })))
   assert.doesNotMatch(plain, /Explanation/)
   assert.match(plain, /Your answer · Correct/)
@@ -405,15 +440,22 @@ test('reports send the exact item, revision and saved attempt to the existing ba
 
 test('confirmations carry the locked copy and truthful counts; the safe action is the cancel', async () => screenFixture(async f => {
   const { AssessmentConfirmation } = require(QUIZ + 'AssessmentConfirmation.tsx')
-  const leave = f.all(f.mount(AssessmentConfirmation, { kind: 'leave', open: true, onOpenChange() {}, onConfirm() {}, onRestoreFocus() {} }).render())
+  const { PRACTICE_COPY, exitBodyFor } = require(QUIZ + 'practice-presentation.ts')
   const strings = element => element.filter(node => typeof node.props?.children === 'string').map(node => node.props.children)
-  assert.ok(strings(leave).includes('Leave practice?'))
-  assert.ok(strings(leave).includes('This attempt will end. It can’t be resumed, and your answers won’t be submitted.'))
-  assert.equal(leave.find(node => node.type?.displayName === 'AlertDialogCancel').props.children, 'Stay and continue')
-  assert.equal(leave.find(node => node.type?.displayName === 'AlertDialogAction').props.children, 'Leave practice')
-  assert.match(leave.find(node => node.type?.displayName === 'AlertDialogAction').props.className, /student-practice-destructive/)
+  const exit = body => f.all(f.mount(AssessmentConfirmation, { kind: 'exit', body, open: true, onOpenChange() {}, onConfirm() {},
+    onRestoreFocus() {} }).render())
+  const saved = exit(exitBodyFor('saved', 3))
+  assert.ok(strings(saved).includes('Exit practice?'))
+  assert.ok(strings(saved).includes('Your answers are saved and the timer keeps running. Come back to this page before time runs out to continue.'))
+  assert.equal(saved.find(node => node.type?.displayName === 'AlertDialogCancel').props.children, 'Stay')
+  assert.equal(saved.find(node => node.type?.displayName === 'AlertDialogAction').props.children, 'Exit')
+  // "Saved" only once the server confirmed every answer; otherwise the answers are still saving on this device.
+  for (const state of ['saving', 'unsaved', 'failed']) assert.equal(exitBodyFor(state, 3), PRACTICE_COPY.exitSaving)
+  assert.match(PRACTICE_COPY.exitSaving, /^Some answers are still saving on this device\. The timer keeps running/)
+  assert.equal(exitBodyFor('saved', 0), PRACTICE_COPY.exitNothing)
+  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /can’t be resumed|won’t be submitted|Leave practice/)
   const submit = f.all(f.mount(AssessmentConfirmation, { kind: 'submit', open: true, answered: 39, unanswered: 11, flagged: 2,
-    onOpenChange() {}, onConfirm() {}, onRestoreFocus() {} }).render())
+    pending: false, onOpenChange() {}, onConfirm() {}, onRestoreFocus() {} }).render())
   assert.ok(strings(submit).includes('Submit practice?'))
   assert.ok(strings(submit).includes('Submitting ends this attempt. You won’t be able to change your answers.'))
   assert.deepEqual(submit.filter(node => node.type?.name === 'SummaryCount').map(node => [node.props.label, node.props.value]),
@@ -421,64 +463,11 @@ test('confirmations carry the locked copy and truthful counts; the safe action i
   assert.ok(submit.some(node => Array.isArray(node.props?.children) && node.props.children.join('').startsWith('11 questions are unanswered.')))
   assert.equal(submit.find(node => node.type?.displayName === 'AlertDialogCancel').props.children, 'Keep working')
   assert.equal(submit.find(node => node.type?.displayName === 'AlertDialogAction').props.children, 'Submit practice')
-  const complete = f.all(f.mount(AssessmentConfirmation, { kind: 'submit', open: true, answered: 50, unanswered: 0, flagged: 0,
-    onOpenChange() {}, onConfirm() {}, onRestoreFocus() {} }).render())
-  assert.equal(complete.some(node => Array.isArray(node.props?.children) && String(node.props.children.join('')).includes('unanswered.')), false)
-}))
-
-test('the client owns review entry, timeout reason, save state and the report target with a saved attempt id only', async () => experience(async f => {
-  await f.start()
-  assert.equal(f.dataset['data-screen'], 'active')
-  f.setNow(25_000); f.tick()
-  f.child('QuestionScreen').props.onSelectOption(1)
-  f.child('QuestionScreen').props.onSubmit()
-  f.dialog('submit').props.onConfirm()
-  f.render()
-  const results = () => f.child('ResultsScreen').props
-  assert.equal(f.dataset['data-screen'], 'results')
-  assert.equal(results().finishReason, 'submitted')
-  assert.equal(results().minutesUsed, 1)
-  assert.equal(results().attemptSeconds, 60)
-  assert.equal(results().saveState, 'pending')
-  assert.equal(results().courseHref, '/courses/test')
-  f.recordingStatus('recording'); f.render()
-  assert.equal(results().saveState, 'pending')
-  results().onReview()
-  f.render()
-  assert.equal(f.dataset['data-screen'], 'review')
-  assert.equal(f.child('ResultsScreen'), undefined)
-  const review = () => f.child('ReviewScreen').props
-  assert.equal(review().questions.length, 2)
-  assert.deepEqual(review().answers, { 0: 1 })
-  assert.equal(f.child('ReportQuestionDialog'), undefined)
-  review().onReport(1)
-  const dialog = () => f.child('ReportQuestionDialog')
-  assert.deepEqual(dialog().props.target, { courseId: 'course-1', itemId: review().questions[1].itemId, revision: 1,
-    questionId: review().questions[1].questionId, attemptId: null })
-  assert.equal(dialog().props.questionNumber, 2)
-  assert.equal(dialog().props.continuityToken, 'page-A')
-  dialog().props.onReported(review().questions[1].questionId)
-  dialog().props.onClose()
-  assert.equal(f.child('ReportQuestionDialog'), undefined)
-  assert.deepEqual(review().reported, { [review().questions[1].questionId]: true })
-  f.recordingStatus('saved'); f.render()
-  review().onReport(0)
-  assert.equal(dialog().props.target.attemptId, 'attempt-1', 'a saved attempt is named by the recorder-issued id')
-  review().onBack()
-  assert.ok(f.child('ResultsScreen'))
-  assert.equal(results().saveState, 'saved')
-  f.recordingStatus('unavailable'); f.render()
-  assert.equal(results().saveState, 'failed')
-  f.setNow(100_000)
-  results().onRedoQuestions()
-  await f.settle()
-  assert.equal(f.child('QuestionScreen').props.total, 2)
-  assert.equal(f.child('ReviewScreen'), undefined)
-  f.setNow(160_000); f.tick()
-  assert.equal(f.child('ResultsScreen').props.finishReason, 'timed_out')
-  assert.equal(f.child('ResultsScreen').props.minutesUsed, 1)
-  f.child('ResultsScreen').props.onReview()
-  assert.deepEqual(f.child('ReviewScreen').props.reported, {}, 'a new attempt starts with no reported items')
+  assert.equal(strings(submit).includes(PRACTICE_COPY.submitPending), false)
+  const pending = f.all(f.mount(AssessmentConfirmation, { kind: 'submit', open: true, answered: 50, unanswered: 0, flagged: 0,
+    pending: true, onOpenChange() {}, onConfirm() {}, onRestoreFocus() {} }).render())
+  assert.ok(strings(pending).includes('Your latest answers will be sent with your submission.'))
+  assert.equal(pending.some(node => Array.isArray(node.props?.children) && String(node.props.children.join('')).includes('unanswered.')), false)
 }))
 
 test('the loading boundary announces once with inert placeholders and no unverified course identity', async () => withTsx(async () => {
@@ -509,8 +498,7 @@ test('the practice stylesheet hides global chrome only in the active attempt and
 
 test('the route page distinguishes not found, signed out, unavailable, invariant, temporary and not built', async () => {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = new Map(Object.entries(require.cache))
-  const state = { session: { user: { id: 'student' } }, result: null, bank: { status: 'ready', quiz: { href: '/courses/x/quiz', bankSize: 3,
-    attemptSize: 2, timerSeconds: 1800, maxQuestions: 2, sections: ['One'], questions: [question(0), question(1), question(2)] } } }
+  const state = { session: { user: { id: 'student' }, sessionId: 'session-x' }, result: null, practice: { status: 'none' } }
   const staticCourse = { slug: 'x', code: 'STAT 1', title: 'Static title', contentKey: 'key-x' }
   const repository = { state: 'shelved', repositoryCourseId: 'repo-uuid', contentKey: 'key-x', isShared: null,
     route: { slug: 'x', href: '/courses/x', course: staticCourse } }
@@ -529,13 +517,14 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
       if (name === '@/lib/supabase/server') return { createClient: async () => ({ scoped: true }) }
       if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () => state.session }
       if (name === '@/lib/courses/read-model') return { getStudentCourseBySlugForVerifiedStudent: async () => state.result }
-      if (name === '@/lib/managed-content/student-quiz') return { getStudentManagedQuiz: async () => state.bank }
+      if (name === '@/lib/practice/server') return { readPracticeState: async () => state.practice,
+        readPracticeAttempt: async () => ({ status: 'not-found' }) }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
       return load.call(this, name, ...args)
     }
     const page = require(QUIZ + 'page.tsx').default
     const render = async () => {
-      const gated = await page({ params: Promise.resolve({ slug: 'x' }) })
+      const gated = await page({ params: Promise.resolve({ slug: 'x' }), searchParams: Promise.resolve({}) })
       const inner = gated.props.children('token-x')
       return inner.type(inner.props)
     }
@@ -547,7 +536,7 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     state.session = null
     state.result = institutional(ready({ cbtPractice: true }), practice)
     await assert.rejects(render(), /redirect:\/login\?next=%2Fcourses%2Fx%2Fquiz/)
-    state.session = { user: { id: 'student' } }
+    state.session = { user: { id: 'student' }, sessionId: 'session-x' }
     state.result = { status: 'unavailable' }
     let out = await html()
     assert.match(out, /<h1[^>]*>Practice<\/h1>/)
@@ -569,22 +558,21 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     assert.match(out, /CBT practice is not available for this course\./)
     assert.doesNotMatch(out, /Try again/)
     state.result = institutional(ready({ cbtPractice: true }), practice)
-    state.bank = { status: 'unavailable' }
+    state.practice = { status: 'unavailable' }
     out = await html()
     assert.match(out, /couldn’t load the practice questions just now/)
-    state.bank = { status: 'ready', quiz: { href: '/courses/x/quiz', bankSize: 3, attemptSize: 2, timerSeconds: 1800, maxQuestions: 2,
-      sections: ['One'], questions: [question(0), question(1), question(2)] } }
+    state.practice = { status: 'none' }
     const client = await render()
     assert.equal(client.type.name, 'QuizClient')
     assert.equal(client.props.continuityToken, 'token-x')
     assert.equal(client.props.courseHref, '/courses/x')
     assert.equal(client.props.courseSlug, 'x')
     assert.equal(client.props.repositoryCourseId, 'repo-uuid')
-    assert.equal(client.props.courseContentKey, 'key-x')
     assert.equal(client.props.repositoryOnly, false)
     assert.equal(client.props.courseCode, 'BUA 216')
-    assert.equal(client.props.totalInBank, 3)
-    assert.equal(client.props.maxQuestions, 2)
+    assert.equal(client.props.bankSize, 3)
+    assert.deepEqual(client.props.brief, { questionCount: 2, durationSeconds: 1800 })
+    assert.deepEqual(client.props.initial, { kind: 'intro' })
     state.result = { status: 'repository-only', learning: null, practice, course: { repository, content: ready({ cbtPractice: true }) } }
     const repo = await render()
     assert.equal(repo.props.repositoryOnly, true)
@@ -600,10 +588,10 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
 
 test('the navigator sheet returns focus to its trigger, closes on the desktop crossing and names a stable submit return target', async () => screenFixture(async f => {
   const { QuestionScreen } = require(QUIZ + 'QuestionScreen.tsx')
-  const questions = Array.from({ length: 12 }, (_, index) => question(index))
+  const questions = Array.from({ length: 12 }, (_, index) => openQuestion(index))
   const calls = { open: 0, close: 0, submit: [], leave: [] }
   const screen = f.mount(QuestionScreen, { ...identity, question: questions[3], current: 3, total: 12, selected: undefined, isMarked: false,
-    timeLeft: 900, isLowTime: false, navOpen: true, answeredCount: 2, markedCount: 0, answersMap: { 0: 1, 1: 0 }, markedMap: {},
+    timeLeft: 900, isLowTime: false, canAnswer: true, saveLine: null, onRetrySave() {}, navOpen: true, answeredCount: 2, markedCount: 0, answersMap: { 0: 1, 1: 0 }, markedMap: {},
     onSelectOption() {}, onToggleMark() {}, onPrev() {}, onNext() {}, onJump() {}, onSubmit: targets => calls.submit.push(targets),
     onOpenNav: () => calls.open++, onCloseNav: () => calls.close++, onLeave: targets => calls.leave.push(targets) })
   const all = () => f.all(screen.render())
@@ -640,8 +628,8 @@ test('the navigator sheet returns focus to its trigger, closes on the desktop cr
   const mainSubmit = f.control('In-flow submit')
   buttons('Submit practice')[0].props.onClick({ currentTarget: mainSubmit })
   assert.deepEqual(calls.submit[1], [mainSubmit])
-  const leaveControl = f.control('Leave practice')
-  buttons('Leave practice')[0].props.onClick({ currentTarget: leaveControl })
+  const leaveControl = f.control('Exit')
+  buttons('Exit')[0].props.onClick({ currentTarget: leaveControl })
   assert.deepEqual(calls.leave, [[leaveControl]])
   screen.props = { ...screen.props, current: 11, question: questions[11] }
   const lastStep = f.control('Last step submit')
@@ -699,23 +687,24 @@ test('a review item hands the report dialog its own trigger and then its disclos
 
 test('results hands entry focus to its own heading once, after a submit and after a timeout alike', async () => screenFixture(async f => {
   const { ResultsScreen } = require(QUIZ + 'ResultsScreen.tsx')
-  const questions = Array.from({ length: 10 }, (_, index) => question(index))
-  const base = { ...identity, questions, answers: { 0: 1 }, correctCount: 1, minutesUsed: 3, attemptSeconds: 3600,
-    saveState: 'pending', preparing: false, error: null, onReview() {}, onRetakeWithNewQuestions() {}, onRedoQuestions() {} }
+  const questions = choose(Array.from({ length: 10 }, (_, index) => question(index)), { 0: 1 })
+  const base = { ...identity, canStartNew: true, unsentAtDeadline: false, starting: false, error: null,
+    onReview() {}, onRetake() {}, onRedo() {} }
   for (const finishReason of ['submitted', 'timed_out']) {
     const heading = f.control(`Practice result heading after ${finishReason}`)
     let focused = 0
     heading.focus = function() { focused++; global.document.activeElement = this }
     f.body.focus()
-    const screen = f.mount(ResultsScreen, { ...base, finishReason })
+    const screen = f.mount(ResultsScreen, { ...base, attempt: gradedAttempt(questions, finishReason === 'timed_out'
+      ? { status: 'timed_out', result: { score: 1, total: 10, timedOut: true, finishedAt: '2026-10-24T11:00:00.000Z' } } : {}) })
     const band = tree => f.all(tree).find(node => node.type?.name === 'PageBand')
     screen.prepare = tree => { band(tree).props.titleRef.current = heading }
     const tree = screen.render()
     assert.equal(band(tree).props.titleRef.current, heading, 'ResultsScreen owns the heading ref it hands the band')
     assert.equal(document.activeElement, heading, `${finishReason}: focus lands on the Results heading, never the body`)
     assert.equal(focused, 1)
-    screen.props = { ...screen.props, saveState: 'saved' }; screen.render(); screen.render()
-    assert.equal(focused, 1, 'save-state updates and re-renders never focus the heading again')
+    screen.props = { ...screen.props, starting: true }; screen.render(); screen.render()
+    assert.equal(focused, 1, 'later updates and re-renders never focus the heading again')
     assert.match(f.html(React.createElement(ResultsScreen, screen.props)), /<h1 class="student-page-band-title" tabindex="-1">Practice result<\/h1>/,
       'the heading is a programmatic focus target, not a tab stop')
   }
