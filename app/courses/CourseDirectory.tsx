@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { btnGhost } from '@/components/chrome/ui'
 import { CourseRegister } from '@/components/student/CourseRow'
 import { EmptyState } from '@/components/student/EmptyState'
+import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
 import { SearchField } from '@/components/student/SearchField'
 import { FilterSelect } from '@/components/student/FilterSelect'
 import { Pagination } from '@/components/student/Pagination'
@@ -62,11 +63,8 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
   const changeFilter = (dimension: keyof Filters, value: string | null) => {
     setFilters(current => ({ ...current, [dimension]: value })); setPage(1)
   }
-  const resetAll = () => { setQuery(''); setFilters(ALL_FILTERS); setPage(1); searchRef.current?.focus() }
 
-  if (items.length === 0) return <EmptyState title="No courses are available to browse." actions={null}>
-    Please check back later, or contact support for help finding study materials.
-  </EmptyState>
+  if (items.length === 0) return <EmptyState title={EMPTY_COURSES_MESSAGE} icon={null} actions={null}>{null}</EmptyState>
 
   return <>
     <section className="student-catalogue-controls" aria-label="Search and filter courses">
@@ -97,9 +95,7 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
         ? <CourseRegister label="Courses">
           {visible.map(item => <Fragment key={item.institutionalCourseId}>{item.row}</Fragment>)}
         </CourseRegister>
-        : <EmptyState title="No courses match your search and filters." actions={
-          <button type="button" onClick={resetAll} className={studentAction(btnGhost)}>Reset search and filters</button>
-        }>Try another course code or title, or reset your search and filters.</EmptyState>}
+        : <EmptyState title={EMPTY_COURSES_MESSAGE} icon={null} actions={null}>{null}</EmptyState>}
     </section>
     <Pagination page={page} totalPages={totalPages} onPageChange={setPage}
       label="Course catalogue pages" scrollTarget={resultsRef} />
