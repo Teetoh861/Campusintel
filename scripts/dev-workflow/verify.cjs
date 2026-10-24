@@ -5,6 +5,7 @@ const { base, branch, changed, git, lines0, sha } = require('./repo.cjs')
 
 const TEST_RUNNER = path.join(__dirname, 'run-tests.cjs')
 const APPLICATION_TEST_LOADER = './lib/auth/test-loader.cjs'
+const TEST_ERROR_LINE_LIMIT = 4
 
 /** Build the one node:test invocation shape: literal file paths through the runner, never CLI globs. */
 function testCommand(files, { loader } = {}) {
@@ -43,6 +44,25 @@ function scope(paths) {
   return { db, content }
 }
 
+/** Retain each TAP failure's title, source location and opening error lines, including nested tests. */
+function testFailures(output) {
+  const failures = output.matchAll(/^([ \t]*)not ok \d+ - ([^\r\n]+)((?:\r?\n\1[ \t]+[^\r\n]*)*)/gm)
+  return [...failures].map(([, , title, diagnostics]) => {
+    const lines = diagnostics.split(/\r?\n/)
+    const location = lines.find(line => /^[ \t]*location:/.test(line))
+    const errorIndex = lines.findIndex(line => /^[ \t]*error:/.test(line))
+    const error = errorIndex < 0 ? [] : [lines[errorIndex]]
+    if (errorIndex >= 0) {
+      const continuation = /^[ \t]*/.exec(lines[errorIndex])[0] + ' '
+      for (const line of lines.slice(errorIndex + 1, errorIndex + TEST_ERROR_LINE_LIMIT)) {
+        if (!line.startsWith(continuation)) break
+        error.push(line)
+      }
+    }
+    return [`  ${title}`, ...[location, ...error].filter(Boolean).map(line => `    ${line.trim()}`)].join('\n')
+  })
+}
+
 function pnpmCommand() {
   const probe = spawnSync('pnpm', ['--version'], { encoding: 'utf8' })
   return probe.error?.code === 'ENOENT'
@@ -60,6 +80,7 @@ function runVerification(repo, options = {}) {
   if (options.db) needed.db = true
   if (options.content) needed.content = needed.db = true
   const rows = []
+  const failureDetails = []
   const environment = { ...process.env, DO_NOT_TRACK: '1' }
   const pnpm = pnpmCommand()
 
@@ -86,6 +107,10 @@ function runVerification(repo, options = {}) {
       : blockedBuild ? 'Turbopack could not bind a local port; build did not complete'
         : blockedDb ? 'local database service failed during test run'
           : testSummary || (result.status === 0 ? detail : `exit ${result.status}`) })
+    if (expectTests && status === 'FAIL') {
+      const failures = testFailures(output)
+      if (failures.length) failureDetails.push(`${name} failures:\n${failures.join('\n')}`)
+    }
   }
 
   const { application: tests, workflow: toolingTests } = collectTestFiles(root)
@@ -152,6 +177,7 @@ function runVerification(repo, options = {}) {
     `Changed files: ${paths.all.length}`,
     '',
     ...rows.map(row => `${row.status.padEnd(7)} ${row.name} — ${row.detail}`),
+    ...(failureDetails.length ? ['', ...failureDetails] : []),
     '', `Result: ${exitCode ? 'FAIL' : 'PASS'}`,
   ].join('\n')
   return { output, exitCode, rows, scope: needed }
