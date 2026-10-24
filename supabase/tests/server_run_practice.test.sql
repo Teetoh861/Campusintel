@@ -85,6 +85,7 @@ select is((select count(*)::integer from unnest(array[
     or not has_function_privilege('service_role', fn, 'EXECUTE')), 0,
   'practice entry points are callable only by the application server (service role), never by a student directly');
 select is((select count(*)::integer from unnest(array['private.practice_pool(uuid)',
+    'private.practice_can_start(uuid,uuid,timestamptz)',
     'private.practice_draw(uuid,uuid,uuid,integer,jsonb)', 'private.practice_questions(uuid,boolean)',
     'private.practice_view(public.quiz_attempts)', 'private.practice_answer(text,public.quiz_attempts)',
     'private.practice_grade(uuid,jsonb,text,timestamptz)', 'private.close_overdue_practice(uuid)',
@@ -437,9 +438,10 @@ reset role;
 update public.quiz_attempts set created_at = created_at - interval '1 hour', deadline_at = clock_timestamp() - interval '1 second'
   where id = pg_temp.a(33);
 set local role service_role;
-select is((select jsonb_build_object('state', r ->> 'state', 'last', r -> 'last' #- '{finished_at}' #- '{id}')
+select is((select jsonb_build_object('state', r ->> 'state', 'id', r -> 'attempt' ->> 'id', 'score', r -> 'attempt' -> 'score',
+    'status', r -> 'attempt' -> 'status', 'bank_size', r -> 'attempt' -> 'bank_size')
   from (select public.practice_state(pg_temp.s(2), pg_temp.c('08')) r) x),
-  '{"state":"none","last":{"score":3,"status":"timed_out","bank_size":100,"question_count":50}}'::jsonb,
+  jsonb_build_object('state', 'graded', 'id', pg_temp.a(33), 'score', 3, 'status', 'timed_out', 'bank_size', 100),
   'the student''s next request grades an overdue attempt before anything is shown');
 insert into outcome values ('d4', pg_temp.start(2, 34, '01'));
 select is(pg_temp.save(2, 34, 1, 1, 0, pg_temp.sheet(34, 1, 1)) ->> 'state', 'saved', 'a student who never returns');
@@ -549,12 +551,18 @@ create temporary table legacy_pick on commit drop as
 select question_id, revision, row_number() over (order by question_id) n
 from (select question_id, revision from private.practice_pool(pg_temp.c('07')) order by question_id limit 2) p;
 grant select on legacy_pick to service_role;
-insert into public.quiz_attempts (id, user_id, course_id, question_count, created_at) values
-  (pg_temp.a(60), pg_temp.u(7), pg_temp.c('07'), 1, now() - interval '30 days'),
-  (pg_temp.a(61), pg_temp.u(7), pg_temp.c('07'), 1, now() - interval '25 hours');
+-- Stuck legacy attempts (two open, one over 24 hours old) and one finished legacy attempt that was given 100 of the
+-- course's questions, all as old tabs left them.
+insert into public.quiz_attempts (id, user_id, course_id, question_count, created_at, status, finished_at) values
+  (pg_temp.a(60), pg_temp.u(7), pg_temp.c('07'), 1, now() - interval '30 days', 'in_progress', null),
+  (pg_temp.a(61), pg_temp.u(7), pg_temp.c('07'), 1, now() - interval '25 hours', 'in_progress', null),
+  (pg_temp.a(64), pg_temp.u(7), pg_temp.c('07'), 100, now() - interval '3 days', 'submitted', now() - interval '3 days');
 insert into public.quiz_attempt_questions (attempt_id, question_id, ordinal, item_id, content_revision)
 select a, p.question_id, 0, p.item_id, p.revision from unnest(array[pg_temp.a(60), pg_temp.a(61)]) a,
   (select * from private.practice_pool(pg_temp.c('07')) order by question_id limit 1) p;
+insert into public.quiz_attempt_questions (attempt_id, question_id, ordinal, item_id, content_revision)
+select pg_temp.a(64), p.question_id, (row_number() over (order by p.question_id) - 1)::integer, p.item_id, p.revision
+from (select * from private.practice_pool(pg_temp.c('07')) order by question_id limit 100) p;
 insert into public.quiz_attempt_answers (attempt_id, question_id, ordinal, option_index, is_correct, section_label)
 select attempt_id, question_id, 0, 0, true, 'General' from public.quiz_attempt_questions
 where attempt_id in (pg_temp.a(60), pg_temp.a(61));
@@ -564,9 +572,22 @@ select is((select count(*)::integer from public.quiz_attempt_answers), 0,
   'marked answers of open legacy attempts are hidden from their owner');
 reset role;
 set local role service_role;
-select is((select jsonb_build_object('state', r ->> 'state', 'open', r -> 'open') from (select public.practice_state(pg_temp.s(7), pg_temp.c('07')) r) x),
-  '{"open":null,"state":"none"}'::jsonb, 'two stuck legacy attempts are never offered for resume');
+select is(public.practice_state(pg_temp.s(7), pg_temp.c('07')) ->> 'state', 'none',
+  'stuck legacy attempts are never offered for resume, nor shown as a result');
 select is(pg_temp.start(7, 62, '07') ->> 'state', 'ready', 'and never block a new attempt');
+reset role;
+select ok(pg_temp.qs(62) && pg_temp.qs(64),
+  'a legacy attempt does not count towards the draw: questions it gave can be drawn first (D3)');
+set local role service_role;
+select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(63), pg_temp.c('07'), 2, 'start', null, 'in_progress',
+  (select jsonb_agg(jsonb_build_object('question_id', question_id, 'ordinal', n - 1, 'content_revision', revision))
+   from legacy_pick p)), '{"status":"conflict"}'::jsonb, 'an old-style start is refused (hard cutover)');
+select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(62), pg_temp.c('07'), 1, 'start', null, 'in_progress',
+  jsonb_build_array(jsonb_build_object('question_id', (pg_temp.qs(62))[1], 'ordinal', 0, 'content_revision', 1))),
+  '{"status":"conflict"}'::jsonb, 'including a replayed start naming a server-run attempt');
+reset role;
+select is((select count(*)::integer from public.quiz_attempts where id = pg_temp.a(63)), 0, 'nothing was pinned');
+set local role service_role;
 select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(61), pg_temp.c('07'), 0, 'record', 0, 'in_progress',
   (select jsonb_build_array(jsonb_build_object('question_id', question_id, 'ordinal', 0, 'option_index', 1))
    from (select (pg_temp.qs(61))[1] question_id) q)), '{"status":"finalized"}'::jsonb,
@@ -575,14 +596,12 @@ select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(61), pg_temp.c('07')
   '{"status":"finalized"}'::jsonb, 'or finish it');
 select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(62), pg_temp.c('07'), 0, 'finish', 0, 'submitted', '[]'),
   '{"status":"not-found"}'::jsonb, 'a server-run attempt cannot be written through the legacy path');
-select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(62), pg_temp.c('07'), 1, 'start', null, 'in_progress',
-  jsonb_build_array(jsonb_build_object('question_id', (pg_temp.qs(62))[1], 'ordinal', 0, 'content_revision', 1))),
-  '{"status":"not-found"}'::jsonb, 'not even by replaying a start with its id');
-select is(public.write_quiz_attempt(pg_temp.s(7), pg_temp.a(63), pg_temp.c('07'), 2, 'start', null, 'in_progress',
-  (select jsonb_agg(jsonb_build_object('question_id', question_id, 'ordinal', n - 1, 'content_revision', revision))
-   from legacy_pick p)) ->> 'status', 'saved',
-  'fixture: a legacy attempt opened by an old tab just before the cutover');
 reset role;
+-- A legacy attempt an old tab opened just before the cutover.
+insert into public.quiz_attempts (id, user_id, course_id, question_count) values (pg_temp.a(63), pg_temp.u(7), pg_temp.c('07'), 2);
+insert into public.quiz_attempt_questions (attempt_id, question_id, ordinal, item_id, content_revision)
+select pg_temp.a(63), p.question_id, (l.n - 1)::integer, p.item_id, p.revision
+from legacy_pick l join private.practice_pool(pg_temp.c('07')) p on p.question_id = l.question_id;
 create temporary table legacy_choice on commit drop as
 select q.question_id, q.ordinal, (r.payload ->> 'correctOption')::integer right_option,
   ((r.payload ->> 'correctOption')::integer + 1) % jsonb_array_length(r.payload -> 'options') wrong_option
@@ -607,6 +626,52 @@ select is(public.practice_state(pg_temp.s(3), pg_temp.c('08')), '{"state":"signe
   'a removed session is signed out');
 select is(public.practice_save(pg_temp.s(3), pg_temp.a(4), pg_temp.t(1), 1, 0, '{}'), '{"state":"signed-out"}'::jsonb,
   'and cannot save');
+reset role;
+
+-- 15. A fresh start is judged on the wall clock, after its locks ------------------------------------------------------
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+values ('00000000-0000-0000-0000-000000000000', pg_temp.u(8), 'authenticated', 'authenticated', 'practice-8@example.test',
+  'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
+insert into auth.sessions (id, user_id, created_at, updated_at) values (pg_temp.s(8), pg_temp.u(8), now(), now());
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
+values (pg_temp.u(8), 'manual', now() - interval '1 day', clock_timestamp() + interval '1 second', 'none', 'test');
+select pg_sleep(1.2);
+select ok(private.can_read_course_content(pg_temp.u(8), pg_temp.c('07')),
+  'fixture: at the transaction''s start time the grant still reads as active');
+set local role service_role;
+select is(pg_temp.start(8, 70, '07'), '{"state":"locked"}'::jsonb,
+  'but a start after it ended, on the wall clock, is locked');
+reset role;
+select is((select count(*)::integer from public.quiz_attempts where user_id = pg_temp.u(8)), 0, 'and creates nothing');
+update auth.sessions set not_after = clock_timestamp() - interval '1 second' where id = pg_temp.s(1);
+set local role service_role;
+select is(pg_temp.start(1, 71, '08'), '{"state":"signed-out"}'::jsonb, 'a session that has ended starts nothing');
+reset role;
+update auth.sessions set not_after = null where id = pg_temp.s(1);
+
+-- 16. Results stay the student's: reload after a lost response, after access ends, after the bank changes ----------
+set local role service_role;
+select is((select jsonb_build_object('state', r ->> 'state', 'id', r -> 'attempt' ->> 'id', 'score', r -> 'attempt' -> 'score')
+  from (select public.practice_state(pg_temp.s(1), pg_temp.c('07')) r) x),
+  jsonb_build_object('state', 'graded', 'id', pg_temp.a(11), 'score', 0),
+  'with no open attempt, the course state is the most recent graded attempt, so a reload shows its result');
+reset role;
+update public.managed_content_items set published_revision = null where course_id = pg_temp.c('07') and kind = 'cbt_question';
+set local role service_role;
+insert into outcome values ('x1-late', public.practice_attempt(pg_temp.s(5), pg_temp.a(40)));
+reset role;
+select is((select jsonb_build_object('state', r ->> 'state', 'score', r -> 'attempt' -> 'result' -> 'score',
+    'bank_size', r -> 'attempt' -> 'bank_size', 'questions', jsonb_array_length(r -> 'attempt' -> 'questions'),
+    'keyed', (select count(*) from jsonb_array_elements(r -> 'attempt' -> 'questions') e
+      where e ? 'correct_option' and e ->> 'prompt' <> ''))
+  from (select pg_temp.o('x1-late') r) x),
+  '{"state":"graded","score":2,"bank_size":149,"questions":50,"keyed":50}'::jsonb,
+  'after access ended and the whole bank was unpublished, the owner still opens the full graded review by id, with the bank size at its start (149: one question was withdrawn in section 11)');
+set local role service_role;
+select is(public.practice_state(pg_temp.s(5), pg_temp.c('07')) -> 'attempt' ->> 'id', pg_temp.a(40)::text,
+  'and the course state still leads to it');
+select is(pg_temp.start(1, 72, '07') ->> 'state', 'unavailable', 'while a fresh start finds nothing to draw');
 reset role;
 
 select * from finish();

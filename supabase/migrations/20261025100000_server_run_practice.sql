@@ -14,8 +14,9 @@
 --     marked answer rows only at grading, and answer rows of open legacy attempts are hidden from their owner.
 --   * An attempt past its deadline is graded from the sheet saved in time on the student's next request, or by the
 --     five-minute pg_cron sweep, whichever comes first.
---   * Legacy (browser-run) attempts: rows with no deadline. They never block or resume. An old tab may save and finish
---     one only while it is less than legacy_window (24 hours) old, and the stored score is computed here.
+--   * Legacy (browser-run) attempts: rows with no deadline. No new one can start. They never block or resume, and
+--     never count towards a draw. An old tab may save and finish one only while it is less than legacy_window
+--     (24 hours) old, and the stored score is computed here.
 -- Every time decision reads clock_timestamp() once the locks are held, never now(): now() is the transaction start, so
 -- a request that waited on a lock would otherwise still count as in time.
 
@@ -114,6 +115,23 @@ as $$
   where i.question_id is not null;
 $$;
 
+-- Whether a fresh attempt may start at p_at: the rule of private.can_read_course_content (a free course, an operator,
+-- or full access as private.has_full_access defines it), judged at the given wall-clock moment instead of the
+-- transaction start, so a grant that ends while a start waits on a lock admits nothing.
+create function private.practice_can_start(p_user_id uuid, p_course_id uuid, p_at timestamptz) returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_user_id is not null and p_at is not null and (
+    exists (select 1 from public.institutional_courses where repository_course_id = p_course_id and is_free)
+    or exists (select 1 from public.profiles where id = p_user_id and role = 'operator')
+    or exists (select 1 from public.entitlement_grants where user_id = p_user_id
+      and (source <> 'trial' or trial_policy = 'seven-day') and revoked_at is null
+      and starts_at <= p_at and ends_at > p_at));
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Student reads. The published-content read keeps every family except CBT questions; the summary gives their count.
 -- ---------------------------------------------------------------------------
@@ -190,8 +208,9 @@ comment on function public.published_cbt_summary(uuid[]) is
 -- attempt, then the rest, each tier at random. Presented grouped by the server's section order, at random within a
 -- section. A bank no larger than the attempt is drawn whole, in a new order (D4).
 -- ---------------------------------------------------------------------------
--- p_attempt_id is the attempt being drawn for: never its own "previous attempt". Attempts are ordered by the moment
--- they started (the database clock at start for a server-run attempt, its creation for a legacy one).
+-- Only this student's server-run attempts on the course count (legacy browser-run attempts are ignored; Discovery
+-- exams are not attempts). p_attempt_id is the attempt being drawn for: never its own "previous attempt". Attempts are
+-- ordered by the moment they started on the database clock.
 create function private.practice_draw(p_user_id uuid, p_course_id uuid, p_attempt_id uuid, p_size integer,
   p_sections jsonb)
 returns table (question_id uuid, item_id uuid, revision integer, ordinal integer)
@@ -203,12 +222,13 @@ as $$
   with given as (
     select distinct q.question_id from public.quiz_attempt_questions q
     join public.quiz_attempts a on a.id = q.attempt_id
-    where a.user_id = p_user_id and a.course_id = p_course_id
+    where a.user_id = p_user_id and a.course_id = p_course_id and a.deadline_at is not null
   ), previous as (
     select q.question_id from public.quiz_attempt_questions q
     where q.attempt_id = (select a.id from public.quiz_attempts a
-      where a.user_id = p_user_id and a.course_id = p_course_id and a.id <> p_attempt_id
-      order by coalesce(a.deadline_at - make_interval(secs => a.duration_seconds), a.created_at) desc, a.id desc
+      where a.user_id = p_user_id and a.course_id = p_course_id and a.deadline_at is not null
+        and a.id <> p_attempt_id
+      order by a.deadline_at - make_interval(secs => a.duration_seconds) desc, a.id desc
       limit 1)
   ), ranked as (
     select pool.question_id, pool.item_id, pool.revision,
@@ -257,7 +277,8 @@ security definer
 set search_path = ''
 as $$
   select jsonb_build_object('id', p_attempt.id, 'course_id', p_attempt.course_id, 'intent', p_attempt.intent,
-    'redo_of', p_attempt.redo_of, 'status', p_attempt.status, 'started_at', p_attempt.created_at,
+    'redo_of', p_attempt.redo_of, 'status', p_attempt.status,
+    'started_at', p_attempt.deadline_at - make_interval(secs => p_attempt.duration_seconds),
     'deadline_at', p_attempt.deadline_at, 'duration_seconds', p_attempt.duration_seconds,
     'question_count', p_attempt.question_count, 'bank_size', p_attempt.bank_size,
     'questions', private.practice_questions(p_attempt.id, p_attempt.status <> 'in_progress'),
@@ -464,10 +485,18 @@ begin
   if not exists (select 1 from public.courses where id = p_course_id) then
     return jsonb_build_object('state', 'invalid-course');
   end if;
-  if not private.can_read_course_content(v_user, p_course_id) then return jsonb_build_object('state', 'locked'); end if;
   -- Publishing changes the item row: holding every CBT item of the course keeps the pool stable until the snapshot
   -- of revisions below commits.
   perform 1 from public.managed_content_items where course_id = p_course_id and kind = 'cbt_question' for share;
+  -- Every lock is held. A fresh start is judged now, on the wall clock: the session must still be live and the course
+  -- readable at this moment, not merely when the request began (a grant that ended while it waited starts nothing).
+  v_now := clock_timestamp();
+  if private.ai_practice_session_user(p_session_id) is distinct from v_user then
+    return jsonb_build_object('state', 'signed-out');
+  end if;
+  if not private.practice_can_start(v_user, p_course_id, v_now) then
+    return jsonb_build_object('state', 'locked');
+  end if;
   select count(*)::integer into v_bank from private.practice_pool(p_course_id);
   if p_intent = 'new' then
     if v_bank = 0 then return jsonb_build_object('state', 'unavailable'); end if;
@@ -490,7 +519,6 @@ begin
       'bank_size', v_bank);
   end if;
 
-  v_now := clock_timestamp();
   insert into public.quiz_attempts (id, user_id, course_id, question_count, deadline_at, duration_seconds, intent,
       redo_of, bank_size)
     values (p_attempt_id, v_user, p_course_id, v_size, v_now + make_interval(secs => p_seconds), p_seconds, p_intent,
@@ -509,8 +537,9 @@ begin
 end;
 $$;
 
--- The practice page's state for a course: the open attempt to resume (summary only), and the latest graded attempt,
--- which includes one the deadline has just closed. No course access needed (D7).
+-- The practice page's state for a course: the open attempt to resume, or else the student's most recent graded attempt
+-- (one the deadline has just closed, or one whose submission response was lost), as a summary; none otherwise. No
+-- course access needed (D7).
 create function public.practice_state(p_session_id uuid, p_course_id uuid) returns jsonb
 language plpgsql
 security definer
@@ -518,26 +547,27 @@ set search_path = ''
 as $$
 declare
   v_user uuid;
-  v_open public.quiz_attempts;
-  v_last public.quiz_attempts;
+  v_attempt public.quiz_attempts;
 begin
   if p_course_id is null then raise exception 'Invalid practice request' using errcode = '22023'; end if;
   v_user := private.ai_practice_session_user(p_session_id);
   if v_user is null then return jsonb_build_object('state', 'signed-out'); end if;
   perform pg_advisory_xact_lock(hashtextextended('practice-account:' || v_user::text, 0));
   perform private.close_overdue_practice(v_user);
-  select * into v_open from public.quiz_attempts where user_id = v_user and course_id = p_course_id
+  select * into v_attempt from public.quiz_attempts where user_id = v_user and course_id = p_course_id
     and status = 'in_progress' and deadline_at is not null;
-  select * into v_last from public.quiz_attempts where user_id = v_user and course_id = p_course_id
-    and status <> 'in_progress' and deadline_at is not null order by finished_at desc, id desc limit 1;
-  return jsonb_build_object('state', case when v_open.id is null then 'none' else 'open' end,
-    'now', clock_timestamp(),
-    'open', case when v_open.id is not null then jsonb_build_object('id', v_open.id, 'deadline_at', v_open.deadline_at,
-      'duration_seconds', v_open.duration_seconds, 'question_count', v_open.question_count,
-      'answered', (select count(*) from jsonb_object_keys(coalesce(v_open.saved_answers, '{}'::jsonb)))) end,
-    'last', case when v_last.id is not null then jsonb_build_object('id', v_last.id, 'status', v_last.status,
-      'finished_at', v_last.finished_at, 'score', v_last.score, 'question_count', v_last.question_count,
-      'bank_size', v_last.bank_size) end);
+  if v_attempt.id is null then
+    select * into v_attempt from public.quiz_attempts where user_id = v_user and course_id = p_course_id
+      and status <> 'in_progress' and deadline_at is not null order by finished_at desc, id desc limit 1;
+  end if;
+  if v_attempt.id is null then return jsonb_build_object('state', 'none', 'now', clock_timestamp()); end if;
+  return jsonb_build_object('state', case when v_attempt.status = 'in_progress' then 'open' else 'graded' end,
+    'now', clock_timestamp(), 'attempt', jsonb_build_object('id', v_attempt.id, 'status', v_attempt.status,
+      'intent', v_attempt.intent, 'started_at', v_attempt.deadline_at - make_interval(secs => v_attempt.duration_seconds),
+      'deadline_at', v_attempt.deadline_at, 'duration_seconds', v_attempt.duration_seconds,
+      'question_count', v_attempt.question_count, 'bank_size', v_attempt.bank_size,
+      'answered', (select count(*) from jsonb_object_keys(coalesce(v_attempt.saved_answers, '{}'::jsonb))),
+      'score', v_attempt.score, 'finished_at', v_attempt.finished_at));
 end;
 $$;
 
@@ -669,8 +699,8 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Legacy writes (hard cutover, D10). The wrapper keeps its identity, deletion and start gates. A server-run attempt
--- is never reachable through it. A legacy attempt may be saved or finished only while it is younger than
+-- Legacy writes (hard cutover, D10). The wrapper keeps its identity, deletion and access gates and refuses every
+-- old-style start. A server-run attempt is never reachable through it. A legacy attempt may be saved or finished only while it is younger than
 -- legacy_window, and its stored score is computed here from the marked rows the private implementation wrote.
 -- ---------------------------------------------------------------------------
 create or replace function public.write_quiz_attempt(
@@ -693,11 +723,17 @@ begin
       and not private.can_read_course_content(v_user, p_course_id) then
     return jsonb_build_object('status', 'locked');
   end if;
+  -- Hard cutover: practice attempts start on the server (practice_start). An old-style start, with its browser-chosen
+  -- selection, is refused whatever it names; nothing is pinned.
+  if p_operation = 'start' then
+    if private.ai_practice_session_user(p_session_id) is null then return jsonb_build_object('status', 'signed-out'); end if;
+    return jsonb_build_object('status', 'conflict');
+  end if;
   select * into v_attempt from public.quiz_attempts where id = p_attempt_id and user_id = v_user;
   if v_attempt.id is not null and v_attempt.deadline_at is not null then
     return jsonb_build_object('status', 'not-found');
   end if;
-  if v_attempt.id is not null and p_operation <> 'start'
+  if v_attempt.id is not null
       and v_attempt.created_at <= clock_timestamp() - (select legacy_window from private.practice_policy) then
     return jsonb_build_object('status', 'finalized');
   end if;
@@ -716,7 +752,8 @@ $$;
 -- Privileges. Entry points are the application server's (service role); students reach them only through it. The
 -- summary is the one student-callable addition. Helpers are callable by no API role.
 -- ---------------------------------------------------------------------------
-revoke all on function private.practice_pool(uuid), private.practice_draw(uuid, uuid, uuid, integer, jsonb),
+revoke all on function private.practice_pool(uuid), private.practice_can_start(uuid, uuid, timestamptz),
+  private.practice_draw(uuid, uuid, uuid, integer, jsonb),
   private.practice_questions(uuid, boolean), private.practice_view(public.quiz_attempts),
   private.practice_answer(text, public.quiz_attempts), private.practice_grade(uuid, jsonb, text, timestamptz),
   private.close_overdue_practice(uuid), private.close_overdue_practice_all(),
