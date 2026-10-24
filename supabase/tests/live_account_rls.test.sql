@@ -47,8 +47,9 @@ select id item_id, course_id, question_id, published_revision content_revision
 from public.managed_content_items where kind = 'cbt_question' and published_revision is not null
 order by id limit 1;
 select is((select count(*)::int from live_rls_question), 1, 'published question fixture exists');
-insert into public.quiz_attempts (id, user_id, course_id, question_count)
-select v.attempt_id, v.user_id, q.course_id, 1 from live_rls_question q cross join (values
+-- Finished attempts: marked answers of an open attempt are never visible (20261025100000_server_run_practice.sql).
+insert into public.quiz_attempts (id, user_id, course_id, question_count, status, finished_at)
+select v.attempt_id, v.user_id, q.course_id, 1, 'submitted', now() from live_rls_question q cross join (values
   ('80000000-0000-4000-8000-000000000001'::uuid, '11111111-1111-4111-8111-111111111111'::uuid),
   ('80000000-0000-4000-8000-000000000002'::uuid, '22222222-2222-4222-8222-222222222222'::uuid)
 ) v(attempt_id, user_id);
