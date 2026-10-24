@@ -75,7 +75,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   ])
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (result.status === 'free-course' || result.status === 'full-access') redirect(route.href)
-  // A pass is named as something to start only when this account can still start one.
+  // A pass is named as something to start only when this student is eligible for one (read on the server, fail closed).
   const offered = plan.status === 'ok' && trialWording(plan.entitlement).passAvailable
   const examQuestions = plan.status === 'ok' && discoveryOffered(plan.entitlement) ? plan.entitlement.discovery.cbt_questions : null
   const endsAt = 'endsAt' in result ? result.endsAt : null
@@ -161,7 +161,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         </Notice>
       }
       return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_LABEL}`} action={plan}>
-        Start your free pass from Plan & Access to try a department course. It takes one tap.
+        Start your free pass from Plan & Access to try a department course.
       </Notice>
     case 'nothing-to-preview':
       return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'study guide topics'} />

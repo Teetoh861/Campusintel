@@ -198,8 +198,12 @@ test('every server result has student-safe copy; unknown or broken replies degra
   assert.match(exhausted(pass), /included in your Discovery Pass\./)
   const offered = trialWording(entitlementSummarySchema.parse({ ...post, trial: { status: 'available', policy: null,
     starts_at: null, ends_at: null, available_from: null } }))
-  assert.deepEqual(offered, { policy: null, passAvailable: true })
-  assert.match(describeResult({ status: 'not-entitled' }, offered).message, /Discovery Pass or Early Access/)
+  assert.deepEqual(offered, { policy: null, passAvailable: false }, 'not eligible until the server has read eligibility')
+  const eligible = trialWording({ ...entitlementSummarySchema.parse({ ...post, trial: { status: 'available', policy: null,
+    starts_at: null, ends_at: null, available_from: null } }), discovery_eligible: true })
+  assert.deepEqual(eligible, { policy: null, passAvailable: true }, 'an eligible student can start a pass')
+  assert.match(describeResult({ status: 'not-entitled' }, eligible).message, /Discovery Pass or Early Access/)
+  assert.doesNotMatch(describeResult({ status: 'not-entitled' }, offered).message, /Discovery|pass/i, 'an ineligible student is not offered one')
   const neutral = trialWording(null)
   assert.deepEqual(neutral, { policy: null, passAvailable: false }, 'no plan summary: neutral')
   assert.match(expired(neutral), /Your trial access has ended/, 'without policy data the grant is named neutrally')

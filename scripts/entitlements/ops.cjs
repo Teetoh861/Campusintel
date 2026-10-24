@@ -13,13 +13,15 @@
 //       [--of <email>] --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs early-access-report
 //   node scripts/entitlements/ops.cjs configure-early-access [--planned-launch <ISO>] [--enrollment-days <n>]
-//       [--trial-after-early-access true|false] --actor <name> --reason <text>
+//       --actor <name> --reason <text>
+//       --trial-after-early-access is retired (20261023120000): no account that has had Early Access gets a pass.
 //   node scripts/entitlements/ops.cjs activate-launch --confirm-public-launch --actor <name> --reason <text>
 //       Records the ACTUAL public launch (once, now) and enrolls eligible confirmed accounts in bounded batches until
 //       none remain.
 //   node scripts/entitlements/ops.cjs reconcile-early-access --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs purge-claims
-//       Removes expired Discovery Pass email claims (past discovery_claim_retention).
+//       Removes expired Discovery Pass email claims (past discovery_claim_retention, 5 years). pg_cron also runs this
+//       daily (campusintell-discovery-claim-purge); the command is for an immediate purge.
 //   node scripts/entitlements/ops.cjs claim-keys
 //       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
 const fs = require('node:fs')
@@ -228,14 +230,14 @@ async function run(args, env = process.env, transport = fetch, write = text => p
     }
     case 'early-access-report': return print(await rpc('admin_early_access_report', {}))
     case 'configure-early-access': {
-      const trial = opts['trial-after-early-access']
-      if (trial !== undefined && !['true', 'false'].includes(trial)) {
-        throw new Error('--trial-after-early-access must be true or false')
+      if (opts['trial-after-early-access'] !== undefined) {
+        throw new Error('--trial-after-early-access is retired: no account that has had Early Access gets a Discovery Pass')
       }
+      // Null leaves the retired setting as the migration pinned it (false).
       return print(await rpc('admin_configure_early_access', {
         p_planned_launch_at: opts['planned-launch'] ? isoTime(opts['planned-launch'], '--planned-launch') : null,
         p_enrollment_days: opts['enrollment-days'] !== undefined ? integer(opts, 'enrollment-days') : null,
-        p_trial_after_early_access: trial === undefined ? null : trial === 'true', ...note() }))
+        p_trial_after_early_access: null, ...note() }))
     }
     case 'activate-launch': {
       // Irreversible: the launch is recorded once and every eligible month starts when its batch commits.

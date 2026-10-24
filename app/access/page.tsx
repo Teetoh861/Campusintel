@@ -18,7 +18,7 @@ import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, DISCOVERY_PREVIEW_LABEL, for
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
-import { TrialActivation } from './TrialActivation'
+import { PassOfferScope, TrialActivation, WhileOffered } from './TrialActivation'
 import type { AllowanceSummary } from '@/lib/ai-practice/upload-contract'
 import { discoveryOffered } from '@/lib/entitlements/contract'
 import type { DiscoverySummary, EntitlementSummary } from '@/lib/entitlements/contract'
@@ -51,7 +51,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
     </Notice>
   </StudentPage>
   const entitlement = read.entitlement
-  return <StudentPage band={band}>
+  return <StudentPage band={band}><PassOfferScope>
     <div className="grid min-w-0 gap-4 tablet:grid-cols-[minmax(0,1.4fr)_minmax(240px,1fr)] desktop:gap-6">
       <div className="grid min-w-0 content-start gap-4">
         <CurrentPlan entitlement={entitlement} />
@@ -62,7 +62,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
         <AiSection allowance={allowance} passAvailable={trialWording(entitlement).passAvailable} />
       </div>
     </div>
-  </StudentPage>
+  </PassOfferScope></StudentPage>
 }
 
 function CurrentPlan({ entitlement }: { entitlement: EntitlementSummary }): ReactElement {
@@ -122,13 +122,21 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
         stay free for every student.</p>
     </section>
   }
-  const body: Record<EntitlementSummary['trial']['status'], ReactElement> = {
-    'available': <>
-      <p className="mt-2 text-sm text-student-text-secondary">Try department courses free for {entitlement.trial_hours} hours.
-        It’s a sample, not full access: each item can be used once, and nothing renews.</p>
-      {discovery !== null && <PassIncludes discovery={discovery} />}
+  if (trial.status !== 'active' && trial.status !== 'ended') {
+    // Offered only to a student who can actually start one (decided on the server before render). Everyone else sees
+    // no offer and no reason; the plan above already says what they have.
+    if (discovery === null || !trialWording(entitlement).passAvailable) return null
+    return <section aria-labelledby="trial-heading" className="student-surface">
+      <h2 id="trial-heading" className="student-section-title">{DISCOVERY_PASS_LABEL}</h2>
+      <WhileOffered>
+        <p className="mt-2 text-sm text-student-text-secondary">Try department courses free for {entitlement.trial_hours} hours.
+          It’s a sample, not full access: each item can be used once, and nothing renews.</p>
+        <PassIncludes discovery={discovery} />
+      </WhileOffered>
       <div className="mt-3"><TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours} /></div>
-    </>,
+    </section>
+  }
+  const body: Record<'active' | 'ended', ReactElement> = {
     'active': <>
       <p className="mt-2 text-sm text-student-text-secondary">Active until
         {trial.ends_at !== null && <> {formatAccessDate(trial.ends_at)}</>}. Open a department course to use what’s left.</p>
@@ -137,11 +145,6 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
     'ended': <p className="mt-2 text-sm text-student-text-secondary">Your {sevenDay ? 'trial' : 'pass'} has ended
       {trial.ends_at !== null && <> ({formatAccessDate(trial.ends_at)})</>}. Each account can have one
       {sevenDay ? ' trial' : ' pass'}.</p>,
-    'after-early-access': <p className="mt-2 text-sm text-student-text-secondary">You already have full access through Early
-      Access, so your pass is kept for later. It becomes available
-      {trial.available_from !== null && <> on {formatAccessDate(trial.available_from)}</>}, when Early Access ends.</p>,
-    'not-offered': <p className="mt-2 text-sm text-student-text-secondary">The {DISCOVERY_PASS_LABEL} is not offered to
-      accounts that have had Early Access.</p>,
   }
   return <section aria-labelledby="trial-heading" className="student-surface">
     <h2 id="trial-heading" className="student-section-title">{sevenDay ? 'Free trial' : DISCOVERY_PASS_LABEL}</h2>
@@ -174,7 +177,8 @@ function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }
 
 function AiSection({ allowance, passAvailable }: { allowance: AllowanceSummary | null; passAvailable: boolean }): ReactElement {
   const line = allowance === null || allowance.state === 'not-entitled'
-    ? `AI practice from your own notes comes with ${passAvailable ? 'a Discovery Pass or ' : ''}Early Access.`
+    ? <>AI practice from your own notes comes with {passAvailable && <WhileOffered>a Discovery Pass or </WhileOffered>}Early
+      Access.</>
     : allowance.state === 'expired' ? 'Your AI practice access has ended.'
       : allowance.total === null ? 'Your AI practice has no set limit during Early Access. Fair-use limits apply.'
         : `${Math.max(0, allowance.total - allowance.used)} of ${allowance.total} AI question ` +

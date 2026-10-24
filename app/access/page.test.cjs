@@ -1,6 +1,7 @@
 // app/access/page.test.cjs — Plan & Access rendered against real entitlement summaries: a database that affirmatively
-// offers the Discovery Pass shows the offer and the one-tap activation; a database from before the pass (which would
-// issue a seven-day full-access trial instead) shows a neutral plan with no pass and no button.
+// offers the Discovery Pass shows the offer and the activation to an eligible student only; an ineligible student sees
+// no offer and no reason; a database from before the pass (which would issue a seven-day full-access trial instead)
+// shows a neutral plan with no pass and no button.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const Module = require('node:module')
@@ -20,7 +21,8 @@ const discoveryDatabase = { now: NOW, planned_launch_at: '2026-10-24T23:00:00+00
 const preDiscoveryDatabase = { now: NOW, planned_launch_at: '2026-10-24T23:00:00+00:00', actual_launch_at: null,
   trial_days: 7, expiry_notice_hours: 48, tier: 'free', access: null, trial, early_access: early, otp: null }
 
-async function render(wire) {
+// `eligible` is what the server's eligibility read (lib/entitlements/server.ts) decided before render.
+async function render(wire, eligible = true) {
   return withTsx(async () => {
     const original = Module._load
     function StudentAccessGate() { return null }
@@ -32,9 +34,11 @@ async function render(wire) {
         if (name === '@/lib/supabase/server') return { createClient: async () => ({}) }
         if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () => ({ user: { id: 'student' }, sessionId: 's' }) }
         if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () =>
-          ({ status: 'ok', entitlement: entitlementSummarySchema.parse(wire) }) }
+          ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse(wire), discovery_eligible: eligible } }) }
         if (name === '@/lib/ai-practice/supabase-env') return { readAllowance: async () => null }
-        if (name === './TrialActivation') return { TrialActivation }
+        // WhileOffered marks the offer text a refusal withdraws (rendered here as <withdrawable>).
+        if (name === './TrialActivation') return { TrialActivation, PassOfferScope: props => props.children,
+          WhileOffered: props => React.createElement('withdrawable', null, props.children) }
         return original.call(this, name, ...args)
       }
       const page = require('./page.tsx').default
@@ -46,12 +50,21 @@ async function render(wire) {
   })
 }
 
-test('with a database that offers the pass, the page offers it with the one-tap activation', async () => {
+test('an eligible student is offered the pass with its activation', async () => {
   const html = await render(discoveryDatabase)
   assert.match(html, /Discovery Pass/)
   assert.match(html, /data-activation="72"/)
   assert.match(html, /50-question CBT exam/)
+  assert.match(html.replace(/<\/?withdrawable>/g, ''), /comes with a Discovery Pass or Early Access/)
   assert.doesNotMatch(html, /phone|SMS|per person/i)
+})
+
+test('an ineligible student sees normal free GST access: no offer, no button and no reason', async () => {
+  const html = await render(discoveryDatabase, false)
+  assert.doesNotMatch(html, /Discovery Pass|data-activation|Start my|72 hours|CBT exam|study guide topic/)
+  assert.doesNotMatch(html, /isn’t available|not offered|email|months?\b|years?\b|already had/i)
+  assert.match(html, /Free<\/b> · GST courses, always included/)
+  assert.match(html, /AI practice from your own notes comes with Early Access\./)
 })
 
 test('with a database from before the pass, the page shows a neutral plan: no pass, no button, no 72 hours', async () => {
@@ -78,6 +91,21 @@ test('regression F4: on a database from before the pass, no trial status names a
     assert.doesNotMatch(html, /Discovery Pass|data-activation|Start my|72 hours|CBT exam|study guide topic|your pass|a pass/i, label)
   }
   assert.match(await render(cases['ended seven-day trial']), /Free trial/, 'a trial that was issued is still described as what it was')
-  // The same statuses on a database that offers the pass do name it: the check is the database answer, not the status.
-  assert.match(await render({ ...discoveryDatabase, trial: { ...trial, status: 'not-offered', policy: null } }), /Discovery Pass/)
+  // On a database that offers the pass, an account it is not offered to sees no pass and no reason either.
+  for (const status of ['not-offered', 'after-early-access']) {
+    const html = await render({ ...discoveryDatabase, trial: { ...trial, status, policy: null } })
+    assert.doesNotMatch(html, /Discovery Pass|data-activation|not offered|kept for later|becomes available/i, status)
+  }
+})
+
+test('a refusal can withdraw every piece of offer text: the description, what is included and the AI line', async () => {
+  const html = await render(discoveryDatabase)
+  const withdrawable = [...html.matchAll(/<withdrawable>([\s\S]*?)<\/withdrawable>/g)].map(match => match[1]).join(' ')
+  assert.match(withdrawable, /Try department courses free for 72 hours/)
+  assert.match(withdrawable, /50-question CBT exam/)
+  assert.match(withdrawable, /a Discovery Pass or /)
+  const kept = html.replace(/<withdrawable>[\s\S]*?<\/withdrawable>/g, '')
+  assert.doesNotMatch(kept, /Try department|CBT exam|study guide topic|AI upload|a Discovery Pass or/,
+    'nothing describing the offer stays outside it')
+  assert.match(kept, /AI practice from your own notes comes with Early Access\./)
 })

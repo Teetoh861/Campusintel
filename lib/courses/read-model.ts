@@ -253,7 +253,8 @@ type AccessReader = () => Promise<CourseAccess | 'signed-out'>
 function accessReader(client: StudentClient): AccessReader {
   let pending: Promise<CourseAccess | 'signed-out'> | null = null
   return () => {
-    pending ??= readEntitlementForVerifiedStudent(client).then(read =>
+    // Course access only: a course list never renders a Discovery offer, so it never reads eligibility.
+    pending ??= readEntitlementForVerifiedStudent(client, { discoveryEligibility: false }).then(read =>
       read.status === 'signed-out' ? 'signed-out' : courseAccessFrom(read))
     return pending
   }

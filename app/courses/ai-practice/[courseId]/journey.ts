@@ -51,7 +51,7 @@ export type JourneyDeps = {
   fetch: typeof fetch
   continuityToken: string
   courseId: string
-  /** The student's own trial grant and whether a pass can still be started (lib/entitlements/presentation.ts
+  /** The student's own trial grant and whether this student is eligible to start a pass (lib/entitlements/presentation.ts
    *  trialWording); copy names a Discovery Pass only where that is what the student holds or can get. */
   trial: TrialWording
   onPhase(phase: JourneyPhase): void
@@ -60,7 +60,7 @@ export type JourneyDeps = {
 
 export const NOT_ENTITLED_TITLE = 'AI practice is not included in your account'
 
-/** Why AI practice is closed and where it opens. The pass is named only when this student can still start one. */
+/** Why AI practice is closed and where it opens. The pass is named only when this student is eligible for one. */
 export function notEntitledMessage(trial: TrialWording): string {
   return trial.passAvailable
     ? 'AI practice opens with a Discovery Pass or Early Access. Get your pass from Plan & Access. GST courses stay free.'

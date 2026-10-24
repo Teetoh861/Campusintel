@@ -33,7 +33,8 @@ const summaryWire = z.object({
   tier: z.enum(['full', 'free']),
   // Full access only: 'trial' here is a seven-day trial issued before the Discovery Pass, never a pass.
   access: z.object({ source: z.enum(['trial', 'early_access', 'manual', 'paid']), ends_at: timestamp }).nullable(),
-  // after-early-access: none while Early Access is active; available_from says when it opens.
+  // not-offered: this account has had Early Access. after-early-access is answered only by databases from before
+  // 20261023120000; neither is ever shown as a reason.
   trial: z.object({ status: z.enum(['available', 'active', 'ended', 'after-early-access', 'not-offered']),
     policy: z.enum(TRIAL_POLICIES).nullable().optional(),
     starts_at: timestamp.nullable(), ends_at: timestamp.nullable(), available_from: timestamp.nullable() }),
@@ -51,7 +52,9 @@ const summaryWire = z.object({
 
 /**
  * The summary every page reads. `trial.policy` is null until a trial exists; a database from before the Discovery Pass
- * only ever issued seven-day trials and offers no pass, so `discovery` is null there.
+ * only ever issued seven-day trials and offers no pass, so `discovery` is null there. `discovery_eligible` is never on
+ * the wire: it is false here and set only by the server's own eligibility read (lib/entitlements/server.ts), so a
+ * summary that did not pass through that read never offers a pass.
  */
 export const entitlementSummarySchema = summaryWire.transform((wire, context) => {
   const { trial_days: trialDays, trial_hours: trialHours, discovery, ...summary } = wire
@@ -62,7 +65,9 @@ export const entitlementSummarySchema = summaryWire.transform((wire, context) =>
   }
   const legacy = discovery === undefined
   const policy: TrialPolicy | null = wire.trial.policy ?? (legacy && wire.trial.starts_at !== null ? 'seven-day' : null)
-  return { ...summary, trial_hours: hours, trial: { ...wire.trial, policy }, discovery: legacy ? null : discovery }
+  const discoveryEligible: boolean = false
+  return { ...summary, trial_hours: hours, trial: { ...wire.trial, policy }, discovery: legacy ? null : discovery,
+    discovery_eligible: discoveryEligible }
 })
 
 export type EntitlementSummary = z.output<typeof entitlementSummarySchema>
@@ -96,16 +101,13 @@ export type EntitlementCommand = z.infer<typeof entitlementCommandSchema>
 const PLAIN_RESULTS = ['signed-out', 'session-changed', 'invalid-request', 'unavailable', 'capacity', 'rate-limited',
   'trial-not-offered'] as const
 
-// How long a used email address blocks a second pass (private.entitlement_policy.discovery_claim_retention).
-// PROPOSED pending privacy approval; the activation answer carries the database's own value.
-export const DISCOVERY_CLAIM_RETENTION_MONTHS = 24
-
 export const entitlementResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pass-activated'), endsAt: timestamp }).strict(),
   // The account already has its one trial grant (active, ended or revoked): a replay, never a second pass.
   z.object({ status: z.literal('already-activated'), endsAt: timestamp }).strict(),
   // This confirmed email address started a pass (on this or a since-deleted account) within the retention period.
-  z.object({ status: z.literal('already-claimed'), retentionMonths: z.number().int().positive() }).strict(),
+  // retentionMonths is accepted from servers built before 20261023120000 and never shown.
+  z.object({ status: z.literal('already-claimed'), retentionMonths: z.number().int().positive().optional() }).strict(),
   z.object({ status: z.literal('early-access-active'), availableFrom: timestamp }).strict(),
   ...PLAIN_RESULTS.map(status => z.object({ status: z.literal(status) }).strict()),
 ])

@@ -8,8 +8,8 @@ import type { ReactElement, ReactNode } from 'react'
 
 /**
  * No content of the course is rendered beside this notice; the server never read it. `passOffered` is true only when
- * this student can still start a Discovery Pass (the database offers one and the account has not had its trial);
- * otherwise the pass is not mentioned at all.
+ * this student is eligible for a Discovery Pass (trialWording().passAvailable, which requires the server's eligibility
+ * read); otherwise the pass is not mentioned at all, and no reason is given.
  */
 export function LockedCourseNotice({ backHref, backLabel, passOffered = false }: {
   backHref?: string; backLabel?: string; passOffered?: boolean

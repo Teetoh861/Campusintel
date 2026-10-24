@@ -1,6 +1,7 @@
 // lib/entitlements/service.ts — One-click Discovery Pass activation for one verified student.
-// The database decides identity, eligibility, the one-pass-per-account and one-pass-per-email rules, the Early Access
-// overlap, the daily guard and the pass window (activate_discovery_pass in 20261021100000_discovery_pass.sql). This
+// The database decides identity, eligibility, the one-pass-per-account and one-pass-per-email rules, Early Access
+// history, the daily guard and the pass window (activate_discovery_pass, last replaced in
+// 20261023120000_discovery_eligibility.sql). This
 // layer applies the request limit first and maps the database answer to the client contract. The keyed email claim
 // hashes are computed by the caller (lib/entitlements/claim-hash.ts). No phone number, code or SMS exists anywhere in
 // this flow.
@@ -13,12 +14,16 @@ export const activationRow = z.discriminatedUnion('state', [
   z.object({ state: z.literal('activated'), ends_at: timestamp }),
   z.object({ state: z.literal('already-activated'), ends_at: timestamp }),
   z.object({ state: z.literal('early-access-active'), available_from: timestamp }),
-  z.object({ state: z.literal('already-claimed'), retention_months: z.number().int().positive() }),
+  // retention_months is still sent for builds from before 20261023120000; this build never shows it.
+  z.object({ state: z.literal('already-claimed'), retention_months: z.number().int().positive().optional() }),
   z.object({ state: z.enum(['signed-out', 'capacity', 'trial-not-offered']) }),
   // The claim-key configuration cannot verify every unexpired claim: nothing was decided (fail closed).
   z.object({ state: z.enum(['claim-key-missing', 'claim-key-replaced']) }),
 ])
 export type ActivationRow = z.infer<typeof activationRow>
+
+/** discovery_pass_eligibility(): whether this student may be offered a pass at all. Never a reason. */
+export const eligibilityRow = z.object({ eligible: z.boolean() })
 
 export type EntitlementEnv = {
   /** The per-account request limit (the requester address is monitored, never a barrier). `limited` means the
@@ -35,7 +40,7 @@ async function activatePass(env: EntitlementEnv): Promise<EntitlementResult> {
   if (row.state === 'activated') return { status: 'pass-activated', endsAt: row.ends_at }
   if (row.state === 'already-activated') return { status: 'already-activated', endsAt: row.ends_at }
   if (row.state === 'early-access-active') return { status: row.state, availableFrom: row.available_from }
-  if (row.state === 'already-claimed') return { status: row.state, retentionMonths: row.retention_months }
+  if (row.state === 'already-claimed') return { status: row.state }
   if (row.state === 'claim-key-missing' || row.state === 'claim-key-replaced') {
     // An operations fault, never the student's: ENTITLEMENT_CLAIM_HASH_KEYS dropped or changed a version that live
     // claims were written with. Surfaced for the operator; the student sees a plain "not available right now".
