@@ -163,6 +163,35 @@ test('verification propagates a failed required check and explains skipped check
   assert.match(report.output, /Result: FAIL/)
 })
 
+test('verification names every failing test with its location and first error lines', t => {
+  const f = fixture(t)
+  const file = path.join(f.root, 'lib', 'auth', 'sample.test.cjs')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(file, [
+    "const { test } = require('node:test')",
+    "const assert = require('node:assert/strict')",
+    "test('queue timing failure', () => assert.equal(1, 2, 'first error line\\nsecond error line\\nthird error line\\nfourth error line'))",
+    "test('nested suite failure', async t => {",
+    "  await t.test('nested test failure', () => assert.ok(false, 'nested error'))",
+    "})",
+    "test('passing fixture test', () => {})",
+    '',
+  ].join('\n'))
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, args, options)
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests — 1 passed, 3 failed, 0 skipped/)
+  for (const title of ['queue timing failure', 'nested test failure', 'nested suite failure']) {
+    assert.ok(report.output.includes(title), title)
+  }
+  for (const line of [3, 4, 5]) assert.ok(report.output.includes(`sample.test.cjs:${line}:`), `location on line ${line}`)
+  assert.match(report.output, /first error line\n\s+second error line\n\s+third error line/)
+  assert.match(report.output, /error: 'nested error'/)
+  assert.doesNotMatch(report.output, /fourth error line|passing fixture test|node:internal|duration_ms:/)
+})
+
 test('verification reports a build environment block without claiming a build pass', t => {
   const f = fixture(t)
   const report = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
