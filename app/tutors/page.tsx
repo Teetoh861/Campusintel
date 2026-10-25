@@ -9,6 +9,9 @@ import { buildWhatsAppUrl } from '@/lib/whatsapp'
 
 import type { ReactElement } from 'react'
 
+// Per-request, so a signed-in student's header is right from the first render.
+export const dynamic = 'force-dynamic'
+
 const WRAP = 'app-container'
 const WAITLIST_MESSAGE = "I'd like to join the CampusIntel tutoring waitlist."
 

@@ -30,7 +30,7 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
-  const { signedIn, version } = useNavigationSession()
+  const { status, signedIn, version } = useNavigationSession()
   const logout = useLogoutAction()
 
   useEffect(() => { setOpen(false) }, [pathname, version])
@@ -94,7 +94,8 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
               {STUDENT_NAVIGATION_GROUPS.desktop.map(topLink)}
             </div>}
 
-            {!signedIn && <div className="ml-auto">
+            {/* An unknown first render shows neither account entry nor student navigation until the lookup answers. */}
+            {status === 'signed-out' && <div className="ml-auto">
               <NavigationAccountControls signedIn={false} surface="blue" onNavigate={close} logout={logout} />
             </div>}
 

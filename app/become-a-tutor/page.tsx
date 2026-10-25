@@ -6,6 +6,9 @@ import { TutorForm } from './TutorForm'
 
 import type { ReactElement } from 'react'
 
+// Per-request, so a signed-in student's header is right from the first render.
+export const dynamic = 'force-dynamic'
+
 const WRAP = 'app-container'
 
 /** Render the existing public information with shared responsive gutters. */

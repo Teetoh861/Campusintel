@@ -4,46 +4,64 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { onStudentChange } from '@/lib/auth/client-events'
 import { AUTH_API, AUTH_LOGOUT_CONTEXT_HEADER, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
+import type { ChromeState } from '@/lib/auth/chrome-state'
 import type { ReactElement, ReactNode } from 'react'
 
-type NavigationSession = { signedIn: boolean; version: number; continuityToken: string | null }
-const SessionContext = createContext<NavigationSession>({ signedIn: false, version: 0, continuityToken: null })
+type NavigationSession = { status: ChromeState; signedIn: boolean; version: number; continuityToken: string | null }
+const SessionContext = createContext<NavigationSession>({ status: 'unknown', signedIn: false, version: 0, continuityToken: null })
 
-/** Reuse the server-verified status endpoint; pending and failed lookups show public chrome. */
-export function NavigationSessionProvider({ children }: { children: ReactNode }): ReactElement {
-  const [state, setState] = useState<NavigationSession>({ signedIn: false, version: 0, continuityToken: null })
+type Answer = { status: Exclude<ChromeState, 'unknown'>; continuityToken: string | null }
+
+/** Read only a complete status answer; anything else is no answer. */
+async function lookup(signal: AbortSignal): Promise<Answer | null> {
+  const response = await fetch(AUTH_API.session, {
+    cache: 'no-store', credentials: 'same-origin', signal,
+    headers: { [AUTH_LOGOUT_CONTEXT_HEADER]: 'true' },
+  })
+  const result: unknown = await response.json()
+  if (!response.ok || !result || typeof result !== 'object' ||
+      !('enabled' in result) || typeof result.enabled !== 'boolean' ||
+      !('signedIn' in result) || typeof result.signedIn !== 'boolean') return null
+  const signedIn = result.enabled && result.signedIn
+  const continuityToken = 'continuityToken' in result && typeof result.continuityToken === 'string'
+    && result.continuityToken ? result.continuityToken : null
+  if (signedIn && continuityToken === null) return null
+  return { status: signedIn ? 'signed-in' : 'signed-out', continuityToken }
+}
+
+/** Start from the proxy's server-verified answer. A pending or failed lookup never replaces a known state;
+ * only an unknown first render falls back to public chrome when the lookup cannot answer.
+ */
+export function NavigationSessionProvider({ initial, children }: { initial: ChromeState; children: ReactNode }): ReactElement {
+  const [state, setState] = useState<NavigationSession>(() =>
+    ({ status: initial, signedIn: initial === 'signed-in', version: 0, continuityToken: null }))
 
   useEffect(() => {
     let controller: AbortController | undefined
     let active = true
-    const refresh = async (): Promise<void> => {
+    // An account change from another document closes open chrome even before the new answer arrives.
+    const refresh = async (changed = false): Promise<void> => {
       controller?.abort()
       controller = new AbortController()
       const { signal } = controller
-      setState(previous => ({ signedIn: false, version: previous.version + 1, continuityToken: null }))
-      try {
-        const response = await fetch(AUTH_API.session, {
-          cache: 'no-store', credentials: 'same-origin', signal,
-          headers: { [AUTH_LOGOUT_CONTEXT_HEADER]: 'true' },
-        })
-        const result: unknown = await response.json()
-        if (!response.ok || !result || typeof result !== 'object' ||
-            !('enabled' in result) || typeof result.enabled !== 'boolean' ||
-            !('signedIn' in result) || typeof result.signedIn !== 'boolean') return
-        const signedIn = result.enabled && result.signedIn
-        const continuityToken = 'continuityToken' in result && typeof result.continuityToken === 'string'
-          && result.continuityToken ? result.continuityToken : null
-        if (signedIn && continuityToken === null) return
-        if (active && !signal.aborted) setState(previous => ({ ...previous, signedIn, continuityToken }))
-      } catch { /* Public chrome remains visible; protected routes keep their server guards. */ }
+      setState(previous => ({ ...previous, continuityToken: null, version: previous.version + (changed ? 1 : 0) }))
+      let answer: Answer | null = null
+      try { answer = await lookup(signal) } catch { /* Keep the presented state; protected routes keep their server guards. */ }
+      if (!active || signal.aborted) return
+      setState(previous => {
+        if (answer) return { status: answer.status, signedIn: answer.status === 'signed-in', continuityToken: answer.continuityToken,
+          version: previous.version + (previous.status === answer.status ? 0 : 1) }
+        return previous.status === 'unknown' ? { ...previous, status: 'signed-out', signedIn: false } : previous
+      })
     }
     const visible = (): void => { if (document.visibilityState === 'visible') void refresh() }
     const restored = (event: PageTransitionEvent): void => { if (event.persisted) void refresh() }
-    const unsubscribe = onStudentChange(refresh)
+    const changed = (): void => { void refresh(true) }
+    const unsubscribe = onStudentChange(changed)
     void refresh()
     window.addEventListener('focus', visible)
     window.addEventListener('pageshow', restored)
-    window.addEventListener(AUTH_STATUS_EVENT, visible)
+    window.addEventListener(AUTH_STATUS_EVENT, changed)
     document.addEventListener('visibilitychange', visible)
     return () => {
       active = false
@@ -51,7 +69,7 @@ export function NavigationSessionProvider({ children }: { children: ReactNode })
       controller?.abort()
       window.removeEventListener('focus', visible)
       window.removeEventListener('pageshow', restored)
-      window.removeEventListener(AUTH_STATUS_EVENT, visible)
+      window.removeEventListener(AUTH_STATUS_EVENT, changed)
       document.removeEventListener('visibilitychange', visible)
     }
   }, [])
