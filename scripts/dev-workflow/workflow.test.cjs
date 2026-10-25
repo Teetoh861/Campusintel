@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { test } = require('node:test')
 const { repository } = require('./repo.cjs')
 const { packageReview } = require('./review.cjs')
@@ -259,38 +259,75 @@ for (const [hook, expected] of [
   })
 }
 
-test('a file waiting for the real-parser lock is not stopped while another holds it; the lock decides', t => {
+/** Run runFiles in a fresh process with a 1 s watchdog; `serial` lists the files it runs as the real-parser batch. */
+function startRunner(root, files, serial = []) {
+  const runner = path.join(root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `const [files, serial] = JSON.parse(process.argv[2])\n` +
+    `require(${JSON.stringify(RUNNER)}).runFiles(files, { testTimeoutMs: 1_000, serialFiles: serial })\n`)
+  const child = spawn(process.execPath, [runner, JSON.stringify([files, serial])], { cwd: root })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.on('data', chunk => { stdout += chunk })
+  child.stderr.on('data', chunk => { stderr += chunk })
+  // A runner that never stops is the failure being tested for; it is killed rather than left to hang this test.
+  const limit = setTimeout(() => child.kill('SIGKILL'), 60_000)
+  return new Promise(resolve => child.on('close', (status, signal) => { clearTimeout(limit); resolve({ status, signal, stdout, stderr }) }))
+}
+
+test('two test runs at once: the second waits for the first real-parser batch outside any test, and both pass', async t => {
   const f = fixture(t)
   const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
-  // Each test of the holder stays under the 1 s watchdog, but together they hold the lock for 2.4 s.
-  const file = (name, tests, delayMs) => {
-    fs.writeFileSync(path.join(f.root, name), [
-      "const { after, before, test } = require('node:test')",
-      `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
-      `before(async () => { await new Promise(resolve => setTimeout(resolve, ${delayMs})); await holdRealParsers() })`,
-      'after(releaseRealParsers)',
-      ...Array.from({ length: tests }, (_, index) =>
-        `test('step ${index + 1}', () => new Promise(resolve => setTimeout(resolve, 600)))`),
-      '',
-    ].join('\n'))
-    return path.join(f.root, name)
+  // Each test stays under the 1 s watchdog, but the batch holds the lock for 2.4 s: the second run waits twice the
+  // watchdog's limit. Under the runner the file must not take the lock itself, or it would wait for its own runner.
+  const file = path.join(f.root, 'real.test.cjs')
+  fs.writeFileSync(file, [
+    "const { after, before, test } = require('node:test')",
+    `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+    'before(holdRealParsers)',
+    'after(releaseRealParsers)',
+    ...[1, 2, 3, 4].map(step => `test('step ${step}', () => new Promise(resolve => setTimeout(resolve, 600)))`),
+    '',
+  ].join('\n'))
+  const runs = await Promise.all([startRunner(f.root, [file], [file]), startRunner(f.root, [file], [file])])
+  for (const run of runs) {
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /^# pass 4$/m)
+    assert.doesNotMatch(run.stderr, /the batch was stopped|waiting for another real-parser test run/)
   }
-  // The waiter asks second, so it waits about 2 s: twice the watchdog's limit. It is listed first because node:test
-  // reports a file's events only once the files listed before it have finished.
-  const files = [file('waiter.test.cjs', 1, 300), file('holder.test.cjs', 4, 0)]
-  const runner = path.join(f.root, 'watchdog-runner.cjs')
-  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles(process.argv.slice(2), { testTimeoutMs: 1_000 })\n`)
-  const result = spawnSync(process.execPath, [runner, ...files], { cwd: f.root, encoding: 'utf8', timeout: 60_000 })
-  assert.doesNotMatch(result.stderr, /the batch was stopped/)
-  assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /^# pass 5$/m)
-  assert.match(result.stdout, /run-tests: waiting for the real-parser lock/, 'one file really waited')
+  assert.equal(runs.filter(run => /^run-tests: waiting for the real-parser lock \(127\.0\.0\.1:47291\)/m.test(run.stderr)).length,
+    1, 'exactly one run waited for the other')
+})
 
-  // The wait is not counted, but the clock restarts once it ends: a test stuck after the wait is still stopped.
-  fs.appendFileSync(files[0], "test('stuck after the wait', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })\n")
-  const stuck = spawnSync(process.execPath, [runner, ...files], { cwd: f.root, encoding: 'utf8', timeout: 60_000 })
-  assert.equal(stuck.status, 1)
-  assert.match(stuck.stderr, /run-tests: "stuck after the wait" \(waiter\.test\.cjs:6\).* ran for more than 1 s; the batch was stopped/)
+test('a stray "run-tests: waiting for" line does not pause the watchdog', async t => {
+  const f = fixture(t)
+  const file = path.join(f.root, 'unrelated.test.cjs')
+  fs.writeFileSync(file, "const { test } = require('node:test')\nprocess.stderr.write('run-tests: waiting for unrelated IO\\n')\n" +
+    "test('ordinary hung test', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })\n")
+  const run = await startRunner(f.root, [file])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /^run-tests: "ordinary hung test" \(unrelated\.test\.cjs:3\) ran for more than 1 s; the batch was stopped$/m)
+})
+
+test('a file that exits early does not shield a silent stuck file, which is named', async t => {
+  const f = fixture(t)
+  const exits = path.join(f.root, 'exits.test.cjs')
+  const silent = path.join(f.root, 'silent.test.cjs')
+  fs.writeFileSync(exits, "const { before, test } = require('node:test')\n" +
+    "before(() => { setTimeout(() => process.exit(1), 300); return new Promise(() => {}) })\ntest('never started', () => {})\n")
+  fs.writeFileSync(silent, 'setInterval(() => {}, 1_000)\n')
+  const run = await startRunner(f.root, [exits, silent])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /^run-tests: silent\.test\.cjs reported nothing for more than 1 s; the batch was stopped$/m)
+})
+
+test('exactly the test files that use the real-parser fixture run in the serial batch', () => {
+  const root = path.join(__dirname, '../..')
+  // Read in another process: loading the runner here would clear this test process's node:test child marker.
+  const serial = JSON.parse(spawnSync(process.execPath, ['-p', `JSON.stringify(require(${JSON.stringify(RUNNER)}).SERIAL_TEST_FILES)`],
+    { encoding: 'utf8' }).stdout)
+  const users = collectTestFiles(root).application
+    .filter(file => fs.readFileSync(path.join(root, file), 'utf8').includes('fixtures/real-parsers.cjs'))
+  assert.deepEqual([...serial].sort(), users.sort(), 'every fixture user is in the batch, and nothing else is')
 })
 
 test('verification reports a build environment block without claiming a build pass', t => {
