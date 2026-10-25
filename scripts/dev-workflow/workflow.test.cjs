@@ -192,6 +192,48 @@ test('verification names every failing test with its location and first error li
   assert.doesNotMatch(report.output, /fourth error line|passing fixture test|node:internal|duration_ms:/)
 })
 
+test('a test that runs out of its own time fails and its file still exits, so the verifier names it', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+    "const { test } = require('node:test')",
+    // A ref'd interval left behind would keep the file's process alive forever without forceExit.
+    "test('stuck parser wait', { timeout: 500 }, () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })",
+    "test('passing fixture test', () => {})",
+    '',
+  ].join('\n'))
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, args, options)
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests — 1 passed, 1 failed, 0 skipped/)
+  assert.match(report.output, /stuck parser wait\n\s+location: .*sample\.test\.cjs:2:1/)
+  assert.match(report.output, /error: 'test timed out after 500ms'/)
+})
+
+test('a stuck test without a timeout is named and the batch stopped, instead of hanging the verifier', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+    "const { test } = require('node:test')",
+    "test('passing fixture test', () => {})",
+    "test('stuck parser wait', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })",
+    '',
+  ].join('\n'))
+  // The production limit is two minutes; this runs the same watchdog with one second. A file, not -e: the runner's
+  // file processes inherit this process's execArgv.
+  const runner = path.join(f.root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { testTimeoutMs: 1_000 })\n`)
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, [runner, args.at(-1)], { ...options, timeout: 60_000 })
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests/)
+  assert.match(report.output, /run-tests: "stuck parser wait" \(lib\/auth\/sample\.test\.cjs:3\) ran for more than 1 s; the batch was stopped/)
+})
+
 test('verification reports a build environment block without claiming a build pass', t => {
   const f = fixture(t)
   const report = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
