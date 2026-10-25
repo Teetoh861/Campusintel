@@ -52,6 +52,9 @@ const MAX_QUEUED_PARSES = 8
 // SIGKILL cannot be caught, so the exit normally follows within milliseconds. Past this the parser or its
 // sampler is uncontained: the request is answered, but the slot stays held while the kill is retried.
 const PARSER_EXIT_GRACE_MS = 2_000
+// A parser that is exiting can fail a sample (its /proc entry or ps row is gone) before its exit event arrives.
+// A failed sample is therefore answered 'unmonitored' only if the parser is still alive this long afterwards.
+const SAMPLE_FAILURE_EXIT_WAIT_MS = 500
 // Enough of the parser's stderr to recognise a V8 abort or a missing module; the rest is discarded.
 const STDERR_TAIL_CHARS = 4_096
 
@@ -151,6 +154,7 @@ function runParser(kind: ParserKind, bytes: Uint8Array, limits: ParserLimits, st
     let stderr = ''
     let settled = false
     let sample: (MemorySample & { started: number; settled: boolean }) | null = null
+    let exitWait: NodeJS.Timeout | undefined
     const answer = (outcome: ParseOutcome, result: ExtractionResult) =>
       resolve({ result, outcome, elapsedMs: Date.now() - started, peakResidentBytes })
     const finish = (outcome: ParseOutcome, result: ExtractionResult) => {
@@ -158,6 +162,7 @@ function runParser(kind: ParserKind, bytes: Uint8Array, limits: ParserLimits, st
       settled = true
       clearTimeout(deadline)
       clearInterval(sampling)
+      clearTimeout(exitWait)
       // Armed before any signal, so the request is answered in bounded time however termination fails.
       const grace = setTimeout(() => {
         console.error('AI practice parser or its memory sampler survived SIGKILL; the slot stays held until both exit')
@@ -172,9 +177,17 @@ function runParser(kind: ParserKind, bytes: Uint8Array, limits: ParserLimits, st
       console.error('AI practice parser memory could not be measured', reason)
       finish('unmonitored', { status: 'unavailable' })
     }
+    // Sampling stops meanwhile; an exit before the wait ends is settled by the exit handler as a crash.
+    const sampleFailed = (reason: string) => {
+      if (settled || exitWait !== undefined) return
+      exitWait = setTimeout(() => {
+        // After this iteration's I/O, so an exit the kernel has already reported is heard before deciding.
+        setImmediate(() => { if (!settled && !parser.isDead()) unmonitored(reason) })
+      }, SAMPLE_FAILURE_EXIT_WAIT_MS)
+    }
     const deadline = setTimeout(() => finish('timeout', { status: 'rejected', reason: 'corrupt' }), limits.timeoutMs)
     const sampling = setInterval(() => {
-      if (settled || parser.isDead() || child.pid === undefined) return
+      if (settled || exitWait !== undefined || parser.isDead() || child.pid === undefined) return
       if (sample !== null) {
         if (!sample.settled && Date.now() - sample.started > MEMORY_SAMPLE_TIMEOUT_MS) unmonitored('a sample did not complete')
         // The next sample waits for this one's ps to be confirmed dead, so samplers never pile up.
@@ -190,7 +203,7 @@ function runParser(kind: ParserKind, bytes: Uint8Array, limits: ParserLimits, st
         if (bytesInUse > limits.maxResidentBytes) finish('memory', { status: 'rejected', reason: 'too-much-text' })
       }, (error: unknown) => {
         // After settling, a failed sample is only the in-flight ps being stopped.
-        if (!settled && !parser.isDead()) unmonitored(errorMessage(error))
+        if (!settled && !parser.isDead()) sampleFailed(errorMessage(error))
       }).finally(() => { current.settled = true })
     }, MEMORY_SAMPLE_MS)
     // Never spawned: supervise has already logged why, and there is nothing to kill.
