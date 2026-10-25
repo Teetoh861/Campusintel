@@ -259,6 +259,40 @@ for (const [hook, expected] of [
   })
 }
 
+test('a file waiting for the real-parser lock is not stopped while another holds it; the lock decides', t => {
+  const f = fixture(t)
+  const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
+  // Each test of the holder stays under the 1 s watchdog, but together they hold the lock for 2.4 s.
+  const file = (name, tests, delayMs) => {
+    fs.writeFileSync(path.join(f.root, name), [
+      "const { after, before, test } = require('node:test')",
+      `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+      `before(async () => { await new Promise(resolve => setTimeout(resolve, ${delayMs})); await holdRealParsers() })`,
+      'after(releaseRealParsers)',
+      ...Array.from({ length: tests }, (_, index) =>
+        `test('step ${index + 1}', () => new Promise(resolve => setTimeout(resolve, 600)))`),
+      '',
+    ].join('\n'))
+    return path.join(f.root, name)
+  }
+  // The waiter asks second, so it waits about 2 s: twice the watchdog's limit. It is listed first because node:test
+  // reports a file's events only once the files listed before it have finished.
+  const files = [file('waiter.test.cjs', 1, 300), file('holder.test.cjs', 4, 0)]
+  const runner = path.join(f.root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles(process.argv.slice(2), { testTimeoutMs: 1_000 })\n`)
+  const result = spawnSync(process.execPath, [runner, ...files], { cwd: f.root, encoding: 'utf8', timeout: 60_000 })
+  assert.doesNotMatch(result.stderr, /the batch was stopped/)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^# pass 5$/m)
+  assert.match(result.stdout, /run-tests: waiting for the real-parser lock/, 'one file really waited')
+
+  // The wait is not counted, but the clock restarts once it ends: a test stuck after the wait is still stopped.
+  fs.appendFileSync(files[0], "test('stuck after the wait', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })\n")
+  const stuck = spawnSync(process.execPath, [runner, ...files], { cwd: f.root, encoding: 'utf8', timeout: 60_000 })
+  assert.equal(stuck.status, 1)
+  assert.match(stuck.stderr, /run-tests: "stuck after the wait" \(waiter\.test\.cjs:6\).* ran for more than 1 s; the batch was stopped/)
+})
+
 test('verification reports a build environment block without claiming a build pass', t => {
   const f = fixture(t)
   const report = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({

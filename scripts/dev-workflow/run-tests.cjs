@@ -16,6 +16,9 @@ const { tap } = require('node:test/reporters')
 // Generous for a loaded machine: the slowest test takes about 16 s on an idle one.
 const TEST_TIMEOUT_MS = 120_000
 const WATCHDOG_INTERVAL_MS = 1_000
+// A test file announces on stderr a wait whose limit it enforces itself (lib/ai-practice/fixtures/real-parsers.cjs: one
+// real-parser file at a time). Until it is done waiting, that file's time does not count; afterwards its clock restarts.
+const WAIT_LINE = /^run-tests: (done )?waiting for .+$/gm
 
 /** Resolve caller-supplied test paths once, byte for byte, without glob interpretation. */
 function testFiles(args, cwd = process.cwd()) {
@@ -55,10 +58,20 @@ function runFiles(files, { testTimeoutMs = TEST_TIMEOUT_MS } = {}) {
     return realPaths.get(file)
   }
   const states = new Map(files.map(file => [real(file), { file: real(file), enqueued: 0, completed: 0, test: null,
-    since: null, done: false }]))
+    since: null, waiting: false, done: false }]))
   let lastEvent = Date.now()
   const stateOf = event => { lastEvent = Date.now(); return event.file === undefined ? undefined : states.get(real(event.file)) }
-  for (const name of ['test:stdout', 'test:stderr', 'test:diagnostic']) stream.on(name, stateOf)
+  for (const name of ['test:stdout', 'test:diagnostic']) stream.on(name, stateOf)
+  stream.on('test:stderr', event => {
+    const state = stateOf(event)
+    const last = state && [...String(event.message).matchAll(WAIT_LINE)].at(-1)
+    if (!last) return
+    state.waiting = !last[1]
+    if (state.waiting) return
+    const now = Date.now()
+    if (state.test) state.test.started = now
+    if (state.since !== null) state.since = now
+  })
   stream.on('test:enqueue', event => {
     const state = stateOf(event)
     if (!state || event.nesting !== 0 || !isRealTest(event)) return
@@ -84,7 +97,7 @@ function runFiles(files, { testTimeoutMs = TEST_TIMEOUT_MS } = {}) {
     const seconds = `${testTimeoutMs / 1000} s`
     for (const state of states.values()) {
       const { file } = state
-      if (state.done || state.since === null) continue
+      if (state.done || state.since === null || state.waiting) continue
       const where = path.relative(process.cwd(), file)
       state.hooks ??= declaredHooks(file)
       if (state.test) {
@@ -102,7 +115,8 @@ function runFiles(files, { testTimeoutMs = TEST_TIMEOUT_MS } = {}) {
     }
     // A file that never reports anything (stuck while loading) shows only as silence from every file.
     const silent = [...states.values()].filter(state => !state.done && state.since === null).map(state => state.file)
-    if (silent.length && now - lastEvent > testTimeoutMs && ![...states.values()].some(state => state.test)) {
+    const busy = [...states.values()].some(state => state.test || state.waiting)
+    if (silent.length && now - lastEvent > testTimeoutMs && !busy) {
       return `${silent.map(file => path.relative(process.cwd(), file)).join(', ')} reported nothing for more than ${seconds}`
     }
     return null
