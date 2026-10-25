@@ -234,6 +234,31 @@ test('a stuck test without a timeout is named and the batch stopped, instead of 
   assert.match(report.output, /run-tests: "stuck parser wait" \(lib\/auth\/sample\.test\.cjs:3\) ran for more than 1 s; the batch was stopped/)
 })
 
+for (const [hook, expected] of [
+  ['after', 'lib/auth/sample\\.test\\.cjs: the after hook at lib/auth/sample\\.test\\.cjs:2 ran for more than 1 s after its last test'],
+  ['before', '"passing fixture test" \\(lib/auth/sample\\.test\\.cjs:3\\), or the before hook at lib/auth/sample\\.test\\.cjs:2, ran for more than 1 s'],
+]) {
+  test(`a hanging ${hook} hook is named with its file and the batch stopped, instead of hanging the verifier`, t => {
+    const f = fixture(t)
+    fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+    fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+      `const { ${hook}, test } = require('node:test')`,
+      `${hook}(() => { setInterval(() => {}, 1_000); return new Promise(() => {}) })`,
+      "test('passing fixture test', () => {})",
+      '',
+    ].join('\n'))
+    const runner = path.join(f.root, 'watchdog-runner.cjs')
+    fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { testTimeoutMs: 1_000 })\n`)
+    const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+      args.includes(RUNNER) ? spawnSync(program, [runner, args.at(-1)], { ...options, timeout: 60_000 })
+        : { status: 0, stdout: '', stderr: '' },
+    })
+    assert.equal(report.exitCode, 1)
+    assert.match(report.output, /FAIL\s+Application tests/)
+    assert.match(report.output, new RegExp(`run-tests: ${expected}; the batch was stopped`))
+  })
+}
+
 test('verification reports a build environment block without claiming a build pass', t => {
   const f = fixture(t)
   const report = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
