@@ -16,8 +16,8 @@ export type HomeCourse = {
   status: HomeCourseStatus
   // The course page when the shelf has one; null leaves the row as text.
   href: string | null
-  // Null until the student has practised this course.
-  progress: { practised: number; total: number | null; lastScore: { score: number; total: number } | null } | null
+  // Null until the student has a graded attempt in this course; an open attempt adds nothing until it is graded.
+  progress: { practised: number; total: number | null; lastScore: { score: number; total: number } } | null
 }
 
 export type ContinuePractice =
@@ -95,6 +95,5 @@ export function formatCourseProgress(progress: NonNullable<HomeCourse['progress'
   const questions = progress.total === null
     ? `${progress.practised} ${progress.practised === 1 ? 'question' : 'questions'} practised`
     : `${progress.practised} of ${progress.total} questions practised`
-  return progress.lastScore === null ? questions
-    : `${questions} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
+  return `${questions} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
 }

@@ -243,16 +243,16 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
   f.state.current.cbtBankSizes = new Map([['course-0', 40], ['course-1', 25]])
   f.state.progress = { ...f.state.progress, open: { courseId: 'repository-1', contentKey: 'course-1',
     deadlineAt: minutesFromNow(11.5) }, latest: { courseId: 'repository-0', contentKey: 'course-0' } }
-  started(f, [['repository-0', { practised: 10, lastScore: { score: 6, total: 10 } }],
-    ['repository-1', { practised: 5, lastScore: null }]])
+  // The open attempt's course has no graded attempt yet, so the database sends no figures for it.
+  started(f, [['repository-0', { practised: 10, lastScore: { score: 6, total: 10 } }]])
   const html = await f.html(), rows = items(html)
   const next = continueCard(html)
   assert.match(next, /data-continue="resume"/)
   assert.match(next, /href="\/courses\/course-1\/quiz"/)
   assert.match(next, />Resume practice: COURSE1, 12 min left</)
   assert.equal((html.match(/class="dashboard-continue /g) || []).length, 1, 'one next step only')
-  assert.match(rows[1], />5 of 25 questions practised</, 'an open attempt\'s questions count; it has no score yet')
-  assert.doesNotMatch(rows[1], /Last score/)
+  assert.doesNotMatch(rows[1], FIGURES, 'an open attempt adds nothing until it is graded')
+  assert.match(rows[0], />10 of 40 questions practised · Last score 6\/10</)
   for (const [minutes, text] of [[60, '1 hr left'], [95, '1 hr 35 min left'], [0.2, '1 min left']]) {
     f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: minutesFromNow(minutes) } }
     assert.match(continueCard(await f.html()), new RegExp(`>Resume practice: COURSE1, ${text}<`))
@@ -279,13 +279,13 @@ test('sprint plan 23 Oct item 2: a course without a question bank shows no total
   f.state.current.courses = [mappedCourse(0, 'overview-only'), mappedCourse(1, 'locked'), mappedCourse(2, 'ready')]
   f.state.current.cbtBankSizes = new Map()
   started(f, [['repository-1', { practised: 3, lastScore: { score: 2, total: 3 } }],
-    ['repository-2', { practised: 1, lastScore: null }]])
+    ['repository-2', { practised: 1, lastScore: { score: 1, total: 1 } }]])
   f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-1', contentKey: 'course-1' } }
   const html = await f.html(), rows = items(html)
   assert.doesNotMatch(rows[0], FIGURES, 'no bank, never practised: nothing')
   assert.match(rows[1], />3 questions practised · Last score 2\/3</, 'a locked course keeps the student\'s own figures')
   assert.doesNotMatch(rows[1], / of \d+/, 'and no total it may not count now')
-  assert.match(rows[2], />1 question practised</)
+  assert.match(rows[2], />1 question practised · Last score 1\/1</)
   assert.equal(continueCard(html), undefined, 'no Continue card into a course the plan now locks')
 }))
 

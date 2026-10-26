@@ -1,6 +1,6 @@
 -- supabase/migrations/20261027100000_home_practice_progress.sql — The student's own practice summary for home (launch
--- sprint item 2): the open attempt to resume, the course last graded, and per course the questions given and the last
--- score. Runs after 20261025100000_server_run_practice.sql and changes nothing in it.
+-- sprint item 2): the open attempt to resume, the course last graded, and per course the questions practised in graded
+-- attempts and the last score. Runs after 20261025100000_server_run_practice.sql and changes nothing in it.
 --   * One call for every course, service role only, keyed by the verified session like the other practice_* functions,
 --     so the database derives the student and nothing else's attempts can be asked for.
 --   * Only server-run attempts count (deadline_at set); legacy browser-run attempts and Discovery exams are ignored.
@@ -11,8 +11,9 @@
 -- ---------------------------------------------------------------------------
 -- The summary
 -- ---------------------------------------------------------------------------
--- practised: distinct questions this student has been given in the course that are still in its practice pool, so the
--- figure is a part of the same total published_cbt_summary reports. score/total: the latest graded attempt, if any.
+-- Only graded (marked) attempts count: an open attempt adds nothing until it is graded, and a course with no graded
+-- attempt has no entry. practised: distinct questions of those attempts still in the course's practice pool, so the
+-- figure is a part of the same total published_cbt_summary reports. score/total: the latest graded attempt.
 create function public.practice_progress(p_session_id uuid) returns jsonb
 language plpgsql
 security definer
@@ -36,16 +37,17 @@ begin
       from public.quiz_attempts a join public.courses c on c.id = a.course_id
       where a.user_id = v_user and a.status <> 'in_progress' and a.deadline_at is not null
       order by a.finished_at desc, a.id desc limit 1),
-    'courses', coalesce((select jsonb_agg(jsonb_build_object('course_id', started.course_id,
+    'courses', coalesce((select jsonb_agg(jsonb_build_object('course_id', marked.course_id,
         'practised', (select count(distinct q.question_id)::integer
           from public.quiz_attempt_questions q join public.quiz_attempts a on a.id = q.attempt_id
-          where a.user_id = v_user and a.course_id = started.course_id and a.deadline_at is not null
-            and q.question_id in (select pool.question_id from private.practice_pool(started.course_id) pool)),
-        'score', graded.score, 'total', graded.question_count) order by started.course_id)
+          where a.user_id = v_user and a.course_id = marked.course_id and a.deadline_at is not null
+            and a.status <> 'in_progress'
+            and q.question_id in (select pool.question_id from private.practice_pool(marked.course_id) pool)),
+        'score', graded.score, 'total', graded.question_count) order by marked.course_id)
       from (select distinct a.course_id from public.quiz_attempts a
-        where a.user_id = v_user and a.deadline_at is not null) started
-      left join lateral (select g.score, g.question_count from public.quiz_attempts g
-        where g.user_id = v_user and g.course_id = started.course_id and g.deadline_at is not null
+        where a.user_id = v_user and a.deadline_at is not null and a.status <> 'in_progress') marked
+      join lateral (select g.score, g.question_count from public.quiz_attempts g
+        where g.user_id = v_user and g.course_id = marked.course_id and g.deadline_at is not null
           and g.status <> 'in_progress'
         order by g.finished_at desc, g.id desc limit 1) graded on true), '[]'::jsonb));
 end;
@@ -53,7 +55,8 @@ $$;
 
 comment on function public.practice_progress(uuid) is
   'Home''s practice summary for the verified session: the open attempt closest to its deadline, the course last '
-  'graded, and per course the questions given (still in the pool) and the last score. Server-run attempts only; '
+  'graded, and per course the questions practised in graded attempts (still in the pool) and the last score. '
+  'Server-run attempts only; '
   'grades overdue attempts first. Counts and scores only. Service role only.';
 
 revoke all on function public.practice_progress(uuid) from public, anon, authenticated, service_role;

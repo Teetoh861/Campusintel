@@ -1,7 +1,8 @@
 -- supabase/tests/home_practice_progress.test.sql — Home's practice summary (20261027100000_home_practice_progress.sql,
 -- owner's sprint plan of 23 Oct, item 2): one service-role call per page, keyed by the session, with the student's own
--- open attempt, latest graded course, and per course the questions given and the last score; overdue attempts are
--- graded first; legacy attempts and other students' attempts never count.
+-- open attempt, latest graded course, and per course the questions practised in graded attempts and the last score;
+-- an open attempt adds nothing until graded; overdue attempts are graded first; legacy attempts and other students'
+-- attempts never count.
 begin;
 select no_plan();
 
@@ -87,8 +88,8 @@ select is(pg_temp.o('open') -> 'open' - 'deadline_at',
 select is((pg_temp.o('open') -> 'open' ->> 'deadline_at')::timestamptz,
   (select deadline_at from public.quiz_attempts where id = pg_temp.a(1)), 'and its own deadline');
 select is(pg_temp.o('open') -> 'latest', 'null'::jsonb, 'nothing graded yet');
-select is(pg_temp.figures(pg_temp.o('open')), '{"08":{"practised":5,"score":null,"total":null}}'::jsonb,
-  'the questions given count at once; no score until graded');
+select is(pg_temp.figures(pg_temp.o('open')), '{}'::jsonb,
+  'an open attempt adds no figures until it is graded');
 
 -- 4. Graded, then a second attempt in the same course and an open one in another --------------------------------------
 set local role service_role;
@@ -105,9 +106,8 @@ select is(pg_temp.figures(pg_temp.o('graded')), '{"08":{"practised":5,"score":3,
   'the last score is the graded one');
 select is(pg_temp.o('two-open') -> 'open' ->> 'course_id', pg_temp.c('07')::text,
   'with two open attempts, the one closest to its deadline comes first');
-select is(pg_temp.figures(pg_temp.o('two-open')),
-  '{"07":{"practised":5,"score":null,"total":null},"08":{"practised":10,"score":3,"total":5}}'::jsonb,
-  'several courses: distinct questions given per course, and each course''s own last score');
+select is(pg_temp.figures(pg_temp.o('two-open')), '{"08":{"practised":5,"score":3,"total":5}}'::jsonb,
+  'questions of the open attempts (a second one in 08, a first one in 07) are not counted until graded');
 
 -- 5. An attempt whose time is up is graded before it is shown ----------------------------------------------------------
 update public.quiz_attempts set created_at = created_at - interval '1 hour', deadline_at = clock_timestamp() - interval '1 second'
@@ -118,8 +118,9 @@ reset role;
 select is(pg_temp.o('overdue') -> 'open' ->> 'course_id', pg_temp.c('08')::text,
   'an overdue attempt is never offered to resume; the next open one is');
 select is((select status from public.quiz_attempts where id = pg_temp.a(3)), 'timed_out', 'it was graded first');
-select is(pg_temp.figures(pg_temp.o('overdue')) -> '07', '{"practised":5,"score":0,"total":5}'::jsonb,
-  'and its score is the graded one');
+select is(pg_temp.figures(pg_temp.o('overdue')),
+  '{"07":{"practised":5,"score":0,"total":5},"08":{"practised":5,"score":3,"total":5}}'::jsonb,
+  'once graded it counts, with its graded score; several courses keep their own figures');
 
 -- 6. Legacy attempts never count ---------------------------------------------------------------------------------------
 insert into public.quiz_attempts (id, user_id, course_id, question_count, created_at, status, finished_at) values
@@ -142,9 +143,9 @@ select is(pg_temp.o('other-day-one') - 'now', '{"state":"ok","open":null,"latest
   'another student sees day one, not the first student''s attempts');
 select is(jsonb_build_object('open', pg_temp.o('other-open') -> 'open' ->> 'course_id',
     'figures', pg_temp.figures(pg_temp.o('other-open'))),
-  jsonb_build_object('open', pg_temp.c('08'), 'figures', '{"08":{"practised":5,"score":null,"total":null}}'::jsonb),
-  'and then only their own attempt in the same course');
-select is(pg_temp.figures(pg_temp.o('first-again')) -> '08', '{"practised":10,"score":3,"total":5}'::jsonb,
+  jsonb_build_object('open', pg_temp.c('08'), 'figures', '{}'::jsonb),
+  'and then only their own open attempt in the same course, with no figures until it is graded');
+select is(pg_temp.figures(pg_temp.o('first-again')) -> '08', '{"practised":5,"score":3,"total":5}'::jsonb,
   'the first student''s figures are unchanged by the second student''s attempt');
 
 -- 8. Counts and identities only ---------------------------------------------------------------------------------------
