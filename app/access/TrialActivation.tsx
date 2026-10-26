@@ -28,9 +28,11 @@ export function WhileOffered({ children }: { children: ReactNode }): ReactNode {
   return useContext(PassOffer)?.withdrawn ? null : children
 }
 
-export function TrialActivation({ continuityToken, passHours }: {
+export function TrialActivation({ continuityToken, passHours, profileRevision }: {
   continuityToken: string
   passHours: number
+  /** The profile revision this page showed, so the pass sets exactly those courses (D7). */
+  profileRevision: number
 }): ReactElement {
   const router = useRouter()
   const token = useRef(continuityToken).current
@@ -51,7 +53,7 @@ export function TrialActivation({ continuityToken, passHours }: {
   async function activate(): Promise<void> {
     setBusy(true)
     setMessage(null)
-    const result = await postEntitlementCommand({ action: 'activate-discovery-pass' }, token)
+    const result = await postEntitlementCommand({ action: 'activate-discovery-pass', profileRevision }, token)
     setBusy(false)
     const { message: next, next: after } = describeResult(result)
     setMessage(next)

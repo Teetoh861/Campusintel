@@ -305,6 +305,8 @@ lifts by itself. If no semester after today has been entered, locks stay on.
 - `term-extend` takes the department's new last day. Giving the semester's own last day removes the extension. It is
   refused (`ended`) once that department's semester has ended, and nothing changes; handle a late request for one
   student with `selection-change`. Semesters may not overlap, and a department's end may not pass the next semester's.
+- Before restoring a revoked grant (`change-grant --action restore`), check the student's courses with
+  `selection-status`: a restored grant sets whatever courses the student has at that moment.
 - A selection change touches no grant, preview or practice attempt. If a pass was spent on the wrong courses because of
   a team mistake, compensate with `grant` separately.
 
