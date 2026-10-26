@@ -40,7 +40,7 @@ test('a start in flight and this tab\'s unsent choices are validated on every re
   const local = memory(), session = memory()
   withWindow({ localStorage: local, sessionStorage: session }, () => {
     const s = storageModule()
-    const pending = { attemptId: ATTEMPT, intent: 'new', redoOf: null, expected: { questionCount: 50, durationSeconds: 1800 } }
+    const pending = { attemptId: ATTEMPT, intent: 'new', redoOf: null, expected: { questionCount: 50, durationSeconds: 1800, wholeBank: false } }
     s.writePendingStart('financial-accounting-1', pending)
     assert.deepEqual(s.readPendingStart('financial-accounting-1'), pending)
     session.setItem('practice-start:financial-accounting-1', JSON.stringify({ ...pending, expected: { questionCount: 500 } }))
@@ -67,7 +67,7 @@ test('storage that is missing or throws is never fatal', () => {
       const s = storageModule()
       s.writeFlags(ATTEMPT, new Set([Q(1)]))
       assert.deepEqual([...s.readFlags(ATTEMPT, [Q(1)])], [])
-      s.writePendingStart('x', { attemptId: ATTEMPT, intent: 'new', redoOf: null, expected: { questionCount: 1, durationSeconds: 300 } })
+      s.writePendingStart('x', { attemptId: ATTEMPT, intent: 'new', redoOf: null, expected: { questionCount: 1, durationSeconds: 300, wholeBank: true } })
       assert.equal(s.readPendingStart('x'), null)
       s.clearPendingStart('x')
       s.writeUnsent(ATTEMPT, { answers: {}, dirty: [] })
@@ -100,4 +100,9 @@ test('the attempt line never claims a save the server has not confirmed', () => 
   assert.doesNotMatch(PRACTICE_COPY.timeUp + PRACTICE_COPY.timeUpOffline, /submitted/i,
     'time up waits for the server before saying the attempt was submitted')
   assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /timer has not started/i)
+})
+
+test('a lost start response says confirmation failed and that its timer may already be running', () => {
+  assert.match(PRACTICE_COPY.startFailedTitle, /couldn’t be confirmed/)
+  assert.match(PRACTICE_COPY.startFailedBody, /timer may already be running/i)
 })

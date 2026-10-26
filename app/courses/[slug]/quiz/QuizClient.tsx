@@ -143,8 +143,9 @@ export function QuizClient(props: Props): ReactElement | null {
   const start = useCallback((intent: 'new' | 'redo', redoOf: string | null, expected: PracticeBrief) => {
     const kept = readPendingStart(courseSlug)
     const same = kept !== null && kept.intent === intent && kept.redoOf === redoOf
-    void begin(same ? kept : { attemptId: crypto.randomUUID(), intent, redoOf, expected })
-  }, [courseSlug, begin])
+    void begin(same ? kept : { attemptId: crypto.randomUUID(), intent, redoOf,
+      expected: { ...expected, wholeBank: bankSize <= expected.questionCount } })
+  }, [courseSlug, begin, bankSize])
 
   // A start whose response was lost before a reload: ask for that same attempt instead of offering a new one.
   useEffect(() => {
