@@ -18,19 +18,24 @@ import { clearPendingStart, markResultSeen, readPendingStart, resultSeen, writeP
 import type { GradedAttempt, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
 import type { PendingStart } from './practice-storage'
+import type { PracticeProblem } from './practice-presentation'
 import type { PracticeBrief, ReportTarget } from './types'
 import type { ReactElement } from 'react'
 
 const START_TRIES = 3
 const START_RETRY_MS = 1500
 const NO_RETURN_FOCUS: ReturnFocus = []
-type Problem = { title: string; body: string }
+type Problem = PracticeProblem
 const PROBLEMS: Record<string, Problem> = {
-  'start-failed': { title: PRACTICE_COPY.startFailedTitle, body: PRACTICE_COPY.startFailedBody },
+  // No answer from the server: Try again repeats the same request, so it can only find or make this one attempt.
+  'no-connection': { title: PRACTICE_COPY.noConnectionTitle, body: PRACTICE_COPY.noConnectionBody, retry: true },
+  // The server answered and started nothing.
+  'start-refused': { title: PRACTICE_COPY.startRefusedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
+  'resume-failed': { title: PRACTICE_COPY.resumeFailedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
   'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
   'locked': { title: 'You can’t start a new attempt right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
-  'signed-out': { title: 'You’ve been signed out.', body: 'Sign in again to continue.' },
+  'signed-out': { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody },
   'session-changed': { title: 'You signed in on another tab.', body: 'Refresh this page to continue.' },
 }
 
@@ -83,6 +88,8 @@ export function QuizClient(props: Props): ReactElement | null {
   const [reported, setReported] = useState<Readonly<Record<string, true>>>({})
   const reportReturnFocus = useRef<ReturnFocus>(NO_RETURN_FOCUS)
   const starting = useRef(false)
+  // What Try again sends after a start problem: the same start when unanswered, a new one when refused.
+  const retryStart = useRef<PendingStart | null>(null)
 
   // Global chrome is hidden only while an attempt is on screen.
   useEffect(() => {
@@ -128,7 +135,13 @@ export function QuizClient(props: Props): ReactElement | null {
     starting.current = false
     setBusy(false)
     // Unanswered: the same attempt id is kept, so trying again (or reloading) can only find this start, never a second.
-    if (outcome.status === 'unavailable') { setProblem(PROBLEMS['start-failed']!); return }
+    // Once reconnected, the server returns that attempt with its real deadline if it started, or starts it now.
+    if (outcome.status === 'unavailable') {
+      retryStart.current = pending
+      setProblem(PROBLEMS['no-connection']!)
+      return
+    }
+    retryStart.current = null
     clearPendingStart(courseSlug)
     if (outcome.status === 'ready' || outcome.status === 'in-progress' || outcome.status === 'graded') { show(outcome); return }
     if (outcome.status === 'policy-changed') {
@@ -137,8 +150,15 @@ export function QuizClient(props: Props): ReactElement | null {
       setBriefingVersion(version => version + 1)
       setView({ screen: 'intro' })
     }
-    setProblem(PROBLEMS[outcome.status] ?? PROBLEMS['start-failed']!)
+    const known = PROBLEMS[outcome.status]
+    if (known === undefined) retryStart.current = { ...pending, attemptId: crypto.randomUUID() }
+    setProblem(known ?? PROBLEMS['start-refused']!)
   }, [courseSlug, continuityToken, show])
+
+  const retry = useCallback(() => {
+    const next = retryStart.current
+    if (next !== null) void begin(next)
+  }, [begin])
 
   const start = useCallback((intent: 'new' | 'redo', redoOf: string | null, expected: PracticeBrief) => {
     const kept = readPendingStart(courseSlug)
@@ -166,7 +186,8 @@ export function QuizClient(props: Props): ReactElement | null {
     const outcome = await postPracticeCommand({ action: 'attempt', attemptId: initial.attemptId }, continuityToken)
     setBusy(false)
     if (outcome.status === 'ready' || outcome.status === 'graded') show(outcome)
-    else setProblem(PROBLEMS[outcome.status] ?? PROBLEMS['start-failed']!)
+    else if (outcome.status === 'unavailable') setProblem(PROBLEMS['no-connection']!)
+    else setProblem(PROBLEMS[outcome.status] ?? PROBLEMS['resume-failed']!)
   }, [initial, continuityToken, show])
 
   const onGraded = useCallback((attempt: GradedAttempt, unsent: boolean) => {
@@ -181,7 +202,8 @@ export function QuizClient(props: Props): ReactElement | null {
   }
   if (view.screen === 'resume' && initial.kind === 'resume') {
     return <ResumeScreen {...identity} courseHref={props.courseHref} answered={initial.answered} total={initial.total}
-      minutesLeft={initial.minutesLeft} opening={busy} error={problem?.title ?? null} onContinue={() => { void resume() }} />
+      minutesLeft={initial.minutesLeft} opening={busy} error={problem} onContinue={() => { void resume() }}
+      onRetry={() => { void resume() }} />
   }
   if (view.screen === 'review') {
     const { attempt } = view
@@ -205,7 +227,7 @@ export function QuizClient(props: Props): ReactElement | null {
   if (view.screen === 'results') {
     const { attempt } = view
     return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={brief !== null}
-      unsentAtDeadline={view.unsent} starting={busy} error={problem}
+      unsentAtDeadline={view.unsent} starting={busy} error={problem} onRetry={retry}
       onReview={() => setView({ ...view, screen: 'review' })}
       onRetake={() => { if (brief !== null) start('new', null, brief) }}
       onRedo={() => {
@@ -215,6 +237,6 @@ export function QuizClient(props: Props): ReactElement | null {
   // The page renders the briefing only when a fresh attempt may start, so a missing brief renders nothing here.
   if (brief === null) return null
   return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief} wholeBank={bankSize <= brief.questionCount}
-    briefingVersion={briefingVersion} starting={busy} error={problem} lastResultHref={props.lastResultHref}
+    briefingVersion={briefingVersion} starting={busy} error={problem} onRetry={retry} lastResultHref={props.lastResultHref}
     onStart={() => start('new', null, brief)} />
 }

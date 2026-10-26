@@ -91,7 +91,7 @@ async function fixture(blocked, run) {
 
 test('blocked storage and an outage require Stay or Leave anyway before losing a pending answer', async () => fixture(true, async f => {
   assert.equal(f.opened.props.open, true)
-  assert.match(f.opened.props.body, /Some answers aren't saved yet\. If you leave now, they'll be lost\./)
+  assert.match(f.opened.props.body, /Some answers aren’t saved yet\. If you leave now, they’ll be lost\./)
   assert.deepEqual(f.navigations, [], 'opening Exit never leaves the attempt')
   const buttons = elementNodes(f.AssessmentConfirmation(f.opened.props)).filter(node =>
     typeof node.props?.children === 'string').map(node => node.props.children)
@@ -107,7 +107,7 @@ test('blocked storage and an outage require Stay or Leave anyway before losing a
 }))
 
 test('a pending answer stored on the device can Exit without the loss warning while offline', async () => fixture(false, async f => {
-  assert.doesNotMatch(f.opened.props.body, /they'll be lost/)
+  assert.doesNotMatch(f.opened.props.body, /they’ll be lost/)
   const stored = JSON.parse(f.records.get(`practice-unsent:${ATTEMPT}`))
   assert.equal(stored.answers[Q], 1)
   f.opened.props.onConfirm()

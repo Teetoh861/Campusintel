@@ -11,8 +11,10 @@ import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { wholeBankAttempt } from '@/lib/practice/contract'
+import { ProblemNotice } from './ProblemNotice'
 import { PRACTICE_COPY, minutesOf, plural, practiceBand, practiceIdentity } from './practice-presentation'
 import type { GradedAttempt } from '@/lib/practice/contract'
+import type { PracticeProblem } from './practice-presentation'
 import type { ReactElement } from 'react'
 
 type Props = {
@@ -26,7 +28,8 @@ type Props = {
   // This tab still held answers the server never received when time ran out.
   unsentAtDeadline: boolean
   starting: boolean
-  error: { title: string; body: string } | null
+  error: PracticeProblem | null
+  onRetry: () => void
   onReview: () => void
   onRetake: () => void
   onRedo: () => void
@@ -62,7 +65,7 @@ export function ResultsScreen(props: Props): ReactElement {
         {PRACTICE_COPY.timedOutBody}{props.unsentAtDeadline ? ` ${PRACTICE_COPY.unsentAtDeadline}` : ''}
       </Notice>
     </div> : null}
-    {error ? <div className="mb-6 max-w-[720px]"><Notice title={error.title}>{error.body}</Notice></div> : null}
+    {error ? <div className="mb-6 max-w-[720px]"><ProblemNotice problem={error} busy={starting} onRetry={props.onRetry} /></div> : null}
     {starting ? <p role="status" className="student-practice-help mb-6">{PRACTICE_COPY.starting}</p> : null}
     <div className="student-practice-results">
       <section aria-labelledby="student-practice-score-heading">

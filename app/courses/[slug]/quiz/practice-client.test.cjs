@@ -101,8 +101,3 @@ test('the attempt line never claims a save the server has not confirmed', () => 
     'time up waits for the server before saying the attempt was submitted')
   assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /timer has not started/i)
 })
-
-test('a lost start response says confirmation failed and that its timer may already be running', () => {
-  assert.match(PRACTICE_COPY.startFailedTitle, /couldn’t be confirmed/)
-  assert.match(PRACTICE_COPY.startFailedBody, /timer may already be running/i)
-})
