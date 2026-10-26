@@ -1,6 +1,8 @@
-// app/dashboard/page.tsx — Request-scoped Student App command centre; semester courses live at /my-courses.
+// app/dashboard/page.tsx — Request-scoped Student App home: the student's semester courses, and once they have started
+// practising, a Continue card and their own progress (owner's sprint plan of 23 Oct, item 2). Full rows stay at /my-courses.
 import Link from 'next/link'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
+import { ContinueCard } from '@/components/dashboard/ContinueCard'
 import { StudentIdentity } from '@/components/dashboard/StudentIdentity'
 import { PrimaryCards } from '@/components/dashboard/PrimaryCards'
 import { SupportingActions } from '@/components/dashboard/SupportingActions'
@@ -16,7 +18,9 @@ import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
+import { homeCoursesFrom } from '@/lib/dashboard/home-courses'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { readPracticeProgress } from '@/lib/practice/progress'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -53,18 +57,20 @@ export default async function DashboardPage(): Promise<ReactElement> {
         <Link href={STUDENT_DESTINATIONS.contact.href} className={studentAction(btnGhost, 'mt-3')}>Contact support</Link>
       </>}
   </StudentPage></>
-  const [current, entitlement] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
-    readEntitlementForVerifiedStudent(client)])
+  // One practice read for every course, for this verified session only.
+  const [current, entitlement, progress] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
+    readEntitlementForVerifiedStudent(client), readPracticeProgress(context.sessionId)])
   if (current.status === 'signed-out' || current.status === 'incomplete') redirectForStudentState(current.status, STUDENT_HOME_PATH)
-  // A selection changed during this request must not produce mismatched statistics.
-  const courses = current.status === 'ok' &&
+  // A selection changed during this request must not produce mismatched courses or figures.
+  const home = current.status === 'ok' &&
     current.selection.departmentId === profile.selection.department.id &&
     current.selection.academicLevelId === profile.selection.academicLevel.id &&
     current.selection.academicPeriodId === profile.selection.academicPeriod.id
-    ? current.courses : null
+    ? homeCoursesFrom(current.courses, current.cbtBankSizes, progress) : null
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">
     <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
-    <PrimaryCards courses={courses} />
+    {home?.continuePractice && <ContinueCard next={home.continuePractice} />}
+    <PrimaryCards home={home} />
     <SupportingActions />
   </StudentPage></>
 }
