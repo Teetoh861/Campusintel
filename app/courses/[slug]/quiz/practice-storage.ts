@@ -1,0 +1,82 @@
+// app/courses/[slug]/quiz/practice-storage.ts — What one browser keeps for practice: never the authority.
+// The server holds the attempt, its deadline, its saved sheet and its grade. This device keeps only conveniences and
+// safety nets, each validated on read and written inside try/catch (storage can be missing, full or blocked):
+//   * flags (D2), per attempt, in local storage, so they survive reload, Exit and resume on this device;
+//   * a start in flight, per course, in session storage, so a lost start response is recovered by asking for the same
+//     attempt id again instead of starting another;
+//   * this tab's unsent choices, per attempt, in session storage, so a reload sends them instead of losing them.
+import { z } from 'zod'
+import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
+import type { UnsentSheet } from '@/lib/entitlements/exam-autosave'
+import type { PracticeBrief } from './types'
+
+type Store = { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem(key: string): void }
+
+function local(): Store | null { try { return window.localStorage } catch { return null } }
+function session(): Store | null { try { return window.sessionStorage } catch { return null } }
+
+function read<T>(store: Store | null, key: string, schema: z.ZodType<T>): T | null {
+  if (store === null) return null
+  try {
+    const parsed = schema.safeParse(JSON.parse(store.getItem(key) ?? 'null'))
+    return parsed.success ? parsed.data : null
+  } catch { return null }
+}
+
+function write(store: Store | null, key: string, value: unknown): void {
+  try { store?.setItem(key, JSON.stringify(value)) } catch { /* Storage may be unavailable or full. */ }
+}
+
+function remove(store: Store | null, key: string): void {
+  try { store?.removeItem(key) } catch { /* Nothing to clear. */ }
+}
+
+const uuid = z.string().uuid()
+const MAX_QUESTIONS = 100
+
+// Flags: the question ids this device flagged in one attempt.
+const flagsKey = (attemptId: string) => `practice-flags:${attemptId}`
+const flagList = z.array(uuid).max(MAX_QUESTIONS)
+
+export function readFlags(attemptId: string, questionIds: ReadonlyArray<string>): Set<string> {
+  const known = new Set(questionIds)
+  return new Set((read(local(), flagsKey(attemptId), flagList) ?? []).filter(id => known.has(id)))
+}
+
+export function writeFlags(attemptId: string, flags: ReadonlySet<string>): void {
+  if (flags.size === 0) remove(local(), flagsKey(attemptId))
+  else write(local(), flagsKey(attemptId), [...flags])
+}
+
+// A start in flight: retried with the same attempt id until the server answers, even across a reload.
+export type PendingStart = { attemptId: string; intent: 'new' | 'redo'; redoOf: string | null; expected: PracticeBrief }
+const pendingKey = (courseSlug: string) => `practice-start:${courseSlug}`
+const pendingStart = z.object({ attemptId: uuid, intent: z.enum(['new', 'redo']), redoOf: uuid.nullable(),
+  expected: z.object({ questionCount: z.number().int().min(1).max(MAX_QUESTIONS),
+    durationSeconds: z.number().int().positive() }).strict() }).strict()
+
+export function readPendingStart(courseSlug: string): PendingStart | null {
+  return read(session(), pendingKey(courseSlug), pendingStart)
+}
+export function writePendingStart(courseSlug: string, start: PendingStart): void { write(session(), pendingKey(courseSlug), start) }
+export function clearPendingStart(courseSlug: string): void { remove(session(), pendingKey(courseSlug)) }
+
+// This tab's unsent choices for one attempt, re-validated against the attempt's questions on every read.
+const unsentKey = (attemptId: string) => `practice-unsent:${attemptId}`
+const storedSheet = z.object({ answers: sampleAnswers, dirty: z.array(uuid).max(MAX_QUESTIONS) }).strict()
+
+export function readUnsent(attemptId: string, options: ReadonlyMap<string, number>): UnsentSheet | null {
+  const stored = read(session(), unsentKey(attemptId), storedSheet)
+  if (stored === null) return null
+  const answers = Object.fromEntries(Object.entries(stored.answers)
+    .filter(([id, index]) => index < (options.get(id) ?? 0)))
+  return { answers, dirty: stored.dirty.filter(id => options.has(id)) }
+}
+export function writeUnsent(attemptId: string, sheet: UnsentSheet): void { write(session(), unsentKey(attemptId), sheet) }
+export function clearUnsent(attemptId: string): void { remove(session(), unsentKey(attemptId)) }
+
+// Results this device has shown, so a course page visit shows a result the student has not seen yet (time ran out
+// while away, or a submission's response was lost) exactly once, and the briefing afterwards.
+const seenKey = (attemptId: string) => `practice-seen:${attemptId}`
+export function resultSeen(attemptId: string): boolean { return read(local(), seenKey(attemptId), z.literal(true)) === true }
+export function markResultSeen(attemptId: string): void { write(local(), seenKey(attemptId), true) }

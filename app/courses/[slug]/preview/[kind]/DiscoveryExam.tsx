@@ -21,9 +21,11 @@ import { postDiscoveryCommand } from '@/lib/entitlements/client'
 import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
 import { ExamClock } from '@/lib/entitlements/exam-clock'
+import { browserTabOptions, claimExamTabOnce } from '@/lib/entitlements/exam-tab'
 import type { SampleAnswers, SampleQuestion, SampleResult, SavedSheet, SheetDelta } from '@/lib/entitlements/discovery-contract'
 import type { AutosaveSnapshot, SaveOutcome, UnsentSheet } from '@/lib/entitlements/exam-autosave'
 import type { ClockReading, ClockState } from '@/lib/entitlements/exam-clock'
+import type { ExamTab } from '@/lib/entitlements/exam-tab'
 import type { ReactElement } from 'react'
 
 const optionLetter = (index: number) => String.fromCharCode(65 + index)
@@ -141,12 +143,21 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     return mounted.current === null ? initialRemaining : initialRemaining - (performance.now() - mounted.current)
   }, [initialRemaining])
 
-  // One tab identity for the database's sequence ledger, new on every mount and never shared between tabs.
-  const [tab] = useState(() => crypto.randomUUID())
+  // This tab's identity for the database's sequence ledger: kept across reloads of this tab (so reloads never use up
+  // the exam's tab capacity) and never shared with a duplicated tab (lib/entitlements/exam-tab.ts).
+  const [identity, setIdentity] = useState<ExamTab | null>(null)
+  const tab = identity?.tab ?? null
+  useEffect(() => {
+    if (initialResult !== null) return
+    // Held for the life of the page (claimExamTabOnce), so a remount reuses it and a duplicated tab is still answered.
+    let live = true
+    void claimExamTabOnce(browserTabOptions(storageKey)).then(next => { if (live) setIdentity(next) })
+    return () => { live = false }
+  }, [initialResult, storageKey])
 
   // The clock: a fresh exchange on mount, again whenever the page comes back into view, and retried after a failure.
   useEffect(() => {
-    if (initialResult !== null) return
+    if (initialResult !== null || tab === null) return
     mounted.current = performance.now()
     const sync = async (): Promise<ClockReading | null> => {
       const outcome = await postDiscoveryCommand({ action: 'sync-exam', courseSlug, tab }, continuityToken)
@@ -188,7 +199,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   // Saves: numbered, only the questions this tab changed, retried and reported. The sheet starts from the database's
   // copy with any changes this tab kept before a reload laid over it; those are saved at once.
   useEffect(() => {
-    if (initialResult !== null) return
+    if (initialResult !== null || identity === null) return
     const server = { revision: savedSheet?.revision ?? 0, answers: validAnswers(savedSheet?.answers ?? {}, questions) }
     const send = async (delta: SheetDelta): Promise<SaveOutcome> => {
       const outcome = await postDiscoveryCommand({ action: 'save-answers', courseSlug, ...delta }, continuityToken)
@@ -213,7 +224,8 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     // Every report also refreshes what this tab keeps for a reload, so a confirmed change is no longer "unsent" there.
     let controller: ExamAutosave | null = null
     controller = new ExamAutosave({
-      tab, server, restored: readStored(storageKey, questions),
+      tab: identity.tab, startSequence: identity.sequence, onSequence: sequence => identity.remember(sequence),
+      server, restored: readStored(storageKey, questions),
       remaining: () => examClock.current?.remaining() ?? null, send,
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
       onChange: snapshot => {
@@ -237,10 +249,10 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', hidden)
     }
-  }, [initialResult, savedSheet, storageKey, questions, courseSlug, continuityToken, tab])
+  }, [initialResult, savedSheet, storageKey, questions, courseSlug, continuityToken, identity])
 
   const submit = useCallback(async (): Promise<boolean> => {
-    if (sending.current) return false
+    if (sending.current || tab === null) return false
     sending.current = true
     setBusy(true)
     setMessage(null)

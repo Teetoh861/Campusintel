@@ -1,4 +1,4 @@
-// app/courses/[slug]/quiz/AssessmentConfirmation.tsx — Confirm submitting or leaving with contained focus and truthful counts.
+// app/courses/[slug]/quiz/AssessmentConfirmation.tsx — Confirm submitting or exiting with contained focus and truthful counts.
 'use client'
 
 import {
@@ -15,7 +15,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
   onRestoreFocus: (event: Event) => void
-} & ({ kind: 'leave' } | { kind: 'submit'; answered: number; unanswered: number; flagged: number })
+} & ({ kind: 'exit'; body: string } | { kind: 'submit'; answered: number; unanswered: number; flagged: number; pending: boolean })
 
 /** Confirm a final decision; the safe action always receives initial focus. */
 export function AssessmentConfirmation(props: Props): ReactElement {
@@ -24,10 +24,10 @@ export function AssessmentConfirmation(props: Props): ReactElement {
     <AlertDialogContent className="student-practice-dialog z-[70] motion-reduce:!animate-none" onCloseAutoFocus={props.onRestoreFocus}>
       <AlertDialogHeader>
         <AlertDialogTitle className="text-left text-[20px] font-bold text-student-primary">
-          {submitting ? PRACTICE_COPY.submitTitle : PRACTICE_COPY.leaveTitle}
+          {submitting ? PRACTICE_COPY.submitTitle : PRACTICE_COPY.exitTitle}
         </AlertDialogTitle>
         <AlertDialogDescription className="text-left text-[15px] leading-[1.5] text-student-text-secondary">
-          {submitting ? PRACTICE_COPY.submitBody : PRACTICE_COPY.leaveBody}
+          {props.kind === 'submit' ? PRACTICE_COPY.submitBody : props.body}
         </AlertDialogDescription>
       </AlertDialogHeader>
       {props.kind === 'submit' ? <>
@@ -39,14 +39,15 @@ export function AssessmentConfirmation(props: Props): ReactElement {
         {props.unanswered > 0 ? <p className="m-0 text-[14px] leading-[1.5] text-student-text-secondary">
           {plural(props.unanswered, 'question is', 'questions are')} unanswered. You can still submit; unanswered questions count as missed.
         </p> : null}
+        {props.pending ? <p className="m-0 text-[14px] leading-[1.5] text-student-text-secondary">{PRACTICE_COPY.submitPending}</p> : null}
       </> : null}
       <AlertDialogFooter className="student-practice-foot sm:space-x-0">
         {submitting ? <>
           <AlertDialogCancel className={studentAction(btnGhost, 'mt-0')}>Keep working</AlertDialogCancel>
           <AlertDialogAction className={studentAction(btnNavy, studentFocusDark)} onClick={props.onConfirm}>Submit practice</AlertDialogAction>
         </> : <>
-          <AlertDialogAction className={studentAction(btnGhost, 'student-practice-destructive')} onClick={props.onConfirm}>Leave practice</AlertDialogAction>
-          <AlertDialogCancel className={studentAction(btnNavy, studentFocusDark, 'mt-0')}>Stay and continue</AlertDialogCancel>
+          <AlertDialogAction className={studentAction(btnGhost)} onClick={props.onConfirm}>Exit</AlertDialogAction>
+          <AlertDialogCancel className={studentAction(btnNavy, studentFocusDark, 'mt-0')}>Stay</AlertDialogCancel>
         </>}
       </AlertDialogFooter>
     </AlertDialogContent>

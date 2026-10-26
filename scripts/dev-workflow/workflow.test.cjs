@@ -662,7 +662,7 @@ test('a suite deleted in the working tree but still in the index is not collecte
 test('the production collection reaches the bracketed Course Detail, tracker and API suites', () => {
   const { application, workflow } = collectTestFiles(path.join(__dirname, '../..'))
   for (const file of ['app/courses/[slug]/course-detail.test.cjs', 'app/courses/[slug]/CourseViewTracker.test.cjs',
-    'app/courses/[slug]/quiz/liveBank.test.cjs', 'app/api/courses/[slug]/quiz-bank/route.test.cjs']) {
+    'app/courses/[slug]/quiz/practice-client.test.cjs', 'app/courses/[slug]/theory/page.test.cjs']) {
     assert.ok(application.includes(file), file)
   }
   assert.equal(application.some(file => file.startsWith('scripts/dev-workflow/')), false)
