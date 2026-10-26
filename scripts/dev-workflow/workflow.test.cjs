@@ -298,6 +298,49 @@ test('two test runs at once: the second waits for the first real-parser batch ou
     1, 'exactly one run waited for the other')
 })
 
+test('a serial worker whose runner is killed stops its child processes and exits, instead of parsing unlocked', async t => {
+  const f = fixture(t)
+  const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
+  const marker = path.join(f.root, 'worker.json')
+  const heartbeat = path.join(f.root, 'heartbeat')
+  const file = path.join(f.root, 'serial.test.cjs')
+  // The worker starts a child standing in for a parser, records both pids and beats until it is stopped.
+  fs.writeFileSync(file, [
+    "const fs = require('node:fs')",
+    "const { spawn } = require('node:child_process')",
+    "const { after, before, test } = require('node:test')",
+    `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+    'before(holdRealParsers)',
+    'after(releaseRealParsers)',
+    "test('serial worker parsing', () => {",
+    "  const parser = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], { stdio: 'ignore' })",
+    `  fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ worker: process.pid, parser: parser.pid }))`,
+    `  setInterval(() => fs.appendFileSync(${JSON.stringify(heartbeat)}, '.'), 20)`,
+    '  return new Promise(() => {})',
+    '})',
+    '',
+  ].join('\n'))
+  const runner = path.join(f.root, 'serial-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { serialFiles: [process.argv[2]] })\n`)
+  const child = spawn(process.execPath, [runner, file], { cwd: f.root, stdio: 'ignore' })
+  const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { return error.code !== 'ESRCH' } }
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+  let pids = {}
+  t.after(() => { for (const pid of [child.pid, pids.worker, pids.parser]) if (pid && alive(pid)) process.kill(pid, 'SIGKILL') })
+  for (let wait = 0; wait < 600 && !(fs.existsSync(marker) && fs.existsSync(heartbeat)); wait += 1) await pause(50)
+  pids = JSON.parse(fs.readFileSync(marker, 'utf8'))
+  child.kill('SIGKILL')
+  await new Promise(resolve => child.once('exit', resolve))
+  // The worker checks for its runner every 250 ms; 5 s is generous for a loaded machine.
+  const until = Date.now() + 5_000
+  while (Date.now() < until && (alive(pids.worker) || alive(pids.parser))) await pause(25)
+  assert.equal(alive(pids.worker), false, 'the worker exited')
+  assert.equal(alive(pids.parser), false, 'its child process was stopped')
+  const beats = fs.statSync(heartbeat).size
+  await pause(300)
+  assert.equal(fs.statSync(heartbeat).size, beats, 'nothing keeps running after the runner died')
+})
+
 test('a stray "run-tests: waiting for" line does not pause the watchdog', async t => {
   const f = fixture(t)
   const file = path.join(f.root, 'unrelated.test.cjs')
