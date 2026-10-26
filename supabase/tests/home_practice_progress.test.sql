@@ -82,7 +82,7 @@ select is(pg_temp.o('day-one') - 'now', '{"state":"ok","open":null,"latest":null
   'day one: nothing open, nothing graded, no figures');
 select is(pg_temp.o('unknown-session'), '{"state":"signed-out"}'::jsonb, 'a session that is not live gets nothing');
 select is(pg_temp.o('start-1') ->> 'state', 'ready', 'fixture: the first attempt started');
-select is(pg_temp.o('open') -> 'open' - 'deadline_at',
+select is((pg_temp.o('open') -> 'open') - 'deadline_at',
   jsonb_build_object('course_id', pg_temp.c('08'), 'content_key', (select content_key from public.courses
     where id = pg_temp.c('08'))), 'an open attempt is offered with its course and route key');
 select is((pg_temp.o('open') -> 'open' ->> 'deadline_at')::timestamptz,
