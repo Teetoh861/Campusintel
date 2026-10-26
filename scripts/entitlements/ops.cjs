@@ -24,7 +24,10 @@
 //       daily (campusintell-discovery-claim-purge); the command is for an immediate purge.
 //   node scripts/entitlements/ops.cjs claim-keys
 //       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
+//   node scripts/entitlements/ops.cjs selection-status | selection-change | calendar | term-set | term-extend ...
+//       A student's course selection and the semester calendar: see scripts/entitlements/course-selection.cjs.
 const fs = require('node:fs')
+const { courseSelectionCall } = require('./course-selection.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
@@ -42,7 +45,7 @@ function options(args) {
     const arg = args[index]
     if (!arg.startsWith('--')) { parsed._.push(arg); continue }
     const name = arg.slice(2)
-    if (name === 'dry-run' || name === 'confirm-public-launch') { parsed[name] = true; continue }
+    if (name === 'dry-run' || name === 'confirm-public-launch' || name === 'allow-empty') { parsed[name] = true; continue }
     const value = args[index + 1]
     if (value === undefined || value.startsWith('--')) throw new Error(`--${name} needs a value`)
     parsed[name] = value
@@ -146,7 +149,9 @@ function connection(env, transport) {
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       const code = payload && typeof payload.code === 'string' ? payload.code : String(response.status)
-      throw new Error(`${fn} refused (${code})`)
+      // The database's own reason (for example "Semester dates refused: overlapping-semesters"), never row data.
+      const message = payload && typeof payload.message === 'string' ? `: ${payload.message.slice(0, 200)}` : ''
+      throw new Error(`${fn} refused (${code})${message}`)
     }
     return payload
   }
@@ -245,7 +250,11 @@ async function run(args, env = process.env, transport = fetch, write = text => p
     case 'reconcile-early-access': return print(await sweepAll(rpc, note(), null))
     case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
     case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
-    default: throw new Error('usage: see the header of scripts/entitlements/ops.cjs')
+    default: {
+      const call = courseSelectionCall(command, opts, { required, integer, note })
+      if (call === null) throw new Error('usage: see the header of scripts/entitlements/ops.cjs')
+      return print(await rpc(call.fn, call.body))
+    }
   }
 }
 

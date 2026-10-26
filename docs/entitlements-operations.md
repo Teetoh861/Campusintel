@@ -278,6 +278,36 @@ transaction. The audit trail never contains phone numbers, email addresses or co
 The tool needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` (an `sb_secret_` key over HTTPS when hosted). A
 student who believes a pass claim is wrong (for example an address they never controlled) is handled with `grant`, never by freeing the claim.
 
+## Courses are set for the semester
+
+From `20261026100000_course_selection_lock.sql`, a student's department, level and semester are locked once any plan
+has started since they were saved: a Discovery Pass, a seven-day trial, Early Access, a manual grant or a paid plan. An
+ended pass still locks until the semester ends; a revoked grant does not lock. The database refuses every other change
+with `CI423`, whoever sends it (the app, a direct API call or a service-role script); saving a name never unlocks. A
+student who picks for the first time while Early Access runs is locked by that first pick. At the semester end the lock
+lifts by itself. If no semester after today has been entered, locks stay on.
+
+| Situation | Command |
+| --- | --- |
+| See a student's courses, lock state, reason, semester end and history | `selection-status --user <uuid>` |
+| Change a student's courses on request (they stay locked) | `selection-change --user <uuid> --department <key> --level <key> --semester <key> --expected-revision <n>` |
+| Set a combination that has no courses yet | the same, with `--allow-empty` |
+| See the semesters, extensions and calendar history | `calendar` |
+| Enter or move a semester's resumption date (only before it resumes) | `term-set --session 2026/2027 --semester first-semester --resumes-on 2026-11-09` |
+| Delay one department's end, or every department's | `term-extend --session 2026/2027 --semester first-semester --department <key>\|all --last-day <YYYY-MM-DD>` |
+
+- Every command except the two reads needs `--actor` and `--reason`, and is recorded in `private.course_selection_events`.
+- `--expected-revision` is the `revision` shown by `selection-status`. If the student saved in between, the command
+  answers `conflict`; read the status again.
+- A semester ends exactly four months after its resumption date, at 00:00 Lagos (resuming 9 Nov 2026, the last day is
+  8 Mar 2027). The migration enters 2026/2027 First Semester with the default resumption date of Mon 9 Nov 2026; move
+  it with `term-set` until that day.
+- `term-extend` takes the department's new last day. Giving the semester's own last day removes the extension. It is
+  refused (`ended`) once that department's semester has ended, and nothing changes; handle a late request for one
+  student with `selection-change`. Semesters may not overlap, and a department's end may not pass the next semester's.
+- A selection change touches no grant, preview or practice attempt. If a pass was spent on the wrong courses because of
+  a team mistake, compensate with `grant` separately.
+
 ## Account deletion
 
 A deletion-scheduled account cannot start a pass or be enrolled in Early Access. Purging an account removes its
