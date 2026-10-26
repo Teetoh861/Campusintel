@@ -32,13 +32,49 @@ jobs:
         if: steps.scope.outputs.db == 'true'
         with:
           version: 2.109.1
+      # Only the services the database tests need: Postgres, Auth and Storage (each migrates its own schema, which the
+      # migrations and tests use), imgproxy (Storage is unhealthy without it), PostgREST and the Kong gateway. Excluded:
+      # the log pipeline (logflare, vector), Studio and its metadata API (studio, postgres-meta), the mail catcher
+      # (mailpit), Edge Functions (edge-runtime; there are none), Realtime (nothing subscribes or uses its schema) and
+      # the pooler (supavisor; disabled in config.toml). A refused image pull is retried with a growing wait.
       - name: Start local database for SQL tests
         if: steps.scope.outputs.db == 'true'
+        env:
+          SUPABASE_EXCLUDE: logflare,vector,studio,postgres-meta,mailpit,edge-runtime,realtime,supavisor
+          # The pgTAP runner `supabase test db` pulls for CLI 2.109.1; update it with the CLI pin.
+          PG_PROVE_IMAGE: public.ecr.aws/supabase/pg_prove:3.36
+          PULL_ATTEMPTS: '4'
+          PULL_WAIT_SECONDS: '30'
         run: |
-          if ! supabase start > "$RUNNER_TEMP/supabase-start.log" 2>&1; then
+          refused() { grep -Eqi 'toomanyrequests|too many requests|rate limit' "$1"; }
+          # retry <log> <command...>: run until it succeeds; only a refused pull is retried, after a growing wait.
+          retry() {
+            local log="$1" attempt
+            shift
+            for attempt in $(seq 1 "$PULL_ATTEMPTS"); do
+              if "$@" > "$log" 2>&1; then return 0; fi
+              if ! refused "$log" || [ "$attempt" -ge "$PULL_ATTEMPTS" ]; then return 1; fi
+              echo "Image pull refused by the registry (attempt $attempt of $PULL_ATTEMPTS); retrying in $((attempt * PULL_WAIT_SECONDS))s."
+              sleep "$((attempt * PULL_WAIT_SECONDS))"
+            done
+          }
+          start_db() { supabase start -x "$SUPABASE_EXCLUDE" || { supabase stop --no-backup > /dev/null 2>&1; return 1; }; }
+          if ! retry "$RUNNER_TEMP/supabase-start.log" start_db; then
             cat "$RUNNER_TEMP/supabase-start.log"
+            if refused "$RUNNER_TEMP/supabase-start.log"; then
+              echo "Image registries refused pulls $PULL_ATTEMPTS times (rate limit). Re-run this job later."
+            fi
             echo 'Local Supabase service setup failed; database tests did not run.'
             exit 1
+          fi
+          if ! retry "$RUNNER_TEMP/pg-prove-pull.log" docker pull "$PG_PROVE_IMAGE"; then
+            cat "$RUNNER_TEMP/pg-prove-pull.log"
+            if refused "$RUNNER_TEMP/pg-prove-pull.log"; then
+              echo "Image registries refused the pgTAP runner $PULL_ATTEMPTS times (rate limit). Re-run this job later."
+              echo 'Local Supabase service setup failed; database tests did not run.'
+              exit 1
+            fi
+            echo "::warning::Could not pull $PG_PROVE_IMAGE in advance; supabase test db will pull its own runner."
           fi
       - name: Verify application and applicable optional checks
         run: node scripts/dev-workflow/cli.cjs verify

@@ -19,17 +19,110 @@ const mockExecute = fn => (program, args, options) => {
 }
 const ORIGIN = 'https://github.com/Teetoh861/Campusintel.git'
 
-test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
-  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/pr-verification.yml'), 'utf8')
-  const startStep = workflow.split('      - name: Start local database for SQL tests\n')[1]
+const WORKFLOW = path.join(__dirname, '../../.github/workflows/pr-verification.yml')
+// Services the database tests need; everything else in a full start is excluded.
+const SUPABASE_KEPT = ['postgres', 'gotrue', 'storage-api', 'imgproxy', 'postgrest', 'kong']
+const SUPABASE_EXCLUDED = ['logflare', 'vector', 'studio', 'postgres-meta', 'mailpit', 'edge-runtime', 'realtime', 'supavisor']
+
+/** The database start step: its env and its script, as GitHub Actions runs it. */
+function startStep() {
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8')
+  const step = workflow.split('      - name: Start local database for SQL tests\n')[1]
     ?.split('      - name: Verify application and applicable optional checks\n')[0]
-  assert.ok(startStep, 'the local Supabase startup step exists')
+  assert.ok(step, 'the local Supabase startup step exists')
+  const env = Object.fromEntries([...step.split('        run: |\n')[0].matchAll(/^ {10}([A-Z_]+): '?([^'\n]*)'?$/gm)]
+    .map(match => [match[1], match[2]]))
+  const script = step.split('        run: |\n')[1].split('\n').map(line => line.slice(10)).join('\n')
+  return { workflow, step, env, script }
+}
+
+test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
+  const { workflow, step, env, script } = startStep()
   assert.match(workflow, /uses: supabase\/setup-cli@v3\s+if: steps\.scope\.outputs\.db == 'true'\s+with:\s+version: 2\.109\.1/)
-  assert.match(startStep, /if: steps\.scope\.outputs\.db == 'true'/)
-  assert.match(startStep, /if ! supabase start > "\$RUNNER_TEMP\/supabase-start\.log" 2>&1; then/)
-  assert.match(startStep, /cat "\$RUNNER_TEMP\/supabase-start\.log"/)
-  assert.match(startStep, /exit 1/)
+  assert.match(step, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(script, /supabase start -x "\$SUPABASE_EXCLUDE"/)
+  assert.match(script, /cat "\$RUNNER_TEMP\/supabase-start\.log"/)
+  assert.match(script, /echo 'Local Supabase service setup failed; database tests did not run\.'\n\s*exit 1/)
   assert.doesNotMatch(workflow, /supabase db start/)
+  assert.deepEqual(env.SUPABASE_EXCLUDE.split(','), SUPABASE_EXCLUDED, 'exactly the services the checks do not need')
+  for (const kept of SUPABASE_KEPT) assert.ok(!env.SUPABASE_EXCLUDE.split(',').includes(kept), `${kept} still starts`)
+  assert.equal(env.PG_PROVE_IMAGE, 'public.ecr.aws/supabase/pg_prove:3.36', 'the pgTAP runner of the pinned CLI')
+  assert.match(workflow, /run: node scripts\/dev-workflow\/cli\.cjs verify/, 'every check still runs through the verifier')
+})
+
+/** Run the start step's script with stub supabase, docker and sleep commands. */
+function runStartStep(t, { start = [], pull = [] } = {}) {
+  const { env, script } = startStep()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-start-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const bin = path.join(dir, 'bin')
+  fs.mkdirSync(bin)
+  // Each stub answers its next scripted outcome ("ok", or text it prints before failing) and records its call.
+  const stub = (name, outcomes) => {
+    fs.writeFileSync(path.join(dir, `${name}.outcomes`), outcomes.join('\n') + '\n')
+    fs.writeFileSync(path.join(bin, name), `#!/bin/bash
+echo "$*" >> "${dir}/${name}.calls"
+if [ "$1" = stop ]; then exit 0; fi
+outcome=$(head -n 1 "${dir}/${name}.outcomes"); sed -i.bak 1d "${dir}/${name}.outcomes"
+if [ -z "$outcome" ] || [ "$outcome" = ok ]; then echo started; exit 0; fi
+echo "$outcome"; exit 1
+`, { mode: 0o755 })
+  }
+  stub('supabase', start)
+  stub('docker', pull)
+  fs.writeFileSync(path.join(bin, 'sleep'), `#!/bin/bash\necho "$1" >> "${dir}/sleep.calls"\n`, { mode: 0o755 })
+  const result = spawnSync('bash', ['-e', '-c', script], { encoding: 'utf8',
+    env: { ...process.env, ...env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: dir } })
+  const calls = name => fs.existsSync(path.join(dir, `${name}.calls`))
+    ? fs.readFileSync(path.join(dir, `${name}.calls`), 'utf8').trim().split('\n') : []
+  return { status: result.status, output: result.stdout + result.stderr, calls }
+}
+
+const REFUSED = 'failed to pull docker image: Error response from daemon: toomanyrequests: Data limit exceeded'
+
+test('a refused image pull is retried with a growing wait, then the database starts', t => {
+  const run = runStartStep(t, { start: [REFUSED, REFUSED, 'ok'] })
+  assert.equal(run.status, 0, run.output)
+  assert.deepEqual(run.calls('supabase').filter(call => call.startsWith('start')),
+    Array(3).fill(`start -x ${SUPABASE_EXCLUDED.join(',')}`))
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('stop')).length, 2, 'a failed start is cleaned up first')
+  assert.deepEqual(run.calls('sleep'), ['30', '60'])
+  assert.match(run.output, /Image pull refused by the registry \(attempt 1 of 4\); retrying in 30s\./)
+  assert.deepEqual(run.calls('docker'), ['pull public.ecr.aws/supabase/pg_prove:3.36'])
+})
+
+test('pulls refused on every attempt fail the step with a clear message', t => {
+  const run = runStartStep(t, { start: [REFUSED, REFUSED, REFUSED, REFUSED, 'ok'] })
+  assert.equal(run.status, 1)
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('start')).length, 4)
+  assert.deepEqual(run.calls('sleep'), ['30', '60', '90'])
+  assert.match(run.output, /toomanyrequests/, 'the start log is shown')
+  assert.match(run.output, /Image registries refused pulls 4 times \(rate limit\)\. Re-run this job later\./)
+  assert.match(run.output, /Local Supabase service setup failed; database tests did not run\./)
+  assert.deepEqual(run.calls('docker'), [], 'nothing else runs after a failed start')
+})
+
+test('any other start failure is reported at once, without retrying', t => {
+  const run = runStartStep(t, { start: ['Bind for 0.0.0.0:54322 failed: port is already allocated', 'ok'] })
+  assert.equal(run.status, 1)
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('start')).length, 1)
+  assert.deepEqual(run.calls('sleep'), [])
+  assert.match(run.output, /port is already allocated/)
+  assert.doesNotMatch(run.output, /rate limit/)
+  assert.match(run.output, /Local Supabase service setup failed; database tests did not run\./)
+})
+
+test('the pgTAP runner pull is retried too; a refusal fails clearly, any other miss leaves the pull to supabase test db', t => {
+  const refused = runStartStep(t, { pull: [REFUSED, REFUSED, REFUSED, REFUSED] })
+  assert.equal(refused.status, 1)
+  assert.equal(refused.calls('docker').length, 4)
+  assert.match(refused.output, /Image registries refused the pgTAP runner 4 times \(rate limit\)\. Re-run this job later\./)
+  const retried = runStartStep(t, { pull: [REFUSED, 'ok'] })
+  assert.equal(retried.status, 0, retried.output)
+  assert.deepEqual(retried.calls('sleep'), ['30'])
+  const missing = runStartStep(t, { pull: ['manifest unknown'] })
+  assert.equal(missing.status, 0, missing.output)
+  assert.match(missing.output, /::warning::Could not pull public\.ecr\.aws\/supabase\/pg_prove:3\.36 in advance/)
 })
 
 function run(program, args, cwd, allowed = [0]) {
