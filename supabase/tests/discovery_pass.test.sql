@@ -1216,8 +1216,11 @@ reset role;
 set local role service_role;
 select is(public.write_quiz_attempt('72000000-0000-4000-8000-000000000010', '74000000-0000-4000-8000-000000000010',
   pg_temp.c('02'), 1, 'start', null, 'in_progress',
-  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]')->>'status', 'saved',
-  'a regular CBT attempt still starts');
+  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]'),
+  '{"status":"conflict"}'::jsonb, 'an old-style CBT start is refused (20261025100000_server_run_practice.sql)');
+select is(public.practice_start('72000000-0000-4000-8000-000000000010', '74000000-0000-4000-8000-000000000010',
+  pg_temp.c('02'), 'new', null, 50, 1800, '[]', 50, 1800)->>'state', 'ready',
+  'a regular CBT attempt still starts, on the server');
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000010', pg_temp.c('02')), '{"state":"full-access"}'::jsonb,
   'previews do not apply: the course itself is open');
 reset role;

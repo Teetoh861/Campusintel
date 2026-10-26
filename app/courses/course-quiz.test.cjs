@@ -67,8 +67,9 @@ async function fixture(quiz, run) {
       correctOption: question.correctAnswer, section: question.section,
       ...(question.explanation ? { explanation: question.explanation } : {}) },
   }))]
-  // locked: the plan excludes the course. bankLocked: access ended between the course read and the bank read.
-  const publishedState = { rows, available: true, locked: false, bankLocked: false, bankReads: 0 }
+  // locked: the plan excludes the course. practice: what the database answers for this student's attempts.
+  const publishedState = { rows, available: true, locked: false, stateReads: 0,
+    practice: { state: { status: 'none' }, attempts: new Map() } }
   try {
     Module._load = function(name, ...args) {
       if (name === 'server-only') return {}
@@ -83,25 +84,17 @@ async function fixture(quiz, run) {
             maxQuizQuestions: quiz.maxQuizQuestions, quizDurationMinutes: quiz.quizDurationMinutes,
             sections: quiz.sections } : undefined,
       }
-      if (name === '@/lib/managed-content/published') return {
-        getPublishedManagedCourse: async () => publishedState.available
-          ? { status: 'ok', courseId, content: publishedState.rows }
-          : { status: 'unavailable' },
-      }
-      if (name === '@/lib/managed-content/student-quiz') return {
-        getStudentManagedQuiz: async slug => {
-          if (slug !== course.slug) return { status: 'invalid-course' }
-          publishedState.bankReads += 1
-          if (publishedState.locked || publishedState.bankLocked) return { status: 'locked' }
-          if (!publishedState.available) return { status: 'unavailable' }
-          const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
-          const questions = publishedState.rows.filter(row => row.kind === 'cbt_question').map((row, index) => ({
-            id: index + 1, questionId: row.question_id, itemId: row.item_id, question: row.payload.prompt,
-            options: row.payload.options, correctAnswer: row.payload.correctOption,
-            section: row.payload.section, publishedRevision: row.revision,
-          }))
-          const usable = getUsableManagedQuiz(slug, quiz, questions)
-          return usable ? { status: 'ready', quiz: usable } : { status: 'unavailable' }
+      // The page reads only the student's own practice state and attempts; it never reads a bank.
+      if (name === '@/lib/practice/server') return {
+        readPracticeState: async (sessionId, courseId) => {
+          assert.equal(sessionId, 'live-session')
+          assert.equal(courseId, '40000000-0000-4000-8000-000000000007')
+          publishedState.stateReads += 1
+          return publishedState.practice.state
+        },
+        readPracticeAttempt: async (sessionId, attemptId) => {
+          assert.equal(sessionId, 'live-session')
+          return publishedState.practice.attempts.get(attemptId) ?? { status: 'not-found' }
         },
       }
       // The quiz route reads central one-course truth on a request-scoped client before any bank read.
@@ -120,12 +113,9 @@ async function fixture(quiz, run) {
           if (!publishedState.available) return { status: 'ok', learning: null, practice: null,
             course: { ...base, content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' } } }
           const { getUsableManagedQuiz } = require('../../lib/managed-content/quiz.ts')
-          const questions = publishedState.rows.filter(row => row.kind === 'cbt_question').map((row, index) => ({
-            id: index + 1, questionId: row.question_id, itemId: row.item_id, question: row.payload.prompt,
-            options: row.payload.options, correctAnswer: row.payload.correctOption,
-            section: row.payload.section, publishedRevision: row.revision,
-          }))
-          const usable = getUsableManagedQuiz(course.slug, quiz, questions)
+          // The bank size is the count-only summary of the published rows.
+          const usable = getUsableManagedQuiz(course.slug, quiz,
+            publishedState.rows.filter(row => row.kind === 'cbt_question').length)
           const study = { notes: false, cbtPractice: Boolean(usable), theory: false, overview: true }
           return { status: 'ok', learning: null, course: { ...base, content: { state: 'ready', study } },
             practice: usable ? { href: usable.href, bankSize: usable.bankSize, attemptSize: usable.attemptSize,
@@ -157,7 +147,13 @@ async function fixture(quiz, run) {
   }
 }
 
-const params = { params: Promise.resolve({ slug: course.slug }) }
+const params = { params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({}) }
+const withAttempt = attempt => ({ params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({ attempt }) })
+const ATTEMPT = '33333333-3333-4333-8333-333333333333'
+const graded = (courseId = '40000000-0000-4000-8000-000000000007') => ({ status: 'graded', now: '2026-10-24T10:30:00Z',
+  attempt: { status: 'submitted', id: ATTEMPT, courseId, intent: 'new', redoOf: null, startedAt: '2026-10-24T10:00:00Z',
+    deadlineAt: '2026-10-24T10:30:00Z', durationSeconds: 1800, questionCount: 50, bankSize: 150, questions: [],
+    result: { score: 7, total: 50, timedOut: false, finishedAt: '2026-10-24T10:20:00Z' } } })
 
 test('material breadcrumbs consume canonical Dashboard and All Courses destinations', async () => fixture(validQuiz, async f => {
   const breadcrumbLinks = element => {
@@ -194,36 +190,58 @@ test('fixture restores loaders and the module cache after success and failure', 
   }
 })
 
-test('usable quiz reaches the quiz route with the published bank and repository policy', async () => fixture(validQuiz, async f => {
+test('a fresh start is briefed with the server count and time, and the page never carries a question', async () => fixture(validQuiz, async f => {
   const route = await f.quizRoute(params)
-  assert.deepEqual(route.props.questions.map(question => question.questionId),
-    validQuiz.questions.map(question => question.questionId))
-  assert.equal(route.props.maxQuestions, validQuiz.maxQuizQuestions)
-  assert.equal(route.props.timerSeconds, validQuiz.quizDurationMinutes * 60)
-  assert.equal(route.props.totalInBank, validQuiz.questions.length)
+  assert.deepEqual(route.props.initial, { kind: 'intro' })
+  assert.deepEqual(route.props.brief, { questionCount: validQuiz.maxQuizQuestions,
+    durationSeconds: validQuiz.quizDurationMinutes * 60 })
+  assert.equal(route.props.bankSize, validQuiz.questions.length)
+  assert.equal(route.props.lastResultHref, null)
+  assert.doesNotMatch(JSON.stringify(route.props), /correct|options|explanation|"prompt"|"question"/i,
+    'no question, option or answer reaches the page before an attempt starts')
 }))
 
-test('displayed bank counts come from questions students can attempt', async () => {
-  await fixture({ ...validQuiz, totalQuestions: validQuiz.questions.length + 50 }, async f => {
-    assert.equal((await f.quizRoute(params)).props.totalInBank, validQuiz.questions.length)
-  })
-})
-
-test('published CBT edits and withdrawals affect the next quiz route read', async () => fixture(validQuiz, async f => {
+test('published withdrawals affect the next brief; an empty bank is not built', async () => fixture(validQuiz, async f => {
   const question = f.publishedState.rows.find(row => row.kind === 'cbt_question')
-  question.payload.prompt = 'Operator published a new prompt'
-  question.revision = 2
-  let route = await f.quizRoute(params)
-  assert.equal(route.props.questions[0].question, 'Operator published a new prompt')
-  assert.equal(route.props.questions[0].publishedRevision, 2)
   f.publishedState.rows = f.publishedState.rows.filter(row => row !== question)
-  route = await f.quizRoute(params)
-  assert.equal(route.props.totalInBank, validQuiz.questions.length - 1)
-  assert.ok(route.props.questions.every(item => item.questionId !== question.question_id))
+  assert.equal((await f.quizRoute(params)).props.bankSize, validQuiz.questions.length - 1)
   f.publishedState.rows = f.publishedState.rows.filter(row => row.kind !== 'cbt_question')
   const html = renderToStaticMarkup(await f.quizRoute(params))
   assert.match(html, /CBT practice is not available for this course/)
   assert.doesNotMatch(html, /temporarily unavailable|Try again/i, 'a bank that was never built is not a temporary failure')
+}))
+
+test('the open attempt comes first: resume, whatever access is now (D7)', async () => fixture(validQuiz, async f => {
+  f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: ATTEMPT,
+    deadlineAt: '2026-10-24T10:18:30Z', questionCount: 50, answered: 12, score: null, bankSize: 150 } }
+  let route = await f.quizRoute(params)
+  assert.deepEqual(route.props.initial, { kind: 'resume', attemptId: ATTEMPT, answered: 12, total: 50, minutesLeft: 18 })
+  f.publishedState.locked = true
+  route = await f.quizRoute(params)
+  assert.equal(route.props.initial.kind, 'resume', 'an attempt started may always finish')
+  assert.equal(route.props.brief, null, 'but nothing new may start')
+}))
+
+test('the latest graded attempt is offered, and an attempt URL reloads its result', async () => fixture(validQuiz, async f => {
+  f.publishedState.practice.state = { status: 'graded', now: '2026-10-24T10:30:00Z', attempt: { id: ATTEMPT,
+    deadlineAt: '2026-10-24T10:30:00Z', questionCount: 50, answered: 12, score: 7, bankSize: 150 } }
+  f.publishedState.practice.attempts.set(ATTEMPT, graded())
+  let route = await f.quizRoute(params)
+  assert.deepEqual([route.props.initial.kind, route.props.initial.latest], ['graded', true])
+  assert.equal(route.props.lastResultHref, `${quizHref}?attempt=${ATTEMPT}`)
+  route = await f.quizRoute(withAttempt(ATTEMPT))
+  assert.deepEqual([route.props.initial.kind, route.props.initial.latest, route.props.initial.attempt.id],
+    ['graded', false, ATTEMPT])
+  f.publishedState.locked = true
+  route = await f.quizRoute(withAttempt(ATTEMPT))
+  assert.equal(route.props.initial.kind, 'graded', 'a graded review stays the student\'s after access ends (D7)')
+  assert.equal(route.props.brief, null, 'with no new attempt offered')
+  f.publishedState.locked = false
+  f.publishedState.practice.attempts.set(ATTEMPT, graded('40000000-0000-4000-8000-000000000001'))
+  let html = renderToStaticMarkup(await f.quizRoute(withAttempt(ATTEMPT)))
+  assert.match(html, /This practice result isn’t available/, 'an attempt of another course is not shown here')
+  html = renderToStaticMarkup(await f.quizRoute(withAttempt('44444444-4444-4444-8444-444444444444')))
+  assert.match(html, /This practice result isn’t available/, 'nor an attempt the student does not own')
 }))
 
 test('managed read unavailability fails closed on the quiz route', async () => fixture(validQuiz, async f => {
@@ -235,18 +253,20 @@ test('managed read unavailability fails closed on the quiz route', async () => f
   assert.doesNotMatch(html, /not available for this course/)
 }))
 
-test('a locked course never reads the bank; access ending before the bank read is locked too', async () => fixture(validQuiz, async f => {
+test('a locked course with no attempt of the student\'s shows the plan notice', async () => fixture(validQuiz, async f => {
   f.publishedState.locked = true
-  let html = renderToStaticMarkup(await f.quizRoute(params))
+  const html = renderToStaticMarkup(await f.quizRoute(params))
   assert.match(html, /Included with full access/)
   assert.match(html, /href="\/access"/)
   assert.doesNotMatch(html, /temporarily unavailable/i)
-  assert.equal(f.publishedState.bankReads, 0, 'the server never loads questions for a locked course')
-  f.publishedState.locked = false
-  f.publishedState.bankLocked = true
-  html = renderToStaticMarkup(await f.quizRoute(params))
-  assert.match(html, /Included with full access/)
-  assert.equal(f.publishedState.bankReads, 1)
+  assert.equal(f.publishedState.stateReads, 1, 'the student\'s own attempts are read first')
+}))
+
+test('an unreadable practice state fails closed with a retry', async () => fixture(validQuiz, async f => {
+  f.publishedState.practice.state = { status: 'unavailable' }
+  const html = renderToStaticMarkup(await f.quizRoute(params))
+  assert.match(html, /couldn’t load the practice questions just now/)
+  assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
 }))
 
 test('missing or unusable quiz configuration makes the quiz route reject the attempt', async () => {

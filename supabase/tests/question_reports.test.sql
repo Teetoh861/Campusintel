@@ -110,24 +110,22 @@ set local role authenticated;
 select throws_ok($$select pg_temp.report('{"revision":2}')$$, '22023', null, 'never-published revision rejected');
 reset role;
 
--- Persist real immutable snapshots through the established attempt write boundary.
-select public.write_quiz_attempt('b2000000-0000-4000-8000-000000000001',
-  'b3000000-0000-4000-8000-000000000001', course_id, 1, 'start', null, 'in_progress',
-  jsonb_build_array(jsonb_build_object('question_id', question_id, 'ordinal', 0, 'content_revision', 1)))
-from report_fixture;
-select public.write_quiz_attempt('b2000000-0000-4000-8000-000000000002',
-  'b3000000-0000-4000-8000-000000000002', course_id, 1, 'start', null, 'in_progress',
-  jsonb_build_array(jsonb_build_object('question_id', question_id, 'ordinal', 0, 'content_revision', 1)))
-from report_fixture;
-select public.write_quiz_attempt('b2000000-0000-4000-8000-000000000001',
-  'b3000000-0000-4000-8000-000000000003', i.course_id, 1, 'start', null, 'in_progress',
-  jsonb_build_array(jsonb_build_object('question_id', i.question_id, 'ordinal', 0, 'content_revision', 1)))
-from public.managed_content_items i join report_fixture f on i.id = f.other_item;
-select public.write_quiz_attempt('b2000000-0000-4000-8000-000000000001',
-  'b3000000-0000-4000-8000-000000000004', course_id, 1, 'start', null, 'in_progress',
-  jsonb_build_array(jsonb_build_object('question_id', question_id, 'ordinal', 0, 'content_revision', 1)))
-from (select i.* from public.managed_content_items i join report_fixture f on i.course_id = f.other_course
-  where i.kind = 'cbt_question' and i.published_revision = 1 order by i.id limit 1) other;
+-- Immutable snapshots as legacy attempts an old tab opened before 20261025100000_server_run_practice.sql refused
+-- old-style starts; the established write boundary still records answers against them.
+insert into public.quiz_attempts (id, user_id, course_id, question_count)
+select a.id, a.user_id, a.course_id, 1 from report_fixture f, lateral (values
+  ('b3000000-0000-4000-8000-000000000001'::uuid, 'b1000000-0000-4000-8000-000000000001'::uuid, f.course_id),
+  ('b3000000-0000-4000-8000-000000000002', 'b1000000-0000-4000-8000-000000000002', f.course_id),
+  ('b3000000-0000-4000-8000-000000000003', 'b1000000-0000-4000-8000-000000000001', f.course_id),
+  ('b3000000-0000-4000-8000-000000000004', 'b1000000-0000-4000-8000-000000000001', f.other_course)) a(id, user_id, course_id);
+insert into public.quiz_attempt_questions (attempt_id, question_id, ordinal, item_id, content_revision)
+select a.id, i.question_id, 0, i.id, 1 from report_fixture f, lateral (values
+  ('b3000000-0000-4000-8000-000000000001'::uuid, f.item_id), ('b3000000-0000-4000-8000-000000000002', f.item_id),
+  ('b3000000-0000-4000-8000-000000000003', f.other_item),
+  ('b3000000-0000-4000-8000-000000000004', (select o.id from public.managed_content_items o
+    where o.course_id = f.other_course and o.kind = 'cbt_question' and o.published_revision = 1 order by o.id limit 1))
+  ) a(id, item_id)
+join public.managed_content_items i on i.id = a.item_id;
 select public.write_quiz_attempt('b2000000-0000-4000-8000-000000000001',
   'b3000000-0000-4000-8000-000000000001', course_id, 0, 'record', 0, 'in_progress',
   jsonb_build_array(jsonb_build_object('question_id', question_id, 'ordinal', 0, 'option_index', 0)))

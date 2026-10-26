@@ -14,30 +14,17 @@ const overviewShape = z.object({
     explanation: text, example: text.optional() })).optional(),
 })
 const theoryShape = z.object({ prompt: text, examTip: text.optional() })
-const cbtShape = z.object({ prompt: text, options: z.array(text),
-  correctOption: z.number().int(), section: text.optional(), explanation: text.optional() })
 
 export type ManagedOverview = z.infer<typeof overviewShape>
 export type ManagedTheoryQuestion = { itemId: string; prompt: string; displayNumber?: number; examTip?: string }
 /** A published note keeps the exact editor-contract payload beside its managed identity. */
 export type ManagedNote = { itemId: string; publishedRevision: number } & NotePayload
-export type ManagedQuizQuestion = {
-  id: number
-  questionId: string
-  // Opaque managed item identity, carried only so a completed attempt can report the exact item/revision.
-  itemId: string
-  question: string
-  options: string[]
-  correctAnswer: number
-  section: string
-  explanation?: string
-  publishedRevision: number
-}
+// CBT questions are not student learning content: they reach a student only inside their own server-run practice
+// attempt (20261025100000_server_run_practice.sql), and the published read never returns them.
 export type StudentLearning = {
   overview: ManagedOverview | null
   notes: ManagedNote[]
   theoryQuestions: ManagedTheoryQuestion[]
-  quizQuestions: ManagedQuizQuestion[]
 }
 export type StudentLearningResult =
   | { status: 'ok'; learning: StudentLearning }
@@ -48,11 +35,11 @@ export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedConte
   let overview: ManagedOverview | null = null
   const notes: ManagedNote[] = []
   const theoryQuestions: ManagedTheoryQuestion[] = []
-  const quizQuestions: ManagedQuizQuestion[] = []
-  const questionIds = new Set<string>()
   const noteIds = new Set<string>()
   const theoryIds = new Set<string>()
   for (const row of rows) {
+    // A CBT row is never projected for a student, whatever reaches this boundary.
+    if (row.kind === 'cbt_question') continue
     if (parseContentPayload(row.kind, row.payload) === null) return { status: 'unavailable' }
     if (row.kind === 'course_overview') {
       const parsed = overviewShape.safeParse(row.payload)
@@ -73,17 +60,6 @@ export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedConte
       theoryQuestions.push({ itemId: row.item_id, prompt: parsed.data.prompt,
         ...(displayNumber !== null && Number.isSafeInteger(displayNumber) ? { displayNumber } : {}),
         ...(parsed.data.examTip === undefined ? {} : { examTip: parsed.data.examTip }) })
-    } else if (row.kind === 'cbt_question') {
-      const parsed = cbtShape.safeParse(row.payload)
-      if (!parsed.success || row.question_id === null || questionIds.has(row.question_id)) {
-        return { status: 'unavailable' }
-      }
-      questionIds.add(row.question_id)
-      quizQuestions.push({ id: quizQuestions.length + 1, questionId: row.question_id, itemId: row.item_id,
-        question: parsed.data.prompt, options: parsed.data.options,
-        correctAnswer: parsed.data.correctOption, section: parsed.data.section ?? 'General',
-        ...(parsed.data.explanation === undefined ? {} : { explanation: parsed.data.explanation }),
-        publishedRevision: row.revision })
     }
   }
   for (const row of rows) {
@@ -94,5 +70,5 @@ export function projectStudentLearning(rows: ReadonlyArray<PublishedManagedConte
   }
   theoryQuestions.sort((a, b) => (a.displayNumber ?? Number.MAX_SAFE_INTEGER) -
     (b.displayNumber ?? Number.MAX_SAFE_INTEGER))
-  return { status: 'ok', learning: { overview, notes, theoryQuestions, quizQuestions } }
+  return { status: 'ok', learning: { overview, notes, theoryQuestions } }
 }

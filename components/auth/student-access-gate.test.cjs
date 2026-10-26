@@ -17,7 +17,8 @@ const course = realCourses.getCourseBySlug('financial-accounting-1')
 const PROTECTED = [
   ['app/courses/page.tsx', () => ({}), '/courses', 'CourseDirectoryPage'],
   ['app/courses/[slug]/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }) }), `/courses/${course.slug}`, 'CourseDetail'],
-  ['app/courses/[slug]/quiz/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }) }), `/courses/${course.slug}/quiz`, 'Quiz'],
+  ['app/courses/[slug]/quiz/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({}) }),
+    `/courses/${course.slug}/quiz`, 'Quiz'],
   ['app/courses/[slug]/materials/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }) }), `/courses/${course.slug}/materials`, 'CourseMaterials'],
   ['app/materials/page.tsx', () => ({}), '/materials', 'MaterialsClient'],
   ['app/bookmarks/page.tsx', () => ({}), '/bookmarks', 'Bookmarks'],
@@ -64,19 +65,6 @@ async function fixture(run) {
         state.contentReads++
         return realQuizzes.getQuizByCourseSlug(slug)
       } }
-      if (name === '@/lib/managed-content/published') return { getPublishedManagedCourse: async () => {
-        state.contentReads++
-        const question = realQuizzes.getQuizByCourseSlug(course.slug).questions[0]
-        return { status: 'ok', courseId: '40000000-0000-4000-8000-000000000007', content: [
-          { item_id: '11111111-1111-4111-8111-111111111111', kind: 'course_overview',
-            question_id: null, parent_item_id: null, revision: 1,
-            payload: { title: course.title, body: course.overview } },
-          { item_id: '22222222-2222-4222-8222-222222222222', kind: 'cbt_question',
-            question_id: question.questionId, parent_item_id: null, revision: 1,
-            payload: { prompt: question.question, options: question.options,
-              correctOption: question.correctAnswer, section: question.section } },
-        ] }
-      } }
       if (name === '@/lib/supabase/server') return { createClient: async () => ({ fixture: 'request-scoped client' }) }
       if (name === '@/lib/courses/read-model') return {
         ...originalLoad.call(this, path.join(root, 'lib/courses/read-model.ts'), ...args),
@@ -93,11 +81,15 @@ async function fixture(run) {
           }, practice: { href: `/courses/${course.slug}/quiz`, bankSize: 1, attemptSize: 1, timerSeconds: 3600 } }
         },
       }
-      if (name === '@/lib/managed-content/student-quiz') return { getStudentManagedQuiz: async () => {
-        state.contentReads++
-        return { status: 'ready', quiz: { questions: [], sections: [], maxQuestions: 50,
-          timerSeconds: 3600, bankSize: 1 } }
-      } }
+      // Practice reads only the student's own attempts on the verified session; no attempt yet.
+      if (name === '@/lib/practice/server') return {
+        readPracticeState: async sessionId => {
+          state.contentReads++
+          assert.equal(sessionId, 'fixture-session')
+          return { status: 'none' }
+        },
+        readPracticeAttempt: async () => ({ status: 'not-found' }),
+      }
       if (name === '@/components/auth/AuthShell') return named('AuthUnavailable')
       if (name === '@/components/chrome/Feedback') return named('Feedback')
       if (name === './AuthFlowSync') return named('AuthFlowSync')

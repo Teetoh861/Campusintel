@@ -113,10 +113,6 @@ create temporary table outcome (step text primary key, result jsonb) on commit d
 grant all on outcome to authenticated, service_role;
 insert into outcome values ('course-acc101', jsonb_build_object('id',
   (select id from public.institutional_courses where course_code = 'ACC101')));
-insert into outcome select 'gst-selection', jsonb_build_array(jsonb_build_object('question_id', question_id, 'ordinal', 0,
-  'content_revision', published_revision)) from public.managed_content_items
-  where course_id = '40000000-0000-4000-8000-000000000008' and kind = 'cbt_question' and published_revision is not null
-  order by created_at limit 1;
 -- Keyed Early Access phone hashes are computed by the operator tool; any 64-hex value stands in for one here.
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
@@ -338,9 +334,9 @@ reset role;
 select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001', array['trial', 'early_access'])->>'state',
   'allowance-expired', 'AI ends with the pass');
 set local role service_role;
-select is(public.write_quiz_attempt('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000003',
-  '40000000-0000-4000-8000-000000000008', 1, 'start', null, 'in_progress',
-  (select result from outcome where step = 'gst-selection'))->>'status', 'saved', 'GST practice still starts on the free tier');
+select is(public.practice_start('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000003',
+  '40000000-0000-4000-8000-000000000008', 'new', null, 50, 1800, '[]', 50, 1800)->>'state', 'ready',
+  'GST practice still starts on the free tier (server-run since 20261025100000_server_run_practice.sql)');
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test'))->>'state', 'already-activated',
   'an ended pass cannot restart');
 reset role;

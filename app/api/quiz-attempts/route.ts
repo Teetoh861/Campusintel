@@ -26,7 +26,8 @@ function finish(response: NextResponse, state: { status: string }): Response {
   return new Response(JSON.stringify(state), { status, headers: response.headers })
 }
 
-/** Start, patch or finish an attempt. Identity and quiz metadata are server-owned. */
+/** Legacy only (D10): patch or finish an attempt an old tab opened before practice moved to the server. Every start is
+ * refused. Remove after the 24-hour legacy window (practice_policy.legacy_window). */
 export async function POST(request: Request): Promise<Response> {
   let input: unknown
   try { input = await readAuthRequest(request, z.unknown(), { maxBytes: QUIZ_BODY_MAX_BYTES }) }

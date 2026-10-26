@@ -4,11 +4,6 @@ import { getAuthSecretKey, getSupabaseConfig } from '@/lib/auth/config'
 import { attemptResultSchema } from './input'
 import type { AttemptWriteResult } from './input'
 
-export type AttemptSelection = {
-  question_id: string
-  ordinal: number
-  content_revision: number
-}
 export type AttemptAnswer = {
   question_id: string
   ordinal: number
@@ -19,10 +14,10 @@ export type AttemptWriteCommand = {
   p_attempt_id: string
   p_course_id: string
   p_question_count: number
-  p_operation: 'start' | 'record' | 'finish'
+  p_operation: 'record' | 'finish'
   p_expected_revision: number | null
   p_status: 'in_progress' | 'submitted' | 'timed_out'
-  p_answers: AttemptSelection[] | AttemptAnswer[]
+  p_answers: AttemptAnswer[]
 }
 const RPC_TIMEOUT_MS = 5000
 

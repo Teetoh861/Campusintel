@@ -160,14 +160,31 @@ function testSql(manifest) {
       const expected = manifest.items.filter(item => item.courseId === course.courseId && item.kind === family)
         .sort((left, right) => left.sourceKey < right.sourceKey ? -1 : left.sourceKey > right.sourceKey ? 1 : 0)
         .map(snapshot)
+      // CBT questions never reach a student through the content read (20261025100000_server_run_practice.sql): the
+      // student read is checked to withhold them, and their published rows are compared as the owner reads them.
+      const cbt = family === 'cbt_question'
+      if (cbt) {
+        lines.push(`select is((select count(*)::int from public.read_published_managed_content('${course.courseId}')`)
+        lines.push(`  where kind = '${family}'), 0,`)
+        lines.push(`  ${sqlLiteral(`${course.contentKey}: CBT questions are withheld from the student content read`)});`)
+        lines.push('reset role;')
+      }
       lines.push(`select ok((select coalesce(jsonb_agg(jsonb_build_object(`)
       lines.push("  'itemId', item_id, 'courseId', course_id, 'kind', kind,")
       lines.push("  'questionId', question_id, 'sourceKey', source_key,")
       lines.push("  'parentItemId', parent_item_id, 'revision', revision,")
       lines.push("  'payload', payload) order by source_key collate \"C\"), '[]'::jsonb)")
-      lines.push(`  from public.read_published_managed_content('${course.courseId}')`)
+      if (cbt) {
+        lines.push('  from (select i.id item_id, i.course_id, i.kind, i.question_id, i.source_key, i.parent_item_id,')
+        lines.push('    i.published_revision revision, r.payload from public.managed_content_items i')
+        lines.push('    join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision')
+        lines.push(`    where i.course_id = '${course.courseId}' and i.published_revision is not null) published`)
+      } else {
+        lines.push(`  from public.read_published_managed_content('${course.courseId}')`)
+      }
       lines.push(`  where kind = '${family}') = ${jsonLiteral(expected, 'expected_content')},`)
       lines.push(`  ${sqlLiteral(`${course.contentKey}: ${family} published payload and identity match source`)});`)
+      if (cbt) lines.push('set local role authenticated;')
     }
   }
   lines.push('', 'reset role;')

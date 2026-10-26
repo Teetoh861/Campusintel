@@ -1,5 +1,7 @@
 -- supabase/tests/quiz_attempt_write_boundary.test.sql
--- Attempt selection pins published managed revisions; only the private RPC scores answers.
+-- Attempt selection pins published managed revisions; only the private RPC scores answers. Since
+-- 20261025100000_server_run_practice.sql the old-style start is refused (practice attempts start on the server); the
+-- legacy attempts below model rows an old tab opened before the cutover, which may still be saved and finished.
 begin;
 select no_plan();
 
@@ -49,6 +51,15 @@ select c.id course_id,
   (select jsonb_array_length(payload->'options') from quiz_selected where ordinal = 0) first_option_count
 from public.courses c where c.content_key = 'financial-accounting-1';
 grant select on quiz_selected, quiz_fixture to service_role;
+-- A legacy attempt as an old tab opened it before the cutover: its selection pinned at the given revisions.
+create function pg_temp.legacy_attempt(p_id uuid, p_first_revision integer) returns void
+language sql as $$
+  insert into public.quiz_attempts (id, user_id, course_id, question_count)
+    select p_id, '11111111-1111-4111-8111-111111111111', course_id, 2 from quiz_fixture;
+  insert into public.quiz_attempt_questions (attempt_id, question_id, ordinal, item_id, content_revision)
+    select p_id, question_id, ordinal, item_id,
+      case when ordinal = 0 then p_first_revision else content_revision end from quiz_selected;
+$$;
 select is((select count(*)::int from quiz_selected), 2, 'fixture has two published managed CBT questions');
 select ok((select bool_and(content_revision > 0 and question_id is not null) from quiz_selected),
   'published revisions and permanent question UUIDs are available');
@@ -78,12 +89,17 @@ select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000003',
   'signed-out', 'expired session fails closed');
 select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000001', (select course_id from quiz_fixture),
-  2, 'start', null, 'in_progress', (select selection from quiz_fixture))->'attempt'->>'revision',
-  '0', 'start pins current published revisions');
+  2, 'start', null, 'in_progress', (select selection from quiz_fixture)),
+  '{"status":"conflict"}'::jsonb, 'an old-style start with a browser-chosen selection is refused');
+reset role;
+select is((select count(*)::int from public.quiz_attempts), 0, 'and pins nothing');
+select pg_temp.legacy_attempt('a2000000-0000-4000-8000-000000000001',
+  (select content_revision from quiz_selected where ordinal = 0));
+set local role service_role;
 select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000001', (select course_id from quiz_fixture),
-  2, 'start', null, 'in_progress', (select selection from quiz_fixture))->'attempt'->>'revision',
-  '0', 'exact retry is idempotent');
+  2, 'start', null, 'in_progress', (select selection from quiz_fixture)),
+  '{"status":"conflict"}'::jsonb, 'replaying a start of a legacy attempt is refused too');
 select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000002',
   'a2000000-0000-4000-8000-000000000001', (select course_id from quiz_fixture),
   0, 'finish', 0, 'submitted', '[]')->>'status', 'not-found', 'another owner cannot finish');
@@ -132,13 +148,13 @@ select ok((select is_correct and option_index = (select first_correct from quiz_
 set local role service_role;
 select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000002', (select course_id from quiz_fixture),
-  2, 'start', null, 'in_progress', (select selection from quiz_fixture))->>'status',
-  'conflict', 'new attempt cannot pin an unpublished old revision');
-select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
-  'a2000000-0000-4000-8000-000000000002', (select course_id from quiz_fixture),
   2, 'start', null, 'in_progress', jsonb_set((select selection from quiz_fixture),
     '{0,content_revision}', to_jsonb((select content_revision + 1 from quiz_selected where ordinal = 0))))->>'status',
-  'saved', 'fresh attempt pins the newer publication');
+  'conflict', 'an old-style start cannot pin even the newer publication');
+reset role;
+select pg_temp.legacy_attempt('a2000000-0000-4000-8000-000000000002',
+  (select content_revision + 1 from quiz_selected where ordinal = 0));
+set local role service_role;
 select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000002', (select course_id from quiz_fixture),
   0, 'record', 0, 'in_progress', jsonb_build_array(jsonb_build_object(
@@ -162,7 +178,7 @@ select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000003', (select course_id from quiz_fixture),
   2, 'start', null, 'in_progress', jsonb_set((select selection from quiz_fixture),
     '{0,content_revision}', to_jsonb((select content_revision + 1 from quiz_selected where ordinal = 0))))->>'status',
-  'conflict', 'withdrawn question cannot enter a fresh attempt');
+  'conflict', 'withdrawn question cannot enter a fresh attempt through the old path');
 select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000002', (select course_id from quiz_fixture),
   0, 'record', 1, 'in_progress', jsonb_build_array(jsonb_build_object(
