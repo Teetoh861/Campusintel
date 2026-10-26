@@ -1,4 +1,4 @@
-// scripts/entitlements/ops.test.cjs — The operator tool: trusted-list import validation, hashing before sending,
+// scripts/entitlements/ops.test.cjs — The operator tool: trusted-list import validation, no phone numbers collected,
 // mandatory actor/reason, and narrow service RPCs only.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -6,11 +6,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { run, parseCsv } = require('./ops.cjs')
-const { phoneHash } = require('../../lib/entitlements/phone.cjs')
 
-const KEY = 'k'.repeat(40)
-const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret',
-  ENTITLEMENT_PHONE_HASH_KEY: KEY }
+const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret' }
 
 function harness(reply = () => ({ state: 'added' })) {
   const requests = []
@@ -35,30 +32,66 @@ test('the CSV reader handles quotes, doubled quotes, CRLF and a byte-order mark'
   assert.throws(() => parseCsv('a,"b'), /unterminated/)
 })
 
-test('import validates the whole file first, normalizes email, and sends only a keyed phone hash', async () => {
-  const list = csv('﻿email,full_name,phone,joined_at\n Ada@Example.TEST ,"Ada Obi",0803 123 4567,2026-09-01T10:00:00Z\n' +
-    'tunde@example.test,Tunde Bello,,2026-09-02T10:00:00Z\n')
+test('import reads email,full_name,joined_at, normalizes email, and sends a null phone hash', async () => {
+  const list = csv('﻿email,full_name,joined_at\n Ada@Example.TEST ,"Ada Obi",2026-09-01T10:00:00Z\n' +
+    'tunde@example.test,Tunde Bello,2026-09-02T10:00:00Z\n')
   try {
     const h = harness()
     await h.run(['import-early-access', '--file', list.file, '--batch', 'google-form-2026-10', '--actor', 'ops'])
     assert.deepEqual(h.requests.map(r => r.fn), ['admin_add_early_access_member', 'admin_add_early_access_member'])
-    assert.deepEqual(h.requests[0].body, { p_email: 'ada@example.test', p_full_name: 'Ada Obi',
-      p_phone_hash: phoneHash(KEY, '+2348031234567'), p_joined_at: '2026-09-01T10:00:00.000Z', p_source: 'import',
-      p_batch: 'google-form-2026-10', p_actor: 'ops' })
+    assert.deepEqual(h.requests[0].body, { p_email: 'ada@example.test', p_full_name: 'Ada Obi', p_phone_hash: null,
+      p_joined_at: '2026-09-01T10:00:00.000Z', p_source: 'import', p_batch: 'google-form-2026-10', p_actor: 'ops' })
     assert.equal(h.requests[1].body.p_phone_hash, null)
-    assert.doesNotMatch(JSON.stringify(h.requests), /8031234567/)
     assert.deepEqual(JSON.parse(h.output[0]), { added: 2 })
   } finally { list.done() }
 })
 
-test('a bad row, duplicate email, wrong header or a phone without the key rejects the file before any write', async () => {
+test('a file that still has a phone column is refused before any number is read or anything is sent', async () => {
+  for (const header of ['email,full_name,phone,joined_at', 'email,full_name,joined_at,Phone Number',
+    'Mobile,email,full_name,joined_at', 'email,full_name,joined_at,whatsapp']) {
+    // The phone cell is malformed on purpose: the file is refused on its header, so the cell is never parsed.
+    const list = csv(`${header}\na@x.test,A,2026-09-01T00:00:00Z,"0803 123 4567\n`)
+    try {
+      const h = harness()
+      await assert.rejects(h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops']),
+        /column: phone numbers are no longer collected\. Delete that column from the file and import again/)
+      await assert.rejects(h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops',
+        '--dry-run']), /no longer collected/)
+      assert.equal(h.requests.length, 0)
+    } finally { list.done() }
+  }
+})
+
+test('duplicates group by email: a repeated email is refused in the file and reported as existing by the database', async () => {
+  // Two people sharing a phone but using different emails are now two separate entries; same-name rows go to the
+  // report for an operator merge.
+  const list = csv('email,full_name,joined_at\nada@example.test,Ada Obi,2026-09-01T10:00:00Z\n' +
+    'ada.obi@example.test,Ada Obi,2026-09-03T10:00:00Z\nalready@example.test,Bola Ade,2026-09-04T10:00:00Z\n')
+  try {
+    const h = harness(body => ({ state: body.p_email === 'already@example.test' ? 'existing' : 'added' }))
+    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops'])
+    assert.deepEqual(h.requests.map(r => [r.body.p_email, r.body.p_phone_hash]),
+      [['ada@example.test', null], ['ada.obi@example.test', null], ['already@example.test', null]])
+    assert.deepEqual(JSON.parse(h.output[0]), { added: 2, existing: 1 })
+  } finally { list.done() }
+  const repeated = csv('email,full_name,joined_at\nada@example.test,Ada,2026-09-01T00:00:00Z\n' +
+    'ADA@example.test ,Ada Obi,2026-09-02T00:00:00Z\n')
+  try {
+    const h = harness()
+    await assert.rejects(h.run(['import-early-access', '--file', repeated.file, '--batch', 'b-1', '--actor', 'ops']),
+      /line 3: email repeated in this file/)
+    assert.equal(h.requests.length, 0)
+  } finally { repeated.done() }
+})
+
+test('a bad row, duplicate email, wrong header or column count rejects the file before any write', async () => {
   const cases = [
-    ['email,full_name,phone,joined_at\nnot-an-email,A,,2026-09-01T00:00:00Z\n', /line 2: invalid email/],
-    ['email,full_name,phone,joined_at\na@x.test,A,,2026-09-01T00:00:00Z\nA@x.test,B,,2026-09-01T00:00:00Z\n', /repeated/],
-    ['email,name\na@x.test,A\n', /header/],
-    ['email,full_name,phone,joined_at\na@x.test,A,12345,2026-09-01T00:00:00Z\n', /Nigerian mobile/],
-    ['email,full_name,phone,joined_at\na@x.test,A,,yesterday\n', /joined_at/],
-    ['email,full_name,phone,joined_at\na@x.test,,,2026-09-01T00:00:00Z\n', /full_name/],
+    ['email,full_name,joined_at\nnot-an-email,A,2026-09-01T00:00:00Z\n', /line 2: invalid email/],
+    ['email,full_name,joined_at\na@x.test,A,2026-09-01T00:00:00Z\nA@x.test,B,2026-09-01T00:00:00Z\n', /repeated/],
+    ['email,name\na@x.test,A\n', /header must be email,full_name,joined_at/],
+    ['email,full_name,joined_at\na@x.test,A,08031234567,2026-09-01T00:00:00Z\n', /line 2: expected 3 columns/],
+    ['email,full_name,joined_at\na@x.test,A,yesterday\n', /joined_at/],
+    ['email,full_name,joined_at\na@x.test,,2026-09-01T00:00:00Z\n', /full_name/],
   ]
   for (const [text, error] of cases) {
     const list = csv(text)
@@ -68,22 +101,24 @@ test('a bad row, duplicate email, wrong header or a phone without the key reject
       assert.equal(h.requests.length, 0)
     } finally { list.done() }
   }
-  const phoneWithoutKey = csv('email,full_name,phone,joined_at\na@x.test,A,08031234567,2026-09-01T00:00:00Z\n')
+})
+
+test('the import no longer needs ENTITLEMENT_PHONE_HASH_KEY', async () => {
+  const list = csv('email,full_name,joined_at\na@x.test,A,2026-09-01T00:00:00Z\n')
   try {
     const h = harness()
-    await assert.rejects(h.run(['import-early-access', '--file', phoneWithoutKey.file, '--batch', 'b-1', '--actor', 'ops'],
-      { ...ENV, ENTITLEMENT_PHONE_HASH_KEY: undefined }), /ENTITLEMENT_PHONE_HASH_KEY/)
-    assert.equal(h.requests.length, 0)
-  } finally { phoneWithoutKey.done() }
+    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops'],
+      { ...ENV, ENTITLEMENT_PHONE_HASH_KEY: '' })
+    assert.equal(h.requests[0].body.p_phone_hash, null)
+  } finally { list.done() }
 })
 
 test('a dry run validates and counts without connecting', async () => {
-  const list = csv('email,full_name,phone,joined_at\na@x.test,A,08031234567,2026-09-01T00:00:00Z\n')
+  const list = csv('email,full_name,joined_at\na@x.test,A,2026-09-01T00:00:00Z\n')
   try {
     const h = harness()
-    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops', '--dry-run'],
-      { ENTITLEMENT_PHONE_HASH_KEY: KEY })
-    assert.deepEqual(JSON.parse(h.output[0]), { valid: 1, withPhone: 1 })
+    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops', '--dry-run'], {})
+    assert.deepEqual(JSON.parse(h.output[0]), { valid: 1 })
     assert.equal(h.requests.length, 0)
   } finally { list.done() }
 })
@@ -181,8 +216,8 @@ test('M3-B: the sweep never reports success while enrollable accounts remain', a
 })
 
 test('M3-A: an enrollment deferred by an import is completed by a follow-up sweep in fresh transactions', async () => {
-  const list = csv('email,full_name,phone,joined_at\nada@example.test,Ada Obi,,2026-09-01T10:00:00Z\n' +
-    'tunde@example.test,Tunde Bello,,2026-09-02T10:00:00Z\n')
+  const list = csv('email,full_name,joined_at\nada@example.test,Ada Obi,2026-09-01T10:00:00Z\n' +
+    'tunde@example.test,Tunde Bello,2026-09-02T10:00:00Z\n')
   try {
     const h = harness(body => body.p_email === 'ada@example.test' ? { state: 'added', enrollment: 'deferred' }
       : body.p_email ? { state: 'added', enrollment: null } : { state: 'reconciled', granted: 1, remaining: 0, deferred: 0 })

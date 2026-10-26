@@ -176,9 +176,9 @@ account is enrolled automatically, with its own full month starting then, when:
 - an operator runs `reconcile-early-access` (an idempotent recovery sweep).
 
 Eligibility is the trusted list only, matched to the account's **confirmed** email (case-insensitive): a typed or
-unconfirmed address proves nothing. Each list entry, and each duplicate group (same phone at import, or grouped by an
-operator), enrolls once. An existing grant is never reset or extended by logins, imports, sweeps or repeat
-reconciliation. Enrollment closes `early_access_enrollment_days` after the actual launch (**28, approved by the owner on 23 October
+unconfirmed address proves nothing. Each list entry, and each duplicate group (same phone at an import before 26
+October 2026, or grouped by an operator), enrolls once. An existing grant is never reset or extended by logins,
+imports, sweeps or repeat reconciliation. Enrollment closes `early_access_enrollment_days` after the actual launch (**28, approved by the owner on 23 October
 2026**: the 28-day window is for claiming after launch, and the list itself closes at launch, as `early_access_status()`
 already enforces for members who join on or after the actual launch). The PROVISIONAL marking in
 `20261017100000_trial_entitlements.sql` is a SQL source comment, not a database `COMMENT`, so that migration is left
@@ -214,12 +214,16 @@ node scripts/entitlements/ops.cjs import-early-access --file list.csv --batch go
 node scripts/entitlements/ops.cjs import-early-access --file list.csv --batch google-form-2026-10 --actor <name>
 ```
 
-CSV header: `email,full_name,phone,joined_at`. `phone` may be empty; when present it is hashed locally with
-`ENTITLEMENT_PHONE_HASH_KEY` and a phone already on the list puts the row in that member's duplicate group.
-`joined_at` must not be in the future and, after launch, must be before the actual launch (pre-launch signups only).
-The whole file is validated before any row is written; existing emails are never overwritten. Prior WhatsApp
-contacts are imported the same way. An import after launch enrolls a matching confirmed account immediately.
-Review `early-access-report` (same-name rows are reported, never blocked); use
+Google Form fields: email address and full name; the form's submission timestamp is exported as `joined_at`. The
+form does not ask for a phone number.
+
+CSV header: `email,full_name,joined_at`. A file with a phone column is refused unread; delete that column and import
+again. `joined_at` must not be in the future and, after launch, must be before the actual launch (pre-launch signups only).
+The whole file is validated before any row is written; an email repeated in the file is refused, and an email already
+on the list is reported as `existing` and never overwritten. Prior WhatsApp contacts are imported the same way, by
+email and name only. An import after launch enrolls a matching confirmed account immediately.
+Duplicates are now found by email and name only: two entries with different emails are separate, even for one person,
+until an operator merges them. Review `early-access-report` (same-name rows are reported, never blocked); use
 `member --action mark-duplicate|clear-duplicate|exclude|include`. Excluding or grouping never removes a grant
 already made; revoke it explicitly with `change-grant`.
 
@@ -249,8 +253,9 @@ are never refunded by restoring Early Access. Failed generations are released an
 
 The phone-code activation of `20261017100000_trial_entitlements.sql` is retired by `20261021100000_discovery_pass.sql`:
 its functions, its challenge table and its `otp_*` policy are dropped, and no SMS provider, Termii account, sender ID or
-`ENTITLEMENT_SMS_PROVIDER` / `TERMII_*` setting exists or is read anywhere. `ENTITLEMENT_PHONE_HASH_KEY` remains only
-for the operator tool's Early Access list import (phone column), which never touches the pass.
+`ENTITLEMENT_SMS_PROVIDER` / `TERMII_*` setting exists or is read anywhere. `ENTITLEMENT_PHONE_HASH_KEY` is no longer
+read by anything (the list import stopped collecting phone numbers on 26 October 2026); keep the key until the owner
+decides what happens to the stored phone hashes it produced.
 `private.trial_phone_claims` is kept read-only as the record of seven-day trials activated by phone before the change;
 nothing writes it.
 
@@ -270,9 +275,8 @@ transaction. The audit trail never contains phone numbers, email addresses or co
 | Two enrolled accounts are the same person | `member --email <later> --action mark-duplicate --of <earlier>` (keeps the canonical month, revokes the other) |
 | Change the enrollment window or planned date | `configure-early-access [--enrollment-days n] [--planned-launch ISO]` (`--trial-after-early-access` is retired and refused) |
 
-The tool needs `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SECRET_KEY` (an `sb_secret_` key over HTTPS when hosted) and,
-for list imports with a phone column, `ENTITLEMENT_PHONE_HASH_KEY`. A student who believes a pass claim is wrong (for
-example an address they never controlled) is handled with `grant`, never by freeing the claim.
+The tool needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` (an `sb_secret_` key over HTTPS when hosted). A
+student who believes a pass claim is wrong (for example an address they never controlled) is handled with `grant`, never by freeing the claim.
 
 ## Account deletion
 
