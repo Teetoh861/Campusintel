@@ -53,6 +53,8 @@ $sql$, 'the student can switch to the existing BUA 200L selection');
 select is((select array_agg(course_code order by course_code) from selected_courses),
   array['ACC-CM201', 'BUA201', 'BUA203', 'BUA205', 'ENT211', 'LAG-BUA210', 'LAG-BUA221']::text[],
   'BUA 200L First Semester retains its exact existing offering');
+select is((select count(*)::int from selected_courses where repository_course_id is not null), 7,
+  'all seven BUA 200L First Semester courses now link to existing study materials');
 
 select lives_ok($sql$
   update public.profiles set academic_level_id = (select id from public.academic_levels where key = '100-level')
@@ -82,6 +84,11 @@ select lives_ok($sql$
 $sql$, 'the student can select another department at 300L');
 select is((select count(*)::int from selected_courses), 0,
   'BUA 300L courses do not leak into another department');
+select lives_ok($sql$
+  update public.profiles set department_id = (select id from public.departments where key = 'accounting')
+  where id = auth.uid()
+$sql$, 'Accounting 300L remains selectable');
+select is((select count(*)::int from selected_courses), 0, 'Accounting 300L has no invented course offering');
 select is(public.get_my_entitlement(), current_setting('test.bua_entitlement')::jsonb,
   'changing academic selection preserves the student entitlement');
 

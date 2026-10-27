@@ -215,7 +215,7 @@ test('course summary handles singular, plural and zero-ready collections honestl
 }))
 
 test('empty, unavailable and changed selections do not invent course statistics', async () => fixture(async f => {
-  assert.match(courseCard(await f.html()), /No courses are listed for your academic details/)
+  assert.match(courseCard(await f.html()), /Your courses are not available yet\./)
   assert.doesNotMatch(courseCard(await f.html()), /0 courses|ready to study/)
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
