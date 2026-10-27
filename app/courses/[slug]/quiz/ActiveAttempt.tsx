@@ -2,13 +2,8 @@
 // app/courses/[slug]/quiz/ActiveAttempt.tsx — One open server-run practice attempt. The browser holds only the pinned
 // prompts and options; the database fixed the deadline at start, keeps the sheet saved before it and grades it once,
 // and only then returns correct options and explanations. The rules are the Discovery exam's, shared:
-//   * time: lib/entitlements/exam-clock.ts. A fresh exchange with the server on mount and whenever the page comes back
-//     into view, the whole round trip charged as elapsed, measured on the monotonic clock; until it lands, answers
-//     cannot change. The device's wall clock is never the authority.
-//   * saving: lib/entitlements/exam-autosave.ts, as this tab's changed questions over the revision it last received,
-//     under a tab identity kept across reloads and never shared with a duplicated tab (lib/entitlements/exam-tab.ts).
-//   * at zero the attempt submits itself and keeps trying while offline; the server grades only what it accepted in
-//     time, and the result says so when this tab still held answers it never received.
+// ExamClock supplies trusted time; ExamAutosave sends sequenced deltas under the persistent exam-tab identity.
+// At zero the server grades only answers it received in time. Exit warns when pending choices have no durable copy.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
 import { ExamClock } from '@/lib/entitlements/exam-clock'
@@ -68,6 +63,7 @@ export function ActiveAttempt(props: Props): ReactElement {
   const [clockState, setClockState] = useState<ClockState>('unsynced')
   const [clockFailures, setClockFailures] = useState(0)
   const [save, setSave] = useState<AutosaveSnapshot | null>(null)
+  const [answersSafe, setAnswersSafe] = useState(true)
   const [busy, setBusy] = useState(false)
   const [submitFailing, setSubmitFailing] = useState(false)
   const [confirm, setConfirm] = useState<'submit' | 'exit' | null>(null)
@@ -184,11 +180,16 @@ export function ActiveAttempt(props: Props): ReactElement {
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
       onChange: snapshot => {
         setSave(snapshot)
-        if (controller !== null && !graded.current) writeUnsent(attempt.id, controller.unsent())
+        if (controller !== null && !graded.current) {
+          const pending = controller.unsent()
+          setAnswersSafe(writeUnsent(attempt.id, pending) || pending.dirty.length === 0)
+        }
       },
       onRebase: merged => { answersRef.current = merged as PracticeSheet; setAnswers(merged as PracticeSheet) },
     })
     autosave.current = controller
+    const pending = controller.unsent()
+    setAnswersSafe(writeUnsent(attempt.id, pending) || pending.dirty.length === 0)
     const sheet = controller.unsent().answers as PracticeSheet
     answersRef.current = sheet
     setAnswers(sheet)
@@ -276,7 +277,7 @@ export function ActiveAttempt(props: Props): ReactElement {
       isMarked={flags.has(question.questionId)} timeLeft={timeLeft}
       isLowTime={timeLeft !== null && timeLeft <= LOW_TIME_SECONDS} canAnswer={canAnswer}
       saveLine={saveLineFor({ timeUp, submitFailing, refusal, clockSynced: clockState === 'synced', clockFailures,
-        save: saveState, answered })}
+        save: saveState, answered, answersSafe })}
       onRetrySave={() => autosave.current?.retry()}
       navOpen={navOpen} answeredCount={answered} markedCount={flags.size} answersMap={answersMap} markedMap={markedMap}
       onSelectOption={choose} onToggleMark={toggleFlag}
@@ -290,6 +291,6 @@ export function ActiveAttempt(props: Props): ReactElement {
       answered={answered} unanswered={attempt.questions.length - answered} flagged={flags.size}
       pending={saveState !== null && saveState !== 'saved'} onConfirm={() => { void submit() }} onRestoreFocus={restore} />
     <AssessmentConfirmation kind="exit" open={confirm === 'exit'} onOpenChange={open => setConfirm(open ? 'exit' : null)}
-      body={exitBodyFor(saveState, answered)} onConfirm={exit} onRestoreFocus={restore} />
+      body={exitBodyFor(saveState, answered, answersSafe)} unsafe={!answersSafe} onConfirm={exit} onRestoreFocus={restore} />
   </>
 }

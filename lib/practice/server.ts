@@ -33,7 +33,7 @@ export function practicePolicyFor(slug: string): PracticePolicy | null {
 
 export type PracticeDelta = { tab: string; sequence: number; baseRevision: number; changes: PracticeChanges }
 export type PracticeStart = { attemptId: string; courseId: string; intent: 'new' | 'redo'; redoOf: string | null
-  policy: PracticePolicy; expected: { questionCount: number; durationSeconds: number } }
+  policy: PracticePolicy; expected: { questionCount: number; durationSeconds: number; wholeBank: boolean } }
 
 export type PracticeEnv = {
   start(start: PracticeStart): Promise<unknown>
@@ -150,7 +150,8 @@ function createSupabasePracticeEnv(sessionId: string): PracticeEnv {
       const { data, error } = await service.rpc('practice_start', { p_session_id: sessionId, p_attempt_id: start.attemptId,
         p_course_id: start.courseId, p_intent: start.intent, p_redo_of: start.redoOf, p_size: start.policy.size,
         p_seconds: start.policy.seconds, p_sections: start.policy.sections,
-        p_expected_size: start.expected.questionCount, p_expected_seconds: start.expected.durationSeconds })
+        p_expected_size: start.expected.questionCount, p_expected_seconds: start.expected.durationSeconds,
+        p_expected_whole_bank: start.expected.wholeBank })
       return rpcAnswer(data, error)
     },
     async state(courseId) {

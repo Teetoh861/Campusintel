@@ -335,7 +335,7 @@ select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001',
   'allowance-expired', 'AI ends with the pass');
 set local role service_role;
 select is(public.practice_start('62000000-0000-4000-8000-000000000001', '64000000-0000-4000-8000-000000000003',
-  '40000000-0000-4000-8000-000000000008', 'new', null, 50, 1800, '[]', 50, 1800)->>'state', 'ready',
+  '40000000-0000-4000-8000-000000000008', 'new', null, 50, 1800, '[]', 50, 1800, false)->>'state', 'ready',
   'GST practice still starts on the free tier (server-run since 20261025100000_server_run_practice.sql)');
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test'))->>'state', 'already-activated',
   'an ended pass cannot restart');

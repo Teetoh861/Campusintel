@@ -103,7 +103,7 @@ export async function claimExamTab(options: ExamTabOptions): Promise<ExamTab> {
   let sequence = record.sequence
   return {
     tab: record.tab,
-    sequence: record.sequence,
+    get sequence() { return sequence },
     remember(next: number) {
       if (!Number.isSafeInteger(next) || next <= sequence) return
       sequence = next

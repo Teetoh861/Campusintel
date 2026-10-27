@@ -15,7 +15,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
   onRestoreFocus: (event: Event) => void
-} & ({ kind: 'exit'; body: string } | { kind: 'submit'; answered: number; unanswered: number; flagged: number; pending: boolean })
+} & ({ kind: 'exit'; body: string; unsafe?: boolean } | { kind: 'submit'; answered: number; unanswered: number; flagged: number; pending: boolean })
 
 /** Confirm a final decision; the safe action always receives initial focus. */
 export function AssessmentConfirmation(props: Props): ReactElement {
@@ -46,7 +46,7 @@ export function AssessmentConfirmation(props: Props): ReactElement {
           <AlertDialogCancel className={studentAction(btnGhost, 'mt-0')}>Keep working</AlertDialogCancel>
           <AlertDialogAction className={studentAction(btnNavy, studentFocusDark)} onClick={props.onConfirm}>Submit practice</AlertDialogAction>
         </> : <>
-          <AlertDialogAction className={studentAction(btnGhost)} onClick={props.onConfirm}>Exit</AlertDialogAction>
+          <AlertDialogAction className={studentAction(btnGhost)} onClick={props.onConfirm}>{props.unsafe ? 'Leave anyway' : 'Exit'}</AlertDialogAction>
           <AlertDialogCancel className={studentAction(btnNavy, studentFocusDark, 'mt-0')}>Stay</AlertDialogCancel>
         </>}
       </AlertDialogFooter>
