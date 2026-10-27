@@ -82,8 +82,8 @@ select is(
     from public.institutional_courses
     where repository_course_id is not null
   ),
-  11,
-  'only eleven confirmed catalogue-to-content links are established'
+  14,
+  'fourteen confirmed catalogue-to-content links are established'
 );
 
 select is(
@@ -92,7 +92,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is not null
   ),
-  11,
+  14,
   'confirmed content links are one-to-one'
 );
 
@@ -102,7 +102,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is null
   ),
-  143,
+  140,
   'institutional catalogue courses may exist without repository content'
 );
 
@@ -130,6 +130,7 @@ select is(
       on courses.id = institutional_courses.repository_course_id
   ),
   array[
+    'ACC-CM201=financial-accounting-1',
     'BUA201=principles-business-administration',
     'BUA202=principles-business-administration-2',
     'BUA203=business-statistics',
@@ -140,9 +141,11 @@ select is(
     'ENT211=entrepreneurship-innovation',
     'GST111=use-of-english',
     'GST112=nigerian-peoples-and-culture',
-    'GST212=philosophy-logic-human-existence'
+    'GST212=philosophy-logic-human-existence',
+    'LAG-BUA210=business-mathematics',
+    'LAG-BUA221=consumer-behaviour'
   ]::text[],
-  'the eleven confirmed content links resolve to the exact repository identities'
+  'the fourteen confirmed content links resolve to the exact repository identities'
 );
 
 select is(
@@ -161,13 +164,8 @@ select is(
         where repository_course_id = courses.id
       )
   ),
-  array[
-    'business-mathematics',
-    'consumer-behaviour',
-    'financial-accounting-1',
-    'international-organisational-behaviour'
-  ]::text[],
-  'the four unresolved repository content records remain unlinked'
+  array['international-organisational-behaviour']::text[],
+  'the remaining unresolved repository content record stays unlinked'
 );
 
 select is(
@@ -177,8 +175,8 @@ select is(
     where course_code in ('LAG-BUA210', 'LAG-BUA221', 'ACC-CM201', 'LAG-BUA222')
       and repository_course_id is null
   ),
-  array['ACC-CM201', 'LAG-BUA210', 'LAG-BUA221', 'LAG-BUA222']::text[],
-  'the catalogue sides of all four runtime aliases also remain unresolved'
+  array['LAG-BUA222']::text[],
+  'only the unapproved runtime alias remains unresolved'
 );
 
 select is(
@@ -468,8 +466,8 @@ select is(
       on institutional_courses.id = course_applicability.institutional_course_id
     where institutional_courses.repository_course_id is not null
   ),
-  40,
-  'linked content gains only the two source-backed ENT211 department mappings'
+  45,
+  'the three approved links expose five existing department mappings without adding applicability'
 );
 
 select is(

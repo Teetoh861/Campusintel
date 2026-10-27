@@ -10,21 +10,25 @@ import { useIsDesktop } from '@/components/ui/use-mobile'
 import { Navigator, NavigatorLegend } from './Navigator'
 import { focusFirst } from './focus-return'
 import { answeredLine, describeClock, formatClock, optionLetter, practiceIdentity, timerAnnouncement } from './practice-presentation'
-import type { ManagedQuizQuestion } from '@/lib/managed-content/student-projection'
-import type { AnswersMap, MarkedMap } from './types'
+import type { AnswersMap, MarkedMap, PracticeQuestion, SaveLine } from './types'
 import type { ReactElement } from 'react'
 
 type Props = {
   courseCode: string
   courseTitle: string
   repositoryOnly: boolean
-  question: ManagedQuizQuestion
+  question: PracticeQuestion
   current: number
   total: number
   selected: number | undefined
   isMarked: boolean
-  timeLeft: number
+  // Seconds left on the server's deadline; null until a fresh exchange with the server says how long.
+  timeLeft: number | null
   isLowTime: boolean
+  // Answers can change only with a trustworthy reading of the server's clock, before the deadline.
+  canAnswer: boolean
+  saveLine: SaveLine
+  onRetrySave: () => void
   navOpen: boolean
   answeredCount: number
   markedCount: number
@@ -69,15 +73,17 @@ export function QuestionScreen(props: Props): ReactElement {
         <div className="student-practice-tools">
           <button type="button" className={studentAction(btnGhost, 'border-transparent px-3')} aria-haspopup="dialog"
             onClick={event => props.onLeave([event.currentTarget])}>
-            Leave practice
+            Exit
           </button>
-          <div className="student-practice-timer" role="timer" aria-label={describeClock(timeLeft)} data-urgency={isLowTime ? 'low' : undefined}>
+          <div className="student-practice-timer" role="timer"
+            aria-label={timeLeft === null ? 'Checking the time left' : describeClock(timeLeft)}
+            data-urgency={isLowTime ? 'low' : undefined}>
             <Clock aria-hidden="true" size={18} strokeWidth={2} />
             <span className="student-practice-timer-label">Time left</span>
-            <span>{formatClock(timeLeft)}</span>
+            <span>{timeLeft === null ? '––:––' : formatClock(timeLeft)}</span>
             {isLowTime ? <span className="student-practice-timer-suffix">left</span> : null}
           </div>
-          <span className="sr-only" aria-live="polite">{timerAnnouncement(timeLeft)}</span>
+          <span className="sr-only" aria-live="polite">{timeLeft === null ? '' : timerAnnouncement(timeLeft)}</span>
           <span className="student-practice-mobile">
             <SheetTrigger asChild>
               <button ref={navTrigger} type="button" className={studentAction(btnGhost, 'px-3')}>Questions</button>
@@ -98,14 +104,14 @@ export function QuestionScreen(props: Props): ReactElement {
               <span>{isMarked ? 'Flagged' : 'Flag question'}</span>
             </button>
           </div>
-          <p className="student-practice-prompt" id={promptId}>{question.question}</p>
+          <p className="student-practice-prompt" id={promptId}>{question.prompt}</p>
           <fieldset className="student-practice-options" aria-labelledby={`${positionId} ${promptId}`}>
             <legend className="sr-only">Choose one answer</legend>
             {question.options.map((text, index) => {
               const checked = selected === index
               return <label key={index} className="student-practice-option" data-selected={checked ? 'true' : undefined}>
                 <input className="sr-only" type="radio" name={`${id}-answer`} value={index} checked={checked}
-                  onChange={() => props.onSelectOption(index)} />
+                  disabled={!props.canAnswer} onChange={() => props.onSelectOption(index)} />
                 <span className="student-practice-option-mark" aria-hidden="true">{optionLetter(index)}</span>
                 <span className="student-practice-option-text">{text}</span>
                 <span className="student-practice-option-check" aria-hidden="true">
@@ -114,6 +120,11 @@ export function QuestionScreen(props: Props): ReactElement {
               </label>
             })}
           </fieldset>
+          {props.saveLine ? <p role="status" className="student-practice-help">
+            {props.saveLine.text}
+            {props.saveLine.retry ? <> <button type="button" className={studentAction(btnGhost, 'border-transparent px-2')}
+              onClick={props.onRetrySave}>Try again</button></> : null}
+          </p> : null}
           <div className="student-practice-steps">
             <button type="button" className={studentAction(btnGhost)} disabled={current === 0} onClick={props.onPrev}>Previous</button>
             <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup={isLast ? 'dialog' : undefined}

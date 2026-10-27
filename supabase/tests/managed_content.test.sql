@@ -66,6 +66,14 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}';
 -- Owner-only import fixture: preserve a pre-intent row and its legacy identities.
 reset role;
+-- CBT questions never reach a student through the content read (20261025100000_server_run_practice.sql), so the
+-- published-revision checks below read the published CBT prompt as the owner.
+create function pg_temp.published_cbt_prompt(p_course_id uuid) returns text
+language sql stable security definer set search_path = '' as $$
+  select r.payload ->> 'prompt' from public.managed_content_items i
+  join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
+  where i.course_id = p_course_id and i.kind = 'cbt_question' and i.published_revision is not null;
+$$;
 select set_config('test.managed_item', public.create_managed_content(
   '70000000-0000-4000-8000-000000000007', 'cbt_question',
   '{"prompt":"Original wording","options":["A","B"],"correctOption":1}'::jsonb,
@@ -97,11 +105,13 @@ select is(public.publish_managed_content(current_setting('test.managed_item')::u
 
 set local request.jwt.claims = '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}';
 select is((select count(*)::int from public.read_published_managed_content(
-  '70000000-0000-4000-8000-000000000007')), 1,
-  'student can read published content through the dedicated boundary');
-select is((select payload->>'prompt' from public.read_published_managed_content(
-  '70000000-0000-4000-8000-000000000007')), 'Original wording',
-  'student sees the published revision');
+  '70000000-0000-4000-8000-000000000007')), 0,
+  'a published CBT question is withheld from the student content read');
+select is((select bank_size from public.published_cbt_summary(
+  array['70000000-0000-4000-8000-000000000007']::uuid[])), 1,
+  'the student sees only that one question is offered for practice');
+select is(pg_temp.published_cbt_prompt('70000000-0000-4000-8000-000000000007'), 'Original wording',
+  'the published revision is the approved one');
 select throws_ok($sql$ select * from public.list_managed_content(
   '70000000-0000-4000-8000-000000000007') $sql$,
   '42501', null, 'student cannot read operator drafts');
@@ -121,8 +131,7 @@ select throws_ok($sql$ select public.revise_managed_content(
   current_setting('test.managed_item')::uuid, 3,
   '{"prompt":"Stale overwrite","options":["A","B"],"correctOption":0}'::jsonb) $sql$,
   '40001', null, 'stale concurrent edit cannot overwrite newer operator work');
-select is((select payload->>'prompt' from public.read_published_managed_content(
-  '70000000-0000-4000-8000-000000000007')), 'Original wording',
+select is(pg_temp.published_cbt_prompt('70000000-0000-4000-8000-000000000007'), 'Original wording',
   'editing does not leak a draft over the published revision');
 select is((select question_id::text from public.list_managed_content(
   '70000000-0000-4000-8000-000000000007')),
@@ -132,15 +141,13 @@ select is(public.review_managed_content(current_setting('test.managed_item')::uu
   5::bigint, 'new revision can be reviewed');
 select is(public.publish_managed_content(current_setting('test.managed_item')::uuid, 5, 2),
   6::bigint, 'new approved revision can replace publication');
-select is((select payload->>'prompt' from public.read_published_managed_content(
-  '70000000-0000-4000-8000-000000000007')), 'Revised wording',
+select is(pg_temp.published_cbt_prompt('70000000-0000-4000-8000-000000000007'), 'Revised wording',
   'published updates become readable without a deployment');
 select is(public.review_managed_content(current_setting('test.managed_item')::uuid, 6, 1, 'approved'),
   7::bigint, 'an earlier immutable revision can be reapproved for rollback');
 select is(public.publish_managed_content(current_setting('test.managed_item')::uuid, 7, 1),
   8::bigint, 'rollback republishes the earlier revision');
-select is((select payload->>'prompt' from public.read_published_managed_content(
-  '70000000-0000-4000-8000-000000000007')), 'Original wording',
+select is(pg_temp.published_cbt_prompt('70000000-0000-4000-8000-000000000007'), 'Original wording',
   'rollback changes only the publication pointer');
 select is(public.unpublish_managed_content(current_setting('test.managed_item')::uuid, 8),
   9::bigint, 'operator can unpublish');

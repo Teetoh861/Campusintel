@@ -7,7 +7,10 @@ select has_table('public', 'quiz_attempts', 'attempt storage exists');
 select has_table('public', 'quiz_attempt_answers', 'answer storage exists');
 select columns_are('public', 'quiz_attempts', array[
   'id', 'user_id', 'course_id', 'question_count', 'status', 'revision',
-  'created_at', 'updated_at', 'finished_at'
+  'created_at', 'updated_at', 'finished_at',
+  -- Server-run practice (20261025100000_server_run_practice.sql); null deadline marks a legacy attempt.
+  'deadline_at', 'duration_seconds', 'intent', 'redo_of', 'bank_size',
+  'saved_answers', 'saved_at', 'saved_revision', 'saved_sources', 'score'
 ], 'attempts contain exactly the required columns');
 select columns_are('public', 'quiz_attempt_answers', array[
   'attempt_id', 'question_id', 'ordinal', 'option_index', 'is_correct',
@@ -24,7 +27,11 @@ select is(
     'question_count:integer:NO', 'status:text:NO', 'revision:integer:NO',
     'created_at:timestamp with time zone:NO',
     'updated_at:timestamp with time zone:NO',
-    'finished_at:timestamp with time zone:YES'
+    'finished_at:timestamp with time zone:YES',
+    'deadline_at:timestamp with time zone:YES', 'duration_seconds:integer:YES',
+    'intent:text:YES', 'redo_of:uuid:YES', 'bank_size:integer:YES',
+    'saved_answers:jsonb:YES', 'saved_at:timestamp with time zone:YES',
+    'saved_revision:integer:NO', 'saved_sources:jsonb:NO', 'score:integer:YES'
   ]::text[],
   'attempt column types and nullability match the contract'
 );
@@ -46,8 +53,9 @@ select is(
    where table_schema = 'public' and table_name = 'quiz_attempts'
      and column_default is not null),
   jsonb_build_object('status', '''in_progress''::text', 'revision', '0',
-                    'created_at', 'now()', 'updated_at', 'now()'),
-  'only status, revision and server timestamps have attempt defaults'
+                    'created_at', 'now()', 'updated_at', 'now()',
+                    'saved_revision', '0', 'saved_sources', '''{}''::jsonb'),
+  'only status, revisions, the empty tab ledger and server timestamps have attempt defaults'
 );
 select is(
   (select jsonb_object_agg(column_name, column_default)
@@ -61,10 +69,13 @@ select is(
   (select array_agg(conname::text order by conname) from pg_constraint
    where conrelid = 'public.quiz_attempts'::regclass),
   array[
-    'quiz_attempts_course_id_fkey', 'quiz_attempts_finished_at_order_check',
-    'quiz_attempts_finished_at_status_check', 'quiz_attempts_pkey',
-    'quiz_attempts_question_count_check', 'quiz_attempts_revision_check',
-    'quiz_attempts_status_check', 'quiz_attempts_user_id_fkey'
+    'quiz_attempts_bank_size_check', 'quiz_attempts_course_id_fkey', 'quiz_attempts_deadline_check',
+    'quiz_attempts_duration_check', 'quiz_attempts_finish_deadline_check',
+    'quiz_attempts_finished_at_order_check',
+    'quiz_attempts_finished_at_status_check', 'quiz_attempts_intent_check', 'quiz_attempts_pkey',
+    'quiz_attempts_question_count_check', 'quiz_attempts_redo_check', 'quiz_attempts_redo_of_fkey',
+    'quiz_attempts_revision_check', 'quiz_attempts_saved_check', 'quiz_attempts_score_check',
+    'quiz_attempts_server_run_check', 'quiz_attempts_status_check', 'quiz_attempts_user_id_fkey'
   ]::text[],
   'all required attempt keys and checks exist'
 );
@@ -294,13 +305,24 @@ set local request.jwt.claims =
 select is((select count(*)::int from public.quiz_attempts
            where id = '80000000-0000-4000-8000-000000000001'),
           1, 'owner A can read their attempt');
-select is((select count(*)::int from public.quiz_attempt_answers
-           where attempt_id = '80000000-0000-4000-8000-000000000001'),
-          2, 'owner A can read their answer children');
+-- Marked answers of an open attempt stay hidden from their owner (20261025100000_server_run_practice.sql).
+select is((select count(*)::int from public.quiz_attempt_answers),
+          0, 'owner A cannot read the marked answers of their open attempts');
 select is((select count(*)::int from public.quiz_attempts),
           2, 'A sees only their two attempts');
+reset role;
+savepoint finished_answers;
+update public.quiz_attempts set status = 'submitted', finished_at = now()
+  where id in ('80000000-0000-4000-8000-000000000001', '80000000-0000-4000-8000-000000000004');
+set local role authenticated;
+select is((select count(*)::int from public.quiz_attempt_answers
+           where attempt_id = '80000000-0000-4000-8000-000000000001'),
+          2, 'owner A can read their answer children once the attempt is finished');
 select is((select count(*)::int from public.quiz_attempt_answers),
           3, 'A sees only the children of their two attempts');
+reset role;
+rollback to savepoint finished_answers;
+set local role authenticated;
 select throws_ok($$insert into public.quiz_attempts (id, user_id, course_id, question_count)
   values ('80000000-0000-4000-8000-000000000009', '11111111-1111-4111-8111-111111111111', '70000000-0000-4000-8000-000000000010', 1)$$,
   '42501', null, 'authenticated cannot directly INSERT an otherwise valid own attempt');

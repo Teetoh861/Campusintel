@@ -132,7 +132,8 @@ test('validation failure is sanitized and empty catalogue remains a genuine empt
   assert.doesNotMatch(f.html(await f.granted()), /private provider details/)
   f.state.sessionError = false; f.state.result = { status: 'ok', courses: [] }
   const html = f.html(await f.granted())
-  assert.match(html, /0 courses/); assert.match(html, /No courses are available to browse\./)
+  assert.match(html, /Your courses are not available yet\./)
+  assert.doesNotMatch(html, /0 courses|Please check back|contact support/)
   assert.doesNotMatch(html, /<input\b|<select\b|<nav\b|No courses match/)
 }))
 

@@ -10,6 +10,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { Checkbox } from '@/components/ui/checkbox'
 import { PRACTICE_COPY, minutesOf, plural, practiceIdentity } from './practice-presentation'
+import type { PracticeBrief } from './types'
 import type { ReactElement } from 'react'
 
 type Props = {
@@ -17,58 +18,64 @@ type Props = {
   courseTitle: string
   courseHref: string
   repositoryOnly: boolean
-  questionCount: number
-  bankSize: number
-  timerSeconds: number
+  // The server's question count and time for the attempt that would start.
+  brief: PracticeBrief
+  // The live bank is no larger than the attempt: every question, in a new order (D4).
+  wholeBank: boolean
   briefingVersion: number
-  preparing: boolean
-  error: string | null
+  starting: boolean
+  error: { title: string; body: string } | null
+  lastResultHref: string | null
   onStart: () => void
 }
 
 /** Readiness is tied to the briefing version, so changed conditions always ask again. */
-export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, questionCount,
-  timerSeconds, briefingVersion, preparing, error, onStart }: Props): ReactElement {
+export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, brief, wholeBank, briefingVersion,
+  starting, error, lastResultHref, onStart }: Props): ReactElement {
   const [readyVersion, setReadyVersion] = useState<number | null>(null)
   const id = useId()
   const ready = readyVersion === briefingVersion
-  const minutes = minutesOf(timerSeconds)
+  const minutes = minutesOf(brief.durationSeconds)
   const identity = practiceIdentity(courseCode, courseTitle, repositoryOnly)
 
   return <StudentPage band={<PageBand title={PRACTICE_COPY.title} lede={identity.lede} context={<p>{identity.context}</p>} />}>
     <h2 className="student-section-title">This attempt</h2>
     <dl className="student-practice-facts">
-      <Fact label="Questions" value={plural(questionCount, 'question')}>
-        Each practice session gives you a fresh set of questions.
+      <Fact label="Questions" value={plural(brief.questionCount, 'question')}>
+        {wholeBank ? `All ${plural(brief.questionCount, 'question')} in this course, in a new order each time.`
+          : 'Each attempt gives you a new set of questions.'}
       </Fact>
       <Fact label="Time" value={plural(minutes, 'minute')}>
-        The timer starts when you press Start practice. It keeps running if you switch tabs or lock your phone.
+        The timer starts when you press Start practice and keeps running even if you leave this page.
       </Fact>
       <Fact label="Answering" value="One answer per question">
         Move freely between questions, flag any to revisit, and leave questions unanswered if you choose.
       </Fact>
       <Fact label="Finishing" value="Submit, or time runs out">
-        Your score and answer review appear straight after. Leaving before you submit ends the attempt; it can’t be resumed.
+        Your answers save as you go. If you leave, come back before time runs out to continue. When time runs out, your saved answers are submitted for you.
       </Fact>
     </dl>
 
     <label htmlFor={`${id}-ready`} className="student-practice-ack">
-      <Checkbox id={`${id}-ready`} checked={ready} disabled={preparing}
+      <Checkbox id={`${id}-ready`} checked={ready} disabled={starting}
         className="student-focus-control h-5 w-5 rounded-[5px] border-student-control-border data-[state=checked]:border-student-primary data-[state=checked]:bg-student-primary data-[state=checked]:text-student-primary-text"
         onCheckedChange={checked => setReadyVersion(checked === true ? briefingVersion : null)} />
-      <span>I’m ready to start a {minutes}-minute attempt of {plural(questionCount, 'question')}.</span>
+      <span>I’m ready to start a {minutes}-minute attempt of {plural(brief.questionCount, 'question')}.</span>
     </label>
 
     <div className="student-practice-row">
-      <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={!ready || preparing}
-        aria-describedby={`${id}-help`} onClick={() => { if (ready && !preparing) onStart() }}>Start practice</button>
+      <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={!ready || starting}
+        aria-describedby={`${id}-help`} onClick={() => { if (ready && !starting) onStart() }}>Start practice</button>
       <Link href={courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>{PRACTICE_COPY.backToCourse}</Link>
     </div>
     <p id={`${id}-help`} className="student-practice-help">
       {ready ? 'The timer starts as soon as you press Start practice.' : 'Confirm you’re ready to start.'}
     </p>
-    {preparing ? <p role="status" className="student-practice-help">Getting your practice ready. The timer has not started.</p> : null}
-    {error ? <div className="mt-5"><Notice title={error}>Your attempt has not started. Review the details above before trying again.</Notice></div> : null}
+    {starting ? <p role="status" className="student-practice-help">{PRACTICE_COPY.starting}</p> : null}
+    {error ? <div className="mt-5"><Notice title={error.title}>{error.body}</Notice></div> : null}
+    {lastResultHref ? <p className="student-practice-help mt-5">
+      <Link href={lastResultHref} prefetch={false} className="underline">{PRACTICE_COPY.lastResult}</Link>
+    </p> : null}
   </StudentPage>
 }
 

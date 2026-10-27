@@ -89,13 +89,15 @@ function runVerification(repo, options = {}) {
       cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: environment,
     })
     const output = `${result.stdout || ''}\n${result.stderr || ''}`
-    const counts = ['pass', 'fail', 'skipped', 'tests'].map(key =>
+    const counts = ['pass', 'fail', 'skipped', 'tests', 'cancelled'].map(key =>
       new RegExp(`^# ${key} (\\d+)$`, 'm').exec(output)?.[1])
     // A test batch with input files that executed nothing is a discovery failure, not a pass.
     const nothingRan = expectTests && (counts[3] === undefined || counts[3] === '0')
+    // node:test reports a test that ran out of time as cancelled; here it is a failure like any other.
+    const failedTests = Number(counts[1] || 0) + Number(counts[4] || 0)
     const testSummary = nothingRan ? 'no tests executed for the supplied files'
       : counts[0] === undefined ? null
-        : `${counts[0]} passed, ${counts[1] || '0'} failed, ${counts[2] || '0'} skipped`
+        : `${counts[0]} passed, ${failedTests} failed, ${counts[2] || '0'} skipped`
     const blockedBuild = name === 'Production build' && result.status !== 0 &&
       /binding to a port[\s\S]*Operation not permitted/.test(output)
     const blockedDb = name === 'Database tests' && result.status !== 0 &&
@@ -108,7 +110,9 @@ function runVerification(repo, options = {}) {
         : blockedDb ? 'local database service failed during test run'
           : testSummary || (result.status === 0 ? detail : `exit ${result.status}`) })
     if (expectTests && status === 'FAIL') {
-      const failures = testFailures(output)
+      // A stuck test is named by the runner's watchdog, since its file never reports it.
+      const stuck = output.match(/^run-tests: .* the batch was stopped$/gm) ?? []
+      const failures = [...stuck.map(line => `  ${line}`), ...testFailures(output)]
       if (failures.length) failureDetails.push(`${name} failures:\n${failures.join('\n')}`)
     }
   }

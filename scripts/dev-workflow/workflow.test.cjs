@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { test } = require('node:test')
 const { repository } = require('./repo.cjs')
 const { packageReview } = require('./review.cjs')
@@ -19,17 +19,124 @@ const mockExecute = fn => (program, args, options) => {
 }
 const ORIGIN = 'https://github.com/Teetoh861/Campusintel.git'
 
-test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
-  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/pr-verification.yml'), 'utf8')
-  const startStep = workflow.split('      - name: Start local database for SQL tests\n')[1]
+const WORKFLOW = path.join(__dirname, '../../.github/workflows/pr-verification.yml')
+// Services the database tests need; everything else in a full start is excluded.
+const SUPABASE_KEPT = ['postgres', 'gotrue', 'storage-api', 'imgproxy', 'postgrest', 'kong']
+const SUPABASE_EXCLUDED = ['logflare', 'vector', 'studio', 'postgres-meta', 'mailpit', 'edge-runtime', 'realtime', 'supavisor']
+
+/** The database start step: its env and its script, as GitHub Actions runs it. */
+function startStep() {
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8')
+  const step = workflow.split('      - name: Start local database for SQL tests\n')[1]
     ?.split('      - name: Verify application and applicable optional checks\n')[0]
-  assert.ok(startStep, 'the local Supabase startup step exists')
+  assert.ok(step, 'the local Supabase startup step exists')
+  const env = Object.fromEntries([...step.split('        run: |\n')[0].matchAll(/^ {10}([A-Z_]+): '?([^'\n]*)'?$/gm)]
+    .map(match => [match[1], match[2]]))
+  const script = step.split('        run: |\n')[1].split('\n').map(line => line.slice(10)).join('\n')
+  return { workflow, step, env, script }
+}
+
+test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
+  const { workflow, step, env, script } = startStep()
   assert.match(workflow, /uses: supabase\/setup-cli@v3\s+if: steps\.scope\.outputs\.db == 'true'\s+with:\s+version: 2\.109\.1/)
-  assert.match(startStep, /if: steps\.scope\.outputs\.db == 'true'/)
-  assert.match(startStep, /if ! supabase start > "\$RUNNER_TEMP\/supabase-start\.log" 2>&1; then/)
-  assert.match(startStep, /cat "\$RUNNER_TEMP\/supabase-start\.log"/)
-  assert.match(startStep, /exit 1/)
+  assert.match(step, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(script, /supabase start -x "\$SUPABASE_EXCLUDE"/)
+  assert.match(script, /cat "\$RUNNER_TEMP\/supabase-start\.log"/)
+  assert.match(script, /echo 'Local Supabase service setup failed; database tests did not run\.'\n\s*exit 1/)
   assert.doesNotMatch(workflow, /supabase db start/)
+  assert.deepEqual(env.SUPABASE_EXCLUDE.split(','), SUPABASE_EXCLUDED, 'exactly the services the checks do not need')
+  for (const kept of SUPABASE_KEPT) assert.ok(!env.SUPABASE_EXCLUDE.split(',').includes(kept), `${kept} still starts`)
+  assert.equal(env.PG_PROVE_IMAGE, 'ghcr.io/supabase/pg_prove:3.36', 'the pgTAP runner of the pinned CLI')
+  assert.match(workflow, /run: node scripts\/dev-workflow\/cli\.cjs verify/, 'every check still runs through the verifier')
+})
+
+test('every image is pulled from GitHub\'s registry, signed in with the workflow\'s own token before the database starts', () => {
+  const { workflow } = startStep()
+  // The CLI reads SUPABASE_INTERNAL_IMAGE_REGISTRY for every pull; set for the whole job, so supabase test db uses it too.
+  assert.match(workflow, /\n {4}env:\n(?: {6}#.*\n)* {6}SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr\.io\n {4}steps:/)
+  assert.match(workflow, /\npermissions:\n {2}contents: read\n(?: {2}#.*\n)* {2}packages: read\n\n/, 'only reading packages is added')
+  const login = workflow.split('      - name: Sign in to GitHub\'s container registry\n')[1]?.split('\n      - ')[0]
+  assert.ok(login, 'the job signs in to ghcr.io')
+  assert.match(login, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(login, /REGISTRY_TOKEN: \$\{\{ github\.token \}\}/)
+  assert.match(login, /echo "\$REGISTRY_TOKEN" \| docker login ghcr\.io -u "\$GITHUB_ACTOR" --password-stdin/, 'the token is never on the command line')
+  assert.doesNotMatch(workflow, /secrets\./, 'no new secret')
+  assert.ok(workflow.indexOf('Sign in to GitHub\'s container registry') < workflow.indexOf('name: Start local database for SQL tests'))
+})
+
+/** Run the start step's script with stub supabase, docker and sleep commands. */
+function runStartStep(t, { start = [], pull = [] } = {}) {
+  const { env, script } = startStep()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-start-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const bin = path.join(dir, 'bin')
+  fs.mkdirSync(bin)
+  // Each stub answers its next scripted outcome ("ok", or text it prints before failing) and records its call.
+  const stub = (name, outcomes) => {
+    fs.writeFileSync(path.join(dir, `${name}.outcomes`), outcomes.join('\n') + '\n')
+    fs.writeFileSync(path.join(bin, name), `#!/bin/bash
+echo "$*" >> "${dir}/${name}.calls"
+if [ "$1" = stop ]; then exit 0; fi
+outcome=$(head -n 1 "${dir}/${name}.outcomes"); sed -i.bak 1d "${dir}/${name}.outcomes"
+if [ -z "$outcome" ] || [ "$outcome" = ok ]; then echo started; exit 0; fi
+echo "$outcome"; exit 1
+`, { mode: 0o755 })
+  }
+  stub('supabase', start)
+  stub('docker', pull)
+  fs.writeFileSync(path.join(bin, 'sleep'), `#!/bin/bash\necho "$1" >> "${dir}/sleep.calls"\n`, { mode: 0o755 })
+  const result = spawnSync('bash', ['-e', '-c', script], { encoding: 'utf8',
+    env: { ...process.env, ...env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: dir } })
+  const calls = name => fs.existsSync(path.join(dir, `${name}.calls`))
+    ? fs.readFileSync(path.join(dir, `${name}.calls`), 'utf8').trim().split('\n') : []
+  return { status: result.status, output: result.stdout + result.stderr, calls }
+}
+
+const REFUSED = 'failed to pull docker image: Error response from daemon: toomanyrequests: Data limit exceeded'
+
+test('a refused image pull is retried with a growing wait, then the database starts', t => {
+  const run = runStartStep(t, { start: [REFUSED, REFUSED, 'ok'] })
+  assert.equal(run.status, 0, run.output)
+  assert.deepEqual(run.calls('supabase').filter(call => call.startsWith('start')),
+    Array(3).fill(`start -x ${SUPABASE_EXCLUDED.join(',')}`))
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('stop')).length, 2, 'a failed start is cleaned up first')
+  assert.deepEqual(run.calls('sleep'), ['30', '60'])
+  assert.match(run.output, /Image pull refused by the registry \(attempt 1 of 4\); retrying in 30s\./)
+  assert.deepEqual(run.calls('docker'), ['pull ghcr.io/supabase/pg_prove:3.36'])
+})
+
+test('pulls refused on every attempt fail the step with a clear message', t => {
+  const run = runStartStep(t, { start: [REFUSED, REFUSED, REFUSED, REFUSED, 'ok'] })
+  assert.equal(run.status, 1)
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('start')).length, 4)
+  assert.deepEqual(run.calls('sleep'), ['30', '60', '90'])
+  assert.match(run.output, /toomanyrequests/, 'the start log is shown')
+  assert.match(run.output, /Image registries refused pulls 4 times \(rate limit\)\. Re-run this job later\./)
+  assert.match(run.output, /Local Supabase service setup failed; database tests did not run\./)
+  assert.deepEqual(run.calls('docker'), [], 'nothing else runs after a failed start')
+})
+
+test('any other start failure is reported at once, without retrying', t => {
+  const run = runStartStep(t, { start: ['Bind for 0.0.0.0:54322 failed: port is already allocated', 'ok'] })
+  assert.equal(run.status, 1)
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('start')).length, 1)
+  assert.deepEqual(run.calls('sleep'), [])
+  assert.match(run.output, /port is already allocated/)
+  assert.doesNotMatch(run.output, /rate limit/)
+  assert.match(run.output, /Local Supabase service setup failed; database tests did not run\./)
+})
+
+test('the pgTAP runner pull is retried too; a refusal fails clearly, any other miss leaves the pull to supabase test db', t => {
+  const refused = runStartStep(t, { pull: [REFUSED, REFUSED, REFUSED, REFUSED] })
+  assert.equal(refused.status, 1)
+  assert.equal(refused.calls('docker').length, 4)
+  assert.match(refused.output, /Image registries refused the pgTAP runner 4 times \(rate limit\)\. Re-run this job later\./)
+  const retried = runStartStep(t, { pull: [REFUSED, 'ok'] })
+  assert.equal(retried.status, 0, retried.output)
+  assert.deepEqual(retried.calls('sleep'), ['30'])
+  const missing = runStartStep(t, { pull: ['manifest unknown'] })
+  assert.equal(missing.status, 0, missing.output)
+  assert.match(missing.output, /::warning::Could not pull ghcr\.io\/supabase\/pg_prove:3\.36 in advance/)
 })
 
 function run(program, args, cwd, allowed = [0]) {
@@ -190,6 +297,187 @@ test('verification names every failing test with its location and first error li
   assert.match(report.output, /first error line\n\s+second error line\n\s+third error line/)
   assert.match(report.output, /error: 'nested error'/)
   assert.doesNotMatch(report.output, /fourth error line|passing fixture test|node:internal|duration_ms:/)
+})
+
+test('a test that runs out of its own time fails and its file still exits, so the verifier names it', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+    "const { test } = require('node:test')",
+    // A ref'd interval left behind would keep the file's process alive forever without forceExit.
+    "test('stuck parser wait', { timeout: 500 }, () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })",
+    "test('passing fixture test', () => {})",
+    '',
+  ].join('\n'))
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, args, options)
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests — 1 passed, 1 failed, 0 skipped/)
+  assert.match(report.output, /stuck parser wait\n\s+location: .*sample\.test\.cjs:2:1/)
+  assert.match(report.output, /error: 'test timed out after 500ms'/)
+})
+
+test('a stuck test without a timeout is named and the batch stopped, instead of hanging the verifier', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+    "const { test } = require('node:test')",
+    "test('passing fixture test', () => {})",
+    "test('stuck parser wait', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })",
+    '',
+  ].join('\n'))
+  // The production limit is two minutes; this runs the same watchdog with one second. A file, not -e: the runner's
+  // file processes inherit this process's execArgv.
+  const runner = path.join(f.root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { testTimeoutMs: 1_000 })\n`)
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, [runner, args.at(-1)], { ...options, timeout: 60_000 })
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests/)
+  assert.match(report.output, /run-tests: "stuck parser wait" \(lib\/auth\/sample\.test\.cjs:3\) ran for more than 1 s; the batch was stopped/)
+})
+
+for (const [hook, expected] of [
+  ['after', 'lib/auth/sample\\.test\\.cjs: the after hook at lib/auth/sample\\.test\\.cjs:2 ran for more than 1 s after its last test'],
+  ['before', '"passing fixture test" \\(lib/auth/sample\\.test\\.cjs:3\\), or the before hook at lib/auth/sample\\.test\\.cjs:2, ran for more than 1 s'],
+]) {
+  test(`a hanging ${hook} hook is named with its file and the batch stopped, instead of hanging the verifier`, t => {
+    const f = fixture(t)
+    fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+    fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+      `const { ${hook}, test } = require('node:test')`,
+      `${hook}(() => { setInterval(() => {}, 1_000); return new Promise(() => {}) })`,
+      "test('passing fixture test', () => {})",
+      '',
+    ].join('\n'))
+    const runner = path.join(f.root, 'watchdog-runner.cjs')
+    fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { testTimeoutMs: 1_000 })\n`)
+    const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+      args.includes(RUNNER) ? spawnSync(program, [runner, args.at(-1)], { ...options, timeout: 60_000 })
+        : { status: 0, stdout: '', stderr: '' },
+    })
+    assert.equal(report.exitCode, 1)
+    assert.match(report.output, /FAIL\s+Application tests/)
+    assert.match(report.output, new RegExp(`run-tests: ${expected}; the batch was stopped`))
+  })
+}
+
+/** Run runFiles in a fresh process with a 1 s watchdog; `serial` lists the files it runs as the real-parser batch. */
+function startRunner(root, files, serial = []) {
+  const runner = path.join(root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `const [files, serial] = JSON.parse(process.argv[2])\n` +
+    `require(${JSON.stringify(RUNNER)}).runFiles(files, { testTimeoutMs: 1_000, serialFiles: serial })\n`)
+  const child = spawn(process.execPath, [runner, JSON.stringify([files, serial])], { cwd: root })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.on('data', chunk => { stdout += chunk })
+  child.stderr.on('data', chunk => { stderr += chunk })
+  // A runner that never stops is the failure being tested for; it is killed rather than left to hang this test.
+  const limit = setTimeout(() => child.kill('SIGKILL'), 60_000)
+  return new Promise(resolve => child.on('close', (status, signal) => { clearTimeout(limit); resolve({ status, signal, stdout, stderr }) }))
+}
+
+test('two test runs at once: the second waits for the first real-parser batch outside any test, and both pass', async t => {
+  const f = fixture(t)
+  const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
+  // Each test stays under the 1 s watchdog, but the batch holds the lock for 2.4 s: the second run waits twice the
+  // watchdog's limit. Under the runner the file must not take the lock itself, or it would wait for its own runner.
+  const file = path.join(f.root, 'real.test.cjs')
+  fs.writeFileSync(file, [
+    "const { after, before, test } = require('node:test')",
+    `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+    'before(holdRealParsers)',
+    'after(releaseRealParsers)',
+    ...[1, 2, 3, 4].map(step => `test('step ${step}', () => new Promise(resolve => setTimeout(resolve, 600)))`),
+    '',
+  ].join('\n'))
+  const runs = await Promise.all([startRunner(f.root, [file], [file]), startRunner(f.root, [file], [file])])
+  for (const run of runs) {
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /^# pass 4$/m)
+    assert.doesNotMatch(run.stderr, /the batch was stopped|waiting for another real-parser test run/)
+  }
+  assert.equal(runs.filter(run => /^run-tests: waiting for the real-parser lock \(127\.0\.0\.1:47291\)/m.test(run.stderr)).length,
+    1, 'exactly one run waited for the other')
+})
+
+test('a serial worker whose runner is killed stops its child processes and exits, instead of parsing unlocked', async t => {
+  const f = fixture(t)
+  const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
+  const marker = path.join(f.root, 'worker.json')
+  const heartbeat = path.join(f.root, 'heartbeat')
+  const file = path.join(f.root, 'serial.test.cjs')
+  // The worker starts a child standing in for a parser, records both pids and beats until it is stopped.
+  fs.writeFileSync(file, [
+    "const fs = require('node:fs')",
+    "const { spawn } = require('node:child_process')",
+    "const { after, before, test } = require('node:test')",
+    `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+    'before(holdRealParsers)',
+    'after(releaseRealParsers)',
+    "test('serial worker parsing', () => {",
+    "  const parser = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], { stdio: 'ignore' })",
+    `  fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ worker: process.pid, parser: parser.pid }))`,
+    `  setInterval(() => fs.appendFileSync(${JSON.stringify(heartbeat)}, '.'), 20)`,
+    '  return new Promise(() => {})',
+    '})',
+    '',
+  ].join('\n'))
+  const runner = path.join(f.root, 'serial-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { serialFiles: [process.argv[2]] })\n`)
+  const child = spawn(process.execPath, [runner, file], { cwd: f.root, stdio: 'ignore' })
+  const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { return error.code !== 'ESRCH' } }
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+  let pids = {}
+  t.after(() => { for (const pid of [child.pid, pids.worker, pids.parser]) if (pid && alive(pid)) process.kill(pid, 'SIGKILL') })
+  for (let wait = 0; wait < 600 && !(fs.existsSync(marker) && fs.existsSync(heartbeat)); wait += 1) await pause(50)
+  pids = JSON.parse(fs.readFileSync(marker, 'utf8'))
+  child.kill('SIGKILL')
+  await new Promise(resolve => child.once('exit', resolve))
+  // The worker checks for its runner every 250 ms; 5 s is generous for a loaded machine.
+  const until = Date.now() + 5_000
+  while (Date.now() < until && (alive(pids.worker) || alive(pids.parser))) await pause(25)
+  assert.equal(alive(pids.worker), false, 'the worker exited')
+  assert.equal(alive(pids.parser), false, 'its child process was stopped')
+  const beats = fs.statSync(heartbeat).size
+  await pause(300)
+  assert.equal(fs.statSync(heartbeat).size, beats, 'nothing keeps running after the runner died')
+})
+
+test('a stray "run-tests: waiting for" line does not pause the watchdog', async t => {
+  const f = fixture(t)
+  const file = path.join(f.root, 'unrelated.test.cjs')
+  fs.writeFileSync(file, "const { test } = require('node:test')\nprocess.stderr.write('run-tests: waiting for unrelated IO\\n')\n" +
+    "test('ordinary hung test', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })\n")
+  const run = await startRunner(f.root, [file])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /^run-tests: "ordinary hung test" \(unrelated\.test\.cjs:3\) ran for more than 1 s; the batch was stopped$/m)
+})
+
+test('a file that exits early does not shield a silent stuck file, which is named', async t => {
+  const f = fixture(t)
+  const exits = path.join(f.root, 'exits.test.cjs')
+  const silent = path.join(f.root, 'silent.test.cjs')
+  fs.writeFileSync(exits, "const { before, test } = require('node:test')\n" +
+    "before(() => { setTimeout(() => process.exit(1), 300); return new Promise(() => {}) })\ntest('never started', () => {})\n")
+  fs.writeFileSync(silent, 'setInterval(() => {}, 1_000)\n')
+  const run = await startRunner(f.root, [exits, silent])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /^run-tests: silent\.test\.cjs reported nothing for more than 1 s; the batch was stopped$/m)
+})
+
+test('exactly the test files that use the real-parser fixture run in the serial batch', () => {
+  const root = path.join(__dirname, '../..')
+  // Read in another process: loading the runner here would clear this test process's node:test child marker.
+  const serial = JSON.parse(spawnSync(process.execPath, ['-p', `JSON.stringify(require(${JSON.stringify(RUNNER)}).SERIAL_TEST_FILES)`],
+    { encoding: 'utf8' }).stdout)
+  const users = collectTestFiles(root).application
+    .filter(file => fs.readFileSync(path.join(root, file), 'utf8').includes('fixtures/real-parsers.cjs'))
+  assert.deepEqual([...serial].sort(), users.sort(), 'every fixture user is in the batch, and nothing else is')
 })
 
 test('verification reports a build environment block without claiming a build pass', t => {
@@ -481,7 +769,7 @@ test('a suite deleted in the working tree but still in the index is not collecte
 test('the production collection reaches the bracketed Course Detail, tracker and API suites', () => {
   const { application, workflow } = collectTestFiles(path.join(__dirname, '../..'))
   for (const file of ['app/courses/[slug]/course-detail.test.cjs', 'app/courses/[slug]/CourseViewTracker.test.cjs',
-    'app/courses/[slug]/quiz/liveBank.test.cjs', 'app/api/courses/[slug]/quiz-bank/route.test.cjs']) {
+    'app/courses/[slug]/quiz/practice-client.test.cjs', 'app/courses/[slug]/theory/page.test.cjs']) {
     assert.ok(application.includes(file), file)
   }
   assert.equal(application.some(file => file.startsWith('scripts/dev-workflow/')), false)

@@ -98,7 +98,7 @@ create function pg_temp.near(p_actual timestamptz, p_offset interval) returns bo
   $$ select p_actual between clock_timestamp() + p_offset - interval '10 minutes'
        and clock_timestamp() + p_offset + interval '1 second' $$;
 -- Course fixtures: 02 has 390 CBT questions and notes, 03 is another offered course, 11 has CBT only, 08 is a free GST
--- course, and 07 (notes, theory, 150 questions) is repository-only, so it is offered in no active catalogue.
+-- course, 07 is now linked Financial Accounting I, and 10 remains an unlinked repository course.
 create function pg_temp.c(p_n text) returns uuid language sql immutable as
   $$ select ('40000000-0000-4000-8000-0000000000' || p_n)::uuid $$;
 grant execute on function pg_temp.c(text) to authenticated, service_role;
@@ -627,11 +627,43 @@ select ok((select bool_and(private.discovery_cbt_question_valid(jsonb_build_obje
 
 -- 4d. Previews belong to actively offered courses only -------------------------------------------------------------
 set local role service_role;
-select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('07'), 'study_guide', false),
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('10'), 'study_guide', false),
   '{"state":"not-offered"}'::jsonb, 'a repository-only course is in no active catalogue and offers no preview');
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000004', pg_temp.c('07')),
   '{"state":"no-pass"}'::jsonb, 'without a pass the answer is unchanged');
 reset role;
+-- The newly confirmed links are choices under the same pass-wide limits; reads spend nothing.
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+values ('00000000-0000-0000-0000-000000000000', '71000000-0000-4000-8000-000000000099',
+  'authenticated', 'authenticated', 'linked-course-pass@example.test', 'x', now(), '{}', '{}', now(), now());
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('72000000-0000-4000-8000-000000000099', '71000000-0000-4000-8000-000000000099', now(), now());
+set local role service_role;
+select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000099',
+  pg_temp.claim('linked-course-pass@example.test'))->>'state', 'activated', 'a fresh pass can choose linked courses');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000099', pg_temp.c('07'),
+  'cbt', false, null, 1800)->>'state', 'available',
+  'ACC-CM201 offers cbt under the current Discovery rules');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000099', pg_temp.c('07'),
+  'study_guide', false, null, null)->>'state', 'available',
+  'ACC-CM201 offers study_guide under the current Discovery rules');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000099', pg_temp.c('05'),
+  'cbt', false, null, 1800)->>'state', 'available',
+  'LAG-BUA210 offers cbt under the current Discovery rules');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000099', pg_temp.c('05'),
+  'study_guide', false, null, null)->>'state', 'available',
+  'LAG-BUA210 offers study_guide under the current Discovery rules');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000099', pg_temp.c('06'),
+  'cbt', false, null, 1800)->>'state', 'available',
+  'LAG-BUA221 offers cbt under the current Discovery rules');
+select is(public.discovery_preview('72000000-0000-4000-8000-000000000099', pg_temp.c('06'),
+  'study_guide', false, null, null)->>'state', 'available',
+  'LAG-BUA221 offers study_guide under the current Discovery rules');
+reset role;
+select is((select count(*)::integer from private.discovery_previews
+  where user_id = '71000000-0000-4000-8000-000000000099'), 0, 'listing choices consumes no preview');
+
 -- BUA201 (course 02) loses every active offering: its identity, content and history stay, the previews close.
 create temporary table discovery_offering_fixture on commit drop as
   select a.* from public.course_applicability a join public.institutional_courses c on c.id = a.institutional_course_id
@@ -1216,8 +1248,11 @@ reset role;
 set local role service_role;
 select is(public.write_quiz_attempt('72000000-0000-4000-8000-000000000010', '74000000-0000-4000-8000-000000000010',
   pg_temp.c('02'), 1, 'start', null, 'in_progress',
-  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]')->>'status', 'saved',
-  'a regular CBT attempt still starts');
+  '[{"question_id":"3d04c5a2-4363-4112-b397-e0191402f275","ordinal":0,"content_revision":1}]'),
+  '{"status":"conflict"}'::jsonb, 'an old-style CBT start is refused (20261025100000_server_run_practice.sql)');
+select is(public.practice_start('72000000-0000-4000-8000-000000000010', '74000000-0000-4000-8000-000000000010',
+  pg_temp.c('02'), 'new', null, 50, 1800, '[]', 50, 1800)->>'state', 'ready',
+  'a regular CBT attempt still starts, on the server');
 select is(pg_temp.open_exam('72000000-0000-4000-8000-000000000010', pg_temp.c('02')), '{"state":"full-access"}'::jsonb,
   'previews do not apply: the course itself is open');
 reset role;

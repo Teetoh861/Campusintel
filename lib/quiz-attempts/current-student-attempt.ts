@@ -6,19 +6,15 @@ import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getCourseByContentKey } from '@/lib/data/courses'
-import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
-import { getPublishedManagedCourse } from '@/lib/managed-content/published'
-import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
-import { projectStudentLearning } from '@/lib/managed-content/student-projection'
 import { attemptWriteSchema } from './input'
 import type { AttemptWriteResult } from './input'
 import { writeAttemptCommand } from './rpc'
-import type { AttemptAnswer, AttemptSelection } from './rpc'
-import { recoverExistingStart } from './recover-start'
 
 const registrySchema = z.object({ id: z.string().uuid(), content_key: z.string().min(1) }).strict()
 
-/** Validate live identity and delegate all scoring to the attempt's pinned managed revisions. */
+/** Legacy only (D10): save or finish an attempt an old tab opened before practice moved to the server. The database
+ * accepts this only for a browser-run attempt younger than 24 hours, scores it from its pinned revisions and refuses
+ * every start. Remove with app/api/quiz-attempts after that window. */
 export async function writeCurrentStudentAttempt(
   input: unknown, response: NextResponse | undefined, pageToken: string | null,
 ): Promise<AttemptWriteResult> {
@@ -41,42 +37,9 @@ export async function writeCurrentStudentAttempt(
     if (registry.error) return { status: 'unavailable' }
     const row = registrySchema.safeParse(registry.data)
     if (!row.success || row.data.content_key !== course.contentKey) return { status: 'unavailable' }
-    let questionCount = 0
-    let answers: AttemptSelection[] | AttemptAnswer[] = []
-    let recovered: AttemptWriteResult | null = null
-    if (command.operation === 'start') {
-      recovered = await recoverExistingStart(client, context.user.id, row.data.id, command)
-      if (recovered === null) {
-        const published = await getPublishedManagedCourse(course.contentKey, response)
-        if (published.status !== 'ok') {
-          return { status: published.status === 'signed-out' || published.status === 'locked' ? published.status : 'unavailable' }
-        }
-        if (published.courseId !== row.data.id) return { status: 'unavailable' }
-        const projected = projectStudentLearning(published.content)
-        if (projected.status !== 'ok') return { status: 'unavailable' }
-        const usable = getUsableManagedQuiz(course.slug,
-          getQuizConfigurationByCourseSlug(course.slug), projected.learning.quizQuestions)
-        if (!usable) return { status: 'unavailable' }
-        if (command.questions.length !== usable.attemptSize) return { status: 'invalid-request' }
-        const liveQuestions = new Map(usable.questions.map(question => [question.questionId, question]))
-        const seen = new Set<string>()
-        for (let ordinal = 0; ordinal < command.questions.length; ordinal += 1) {
-          const selection = command.questions[ordinal]!
-          const live = liveQuestions.get(selection.questionId)
-          if (!live || seen.has(selection.questionId) || selection.ordinal !== ordinal ||
-              live.publishedRevision !== selection.publishedRevision) return { status: 'conflict' }
-          seen.add(selection.questionId)
-        }
-        questionCount = usable.attemptSize
-        answers = command.questions.map(question => ({ question_id: question.questionId,
-          ordinal: question.ordinal, content_revision: question.publishedRevision }))
-      }
-    } else {
-      // The current publication is irrelevant to an already-started attempt.
-      // SQL checks membership and derives correctness from its stored revisions.
-      answers = command.answers.map(answer => ({ question_id: answer.questionId,
-        ordinal: answer.ordinal, option_index: answer.optionIndex }))
-    }
+    // SQL checks membership and derives correctness from the attempt's stored revisions.
+    const answers = command.answers.map(answer => ({ question_id: answer.questionId,
+      ordinal: answer.ordinal, option_index: answer.optionIndex }))
 
     // A refreshed/revoked/switched session must not authorize the earlier draft.
     const live = await getStudentSessionContext(response, client)
@@ -84,32 +47,13 @@ export async function writeCurrentStudentAttempt(
     if (live.user.id !== context.user.id || live.sessionId !== context.sessionId) {
       return { status: 'session-changed' }
     }
-    if (recovered !== null) {
-      if (recovered.status !== 'saved') return recovered
-      if (command.operation !== 'start') return { status: 'unavailable' }
-      // Auth may still accept the JWT after durable not_after expiry. Confirm
-      // the exact initial attempt through live-session RLS immediately before
-      // acknowledging it. Once found, lost visibility never means fresh START.
-      return await recoverExistingStart(client, live.user.id, row.data.id, command)
-        ?? { status: 'signed-out' }
-    }
     const result = await writeAttemptCommand({
       p_session_id: live.sessionId, p_attempt_id: command.attemptId,
-      p_course_id: row.data.id, p_question_count: questionCount,
-      p_operation: command.operation,
-      p_expected_revision: command.operation === 'start' ? null : command.expectedRevision,
+      p_course_id: row.data.id, p_question_count: 0,
+      p_operation: command.operation, p_expected_revision: command.expectedRevision,
       p_status: command.operation === 'finish' ? command.completion : 'in_progress', p_answers: answers,
     })
-    if (result.status === 'saved' && (result.attempt.id !== command.attemptId ||
-        (command.operation === 'start' && result.attempt.questionCount !== questionCount))) {
-      return { status: 'unavailable' }
-    }
-    // An absent read may race a START followed by RECORD/FINISH. Never acknowledge
-    // that advanced state as the recorder's initial revision-zero START result.
-    if (result.status === 'saved' && command.operation === 'start') {
-      if (result.attempt.status !== 'in_progress') return { status: 'finalized' }
-      if (result.attempt.revision !== 0) return { status: 'conflict' }
-    }
+    if (result.status === 'saved' && result.attempt.id !== command.attemptId) return { status: 'unavailable' }
     return result
   } catch { return { status: 'unavailable' } }
 }

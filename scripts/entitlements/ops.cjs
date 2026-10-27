@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // scripts/entitlements/ops.cjs — Operator tool for entitlements: status, recovery and the trusted Early Access list.
 // Explicit invocation only. Every change requires --actor and --reason and is written to the audit trail by the
-// database function it calls. Early Access list phones are hashed here with ENTITLEMENT_PHONE_HASH_KEY and never
-// sent; the Discovery Pass itself collects no phone number and has no operator command (students activate it).
+// database function it calls. The Early Access list import collects no phone number (a file with a phone column is
+// refused unread); the Discovery Pass collects none either and has no operator command (students activate it).
 //   node scripts/entitlements/ops.cjs status --user <uuid>
 //   node scripts/entitlements/ops.cjs grant --user <uuid> --days <n> --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs change-grant --grant <uuid> --action extend|revoke|restore|set-ai-units
 //       [--until <ISO time>] [--units <n>] --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs import-early-access --file <csv> --batch <label> --actor <name> [--dry-run]
-//       CSV header: email,full_name,phone,joined_at  (phone may be empty; joined_at is an ISO time before launch)
+//       CSV header: email,full_name,joined_at  (joined_at is an ISO time before launch; no phone column)
 //   node scripts/entitlements/ops.cjs member --email <email> --action exclude|include|mark-duplicate|clear-duplicate
 //       [--of <email>] --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs early-access-report
@@ -25,11 +25,9 @@
 //   node scripts/entitlements/ops.cjs claim-keys
 //       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
 const fs = require('node:fs')
-const { normalizeNigerianMobile, phoneHash } = require('../../lib/entitlements/phone.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
-const MIN_KEY_LENGTH = 32
 const IMPORT_MAX_ROWS = 20_000
 // Each sweep is one bounded transaction; the tool repeats them until nothing enrollable is left. A batch that grants
 // nobody is retried only while it deferred accounts held by in-flight confirmations, which enroll themselves.
@@ -96,18 +94,27 @@ function parseCsv(text) {
   return rows.filter(cells => cells.some(cell => cell.trim() !== ''))
 }
 
-/** Validate every row before anything is written; a bad file changes nothing. */
-function readMembers(file, key) {
-  const [header, ...rows] = parseCsv(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''))
-  const columns = (header ?? []).map(cell => cell.trim().toLowerCase())
-  const expected = ['email', 'full_name', 'phone', 'joined_at']
+/**
+ * Validate every row before anything is written; a bad file changes nothing. Phone numbers are no longer collected:
+ * the header is checked first, and a file with a phone column is refused before any row is parsed.
+ */
+function readMembers(file) {
+  const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '')
+  const columns = (parseCsv(text.split(/\r?\n/, 1)[0])[0] ?? []).map(cell => cell.trim().toLowerCase())
+  const phoneColumn = columns.find(column => /phone|mobile|whatsapp/.test(column))
+  if (phoneColumn !== undefined) {
+    throw new Error(`CSV has a "${phoneColumn}" column: phone numbers are no longer collected. Delete that column ` +
+      'from the file and import again')
+  }
+  const expected = ['email', 'full_name', 'joined_at']
   if (columns.join(',') !== expected.join(',')) throw new Error(`CSV header must be ${expected.join(',')}`)
+  const rows = parseCsv(text).slice(1)
   if (rows.length > IMPORT_MAX_ROWS) throw new Error(`CSV has more than ${IMPORT_MAX_ROWS} rows`)
   const seen = new Set()
   return rows.map((cells, index) => {
     const line = index + 2
     if (cells.length !== expected.length) throw new Error(`line ${line}: expected ${expected.length} columns`)
-    const [email, fullName, phone, joinedAt] = cells.map(cell => cell.trim())
+    const [email, fullName, joinedAt] = cells.map(cell => cell.trim())
     const normalizedEmail = email.toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizedEmail) || normalizedEmail.length > 254) {
       throw new Error(`line ${line}: invalid email`)
@@ -115,20 +122,8 @@ function readMembers(file, key) {
     if (seen.has(normalizedEmail)) throw new Error(`line ${line}: email repeated in this file`)
     seen.add(normalizedEmail)
     if (fullName === '' || fullName.length > 200) throw new Error(`line ${line}: full_name is required`)
-    let hash = null
-    if (phone !== '') {
-      const normalized = normalizeNigerianMobile(phone)
-      if (normalized === null) throw new Error(`line ${line}: phone is not a Nigerian mobile number`)
-      if (key === null) throw new Error('ENTITLEMENT_PHONE_HASH_KEY is required to import phone numbers')
-      hash = phoneHash(key, normalized.e164)
-    }
-    return { email: normalizedEmail, fullName, phoneHash: hash, joinedAt: isoTime(joinedAt, `line ${line}: joined_at`) }
+    return { email: normalizedEmail, fullName, joinedAt: isoTime(joinedAt, `line ${line}: joined_at`) }
   })
-}
-
-function phoneKey(env) {
-  const key = env.ENTITLEMENT_PHONE_HASH_KEY
-  return key !== undefined && key.trim().length >= MIN_KEY_LENGTH ? key : null
 }
 
 function connection(env, transport) {
@@ -190,16 +185,17 @@ async function run(args, env = process.env, transport = fetch, write = text => p
   const note = () => ({ p_actor: required(opts, 'actor'), p_reason: required(opts, 'reason') })
   const print = value => write(`${JSON.stringify(value, null, 2)}\n`)
   if (command === 'import-early-access') {
-    const members = readMembers(required(opts, 'file'), phoneKey(env))
+    const members = readMembers(required(opts, 'file'))
     const batch = required(opts, 'batch')
     const actor = required(opts, 'actor')
-    if (opts['dry-run']) return print({ valid: members.length, withPhone: members.filter(m => m.phoneHash).length })
+    if (opts['dry-run']) return print({ valid: members.length })
     const rpc = connection(env, transport)
     const counts = {}
     let deferred = 0
     for (const member of members) {
+      // No phone hash: members already stored keep theirs, and a new row joins a group only by an operator's merge.
       const result = await rpc('admin_add_early_access_member', { p_email: member.email, p_full_name: member.fullName,
-        p_phone_hash: member.phoneHash, p_joined_at: member.joinedAt, p_source: 'import', p_batch: batch, p_actor: actor })
+        p_phone_hash: null, p_joined_at: member.joinedAt, p_source: 'import', p_batch: batch, p_actor: actor })
       counts[result.state] = (counts[result.state] ?? 0) + 1
       if (result.enrollment === 'deferred') deferred += 1
     }

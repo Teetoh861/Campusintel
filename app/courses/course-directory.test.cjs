@@ -81,7 +81,7 @@ test('all active dimensions must match one tuple; separate matching tuples never
   assert.deepEqual(f.visible(), ['one', 'two'])
 }))
 
-test('query clear preserves filters, clear filters preserves query, no-results recovery resets both', async () => directory(async f => {
+test('query and filter controls retain recovery while an empty result shows only the approved sentence', async () => directory(async f => {
   f.query('Institution One')
   f.filter('Department', a.id); f.filter('Level', l2.id); f.filter('Semester', p2.id)
   assert.deepEqual(f.visible(), [])
@@ -99,11 +99,12 @@ test('query clear preserves filters, clear filters preserves query, no-results r
   assert.equal(f.nodes(f.view.render()).find(node => node.type === f.FilterSelect && node.props.label === 'Department').props.value, b.id)
   f.query('No such title')
   const empty = f.find(f.EmptyState)
-  empty.props.actions.props.onClick()
+  assert.equal(f.html(empty).replace(/<[^>]+>/g, ''), 'Your courses are not available yet.')
+  assert.equal(empty.props.actions, null)
+  f.query(''); f.clear()
   assert.deepEqual(f.visible(), ['one', 'two'])
   assert.equal(f.find(f.SearchField).props.value, '')
   assert.ok(f.nodes(f.view.render()).filter(node => node.type === f.FilterSelect).every(node => node.props.value === null))
-  assert.equal(focused, 2)
 }))
 
 test('search and filters happen before pagination; either input resets page to one', async () => directory(async f => {
@@ -133,7 +134,9 @@ test('data shrink clamps before rendering and settles the page before later grow
 
 test('genuine empty catalogue differs from no matches and has no search, filters or pagination', async () =>
   directory(async f => {
-    assert.match(f.html(f.view.render()), /No courses are available to browse\./)
+    const html = f.html(f.view.render())
+    assert.equal(html.replace(/<[^>]+>/g, ''), 'Your courses are not available yet.')
+    assert.doesNotMatch(html, /<a\b|<button\b|<svg\b|Please check back|contact support/)
     assert.equal(f.find(f.SearchField), undefined); assert.equal(f.find(f.FilterSelect), undefined)
     assert.equal(f.find(f.Pagination), undefined)
   }, () => []))

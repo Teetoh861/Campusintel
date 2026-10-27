@@ -47,8 +47,13 @@ export type AutosaveSnapshot = {
 export type UnsentSheet = { answers: SampleAnswers; dirty: string[] }
 
 export type AutosaveOptions = {
-  /** This tab's identity for the database's sequence ledger; fresh for every mount, never shared between tabs. */
+  /** This tab's identity for the database's sequence ledger; never shared between tabs (see exam-tab.ts). */
   tab: string
+  /** The last sequence this identity used before a reload (exam-tab.ts), so new changes go above anything the
+   *  database has applied for it. 0 for a new identity. */
+  startSequence?: number
+  /** A change took a new sequence: record it before the request carrying it is sent. */
+  onSequence?(sequence: number): void
   /** The sheet the database holds, at its revision. */
   server: SheetAnswer
   /** A sheet this tab kept before a reload, with the questions it had changed: only those are laid over the server's. */
@@ -120,13 +125,22 @@ export class ExamAutosave {
   constructor(private readonly options: AutosaveOptions) {
     this.base = options.server
     this.answers = options.server.answers
+    // Nothing at or below the identity's last sequence is pending in this instance: whatever it carried and was not
+    // confirmed comes back below as a restored change, at the next sequence.
+    const start = options.startSequence ?? 0
+    this.sequence = start
+    this.acked = start
     const restored = options.restored ?? null
     if (restored !== null) {
       const merged = mergeSheets(this.base.answers, restored.answers, restored.dirty)
-      for (const item of differences(this.base.answers, merged)) this.dirty.set(item, 1)
+      for (const item of differences(this.base.answers, merged)) this.dirty.set(item, start + 1)
       this.answers = merged
     }
-    if (this.dirty.size > 0) { this.sequence = 1; this.plan() } else this.notify()
+    if (this.dirty.size > 0) {
+      this.sequence = start + 1
+      this.options.onSequence?.(this.sequence)
+      this.plan()
+    } else this.notify()
   }
 
   snapshot(): AutosaveSnapshot {
@@ -161,6 +175,7 @@ export class ExamAutosave {
     const remaining = this.options.remaining()
     if (this.stopped || this.refusal !== null || remaining === null || remaining <= 0) return null
     this.sequence += 1
+    this.options.onSequence?.(this.sequence)
     for (const item of differences(this.answers, answers)) this.dirty.set(item, this.sequence)
     this.answers = answers
     this.attempts = 0

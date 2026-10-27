@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
+import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
 import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
 import { isActionableStudentCourse } from '@/lib/courses/read-model'
 import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
@@ -12,7 +13,7 @@ import type { ReactElement } from 'react'
 
 function courseSummary(courses: ReadonlyArray<StudentCourse> | null): string {
   if (courses === null) return 'Course information is temporarily unavailable.'
-  if (courses.length === 0) return 'No courses are listed for your academic details.'
+  if (courses.length === 0) return EMPTY_COURSES_MESSAGE
   const total = `${courses.length} ${courses.length === 1 ? 'course' : 'courses'}`
   const ready = courses.filter(isActionableStudentCourse).length
   return `${total} · ${ready > 0 ? `${ready} ready to study` : 'Study materials are not available'}`

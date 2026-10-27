@@ -57,20 +57,20 @@ select is(
 
 select is(
   (select count(*)::int from public.institutional_courses),
-  101,
+  154,
   'the upgrade installs all source-backed institutional identities'
 );
 
 select is(
   (select count(*)::int from public.institutional_courses
     where repository_course_id is not null),
-  11,
+  14,
   'the upgrade installs only confirmed repository content links'
 );
 
 select is(
   (select count(*)::int from public.course_applicability),
-  196,
+  267,
   'the upgrade installs all source-backed institutional applicability tuples'
 );
 
