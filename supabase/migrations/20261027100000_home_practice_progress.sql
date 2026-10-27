@@ -12,8 +12,9 @@
 -- The summary
 -- ---------------------------------------------------------------------------
 -- Only graded (marked) attempts count: an open attempt adds nothing until it is graded, and a course with no graded
--- attempt has no entry. practised: distinct questions of those attempts still in the course's practice pool, so the
--- figure is a part of the same total published_cbt_summary reports. score/total: the latest graded attempt.
+-- attempt has no entry. practised: distinct questions the student answered in those attempts (a question shown but
+-- left unanswered is not practised) still in the course's practice pool, so the figure is a part of the same total
+-- published_cbt_summary reports. score/total: the latest graded attempt.
 create function public.practice_progress(p_session_id uuid) returns jsonb
 language plpgsql
 security definer
@@ -39,7 +40,7 @@ begin
       order by a.finished_at desc, a.id desc limit 1),
     'courses', coalesce((select jsonb_agg(jsonb_build_object('course_id', marked.course_id,
         'practised', (select count(distinct q.question_id)::integer
-          from public.quiz_attempt_questions q join public.quiz_attempts a on a.id = q.attempt_id
+          from public.quiz_attempt_answers q join public.quiz_attempts a on a.id = q.attempt_id
           where a.user_id = v_user and a.course_id = marked.course_id and a.deadline_at is not null
             and a.status <> 'in_progress'
             and q.question_id in (select pool.question_id from private.practice_pool(marked.course_id) pool)),
@@ -55,7 +56,7 @@ $$;
 
 comment on function public.practice_progress(uuid) is
   'Home''s practice summary for the verified session: the open attempt closest to its deadline, the course last '
-  'graded, and per course the questions practised in graded attempts (still in the pool) and the last score. '
+  'graded, and per course the questions answered in graded attempts (still in the pool) and the last score. '
   'Server-run attempts only; '
   'grades overdue attempts first. Counts and scores only. Service role only.';
 

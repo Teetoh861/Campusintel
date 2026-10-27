@@ -1,6 +1,6 @@
 -- supabase/tests/home_practice_progress.test.sql — Home's practice summary (20261027100000_home_practice_progress.sql,
 -- owner's sprint plan of 23 Oct, item 2): one service-role call per page, keyed by the session, with the student's own
--- open attempt, latest graded course, and per course the questions practised in graded attempts and the last score;
+-- open attempt, latest graded course, and per course the questions answered in graded attempts and the last score;
 -- an open attempt adds nothing until graded; overdue attempts are graded first; legacy attempts and other students'
 -- attempts never count.
 begin;
@@ -20,21 +20,23 @@ create function pg_temp.start(p_user integer, p_attempt integer, p_course text, 
   returns jsonb language sql
   as $$ select public.practice_start(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.c(p_course), 'new', null, 5,
     p_seconds, '[]', 5, p_seconds) $$;
--- A sheet of p_right right answers then wrong ones for the rest of the attempt (fixture read as the owner).
-create function pg_temp.sheet(p_attempt integer, p_right integer) returns jsonb language sql stable security definer
-  set search_path = '' as $$
+-- A sheet answering the first p_answered questions: p_right right answers then wrong ones; the rest are left
+-- unanswered (fixture read as the owner).
+create function pg_temp.sheet(p_attempt integer, p_right integer, p_answered integer) returns jsonb language sql stable
+  security definer set search_path = '' as $$
   select coalesce(jsonb_object_agg(q.question_id::text, case when q.ordinal < p_right
       then (r.payload ->> 'correctOption')::integer
       else ((r.payload ->> 'correctOption')::integer + 1) % jsonb_array_length(r.payload -> 'options') end), '{}')
   from public.quiz_attempt_questions q
   join public.managed_content_revisions r on r.item_id = q.item_id and r.revision = q.content_revision
-  where q.attempt_id = pg_temp.a(p_attempt) $$;
+  where q.attempt_id = pg_temp.a(p_attempt) and q.ordinal < p_answered $$;
+-- Submits 4 of the 5 questions answered, 3 of them right.
 create function pg_temp.submit(p_user integer, p_attempt integer) returns jsonb language sql
   as $$ select public.practice_submit(pg_temp.s(p_user), pg_temp.a(p_attempt),
-    'e4000000-0000-4000-8000-000000000001', 1, 0, pg_temp.sheet(p_attempt, 3)) $$;
+    'e4000000-0000-4000-8000-000000000001', 1, 0, pg_temp.sheet(p_attempt, 3, 4)) $$;
 create function pg_temp.progress(p_user integer) returns jsonb language sql
   as $$ select public.practice_progress(pg_temp.s(p_user)) $$;
--- The per-course figures, without the clock: {"08": {"practised": 5, "score": 3, "total": 5}}.
+-- The per-course figures, without the clock: {"08": {"practised": 4, "score": 3, "total": 5}}.
 create function pg_temp.figures(p_value jsonb) returns jsonb language sql immutable
   as $$ select coalesce(jsonb_object_agg(right(c ->> 'course_id', 2), c - 'course_id'), '{}')
     from jsonb_array_elements(p_value -> 'courses') c $$;
@@ -102,11 +104,11 @@ reset role;
 select is(pg_temp.o('submit-1') -> 'attempt' -> 'result' ->> 'score', '3', 'fixture: graded 3 of 5');
 select is(jsonb_build_object('open', pg_temp.o('graded') -> 'open', 'latest', pg_temp.o('graded') -> 'latest' -> 'course_id'),
   jsonb_build_object('open', null, 'latest', pg_temp.c('08')), 'once graded: nothing open, and the course to continue');
-select is(pg_temp.figures(pg_temp.o('graded')), '{"08":{"practised":5,"score":3,"total":5}}'::jsonb,
-  'the last score is the graded one');
+select is(pg_temp.figures(pg_temp.o('graded')), '{"08":{"practised":4,"score":3,"total":5}}'::jsonb,
+  'the last score is the graded one; only the 4 questions answered count as practised, not the one left blank');
 select is(pg_temp.o('two-open') -> 'open' ->> 'course_id', pg_temp.c('07')::text,
   'with two open attempts, the one closest to its deadline comes first');
-select is(pg_temp.figures(pg_temp.o('two-open')), '{"08":{"practised":5,"score":3,"total":5}}'::jsonb,
+select is(pg_temp.figures(pg_temp.o('two-open')), '{"08":{"practised":4,"score":3,"total":5}}'::jsonb,
   'questions of the open attempts (a second one in 08, a first one in 07) are not counted until graded');
 
 -- 5. An attempt whose time is up is graded before it is shown ----------------------------------------------------------
@@ -119,8 +121,8 @@ select is(pg_temp.o('overdue') -> 'open' ->> 'course_id', pg_temp.c('08')::text,
   'an overdue attempt is never offered to resume; the next open one is');
 select is((select status from public.quiz_attempts where id = pg_temp.a(3)), 'timed_out', 'it was graded first');
 select is(pg_temp.figures(pg_temp.o('overdue')),
-  '{"07":{"practised":5,"score":0,"total":5},"08":{"practised":5,"score":3,"total":5}}'::jsonb,
-  'once graded it counts, with its graded score; several courses keep their own figures');
+  '{"07":{"practised":0,"score":0,"total":5},"08":{"practised":4,"score":3,"total":5}}'::jsonb,
+  'once graded it counts, with its graded score and nothing practised (no answer was saved); several courses keep their own figures');
 
 -- 6. Legacy attempts never count ---------------------------------------------------------------------------------------
 insert into public.quiz_attempts (id, user_id, course_id, question_count, created_at, status, finished_at) values
@@ -145,7 +147,7 @@ select is(jsonb_build_object('open', pg_temp.o('other-open') -> 'open' ->> 'cour
     'figures', pg_temp.figures(pg_temp.o('other-open'))),
   jsonb_build_object('open', pg_temp.c('08'), 'figures', '{}'::jsonb),
   'and then only their own open attempt in the same course, with no figures until it is graded');
-select is(pg_temp.figures(pg_temp.o('first-again')) -> '08', '{"practised":5,"score":3,"total":5}'::jsonb,
+select is(pg_temp.figures(pg_temp.o('first-again')) -> '08', '{"practised":4,"score":3,"total":5}'::jsonb,
   'the first student''s figures are unchanged by the second student''s attempt');
 
 -- 8. Counts and identities only ---------------------------------------------------------------------------------------

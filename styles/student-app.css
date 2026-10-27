@@ -101,7 +101,7 @@
 .dashboard-record-fields .dashboard-department { grid-column: 1 / -1; padding-right: 104px; border-bottom: 1px solid var(--student-border); }
 .dashboard-record-fields > div:last-child { border-left: 1px solid var(--student-border); }
 .dashboard-change { position: absolute; right: 10px; top: 9px; }
-.dashboard-primary-grid { display: grid; grid-auto-rows: 1fr; gap: 20px; align-items: stretch; }
+.dashboard-primary-grid { display: grid; gap: 20px; align-items: start; }
 .dashboard-course-file { display: flex; flex-direction: column; min-width: 0; text-decoration: none; color: var(--student-navigation-text); border-radius: 14px 18px 18px 18px; }
 .dashboard-file-tab { display: flex; align-items: center; align-self: flex-start; min-height: 32px; max-width: 100%; padding: 6px 16px; background: var(--student-primary); color: var(--student-navigation-text-muted); border-radius: 12px 12px 0 0; font-size: 13px; font-weight: 600; }
 .dashboard-file-body { display: flex; flex: 1; position: relative; overflow: hidden; background: var(--student-primary); border-radius: 0 18px 18px 18px; padding: 16px 20px; }
