@@ -1,10 +1,11 @@
 // app/my-courses/page.tsx — Request-scoped semester register with verified academic context.
 import Link from 'next/link'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
-import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { btnGhost } from '@/components/chrome/ui'
 import { AccessNotice } from '@/components/student/AccessNotice'
 import { CourseRegister } from '@/components/student/CourseRow'
 import { EmptyState } from '@/components/student/EmptyState'
+import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
@@ -12,7 +13,7 @@ import { StudentCourseRow } from '@/components/student/StudentCourseRow'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { INACTIVE_SELECTION_COPY } from '@/components/student/selection-copy'
-import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { studentAction } from '@/components/student/ui'
 import { AUTH_MESSAGES } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -114,12 +115,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
   return <>{continuity}<StudentPage band={<SemesterContext selection={profile.selection} total={result.courses.length}
     ready={result.courses.filter(isActionableStudentCourse).length} />}>
     {result.courses.length === 0
-      ? <EmptyState title="No courses are listed for your academic details." actions={<>
-        <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Change selection</Link>
-        <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnGhost)}>Browse All Courses</Link>
-      </>}>
-        Check your department, level and semester, or browse All Courses to find study materials.
-      </EmptyState>
+      ? <EmptyState title={EMPTY_COURSES_MESSAGE} icon={null} actions={null}>{null}</EmptyState>
       : <section aria-labelledby="my-courses-list-title" className="student-stack">
         <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
         <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
