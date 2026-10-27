@@ -163,7 +163,6 @@ test('Change and error recovery retain canonical routes, compact borders and sha
   }
   const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8')
   assert.match(source, /href=\{PROFILE_SELECTION_PATH\}/)
-  assert.match(source, /STUDENT_DESTINATIONS\.courses\.href/)
   assert.match(source, /STUDENT_DESTINATIONS\.materials\.href/)
 }))
 
@@ -180,15 +179,25 @@ test('Request Material appears once only for genuinely missing learning, using /
   }
 }))
 
-test('empty semester is distinct and offers Change selection plus Browse All Courses only', async () => fixture(async f => {
+test('every empty semester shows only the approved sentence with no empty-state help or actions', async () => fixture(async f => {
   f.state.result = { status: 'ok', selection, courses: [] }
   const html = await f.render()
   assert.match(html, /Business Administration · 200 Level · First Semester/)
-  assert.match(html, /No courses are listed for your academic details\./)
-  assert.match(html, /Check your department, level and semester, or browse All Courses to find study materials/)
-  assert.match(anchor(html, '/courses'), /Browse All Courses/)
-  assert.ok(anchors(html).some(link => link.includes('href="/profile-selection"') && link.includes('Change selection')))
-  assert.doesNotMatch(html, /<ul\b|href="\/(bookmarks|account|materials)"|role="alert"|ready to study/)
+  const empty = /<section class="student-empty-state"[^>]*>([\s\S]*?)<\/section>/.exec(html)[1]
+  assert.equal(empty.replace(/<[^>]+>/g, ''), 'Your courses are not available yet.')
+  assert.doesNotMatch(empty, /<a\b|<button\b|<svg\b/)
+  assert.doesNotMatch(html, /Check your department|Browse All Courses|Change selection|<ul\b|href="\/(bookmarks|account|materials)"|role="alert"|ready to study/)
+  for (const [department, period] of [['Business Administration', 'Second Semester'], ['Accounting', 'First Semester']]) {
+    f.state.profile = { ...profile, selection: { ...profile.selection,
+      department: { ...profile.selection.department, label: department },
+      academicLevel: { ...profile.selection.academicLevel, label: '300 Level' },
+      academicPeriod: { ...profile.selection.academicPeriod, label: period },
+    } }
+    const next = await f.render()
+    assert.match(next, /300 Level/)
+    assert.equal(/<section class="student-empty-state"[^>]*>([\s\S]*?)<\/section>/.exec(next)[1]
+      .replace(/<[^>]+>/g, ''), 'Your courses are not available yet.')
+  }
 }))
 
 test('signed-out and incomplete students follow existing login/selection routes', async () => fixture(async f => {
@@ -222,7 +231,7 @@ test('domain failures retain truthful recovery and never look like an empty seme
     assert.match(html, new RegExp(message))
     assert.match(html, /role="alert"/)
     assert.ok(anchor(html, href))
-    assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|No courses are listed/)
+    assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|Your courses are not available yet/)
   }
 }))
 
@@ -234,7 +243,7 @@ test('every selection mismatch fails closed before rendering mixed context/cours
     const html = await f.render()
     assert.match(html, /selection changed/)
     assert.ok(anchor(html, '/my-courses'))
-    assert.doesNotMatch(html, /BUA201|Business Administration|No courses are listed/)
+    assert.doesNotMatch(html, /BUA201|Business Administration|Your courses are not available yet/)
   }
   f.state.contextError = new Error('provider secret')
   assert.doesNotMatch(await f.render(), /provider secret/)

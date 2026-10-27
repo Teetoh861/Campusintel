@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
+import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
 import { studentFocusControl, studentFocusDark } from '@/components/student/ui'
 import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
 import { formatCourseProgress } from '@/lib/dashboard/home-courses'
@@ -32,7 +33,7 @@ function CourseItem({ course }: { course: HomeCourse }): ReactElement {
 /** The semester's courses, or a neutral line when they cannot be read or none are listed. */
 function CourseList({ home }: { home: HomeCourses | null }): ReactElement {
   if (home === null) return <p className="dashboard-primary-copy">Course information is temporarily unavailable.</p>
-  if (home.courses.length === 0) return <p className="dashboard-primary-copy">No courses are listed for your academic details.</p>
+  if (home.courses.length === 0) return <p className="dashboard-primary-copy">{EMPTY_COURSES_MESSAGE}</p>
   return <ul className="dashboard-course-list">{home.courses.map(course => <CourseItem key={course.id} course={course} />)}</ul>
 }
 

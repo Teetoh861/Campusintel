@@ -46,8 +46,22 @@ test('PR verification starts scoped Supabase with the pinned CLI and shows start
   assert.doesNotMatch(workflow, /supabase db start/)
   assert.deepEqual(env.SUPABASE_EXCLUDE.split(','), SUPABASE_EXCLUDED, 'exactly the services the checks do not need')
   for (const kept of SUPABASE_KEPT) assert.ok(!env.SUPABASE_EXCLUDE.split(',').includes(kept), `${kept} still starts`)
-  assert.equal(env.PG_PROVE_IMAGE, 'public.ecr.aws/supabase/pg_prove:3.36', 'the pgTAP runner of the pinned CLI')
+  assert.equal(env.PG_PROVE_IMAGE, 'ghcr.io/supabase/pg_prove:3.36', 'the pgTAP runner of the pinned CLI')
   assert.match(workflow, /run: node scripts\/dev-workflow\/cli\.cjs verify/, 'every check still runs through the verifier')
+})
+
+test('every image is pulled from GitHub\'s registry, signed in with the workflow\'s own token before the database starts', () => {
+  const { workflow } = startStep()
+  // The CLI reads SUPABASE_INTERNAL_IMAGE_REGISTRY for every pull; set for the whole job, so supabase test db uses it too.
+  assert.match(workflow, /\n {4}env:\n(?: {6}#.*\n)* {6}SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr\.io\n {4}steps:/)
+  assert.match(workflow, /\npermissions:\n {2}contents: read\n(?: {2}#.*\n)* {2}packages: read\n\n/, 'only reading packages is added')
+  const login = workflow.split('      - name: Sign in to GitHub\'s container registry\n')[1]?.split('\n      - ')[0]
+  assert.ok(login, 'the job signs in to ghcr.io')
+  assert.match(login, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(login, /REGISTRY_TOKEN: \$\{\{ github\.token \}\}/)
+  assert.match(login, /echo "\$REGISTRY_TOKEN" \| docker login ghcr\.io -u "\$GITHUB_ACTOR" --password-stdin/, 'the token is never on the command line')
+  assert.doesNotMatch(workflow, /secrets\./, 'no new secret')
+  assert.ok(workflow.indexOf('Sign in to GitHub\'s container registry') < workflow.indexOf('name: Start local database for SQL tests'))
 })
 
 /** Run the start step's script with stub supabase, docker and sleep commands. */
@@ -88,7 +102,7 @@ test('a refused image pull is retried with a growing wait, then the database sta
   assert.equal(run.calls('supabase').filter(call => call.startsWith('stop')).length, 2, 'a failed start is cleaned up first')
   assert.deepEqual(run.calls('sleep'), ['30', '60'])
   assert.match(run.output, /Image pull refused by the registry \(attempt 1 of 4\); retrying in 30s\./)
-  assert.deepEqual(run.calls('docker'), ['pull public.ecr.aws/supabase/pg_prove:3.36'])
+  assert.deepEqual(run.calls('docker'), ['pull ghcr.io/supabase/pg_prove:3.36'])
 })
 
 test('pulls refused on every attempt fail the step with a clear message', t => {
@@ -122,7 +136,7 @@ test('the pgTAP runner pull is retried too; a refusal fails clearly, any other m
   assert.deepEqual(retried.calls('sleep'), ['30'])
   const missing = runStartStep(t, { pull: ['manifest unknown'] })
   assert.equal(missing.status, 0, missing.output)
-  assert.match(missing.output, /::warning::Could not pull public\.ecr\.aws\/supabase\/pg_prove:3\.36 in advance/)
+  assert.match(missing.output, /::warning::Could not pull ghcr\.io\/supabase\/pg_prove:3\.36 in advance/)
 })
 
 function run(program, args, cwd, allowed = [0]) {

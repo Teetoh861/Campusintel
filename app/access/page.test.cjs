@@ -22,11 +22,13 @@ const preDiscoveryDatabase = { now: NOW, planned_launch_at: '2026-10-24T23:00:00
   trial_days: 7, expiry_notice_hours: 48, tier: 'free', access: null, trial, early_access: early, otp: null }
 
 // `eligible` is what the server's eligibility read (lib/entitlements/server.ts) decided before render.
-async function render(wire, eligible = true) {
+// `courses` is get_my_course_selection() as read by lib/profile/course-selection.ts; `revision` the profile revision.
+async function render(wire, eligible = true, { courses = { state: 'open', locked: false, lastDay: null }, revision = 4 } = {}) {
   return withTsx(async () => {
     const original = Module._load
     function StudentAccessGate() { return null }
-    function TrialActivation(props) { return React.createElement('button', { 'data-activation': props.passHours }, 'Start my Discovery Pass') }
+    function TrialActivation(props) { return React.createElement('button', { 'data-activation': props.passHours,
+      'data-revision': String(props.profileRevision) }, 'Start my Discovery Pass') }
     try {
       Module._load = function(name, ...args) {
         if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate }
@@ -36,6 +38,9 @@ async function render(wire, eligible = true) {
         if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () =>
           ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse(wire), discovery_eligible: eligible } }) }
         if (name === '@/lib/ai-practice/supabase-env') return { readAllowance: async () => null }
+        if (name === '@/lib/profile/course-selection') return { readCourseSelection: async () => courses,
+          readProfileRevision: async () => revision,
+          formatSemesterDay: original.call(this, '../../lib/profile/course-selection.ts', ...args).formatSemesterDay }
         // WhileOffered marks the offer text a refusal withdraws (rendered here as <withdrawable>).
         if (name === './TrialActivation') return { TrialActivation, PassOfferScope: props => props.children,
           WhileOffered: props => React.createElement('withdrawable', null, props.children) }
@@ -108,4 +113,30 @@ test('a refusal can withdraw every piece of offer text: the description, what is
   assert.doesNotMatch(kept, /Try department|CBT exam|study guide topic|AI upload|a Discovery Pass or/,
     'nothing describing the offer stays outside it')
   assert.match(kept, /AI practice from your own notes comes with Early Access\./)
+})
+
+const locked = { ...discoveryDatabase, tier: 'full', access: { source: 'early_access', ends_at: '2026-11-25T12:00:00+00:00' } }
+
+test('a student whose courses are set sees the semester\'s last day on the plan, once (D9)', async () => {
+  const html = await render(locked, false, { courses: { state: 'locked', locked: true, lastDay: '2027-03-08' } })
+  assert.match(html, /Your courses are set for this semester, until 8 March 2027\./)
+  assert.equal(html.match(/until 8 March 2027/g).length, 1)
+})
+
+test('no semester date for an unlocked student, or a locked one whose semester end is not known yet', async () => {
+  for (const courses of [{ state: 'open', locked: false, lastDay: null }, { state: 'incomplete', locked: false, lastDay: null },
+    { state: 'locked', locked: true, lastDay: null }, null]) {
+    const html = await render(discoveryDatabase, true, { courses })
+    assert.doesNotMatch(html, /courses are set|March|semester,/, JSON.stringify(courses))
+  }
+})
+
+test('the pass activation is given the profile revision the page showed (D7)', async () => {
+  assert.match(await render(discoveryDatabase, true, { revision: 7 }), /data-revision="7"/)
+})
+
+test('when the revision cannot be read, no pass can be started unbound: the student is asked to refresh', async () => {
+  const html = await render(discoveryDatabase, true, { revision: null })
+  assert.doesNotMatch(html, /data-activation|Start my Discovery Pass/)
+  assert.match(html, /We couldn’t load your courses\. Refresh the page to continue\./)
 })

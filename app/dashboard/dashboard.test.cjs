@@ -308,10 +308,17 @@ test('sprint plan 23 Oct item 2: an attempt in a course off the shelf offers no 
 }))
 
 test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list no courses and no figures', async () => fixture(async f => {
-  assert.match(courseCard(await f.html()), /No courses are listed for your academic details/)
+  assert.match(courseCard(await f.html()), /Your courses are not available yet\./)
+  assert.doesNotMatch(courseCard(await f.html()), /0 courses|ready to study/)
   assert.equal(items(await f.html()).length, 0)
   started(f, [['repository-0', { practised: 3, lastScore: { score: 2, total: 3 } }]])
   f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-0', contentKey: 'course-0' } }
+  // EST's decision: an empty list shows that one sentence and no extra detail, even after earlier practice.
+  const empty = await f.html()
+  assert.deepEqual([...courseCard(empty).matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(match => match[1]),
+    ['Your courses are not available yet.'])
+  assert.doesNotMatch(empty, FIGURES)
+  assert.equal(continueCard(empty), undefined)
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()

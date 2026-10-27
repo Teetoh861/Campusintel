@@ -10,7 +10,7 @@ const SAMPLES = {
   'already-claimed': {},
 }
 const STATUSES = ['pass-activated', 'already-activated', 'already-claimed', 'early-access-active', 'trial-not-offered',
-  'rate-limited', 'capacity', 'signed-out', 'session-changed', 'invalid-request', 'unavailable']
+  'rate-limited', 'capacity', 'signed-out', 'session-changed', 'invalid-request', 'unavailable', 'selection-changed']
 
 test('every status is described and never echoes an address, a phone number, a code or another account', () => {
   for (const status of STATUSES) {
@@ -38,4 +38,9 @@ test('every refusal of this account closes the offer with the one approved sente
     assert.equal(next, 'close', JSON.stringify(result))
     assert.equal(message.text, PASS_REFUSED, JSON.stringify(result))
   }
+})
+
+test('a pass refused because the courses changed in another tab says so and reloads the plan (D7)', () => {
+  assert.deepEqual(describeResult({ status: 'selection-changed' }), { next: 'refresh',
+    message: { tone: 'error', text: 'Your courses were just updated. Check them and try again.' } })
 })

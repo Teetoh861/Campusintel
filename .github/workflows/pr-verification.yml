@@ -7,11 +7,17 @@ on:
 
 permissions:
   contents: read
+  # Pull the Supabase images from GitHub's registry as this workflow, not anonymously.
+  packages: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      # The Supabase CLI pulls every image, the pgTAP runner included, from this registry (SUPABASE_INTERNAL_IMAGE_REGISTRY,
+      # read by GetRegistry in apps/cli-go/internal/utils/docker.go at CLI v2.109.1), with the credentials of docker login.
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +38,13 @@ jobs:
         if: steps.scope.outputs.db == 'true'
         with:
           version: 2.109.1
+      # Anonymous pulls from shared runners hit the registries' limits; signed-in pulls do not. No new secret: the
+      # workflow's own token, limited to reading packages above.
+      - name: Sign in to GitHub's container registry
+        if: steps.scope.outputs.db == 'true'
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       # Only the services the database tests need: Postgres, Auth and Storage (each migrates its own schema, which the
       # migrations and tests use), imgproxy (Storage is unhealthy without it), PostgREST and the Kong gateway. Excluded:
       # the log pipeline (logflare, vector), Studio and its metadata API (studio, postgres-meta), the mail catcher
@@ -42,7 +55,7 @@ jobs:
         env:
           SUPABASE_EXCLUDE: logflare,vector,studio,postgres-meta,mailpit,edge-runtime,realtime,supavisor
           # The pgTAP runner `supabase test db` pulls for CLI 2.109.1; update it with the CLI pin.
-          PG_PROVE_IMAGE: public.ecr.aws/supabase/pg_prove:3.36
+          PG_PROVE_IMAGE: ghcr.io/supabase/pg_prove:3.36
           PULL_ATTEMPTS: '4'
           PULL_WAIT_SECONDS: '30'
         run: |
