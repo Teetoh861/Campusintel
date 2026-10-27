@@ -124,10 +124,12 @@ function createSupabaseEntitlementEnv(sessionId: string, email: string, address:
       if (error || !parsed.success) throw new Error('Activation rate limit unavailable')
       return parsed.data.allowed ? 'allowed' : 'limited'
     },
-    async activate() {
-      // Only keyed hashes of the confirmed address reach the database, current key first.
+    async activate(profileRevision) {
+      // Only keyed hashes of the confirmed address reach the database, current key first. With a revision the pass sets
+      // exactly the courses the student saw (20261026100000); without one (a tab from before) it is unbound.
       const { data, error } = await service.rpc('activate_discovery_pass', { p_session_id: sessionId,
-        p_claim_hashes: claimHashes(keys, email) })
+        p_claim_hashes: claimHashes(keys, email),
+        ...(profileRevision === undefined ? {} : { p_expected_profile_revision: profileRevision }) })
       const parsed = activationRow.safeParse(data)
       return error || !parsed.success ? null : parsed.data
     },

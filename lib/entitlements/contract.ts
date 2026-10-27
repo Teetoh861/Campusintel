@@ -90,16 +90,20 @@ export type CourseAccess = 'full' | 'free' | 'unknown'
 
 // Activation is one explicit command with nothing to fill in: no phone number, no code. The student is the verified
 // session; the database decides eligibility, the one-pass-per-account rule and the pass window on its own clock.
+// profileRevision is the profile revision the page showed: the pass then sets exactly those courses (D7). Tabs opened
+// before it existed send none and are activated unbound.
 export const entitlementCommandSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('activate-discovery-pass') }).strict(),
+  z.object({ action: z.literal('activate-discovery-pass'),
+    profileRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
 ])
 
 export type EntitlementCommand = z.infer<typeof entitlementCommandSchema>
 
 // rate-limited: too many activation requests from this account or address; nothing was started.
 // capacity: the platform-wide daily activation guard; nothing was started.
+// selection-changed: the courses changed after the page was shown (another tab); nothing was started.
 const PLAIN_RESULTS = ['signed-out', 'session-changed', 'invalid-request', 'unavailable', 'capacity', 'rate-limited',
-  'trial-not-offered'] as const
+  'trial-not-offered', 'selection-changed'] as const
 
 export const entitlementResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pass-activated'), endsAt: timestamp }).strict(),

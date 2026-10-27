@@ -16,6 +16,7 @@ import { DISCOVERY_KINDS } from '@/lib/entitlements/discovery-contract'
 import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, DISCOVERY_PREVIEW_LABEL, formatAccessDate, trialWording }
   from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { formatSemesterDay, readCourseSelection, readProfileRevision } from '@/lib/profile/course-selection'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { PassOfferScope, TrialActivation, WhileOffered } from './TrialActivation'
@@ -29,6 +30,7 @@ export const metadata = { title: 'Plan & Access | CampusIntell', robots: { index
 
 const PATH = STUDENT_DESTINATIONS.access.href
 const LEDE = 'GST courses are free for every student. Department courses open fully with Early Access.'
+const COURSES_UNREADABLE = 'We couldn’t load your courses. Refresh the page to continue.'
 
 export default async function AccessPage(): Promise<ReactElement> {
   return <StudentAccessGate returnPath={PATH}>
@@ -40,8 +42,8 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
   const client = await createClient()
   const context = await getStudentSessionContext(undefined, client)
   if (context === null) return redirectForStudentState('signed-out', PATH)
-  const [read, allowance] = await Promise.all([readEntitlementForVerifiedStudent(client),
-    readAllowance(client).catch(() => null)])
+  const [read, allowance, courses, profileRevision] = await Promise.all([readEntitlementForVerifiedStudent(client),
+    readAllowance(client).catch(() => null), readCourseSelection(client), readProfileRevision(client, context.user.id)])
   if (read.status === 'signed-out') return redirectForStudentState('signed-out', PATH)
   const band = <PageBand title="Plan & Access" lede={LEDE} aside={<Link href={STUDENT_DESTINATIONS.account.href}
     prefetch={false} className={studentAction(btnGhost)}>{STUDENT_DESTINATIONS.account.label}</Link>} />
@@ -54,8 +56,8 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
   return <StudentPage band={band}><PassOfferScope>
     <div className="grid min-w-0 gap-4 tablet:grid-cols-[minmax(0,1.4fr)_minmax(240px,1fr)] desktop:gap-6">
       <div className="grid min-w-0 content-start gap-4">
-        <CurrentPlan entitlement={entitlement} />
-        <TrialSection entitlement={entitlement} continuityToken={continuityToken} />
+        <CurrentPlan entitlement={entitlement} coursesSetUntil={courses?.locked ? courses.lastDay : null} />
+        <TrialSection entitlement={entitlement} continuityToken={continuityToken} profileRevision={profileRevision} />
       </div>
       <div className="grid min-w-0 content-start gap-4">
         <EarlyAccessSection entitlement={entitlement} />
@@ -65,7 +67,10 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
   </PassOfferScope></StudentPage>
 }
 
-function CurrentPlan({ entitlement }: { entitlement: EntitlementSummary }): ReactElement {
+/** coursesSetUntil: the semester's last day, only for a student whose courses are set (D9). */
+function CurrentPlan({ entitlement, coursesSetUntil }: { entitlement: EntitlementSummary; coursesSetUntil: string | null }):
+  ReactElement {
+  const lastDay = coursesSetUntil === null ? '' : formatSemesterDay(coursesSetUntil)
   const { access, trial } = entitlement
   const pass = access === null && trial.status === 'active' && trial.ends_at !== null ? trial.ends_at : null
   return <section aria-labelledby="plan-heading" className="student-surface student-surface-raised" data-plan={entitlement.tier}>
@@ -75,6 +80,8 @@ function CurrentPlan({ entitlement }: { entitlement: EntitlementSummary }): Reac
       : pass !== null
         ? <p className="mt-2 text-student-text-primary"><b>{DISCOVERY_PASS_LABEL}</b> · previews until {formatAccessDate(pass)}.</p>
         : <p className="mt-2 text-student-text-primary"><b>Free</b> · GST courses, always included.</p>}
+    {lastDay !== '' && <p className="mt-2 text-student-text-primary" data-courses-set-until="">
+      Your courses are set for this semester, until {lastDay}.</p>}
     <p className="mt-2 text-sm text-student-text-secondary">
       When a plan or pass ends, your account returns to the free plan automatically. Nothing is deleted, and GST courses stay open.
     </p>
@@ -105,8 +112,9 @@ function PassUsage({ discovery }: { discovery: DiscoverySummary }): ReactElement
   </ul>
 }
 
-function TrialSection({ entitlement, continuityToken }: { entitlement: EntitlementSummary; continuityToken: string }):
-  ReactElement | null {
+function TrialSection({ entitlement, continuityToken, profileRevision }: {
+  entitlement: EntitlementSummary; continuityToken: string; profileRevision: number | null
+}): ReactElement | null {
   const { trial } = entitlement
   const sevenDay = trial.policy === 'seven-day'
   // A seven-day trial issued before the pass is full access, already shown as the current plan.
@@ -133,7 +141,11 @@ function TrialSection({ entitlement, continuityToken }: { entitlement: Entitleme
           It’s a sample, not full access: each item can be used once, and nothing renews.</p>
         <PassIncludes discovery={discovery} />
       </WhileOffered>
-      <div className="mt-3"><TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours} /></div>
+      <div className="mt-3">{profileRevision === null
+        // Without the revision the pass could set courses the student did not see (D7): nothing is started unbound.
+        ? <p className="text-sm text-student-text-secondary" role="status">{COURSES_UNREADABLE}</p>
+        : <TrialActivation continuityToken={continuityToken} passHours={entitlement.trial_hours}
+          profileRevision={profileRevision} />}</div>
     </section>
   }
   const body: Record<'active' | 'ended', ReactElement> = {
