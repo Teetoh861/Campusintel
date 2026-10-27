@@ -62,6 +62,7 @@ async function fixture(run, complete = false) {
   const state = [], refs = [], effectDeps = [], effects = [], requests = [], navigations = []
   let stateIndex = 0, refIndex = 0, effectIndex = 0
   let pageToken = 'page:fixture-student'
+  let mode = 'open'
   let responder = async () => response(503, { status: 'unavailable' })
   const hooks = {
     ...React,
@@ -99,7 +100,7 @@ async function fixture(run, complete = false) {
     global.fetch = async (...args) => { requests.push(args); return responder(...args) }
     delete require.cache[file]
     const { ProfileSelectionForm } = require(file)
-    const render = () => { stateIndex = 0; refIndex = 0; effectIndex = 0; return ProfileSelectionForm({ initial, continuityToken: pageToken }) }
+    const render = () => { stateIndex = 0; refIndex = 0; effectIndex = 0; return ProfileSelectionForm({ initial, continuityToken: pageToken, mode }) }
     const flushEffects = () => { while (effects.length) effects.shift()() }
     const input = () => nodes(render()).find(node => node.type === 'input' && node.props.id === 'first-name')
     const setName = value => input().props.onChange({ target: { value } })
@@ -117,6 +118,7 @@ async function fixture(run, complete = false) {
     flushEffects()
     await run({ ids, options, initial, render, input, setName, select, submit, choose, flushEffects, requests, navigations, saved,
       changeIncomingToken: value => { pageToken = value },
+      setMode: value => { mode = value },
       remount: () => { state.length = 0; refs.length = 0; effectDeps.length = 0; effects.length = 0; render(); flushEffects() },
       respond: fn => { responder = fn }, notice: () => nodes(render()).find(node => node.type?.name === 'Feedback')?.props.message })
   } finally {
@@ -369,7 +371,7 @@ test('conflict blocks stale saves through field edits until explicit reload', as
   f.respond(async () => response(409, { status: 'conflict' }))
   await f.submit()
   assert.deepEqual(f.navigations, [])
-  assert.equal(f.notice(), 'Your profile changed elsewhere. Reload the latest profile before saving again.')
+  assert.equal(f.notice(), 'Your courses were just updated. Check them and try again.')
   const save = () => nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit')
   assert.equal(save().props.disabled, true)
   assert.equal(save().props['aria-busy'], false)
@@ -404,4 +406,62 @@ test('lost response has no automatic retry and manual retry retains the draft re
   assert.equal(f.requests.length, 2)
   assert.deepEqual(f.requests.map(request => JSON.parse(request[1].body).expectedRevision), [0, 0])
   assert.deepEqual(f.navigations, [])
+}, true))
+
+const coursesSet = tree => nodes(tree).some(node => node.type?.name === 'CoursesSetNotice')
+const firstPick = tree => nodes(tree).find(node => node.props?.['data-first-pick'] === '')
+const selects = tree => nodes(tree).filter(node => node.type === 'select')
+
+test('locked: the courses are shown, not offered; the name still saves with the same courses', async () => fixture(async f => {
+  f.setMode('locked'); f.remount()
+  const tree = f.render()
+  assert.equal(coursesSet(tree), true, 'the locked message and its Message us link are shown')
+  assert.deepEqual(selects(tree), [], 'no department, level or semester can be chosen')
+  assert.equal(firstPick(tree), undefined)
+  assert.equal(nodes(tree).find(node => node.type === 'button' && node.props.type === 'submit')?.props.children, 'Save name')
+  f.setName('Amara')
+  f.respond(async () => response(200, { ...f.saved(), firstName: 'Amara' }))
+  await f.submit()
+  assert.deepEqual(JSON.parse(f.requests[0][1].body), { departmentId: f.ids.department, academicLevelId: f.ids.level,
+    academicPeriodId: f.ids.period, first_name: 'Amara', expectedRevision: 0 })
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
+}, true))
+
+test('locked with an inactive saved course still sends the saved courses, never a blank choice', async () => fixture(async f => {
+  f.initial.selection.department = { id: f.ids.inactive, label: 'Former unit', isActive: false }
+  f.setMode('locked'); f.remount()
+  await f.submit()
+  assert.equal(JSON.parse(f.requests[0][1].body).departmentId, f.ids.inactive)
+}, true))
+
+test('first pick while a plan is running: warned before saving, then the same save', async () => fixture(async f => {
+  f.setMode('first-pick'); f.remount()
+  assert.equal(firstPick(f.render()).props.children, 'Your courses will be set for this semester once you save.')
+  assert.equal(coursesSet(f.render()), false)
+  assert.equal(selects(f.render()).length, 3)
+  f.choose('department', f.ids.department); f.choose('academic-level', f.ids.level); f.choose('academic-period', f.ids.period)
+  f.respond(async () => response(200, f.saved()))
+  await f.submit()
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
+}))
+
+test('an open form shows neither the warning nor the locked message', async () => fixture(async f => {
+  assert.equal(firstPick(f.render()), undefined)
+  assert.equal(coursesSet(f.render()), false)
+}, true))
+
+test('the database refusal (CI423, sent as locked) shows the locked view, never a raw error', async () => fixture(async f => {
+  f.choose('department', f.ids.secondDepartment); f.choose('academic-level', f.ids.level); f.choose('academic-period', f.ids.period)
+  f.respond(async () => response(409, { status: 'locked' }))
+  await f.submit()
+  const tree = f.render()
+  assert.equal(coursesSet(tree), true)
+  assert.equal(f.notice(), undefined, 'no error message, only the locked message')
+  assert.equal(nodes(tree).find(node => node.type === 'button' && node.props.type === 'submit')?.props.children, 'Save name')
+  assert.deepEqual(selects(tree), [])
+  assert.deepEqual(f.navigations, [])
+  // The name can still be saved; the saved courses go back unchanged.
+  f.respond(async () => response(200, f.saved()))
+  await f.submit()
+  assert.equal(JSON.parse(f.requests[1][1].body).departmentId, f.ids.department)
 }, true))
