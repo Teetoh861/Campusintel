@@ -24,17 +24,22 @@ export const metadata = { title: 'Profile selection | CampusIntell', robots: { i
 
 /**
  * Locked when the database says the courses are set for the semester. A first pick while a plan or pass is running is
- * warned about, because that save sets them. Any read failure leaves the form open: the database still decides the save.
+ * warned about, because that save sets them. Unknown lock or plan state withholds the form until a refresh.
  */
-async function courseSelectionMode(): Promise<CourseSelectionMode> {
-  const client = await createClient()
-  const lock = await readCourseSelection(client)
-  if (lock === null) return 'open'
-  if (lock.locked) return 'locked'
-  if (lock.state !== 'incomplete') return 'open'
-  const read = await readEntitlementForVerifiedStudent(client, { discoveryEligibility: false })
-  const running = read.status === 'ok' && (read.entitlement.tier === 'full' || read.entitlement.trial.status === 'active')
-  return running ? 'first-pick' : 'open'
+async function courseSelectionMode(): Promise<CourseSelectionMode | null> {
+  try {
+    const client = await createClient()
+    const lock = await readCourseSelection(client)
+    if (lock === null) return null
+    if (lock.locked) return 'locked'
+    if (lock.state !== 'incomplete') return 'open'
+    const read = await readEntitlementForVerifiedStudent(client, { discoveryEligibility: false })
+    if (read.status !== 'ok') return null
+    const running = read.entitlement.tier === 'full' || read.entitlement.trial.status === 'active'
+    return running ? 'first-pick' : 'open'
+  } catch {
+    return null
+  }
 }
 
 /** Load the live student's profile on the server; only presentation data enters the form. */
@@ -58,10 +63,13 @@ export default async function ProfileSelectionPage(): Promise<ReactElement> {
   }
   const complete = profile.status === 'complete'
   const mode = profile.status === 'incomplete' || complete ? await courseSelectionMode() : 'open'
-  return <ProfilePageFrame title={complete ? 'Change selection' : 'Complete your profile'}
-    description={complete ? 'Update your first name and academic details.' : 'Add your first name and confirm the details used for your courses.'} narrow>
+  return <ProfilePageFrame title={mode === 'locked' ? 'Your details' : complete ? 'Change selection' : 'Complete your profile'}
+    description={mode === null ? undefined : mode === 'locked' ? 'Update your first name.'
+      : complete ? 'Update your first name and academic details.' : 'Add your first name and confirm the details used for your courses.'} narrow>
     <AuthFlowSync signedIn continuityToken={continuityToken} />
-    {profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} mode={mode} /> : <div className="student-surface space-y-3">
+    {mode === null ? <div className="student-surface">
+      <Feedback tone="error" message="We couldn't load your courses. Refresh the page to try again." />
+    </div> : profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} mode={mode} /> : <div className="student-surface space-y-3">
       <Feedback tone="error" message={profile.status === 'missing-profile'
         ? 'Your profile could not be found. Please contact support.'
         : profile.status === 'invariant-failure'

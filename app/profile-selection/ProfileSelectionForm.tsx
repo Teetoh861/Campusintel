@@ -265,7 +265,7 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open' }
     <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
       <button type="submit" disabled={!ready || pending || stale} aria-busy={pending}
         className={buttonClassName(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', studentFocusDark)}>
-        {pending ? 'Saving…' : 'Save selection'}
+        {pending ? 'Saving…' : locked ? 'Save name' : 'Save selection'}
       </button>
       {initial.status === 'complete' && <Link href={AUTH_PATHS.account}
         className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>

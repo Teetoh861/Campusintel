@@ -241,6 +241,12 @@ begin
       and detail -> 'to' = jsonb_build_object('department_id', new.department_id,
         'academic_level_id', new.academic_level_id, 'academic_period_id', new.academic_period_id));
   if v_operator then
+    -- A different department can have an earlier semester end. Judge the resulting scope at the same instant,
+    -- under the calendar lock; an exception also rolls back the operator's audit and profile revision.
+    if v_state = 'locked' and private.course_selection_state_for(old.id, new.department_id,
+        old.selection_confirmed_at, v_now)->>'state' is distinct from 'locked' then
+      raise exception 'Course correction would unlock this student' using errcode = 'CI423';
+    end if;
     -- An operator change never unlocks: the confirmation stays, unless the student had not picked for this semester.
     if v_state in ('incomplete', 'reselect') then new.selection_confirmed_at := v_now; end if;
     return new;

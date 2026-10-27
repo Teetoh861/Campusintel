@@ -418,6 +418,7 @@ test('locked: the courses are shown, not offered; the name still saves with the 
   assert.equal(coursesSet(tree), true, 'the locked message and its Message us link are shown')
   assert.deepEqual(selects(tree), [], 'no department, level or semester can be chosen')
   assert.equal(firstPick(tree), undefined)
+  assert.equal(nodes(tree).find(node => node.type === 'button' && node.props.type === 'submit')?.props.children, 'Save name')
   f.setName('Amara')
   f.respond(async () => response(200, { ...f.saved(), firstName: 'Amara' }))
   await f.submit()
@@ -456,6 +457,7 @@ test('the database refusal (CI423, sent as locked) shows the locked view, never 
   const tree = f.render()
   assert.equal(coursesSet(tree), true)
   assert.equal(f.notice(), undefined, 'no error message, only the locked message')
+  assert.equal(nodes(tree).find(node => node.type === 'button' && node.props.type === 'submit')?.props.children, 'Save name')
   assert.deepEqual(selects(tree), [])
   assert.deepEqual(f.navigations, [])
   // The name can still be saved; the saved courses go back unchanged.

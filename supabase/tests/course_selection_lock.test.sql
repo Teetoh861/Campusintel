@@ -384,5 +384,58 @@ set local request.jwt.claims = '{"sub":"c1000000-0000-4000-8000-000000000005","r
 select throws_ok($$select public.get_my_course_selection()$$, '42501', null, 'a session of another account is refused');
 reset role;
 
+-- An operator correction cannot release a locked student across department calendar boundaries.
+-- Only the previous term is needed here: Business Administration is extended, Accounting has ended.
+reset role;
+delete from private.academic_term_extensions;
+delete from private.academic_terms where session_label = '2026/2027';
+insert into private.academic_term_extensions (term_id, department_id, last_day, set_by, reason)
+  select id, '10000000-0000-4000-8000-000000000002', (select today + 5 from cal), 'test', 'source still running'
+  from private.academic_terms;
+insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, created_at, updated_at)
+  select '00000000-0000-0000-0000-000000000000', ('c1000000-0000-4000-8000-0000000000' || n)::uuid,
+    'authenticated', 'authenticated', 'lock-' || n || '@example.test', now(), now(), now()
+  from unnest(array['15','16']) n;
+insert into auth.sessions (id, user_id, created_at, updated_at)
+  select ('c2000000-0000-4000-8000-0000000000' || n)::uuid, ('c1000000-0000-4000-8000-0000000000' || n)::uuid, now(), now()
+  from unnest(array['15','16']) n;
+select pg_temp.pick(('c1000000-0000-4000-8000-0000000000' || n)::uuid, '10000000-0000-4000-8000-000000000002',
+    '20000000-0000-4000-8000-000000000002', '30000000-0000-4000-8000-000000000001')
+  from unnest(array['15','16']) n;
+select pg_temp.backdate(('c1000000-0000-4000-8000-0000000000' || n)::uuid,
+    (select previous_end from ends) - interval '20 days') from unnest(array['15','16']) n;
+select pg_temp.grant('c1000000-0000-4000-8000-000000000015', 'trial', 'discovery',
+  (select previous_end from ends) - interval '19 days', now() + interval '20 days');
+select pg_temp.grant('c1000000-0000-4000-8000-000000000016', 'trial', 'discovery',
+  (select previous_end from ends) - interval '19 days', now() - interval '1 day');
+create temporary table correction_before on commit drop as
+  select p.id, p.revision, to_jsonb(p) as profile, case when p.id::text like '%15' then 'active' else 'expired' end as label,
+    (select count(*) from private.course_selection_events e where e.user_id = p.id) as events
+  from public.profiles p where p.id in ('c1000000-0000-4000-8000-000000000015', 'c1000000-0000-4000-8000-000000000016');
+grant select on correction_before to service_role;
+select is(pg_temp.state(id), 'locked', label || ' grant: source department is locked') from correction_before;
+select is(private.course_selection_state_for(id, '10000000-0000-4000-8000-000000000001',
+    (profile->>'selection_confirmed_at')::timestamptz, clock_timestamp())->>'state', 'reselect',
+    label || ' grant: target boundary would release the lock') from correction_before;
+set local role service_role;
+select throws_ok(format($sql$select public.admin_change_course_selection(%L::uuid, 'accounting', '200-level',
+    'first-semester', %s, false, 'Ops', 'correct department')$sql$, id, revision), 'CI423',
+    'Course correction would unlock this student', label || ' grant: unlocking correction is refused')
+  from correction_before;
+reset role;
+select is(to_jsonb(p), b.profile, b.label || ' grant: refusal leaves the full profile and revision untouched')
+  from correction_before b join public.profiles p using (id);
+select is((select count(*) from private.course_selection_events e where e.user_id = b.id), b.events,
+    b.label || ' grant: refusal rolls back the operator audit too') from correction_before b;
+select is(pg_temp.state(id), 'locked', label || ' grant: refusal keeps the student locked') from correction_before;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c1000000-0000-4000-8000-000000000015","role":"authenticated","session_id":"c2000000-0000-4000-8000-000000000015"}';
+select throws_ok($$update public.profiles set department_id = '10000000-0000-4000-8000-000000000001'
+  where id = 'c1000000-0000-4000-8000-000000000015'$$, 'CI423', null, 'active grant: direct student change is still refused');
+set local request.jwt.claims = '{"sub":"c1000000-0000-4000-8000-000000000016","role":"authenticated","session_id":"c2000000-0000-4000-8000-000000000016"}';
+select throws_ok($$update public.profiles set department_id = '10000000-0000-4000-8000-000000000001'
+  where id = 'c1000000-0000-4000-8000-000000000016'$$, 'CI423', null, 'expired grant: direct student change is still refused');
+reset role;
+
 select * from finish();
 rollback;
