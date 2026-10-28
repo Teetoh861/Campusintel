@@ -48,8 +48,9 @@ const quizHref = `/courses/${course.slug}/quiz`
 async function fixture(quiz, run) {
   // Course Detail itself is covered at the central-model boundary in [slug]/course-detail.test.cjs.
   // Bookmarks is covered at the central-model boundary in app/bookmarks; it no longer renders static cards.
+  // The public landing page shows no course cards; its links are covered in components/landing.
   const files = [
-    './[slug]/quiz/page.tsx', '../page.tsx', './[slug]/materials/page.tsx',
+    './[slug]/quiz/page.tsx', './[slug]/materials/page.tsx',
   ].map(file => require.resolve(file))
   const restore = installLoader()
   const originalLoad = Module._load
@@ -125,7 +126,6 @@ async function fixture(quiz, run) {
       if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
-      if (name === '@/components/auth/PublicHomeBoundary') return { PublicHomeBoundary: ({ children }) => children }
       if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
       return originalLoad.call(this, name, ...args)
     }
@@ -137,8 +137,7 @@ async function fixture(quiz, run) {
     }
     await run({
       quizRoute: granted(require(files[0]).default),
-      home: require(files[1]).default,
-      materials: granted(require(files[2]).default),
+      materials: granted(require(files[1]).default),
       destinations,
       publishedState,
     })
@@ -279,27 +278,3 @@ test('missing or unusable quiz configuration makes the quiz route reject the att
     })
   }
 })
-
-test('public home cards never infer quiz readiness from repository questions', async () => fixture(validQuiz, async f => {
-  const publicCards = () => [f.home()].map(element => renderToStaticMarkup(element))
-  const assertNeutral = html => {
-    assert.match(html, new RegExp(`href="/courses/${course.slug}"`))
-    assert.match(html, /View course/)
-    assert.doesNotMatch(html, new RegExp(`href="${quizHref}"`))
-    assert.doesNotMatch(html, /Start quiz|Timed quiz|Practice quizzes/)
-    assert.doesNotMatch(html, new RegExp(`${validQuiz.questions.length} questions`))
-    assert.doesNotMatch(html, new RegExp(`${validQuiz.quizDurationMinutes} min`))
-  }
-  publicCards().forEach(assertNeutral)
-
-  // Repository data still exists, but the operator can withdraw all published CBT.
-  const originalRows = f.publishedState.rows
-  f.publishedState.rows = originalRows.filter(row => row.kind !== 'cbt_question')
-  publicCards().forEach(assertNeutral)
-
-  f.publishedState.rows = originalRows
-  publicCards().forEach(assertNeutral)
-
-  f.publishedState.available = false
-  publicCards().forEach(assertNeutral)
-}))

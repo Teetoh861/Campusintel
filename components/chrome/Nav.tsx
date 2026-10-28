@@ -17,6 +17,7 @@ import type { StudentDestination } from '@/lib/product/student-navigation'
 import type { ReactElement } from 'react'
 
 const WRAP = 'app-container'
+const LANDING_PATH = '/'
 const DESKTOP_QUERY = '(min-width: 1200px)'
 const FOCUS_ON_BLUE = studentFocusDark
 const FOCUS_ON_PAPER = studentFocusRow
@@ -40,6 +41,9 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
     desktop.addEventListener('change', closeAtDesktop)
     return () => desktop.removeEventListener('change', closeAtDesktop)
   }, [])
+
+  // The public landing page at / carries its own header for signed-out visitors.
+  if (!signedIn && pathname === LANDING_PATH) return <></>
 
   const topLink = (link: StudentDestination) => {
     const active = isStudentDestinationActive(pathname, link)

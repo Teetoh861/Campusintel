@@ -22,6 +22,12 @@ export function buildWhatsAppUrl(message?: string): string {
 export const COURSE_CHANGE_MESSAGE = 'Hello CampusIntell, I need a change to my courses for this semester.'
 const WHATSAPP_NUMBER_FORMAT = /^[0-9]{8,15}$/
 
+/** A WhatsApp chat link, or null when no valid number is configured so the action can stay hidden. */
+export function whatsAppChatUrl(message?: string, number: string = WHATSAPP_NUMBER): string | null {
+  if (!WHATSAPP_NUMBER_FORMAT.test(number)) return null
+  return message ? `${WA_BASE}${number}?text=${encodeURIComponent(message)}` : `${WA_BASE}${number}`
+}
+
 /** Where "Message us" goes: WhatsApp when a number is configured, otherwise Help & Support. */
 export function courseChangeContact(fallback: string, number: string = WHATSAPP_NUMBER): { href: string; external: boolean } {
   return WHATSAPP_NUMBER_FORMAT.test(number)

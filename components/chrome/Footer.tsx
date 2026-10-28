@@ -2,6 +2,7 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { CONTACT_EMAIL } from '@/lib/contact'
 import { useNavigationSession } from '@/components/auth/NavigationSession'
 import { studentFocusRow } from '@/components/student/ui'
@@ -9,6 +10,7 @@ import { BrandMark, Wordmark } from './Logo'
 import type { ReactElement } from 'react'
 
 const WRAP = 'app-container'
+const LANDING_PATH = '/'
 
 const linkClass =
   `inline-flex min-h-11 items-center text-[13.5px] font-medium leading-5 text-student-text-secondary transition-colors hover:text-student-primary tablet:text-[14px] ${studentFocusRow}`
@@ -16,12 +18,15 @@ const linkClass =
 /** Match Student App identity while preserving anonymous brand/support presentation. */
 export function Footer({ year }: { year: number }): ReactElement {
   const { signedIn } = useNavigationSession()
+  const pathname = usePathname()
   if (signedIn) return <footer className="student-footer" data-screen-label="Footer" data-student-app>
     <div className="student-workspace student-footer-inner">
       <BrandMark size={24} className="h-6 w-6 shrink-0" />
       <p>The inside track on every paper.</p>
     </div>
   </footer>
+  // The public landing page at / carries its own footer for signed-out visitors.
+  if (pathname === LANDING_PATH) return <></>
   const supportEmail = <a href={`mailto:${CONTACT_EMAIL}`}
     className={`${linkClass} max-w-full break-words [overflow-wrap:anywhere]`}>{CONTACT_EMAIL}</a>
   return (
