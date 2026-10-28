@@ -23,12 +23,7 @@ export function Hero({ earlyAccessUrl }: { earlyAccessUrl: string | null }): Rea
           <p className={`${styles.tagline} ${styles.rise} ${styles.d1}`}>{hero.tagline}</p>
           <h1 id="landing-title" className={`${styles.heroTitle} ${styles.rise} ${styles.d2}`}>
             {hero.titleLead}{' '}
-            <span className={styles.underline}>
-              {hero.titleEmphasis}
-              <svg viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-                <path d="M4 14 C 80 4, 200 4, 296 12" />
-              </svg>
-            </span>
+            <span className={styles.emphasis}>{hero.titleEmphasis}</span>
           </h1>
           <p className={`${styles.lead} ${styles.rise} ${styles.d3}`}>{hero.lead}</p>
           <div className={`${styles.ctas} ${styles.rise} ${styles.d4}`}>
@@ -49,7 +44,6 @@ export function Hero({ earlyAccessUrl }: { earlyAccessUrl: string | null }): Rea
         </div>
 
         <div className={styles.visual} aria-hidden="true">
-          <div className={styles.ring} />
           <div className={styles.circle} />
           <div className={styles.people}>
             <Image src={images.hero.src} width={images.hero.width} height={images.hero.height} alt=""

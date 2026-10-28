@@ -1,9 +1,9 @@
 // components/landing/FinalCta.tsx — Closing call to action and the optional WhatsApp community link.
 import Image from 'next/image'
 import Link from 'next/link'
-import { MessageCircle } from 'lucide-react'
 import { btnAccent, btnBase, btnGhostOnBlue, btnSm, buttonClassName } from '@/components/chrome/ui'
 import { landingContent } from '@/lib/landing/content'
+import { BrandIcon } from './icons'
 import styles from './landing.module.css'
 import type { ReactElement } from 'react'
 
@@ -26,7 +26,7 @@ export function FinalCta({ communityUrl }: { communityUrl: string | null }): Rea
             {communityUrl && (
               <a href={communityUrl} target="_blank" rel="noopener noreferrer"
                 className={buttonClassName(btnBase, btnSm, btnGhostOnBlue, 'mt-5 border-transparent px-0 hover:border-transparent')}>
-                <MessageCircle aria-hidden="true" size={18} />
+                <BrandIcon name="whatsapp-on-navy" />
                 {cta.community}<span className="sr-only"> {landingContent.newTab}</span>
               </a>
             )}

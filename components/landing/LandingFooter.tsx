@@ -5,17 +5,19 @@ import { btnBase, btnGhost, btnSm, buttonClassName } from '@/components/chrome/u
 import { CONTACT_EMAIL, INSTAGRAM_URL, X_URL } from '@/lib/contact'
 import { landingContent } from '@/lib/landing/content'
 import { fillTemplate } from '@/lib/landing/format'
+import { BrandIcon } from './icons'
 import styles from './landing.module.css'
+import type { BrandName } from './icons'
 import type { ReactElement, ReactNode } from 'react'
 
 const { brand, footer } = landingContent
 const LINK = buttonClassName(btnBase, btnSm, btnGhost,
   'min-w-11 max-w-full justify-start border-transparent px-0 text-[16px] font-normal text-student-text-secondary hover:border-transparent hover:bg-transparent hover:text-ci-blue-600 [overflow-wrap:anywhere]')
 
-function External({ href, children }: { href: string; children: ReactNode }): ReactElement {
+function External({ href, brand, children }: { href: string; brand?: BrandName; children: ReactNode }): ReactElement {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className={LINK}>
-      {children}<span className="sr-only"> {landingContent.newTab}</span>
+      {brand && <BrandIcon name={brand} />}{children}<span className="sr-only"> {landingContent.newTab}</span>
     </a>
   )
 }
@@ -37,7 +39,7 @@ export function LandingFooter({ whatsAppUrl, year }: { whatsAppUrl: string | nul
         <div>
           <h2>{footer.contactHeading}</h2>
           <ul>
-            {whatsAppUrl && <li><External href={whatsAppUrl}>{footer.whatsApp}</External></li>}
+            {whatsAppUrl && <li><External href={whatsAppUrl} brand="whatsapp">{footer.whatsApp}</External></li>}
             <li><a href={`mailto:${CONTACT_EMAIL}`} className={LINK}>{CONTACT_EMAIL}</a></li>
             <li><External href={footer.website.href}>{footer.website.label}</External></li>
           </ul>
@@ -45,8 +47,8 @@ export function LandingFooter({ whatsAppUrl, year }: { whatsAppUrl: string | nul
         <div>
           <h2>{footer.followHeading}</h2>
           <ul>
-            <li><External href={INSTAGRAM_URL}>{footer.instagram}</External></li>
-            <li><External href={X_URL}>{footer.x}</External></li>
+            <li><External href={INSTAGRAM_URL} brand="instagram">{footer.instagram}</External></li>
+            <li><External href={X_URL} brand="x">{footer.x}</External></li>
           </ul>
         </div>
       </div>

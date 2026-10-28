@@ -268,6 +268,38 @@ test('the mobile menu toggles with aria-expanded and lists Browse courses and ac
   assert.ok(links.some(node => node.props.href === '/register'))
 })
 
+// Emoji are pictographs; the typographic © ® ™ marks are text symbols the copyright line legitimately uses.
+const EMOJI = /(?![\u00a9\u00ae\u2122])[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{FE0F}]/u
+
+test('no emoji and no hand-drawn SVG: icons are lucide-react or official brand image files', async () => {
+  const sourceFiles = [
+    ...fs.readdirSync(__dirname).map(file => path.join(__dirname, file)),
+    ...fs.readdirSync(path.join(root, 'lib/landing')).map(file => path.join(root, 'lib/landing', file)),
+  ].filter(file => /\.(tsx?|css)$/.test(file))
+  for (const file of sourceFiles) {
+    const source = fs.readFileSync(file, 'utf8')
+    assert.doesNotMatch(source, EMOJI, `${path.relative(root, file)} contains an emoji`)
+    if (!/\.test\./.test(file)) {
+      assert.doesNotMatch(source, /<svg|<path|stroke-dash|@keyframes draw/i, `${path.relative(root, file)} draws SVG`)
+      assert.doesNotMatch(source, /from 'lucide-react'[^\n]*\b(?:Instagram|Twitter|Facebook|MessageCircle)\b/, 'brand marks are official files')
+    }
+  }
+  assert.doesNotMatch('Join the WhatsApp community', EMOJI)
+  assert.match('\u260e Join the WhatsApp community', EMOJI, 'the check catches the design\'s phone glyph')
+
+  const html = await renderHome({ env: CONFIGURED })
+  assert.doesNotMatch(html.replace(/<svg[\s\S]*?<\/svg>/g, ''), EMOJI)
+  const sources = [...html.matchAll(/<img [^>]*src="([^"]+)"/g)].map(([, src]) => src)
+  for (const src of sources) assert.match(src, /^\/landing\/[\w/-]+\.(?:png|webp|jpe?g|gif)$/, src)
+  for (const brand of ['whatsapp-glyph-white.png', 'whatsapp-glyph-green.png', 'instagram-glyph.png', 'x-logo-black.png']) {
+    assert.ok(sources.includes(`/landing/icons/${brand}`), brand)
+    assert.ok(fs.existsSync(path.join(root, 'public/landing/icons', brand)), brand)
+  }
+  for (const file of fs.readdirSync(path.join(root, 'public/landing'), { recursive: true })) {
+    if (fs.statSync(path.join(root, 'public/landing', file)).isFile()) assert.match(file, /\.(?:png|webp|jpe?g|gif|mp4|webm)$/, file)
+  }
+})
+
 test('landing source keeps client code small, scripts out, colours on tokens and motion optional', () => {
   const dir = __dirname
   const sources = fs.readdirSync(dir).filter(file => /\.(tsx?|css)$/.test(file))
