@@ -80,7 +80,9 @@ export type StudentCatalogueResult =
   | { status: 'signed-out' | 'unavailable' | 'invariant-failure' }
 
 export type CurrentStudentCoursesResult =
-  | { status: 'ok'; selection: SelectionIds; courses: StudentCourse[] }
+  | { status: 'ok'; selection: SelectionIds; courses: StudentCourse[]
+      // Practice bank size (published_cbt_summary) by institutional course id, for courses that offer CBT practice now.
+      cbtBankSizes: ReadonlyMap<string, number> }
   | { status: 'signed-out' | 'missing-profile' | 'incomplete' | 'unavailable' | 'invariant-failure' }
 
 /** Course Detail payload: the validated managed bodies behind the one-course availability flags. */
@@ -328,36 +330,46 @@ async function resolvePublication(
   return { content, learning: { overview, notes, theoryQuestions, theoryPractice }, practice }
 }
 
-/** Catalogue readers keep only availability; payload bodies never reach catalogue rows. */
+type ResolvedContent = { content: StudentCourseContent; practiceBankSize: number | null }
+
+/** Catalogue readers keep only availability and the practice bank size; payload bodies never reach catalogue rows. */
 async function resolvePublishedContent(
   client: StudentClient, repository: LinkedRepository, isFree: boolean, access: AccessReader, bankSizes: BankSizeReader,
-): Promise<LinkedContent | 'signed-out'> {
+): Promise<ResolvedContent | 'signed-out'> {
   const resolved = await resolvePublication(client, repository, isFree, access, bankSizes)
-  return resolved === 'signed-out' ? resolved : resolved.content
+  return resolved === 'signed-out' ? resolved
+    : { content: resolved.content, practiceBankSize: resolved.practice?.bankSize ?? null }
 }
 
 function resolveContent(
   client: StudentClient, structure: Structure, access: AccessReader, bankSizes: BankSizeReader,
-): Promise<StudentCourseContent | 'signed-out'> {
+): Promise<ResolvedContent | 'signed-out'> {
   const { repository } = structure
-  if (repository.state === 'unlinked') return Promise.resolve({ state: 'not-built', reason: 'unlinked' })
+  if (repository.state === 'unlinked') {
+    return Promise.resolve({ content: { state: 'not-built', reason: 'unlinked' }, practiceBankSize: null })
+  }
   return resolvePublishedContent(client, repository, structure.isFree, access, bankSizes)
 }
+
+type ResolvedCourses = { courses: StudentCourse[]; cbtBankSizes: Map<string, number> }
 
 /** Bounded fan-out across linked identities only; one lost session fails the whole read. */
 async function resolveCourses(
   client: StudentClient, structures: ReadonlyArray<Structure>,
-): Promise<StudentCourse[] | 'signed-out'> {
+): Promise<ResolvedCourses | 'signed-out'> {
   const access = accessReader(client)
   const bankSizes = bankSizeReader(client, structures.flatMap(structure => structure.repository.state === 'unlinked' ? []
     : [{ repositoryCourseId: structure.repository.repositoryCourseId, isFree: structure.isFree }]), access)
   const contents = await Promise.all(structures.map(structure => resolveContent(client, structure, access, bankSizes)))
   const courses: StudentCourse[] = []
-  for (const [index, content] of contents.entries()) {
-    if (content === 'signed-out') return 'signed-out'
-    courses.push({ ...structures[index], content })
+  const cbtBankSizes = new Map<string, number>()
+  for (const [index, resolved] of contents.entries()) {
+    if (resolved === 'signed-out') return 'signed-out'
+    const structure = structures[index]
+    courses.push({ ...structure, content: resolved.content })
+    if (resolved.practiceBankSize !== null) cbtBankSizes.set(structure.institutionalCourseId, resolved.practiceBankSize)
   }
-  return courses.sort(compareCodeThenId)
+  return { courses: courses.sort(compareCodeThenId), cbtBankSizes }
 }
 
 /** Every identity the Student App presents as a course row: institutional, or repository-only. */
@@ -425,8 +437,8 @@ export async function getStudentCatalogueForVerifiedStudent(client: StudentClien
       if (structure === null) return { status: 'invariant-failure' }
       if (hasActiveCourseOffering(structure)) structures.push(structure)
     }
-    const courses = await resolveCourses(client, structures)
-    return courses === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', courses }
+    const resolved = await resolveCourses(client, structures)
+    return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', courses: resolved.courses }
   } catch {
     return { status: 'unavailable' }
   }
@@ -451,9 +463,9 @@ export async function getStudentCourseByIdForVerifiedStudent(
     if (!parsed.success || parsed.data.id !== institutionalCourseId) return { status: 'invariant-failure' }
     const structure = deriveStructure(parsed.data, parsed.data.applicability)
     if (structure === null) return { status: 'invariant-failure' }
-    const courses = await resolveCourses(client, [structure])
-    if (courses === 'signed-out') return { status: 'signed-out' }
-    const [course] = courses
+    const resolved = await resolveCourses(client, [structure])
+    if (resolved === 'signed-out') return { status: 'signed-out' }
+    const [course] = resolved.courses
     return course ? { status: 'ok', course } : { status: 'invariant-failure' }
   } catch {
     return { status: 'unavailable' }
@@ -499,8 +511,8 @@ export async function getCurrentStudentCoursesForVerifiedStudent(
       if (structure === null) return { status: 'invariant-failure' }
       structures.push(structure)
     }
-    const courses = await resolveCourses(client, structures)
-    return courses === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', selection, courses }
+    const resolved = await resolveCourses(client, structures)
+    return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', selection, ...resolved }
   } catch {
     return { status: 'unavailable' }
   }
