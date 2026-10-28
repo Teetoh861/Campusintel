@@ -29,8 +29,8 @@ async function lookup(signal: AbortSignal): Promise<Answer | null> {
   return { status: signedIn ? 'signed-in' : 'signed-out', continuityToken }
 }
 
-/** Start from the proxy's server-verified answer. A pending or failed lookup never replaces a known state;
- * only an unknown first render falls back to public chrome when the lookup cannot answer.
+/** Start from the proxy's server-verified answer while a check is pending.
+ * A failed or inconclusive answer clears account controls until a definitive answer arrives.
  */
 export function NavigationSessionProvider({ initial, children }: { initial: ChromeState; children: ReactNode }): ReactElement {
   const [state, setState] = useState<NavigationSession>(() =>
@@ -46,12 +46,13 @@ export function NavigationSessionProvider({ initial, children }: { initial: Chro
       const { signal } = controller
       setState(previous => ({ ...previous, continuityToken: null, version: previous.version + (changed ? 1 : 0) }))
       let answer: Answer | null = null
-      try { answer = await lookup(signal) } catch { /* Keep the presented state; protected routes keep their server guards. */ }
+      try { answer = await lookup(signal) } catch { /* No account answer: show neutral chrome. Server guards remain authoritative. */ }
       if (!active || signal.aborted) return
       setState(previous => {
         if (answer) return { status: answer.status, signedIn: answer.status === 'signed-in', continuityToken: answer.continuityToken,
           version: previous.version + (previous.status === answer.status ? 0 : 1) }
-        return previous.status === 'unknown' ? { ...previous, status: 'signed-out', signedIn: false } : previous
+        return { status: 'unknown', signedIn: false, continuityToken: null,
+          version: previous.version + (previous.status === 'unknown' ? 0 : 1) }
       })
     }
     const visible = (): void => { if (document.visibilityState === 'visible') void refresh() }

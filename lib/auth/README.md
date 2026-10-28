@@ -19,8 +19,9 @@ files), so a refreshed session is saved wherever the student is. Every page is r
 per request: the proxy's live lifecycle answer reaches the root layout as the request-only
 `x-campus-chrome-state` header (always replaced, never taken from the client), and the
 header's first render uses it. It is presentation only. The nav then reads booleans from
-`/api/auth/session` and rechecks on focus/visibility changes; a pending or failed recheck
-keeps the presented state, and only an unknown first render falls back to public chrome.
+`/api/auth/session` and rechecks on focus/visibility changes. A pending recheck keeps
+the server-verified state. Any failed or inconclusive check shows neutral account controls:
+neither sign-in links nor the signed-in menu, until a definitive answer arrives.
 
 Confirmation and recovery emails display `{{ .Token }}` without action links.
 A GET never verifies a code. No email, code, hash or session credential is included

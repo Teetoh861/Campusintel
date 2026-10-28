@@ -49,7 +49,10 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
       },
     })
     const { data, error } = await client.auth.getClaims()
-    if (error || typeof data?.claims?.sub !== 'string' || !data.claims.sub) chrome = 'signed-out'
+    // Only the SDK's explicit no-session answer is signed-out; unclear answers stay neutral.
+    if (error !== null) failed = true
+    else if (data === null) chrome = 'signed-out'
+    else if (typeof data?.claims?.sub !== 'string' || !data.claims.sub) failed = true
     else if (request.method === 'GET' && !request.nextUrl.pathname.startsWith('/api/')) {
       const lifecycle = await readAccountLifecycle(client)
       chrome = lifecycle.status === 'signed-out' ? 'signed-out' : 'signed-in'
