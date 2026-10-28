@@ -173,7 +173,7 @@ test('the briefing states the server brief, requires readiness and names reposit
   assert.match(html, /<h1[^>]*>Practice<\/h1>/)
   assert.match(html, /CBT practice · One timed attempt/)
   assert.match(text(html), /Questions 50 questions Each attempt gives you a new set of questions\./)
-  assert.match(text(html), /Time 60 minutes The timer starts when you press Start practice and keeps running even if you leave this page\./)
+  assert.match(text(html), /Time 60 minutes Once you start, the timer keeps running, even if you leave or lose connection\./)
   assert.match(text(html), /Finishing Submit, or time runs out Your answers save as you go\. If you leave, come back before time runs out to continue\. When time runs out, your saved answers are submitted for you\./)
   assert.doesNotMatch(html, /fresh set|can’t be resumed|ends the attempt/)
   assert.match(html, /role="checkbox"[^>]*aria-checked="false"/)

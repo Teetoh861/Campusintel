@@ -21,12 +21,15 @@ create function pg_temp.c(n text) returns uuid language sql immutable
 create function pg_temp.near(p_a timestamptz, p_b timestamptz) returns boolean language sql immutable
   as $$ select abs(extract(epoch from p_a - p_b)) < 5 $$;
 -- Practice calls as the application server makes them (the caller sets the service role).
+create function pg_temp.whole_bank(p_course uuid, p_size integer) returns boolean
+language sql stable security definer set search_path = ''
+as $$ select count(*) <= p_size from private.practice_pool(p_course) $$;
 create function pg_temp.start(p_user integer, p_attempt integer, p_course text, p_expected integer default 50,
   p_intent text default 'new', p_redo integer default null, p_sections jsonb default '[]', p_size integer default 50,
   p_seconds integer default 1800) returns jsonb language sql
   as $$ select public.practice_start(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.c(p_course), p_intent,
     case when p_redo is null then null else pg_temp.a(p_redo) end, p_size, p_seconds, p_sections, p_expected,
-    p_seconds) $$;
+    p_seconds, pg_temp.whole_bank(pg_temp.c(p_course), p_expected)) $$;
 create function pg_temp.save(p_user integer, p_attempt integer, p_tab integer, p_seq integer, p_base integer,
   p_changes jsonb) returns jsonb language sql
   as $$ select public.practice_save(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.t(p_tab), p_seq, p_base,
@@ -77,7 +80,7 @@ create function pg_temp.leaks(p_value jsonb) returns text[] language sql immutab
 
 -- 1. Structure, privileges and policy --------------------------------------------------------------------------------
 select is((select count(*)::integer from unnest(array[
-    'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer)',
+    'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer,boolean)',
     'public.practice_state(uuid,uuid)', 'public.practice_attempt(uuid,uuid)',
     'public.practice_save(uuid,uuid,uuid,integer,integer,jsonb)',
     'public.practice_submit(uuid,uuid,uuid,integer,integer,jsonb)']) fn
@@ -106,7 +109,7 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid 
       where t in ('timestamptz'::regtype, 'timestamp'::regtype, 'interval'::regtype, 'date'::regtype))), 0,
   'no practice entry point takes a time from its caller');
 select ok(not exists (select 1 from unnest((select proargnames from pg_proc
-    where oid = 'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer)'::regprocedure)) arg
+    where oid = 'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer,boolean)'::regprocedure)) arg
   where arg ~ '(question|answer|item|option|deadline|score)'),
   'a start names no question, answer, deadline or score: the database chooses and decides them');
 select is((select jsonb_build_object('tabs', attempt_tabs, 'batch', sweep_batch, 'legacy', legacy_window)
@@ -303,9 +306,9 @@ select throws_ok($$ select pg_temp.start(1, 4, '08', p_intent => 'redo') $$, '22
   'a redo names the attempt it repeats');
 select is(pg_temp.start(3, 4, '07') ->> 'state', 'locked', 'a student without access cannot start');
 select is(public.practice_start(pg_temp.s(1), pg_temp.a(4), '90000000-0000-4000-8000-000000000001', 'new', null, 50,
-  1800, '[]', 50, 1800) ->> 'state', 'invalid-course', 'an unknown course cannot start');
+  1800, '[]', 50, 1800, false) ->> 'state', 'invalid-course', 'an unknown course cannot start');
 select is(public.practice_start('d2000000-0000-4000-8000-0000000000ff', pg_temp.a(4), pg_temp.c('08'), 'new', null,
-  50, 1800, '[]', 50, 1800) ->> 'state', 'signed-out', 'an unknown session is signed out');
+  50, 1800, '[]', 50, 1800, false) ->> 'state', 'signed-out', 'an unknown session is signed out');
 select is(pg_temp.start(3, 4, '08') ->> 'state', 'ready', 'a free course starts on the free tier');
 reset role;
 

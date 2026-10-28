@@ -23,8 +23,13 @@ function read<T>(store: Store | null, key: string, schema: z.ZodType<T>): T | nu
   } catch { return null }
 }
 
-function write(store: Store | null, key: string, value: unknown): void {
-  try { store?.setItem(key, JSON.stringify(value)) } catch { /* Storage may be unavailable or full. */ }
+function write(store: Store | null, key: string, value: unknown): boolean {
+  if (store === null) return false
+  try {
+    const serialized = JSON.stringify(value)
+    store.setItem(key, serialized)
+    return store.getItem(key) === serialized
+  } catch { return false }
 }
 
 function remove(store: Store | null, key: string): void {
@@ -49,11 +54,11 @@ export function writeFlags(attemptId: string, flags: ReadonlySet<string>): void 
 }
 
 // A start in flight: retried with the same attempt id until the server answers, even across a reload.
-export type PendingStart = { attemptId: string; intent: 'new' | 'redo'; redoOf: string | null; expected: PracticeBrief }
+export type PendingStart = { attemptId: string; intent: 'new' | 'redo'; redoOf: string | null; expected: PracticeBrief & { wholeBank: boolean } }
 const pendingKey = (courseSlug: string) => `practice-start:${courseSlug}`
 const pendingStart = z.object({ attemptId: uuid, intent: z.enum(['new', 'redo']), redoOf: uuid.nullable(),
   expected: z.object({ questionCount: z.number().int().min(1).max(MAX_QUESTIONS),
-    durationSeconds: z.number().int().positive() }).strict() }).strict()
+    durationSeconds: z.number().int().positive(), wholeBank: z.boolean() }).strict() }).strict()
 
 export function readPendingStart(courseSlug: string): PendingStart | null {
   return read(session(), pendingKey(courseSlug), pendingStart)
@@ -72,7 +77,8 @@ export function readUnsent(attemptId: string, options: ReadonlyMap<string, numbe
     .filter(([id, index]) => index < (options.get(id) ?? 0)))
   return { answers, dirty: stored.dirty.filter(id => options.has(id)) }
 }
-export function writeUnsent(attemptId: string, sheet: UnsentSheet): void { write(session(), unsentKey(attemptId), sheet) }
+/** True only when this exact pending sheet can be read back from this device. */
+export function writeUnsent(attemptId: string, sheet: UnsentSheet): boolean { return write(session(), unsentKey(attemptId), sheet) }
 export function clearUnsent(attemptId: string): void { remove(session(), unsentKey(attemptId)) }
 
 // Results this device has shown, so a course page visit shows a result the student has not seen yet (time ran out
