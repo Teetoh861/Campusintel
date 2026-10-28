@@ -141,6 +141,8 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
 }))
 
 test('Dashboard actions stay arrow-free with their labels, destinations and keyboard focus families intact', async () => fixture(async f => {
+  // A student with courses: an empty list has no View my courses (below).
+  f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
   const actions = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
     .filter(([, attributes]) => /class="[^"]*\bdashboard-(?:primary-action|practice-action|material-card|utility-row)\b/.test(attributes))
@@ -319,10 +321,15 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
     ['Your courses are not available yet.'])
   assert.doesNotMatch(empty, FIGURES)
   assert.equal(continueCard(empty), undefined)
+  // My Courses would open empty, so the card offers no way there.
+  assert.doesNotMatch(courseCard(empty), /View my courses|href="\/my-courses"/)
+  assert.equal(courseCard(empty).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+    'This semester Your courses Your courses are not available yet.')
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()
     assert.match(courseCard(html), /Course information is temporarily unavailable/)
+    assert.match(courseCard(html), />View my courses</, 'only an empty list loses the link')
     assert.doesNotMatch(html, FIGURES)
     assert.doesNotMatch(html, /Continue practising/)
   }

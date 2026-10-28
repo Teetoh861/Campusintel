@@ -15,11 +15,12 @@ create function pg_temp.a(n integer) returns uuid language sql immutable
   as $$ select ('e3000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid $$;
 create function pg_temp.c(n text) returns uuid language sql immutable
   as $$ select ('40000000-0000-4000-8000-0000000000' || n)::uuid $$;
--- Practice calls as the application server makes them (the caller sets the service role). Five questions per attempt.
+-- Practice calls as the application server makes them (the caller sets the service role). Five questions per attempt;
+-- both courses used (07: 150 questions, 08: 100) have larger banks, so an attempt is never the whole bank.
 create function pg_temp.start(p_user integer, p_attempt integer, p_course text, p_seconds integer default 1800)
   returns jsonb language sql
   as $$ select public.practice_start(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.c(p_course), 'new', null, 5,
-    p_seconds, '[]', 5, p_seconds) $$;
+    p_seconds, '[]', 5, p_seconds, false) $$;
 -- A sheet answering the first p_answered questions: p_right right answers then wrong ones; the rest are left
 -- unanswered (fixture read as the owner).
 create function pg_temp.sheet(p_attempt integer, p_right integer, p_answered integer) returns jsonb language sql stable

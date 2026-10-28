@@ -48,8 +48,9 @@ export function PrimaryCards({ home }: { home: HomeCourses | null }): ReactEleme
         <div className="dashboard-file-content">
           <h2 id="my-courses-title">Your courses</h2>
           <CourseList home={home} />
-          <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
-            className={`dashboard-primary-action ${studentFocusControl}`}>View my courses</Link>
+          {/* An empty list has nothing to view: My Courses would open empty. */}
+          {(home === null || home.courses.length > 0) && <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+            className={`dashboard-primary-action ${studentFocusControl}`}>View my courses</Link>}
         </div>
       </div>
     </section>
