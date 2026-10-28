@@ -16,7 +16,7 @@ export const activationRow = z.discriminatedUnion('state', [
   z.object({ state: z.literal('early-access-active'), available_from: timestamp }),
   // retention_months is still sent for builds from before 20261023120000; this build never shows it.
   z.object({ state: z.literal('already-claimed'), retention_months: z.number().int().positive().optional() }),
-  z.object({ state: z.enum(['signed-out', 'capacity', 'trial-not-offered']) }),
+  z.object({ state: z.enum(['signed-out', 'capacity', 'trial-not-offered', 'selection-changed']) }),
   // The claim-key configuration cannot verify every unexpired claim: nothing was decided (fail closed).
   z.object({ state: z.enum(['claim-key-missing', 'claim-key-replaced']) }),
 ])
@@ -29,13 +29,13 @@ export type EntitlementEnv = {
   /** The per-account request limit (the requester address is monitored, never a barrier). `limited` means the
    *  database is not asked at all. */
   limit(): Promise<'allowed' | 'limited'>
-  /** Null when the database answer was missing or malformed. */
-  activate(): Promise<ActivationRow | null>
+  /** Null when the database answer was missing or malformed. Bound to the profile revision when one is given. */
+  activate(profileRevision?: number): Promise<ActivationRow | null>
 }
 
-async function activatePass(env: EntitlementEnv): Promise<EntitlementResult> {
+async function activatePass(env: EntitlementEnv, profileRevision: number | undefined): Promise<EntitlementResult> {
   if (await env.limit() === 'limited') return { status: 'rate-limited' }
-  const row = await env.activate()
+  const row = await env.activate(profileRevision)
   if (row === null) return { status: 'unavailable' }
   if (row.state === 'activated') return { status: 'pass-activated', endsAt: row.ends_at }
   if (row.state === 'already-activated') return { status: 'already-activated', endsAt: row.ends_at }
@@ -54,6 +54,6 @@ async function activatePass(env: EntitlementEnv): Promise<EntitlementResult> {
 export function executeEntitlementCommand(env: EntitlementEnv, command: EntitlementCommand): Promise<EntitlementResult> {
   // One command today; the switch keeps a future command from silently activating a pass.
   switch (command.action) {
-    case 'activate-discovery-pass': return activatePass(env)
+    case 'activate-discovery-pass': return activatePass(env, command.profileRevision)
   }
 }

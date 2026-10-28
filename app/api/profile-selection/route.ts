@@ -18,7 +18,7 @@ function privateJson(body: Record<string, unknown>, status = 200): NextResponse 
 function finish(response: NextResponse, state: StudentProfileState): Response {
   const status = state.status === 'signed-out' ? 401
     : state.status === 'invalid-selection' ? 400
-    : state.status === 'conflict' || state.status === 'missing-profile' || state.status === 'invariant-failure' || state.status === 'session-changed' ? 409
+    : state.status === 'conflict' || state.status === 'locked' || state.status === 'missing-profile' || state.status === 'invariant-failure' || state.status === 'session-changed' ? 409
     : state.status === 'unavailable' ? 503 : 200
   // Keep the exact response headers, including any session rotation/clearing cookies.
   return new Response(JSON.stringify(state), { status, headers: response.headers })

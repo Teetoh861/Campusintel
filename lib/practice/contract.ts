@@ -30,7 +30,7 @@ export const practiceCommandSchema = z.discriminatedUnion('action', [
   // they confirmed. Size, duration and sections are the server's own; the database draws the questions.
   z.object({ action: z.literal('start'), courseSlug, attemptId: uuid, intent: z.enum(['new', 'redo']),
     redoOf: uuid.nullable(), expected: z.object({ questionCount: z.number().int().min(1).max(MAX_QUESTIONS),
-      durationSeconds: z.number().int().min(1).max(10_800) }).strict() }).strict(),
+      durationSeconds: z.number().int().min(1).max(10_800), wholeBank: z.boolean() }).strict() }).strict(),
   // One of the student's own attempts: open to resume, or graded for its result and review.
   z.object({ action: z.literal('attempt'), attemptId: uuid }).strict(),
   z.object({ action: z.literal('save'), ...delta, sequence: sequence.min(1),

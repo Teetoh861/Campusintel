@@ -12,6 +12,7 @@ import { AUTH_CONTINUITY_HEADER, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/aut
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { FIRST_NAME_ERROR, FIRST_NAME_MAX_LENGTH, firstNameSchema } from '@/lib/profile/first-name'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
+import { CoursesSetNotice } from './CoursesSetNotice'
 import type { FormEvent, ReactElement } from 'react'
 
 const focusRingNavy = studentFocusControl
@@ -21,6 +22,11 @@ type Draft = { departmentId: string; academicLevelId: string; academicPeriodId: 
 type Choice = { id: string; label: string }
 type Field = keyof Draft
 type Notice = { message: string; reload?: boolean; field?: Field }
+/** open: courses can change; first-pick: a plan is running, so this first save sets them; locked: set for the semester. */
+export type CourseSelectionMode = 'open' | 'first-pick' | 'locked'
+
+export const FIRST_PICK_WARNING = 'Your courses will be set for this semester once you save.'
+export const CHANGED_ELSEWHERE = 'Your courses were just updated. Check them and try again.'
 
 const FIELD_ERRORS: Record<Field, { id: string; message: string }> = {
   first_name: { id: 'first-name-error', message: FIRST_NAME_ERROR },
@@ -63,8 +69,12 @@ function isSelectable(options: Choice[], id: string): boolean {
 }
 
 /** Keep only a draft in browser memory; successful navigation requires a confirmed server save. */
-export function ProfileSelectionForm({ initial, continuityToken }: { initial: ProfileView; continuityToken: string }): ReactElement {
+export function ProfileSelectionForm({ initial, continuityToken, mode = 'open' }: {
+  initial: ProfileView; continuityToken: string; mode?: CourseSelectionMode
+}): ReactElement {
   const [draft, setDraft] = useState<Draft>(() => initialDraft(initial))
+  // Only a saved selection can be shown as set; the database refusal (CI423) switches an open form to this view.
+  const [locked, setLocked] = useState(mode === 'locked' && initial.selection !== undefined)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [pending, setPending] = useState(false)
   const [ready, setReady] = useState(false)
@@ -96,6 +106,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
     if (!ready || lock.current || conflict.current) return
     const name = firstNameSchema.safeParse(draft.first_name)
     const missingField: Field | null = !name.success ? 'first_name'
+      : locked ? null
       : !isSelectable(departments, draft.departmentId) ? 'departmentId'
       : !isSelectable(academicLevels, draft.academicLevelId) ? 'academicLevelId'
         : !isSelectable(academicPeriods, draft.academicPeriodId) ? 'academicPeriodId' : null
@@ -113,10 +124,13 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
     setPending(true)
     setNotice(null)
     let navigating = false
+    // While the courses are set only the name changes; the saved selection is sent back as it is.
+    const submitted = locked && initial.selection ? { ...draft, departmentId: initial.selection.department.id,
+      academicLevelId: initial.selection.academicLevel.id, academicPeriodId: initial.selection.academicPeriod.id } : draft
     try {
       const response = await fetch(PROFILE_API, {
         method: 'PUT', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken }, body: JSON.stringify({ ...draft, expectedRevision }),
+        headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken }, body: JSON.stringify({ ...submitted, expectedRevision }),
       })
       const body: unknown = await response.json()
       if (response.status === 401 && body && typeof body === 'object' && 'status' in body && body.status === 'signed-out') {
@@ -135,11 +149,17 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
         setNotice(null)
         return
       }
+      if (response.status === 409 && body && typeof body === 'object' && 'status' in body && body.status === 'locked' &&
+          initial.selection !== undefined) {
+        setLocked(true)
+        setDraft(value => ({ ...value, ...initialDraft(initial), first_name: value.first_name }))
+        return
+      }
       if (response.ok) {
         const parsed = savedResponseSchema.safeParse(body)
-        if (parsed.success && parsed.data.revision > expectedRevision && parsed.data.selection.department.id === draft.departmentId &&
-            parsed.data.selection.academicLevel.id === draft.academicLevelId &&
-            parsed.data.selection.academicPeriod.id === draft.academicPeriodId &&
+        if (parsed.success && parsed.data.revision > expectedRevision && parsed.data.selection.department.id === submitted.departmentId &&
+            parsed.data.selection.academicLevel.id === submitted.academicLevelId &&
+            parsed.data.selection.academicPeriod.id === submitted.academicPeriodId &&
             parsed.data.firstName === draft.first_name.trim()) {
           navigating = true
           window.location.replace(STUDENT_HOME_PATH)
@@ -176,6 +196,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
       <h2 id="current-selection-heading" className="font-semibold text-student-text-primary">Current selection</h2>
       <SelectionSummary selection={initial.selection} />
     </section>}
+    {locked && <CoursesSetNotice />}
     <div className="grid gap-3 tablet:grid-cols-2 tablet:gap-4">
       <div className="space-y-1 tablet:col-span-2">
         <label htmlFor="first-name" className="block font-semibold text-student-text-primary">First name</label>
@@ -185,6 +206,7 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
           aria-describedby={notice?.field === 'first_name' ? FIELD_ERRORS.first_name.id : undefined}
           value={draft.first_name} onChange={event => { setDraft(value => ({ ...value, first_name: event.target.value })); setNotice(null) }} />
       </div>
+      {!locked && <>
       <div className="space-y-1 tablet:col-span-2">
         <label htmlFor="department" className="block font-semibold text-student-text-primary">Department</label>
         <select id="department" ref={departmentRef} required disabled={!ready || pending} className={selectClass}
@@ -228,9 +250,10 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
           {academicPeriods.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
       </div>
+      </>}
     </div>
     {stale && <div className="space-y-1">
-      <Feedback compact tone="error" message="Your profile changed elsewhere. Reload the latest profile before saving again." />
+      <Feedback compact tone="error" message={CHANGED_ELSEWHERE} />
       <button ref={reloadRef} type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}
         onClick={() => window.location.reload()}>Reload latest profile</button>
     </div>}
@@ -238,10 +261,11 @@ export function ProfileSelectionForm({ initial, continuityToken }: { initial: Pr
       <Feedback compact tone="error" message={notice.message} />
       {notice.reload && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
     </div>}
+    {mode === 'first-pick' && !locked && <p className="text-sm text-student-text-secondary" data-first-pick="">{FIRST_PICK_WARNING}</p>}
     <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
       <button type="submit" disabled={!ready || pending || stale} aria-busy={pending}
         className={buttonClassName(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', studentFocusDark)}>
-        {pending ? 'Saving…' : 'Save selection'}
+        {pending ? 'Saving…' : locked ? 'Save name' : 'Save selection'}
       </button>
       {initial.status === 'complete' && <Link href={AUTH_PATHS.account}
         className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>

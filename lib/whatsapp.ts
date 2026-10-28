@@ -16,3 +16,15 @@ export function buildWhatsAppUrl(message?: string): string {
   if (!message) return base
   return `${base}?text=${encodeURIComponent(message)}`
 }
+
+// Course changes during a locked semester go through the team. Generic on purpose: no name, email or course in the
+// link (D10); the team asks for the account email in the chat.
+export const COURSE_CHANGE_MESSAGE = 'Hello CampusIntell, I need a change to my courses for this semester.'
+const WHATSAPP_NUMBER_FORMAT = /^[0-9]{8,15}$/
+
+/** Where "Message us" goes: WhatsApp when a number is configured, otherwise Help & Support. */
+export function courseChangeContact(fallback: string, number: string = WHATSAPP_NUMBER): { href: string; external: boolean } {
+  return WHATSAPP_NUMBER_FORMAT.test(number)
+    ? { href: `${WA_BASE}${number}?text=${encodeURIComponent(COURSE_CHANGE_MESSAGE)}`, external: true }
+    : { href: fallback, external: false }
+}

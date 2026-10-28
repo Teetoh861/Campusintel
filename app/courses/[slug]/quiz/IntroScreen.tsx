@@ -4,12 +4,13 @@
 import { useId, useState } from 'react'
 import Link from 'next/link'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
-import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ProblemNotice } from './ProblemNotice'
 import { PRACTICE_COPY, minutesOf, plural, practiceIdentity } from './practice-presentation'
+import type { PracticeProblem } from './practice-presentation'
 import type { PracticeBrief } from './types'
 import type { ReactElement } from 'react'
 
@@ -24,14 +25,15 @@ type Props = {
   wholeBank: boolean
   briefingVersion: number
   starting: boolean
-  error: { title: string; body: string } | null
+  error: PracticeProblem | null
   lastResultHref: string | null
   onStart: () => void
+  onRetry: () => void
 }
 
 /** Readiness is tied to the briefing version, so changed conditions always ask again. */
 export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, brief, wholeBank, briefingVersion,
-  starting, error, lastResultHref, onStart }: Props): ReactElement {
+  starting, error, lastResultHref, onStart, onRetry }: Props): ReactElement {
   const [readyVersion, setReadyVersion] = useState<number | null>(null)
   const id = useId()
   const ready = readyVersion === briefingVersion
@@ -46,7 +48,7 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
           : 'Each attempt gives you a new set of questions.'}
       </Fact>
       <Fact label="Time" value={plural(minutes, 'minute')}>
-        The timer starts when you press Start practice and keeps running even if you leave this page.
+        {PRACTICE_COPY.timerRule}
       </Fact>
       <Fact label="Answering" value="One answer per question">
         Move freely between questions, flag any to revisit, and leave questions unanswered if you choose.
@@ -72,7 +74,7 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
       {ready ? 'The timer starts as soon as you press Start practice.' : 'Confirm you’re ready to start.'}
     </p>
     {starting ? <p role="status" className="student-practice-help">{PRACTICE_COPY.starting}</p> : null}
-    {error ? <div className="mt-5"><Notice title={error.title}>{error.body}</Notice></div> : null}
+    {error ? <div className="mt-5"><ProblemNotice problem={error} busy={starting} onRetry={onRetry} /></div> : null}
     {lastResultHref ? <p className="student-practice-help mt-5">
       <Link href={lastResultHref} prefetch={false} className="underline">{PRACTICE_COPY.lastResult}</Link>
     </p> : null}

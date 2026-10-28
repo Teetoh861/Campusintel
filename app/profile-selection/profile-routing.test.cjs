@@ -26,7 +26,7 @@ async function fixture(run) {
     require.resolve('../account/page.tsx'), require.resolve('./page.tsx'),
     require.resolve('../../components/auth/SignedOutGate.tsx'),
   ]
-  const state = { enabled: true, user: { id: 'student', email: 'student@example.test' }, deletionAllowed: true, profile: { status: 'incomplete', revision: 0, firstName: null, options }, reads: 0 }
+  const state = { courses: { state: 'incomplete', locked: false, lastDay: null }, plan: { status: 'ok', entitlement: { tier: 'free', trial: { status: 'available' } } }, enabled: true, user: { id: 'student', email: 'student@example.test' }, deletionAllowed: true, profile: { status: 'incomplete', revision: 0, firstName: null, options }, reads: 0 }
   const redirect = path => { throw new Error('redirect:' + path) }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -43,7 +43,12 @@ async function fixture(run) {
         getStudentSessionContext: async () => state.user === null ? null : { user: state.user, sessionId: 'fixture-session' },
         hasStudentSession: async () => state.user !== null,
       }
-      if (name === '@/lib/supabase/server') return { createClient: async () => ({ fixture: 'verified client' }) }
+      if (name === '@/lib/supabase/server') return { createClient: async () => {
+        if (state.clientError) throw new Error('read transport unavailable')
+        return { fixture: 'verified client' }
+      } }
+      if (name === '@/lib/profile/course-selection') return { readCourseSelection: async () => state.courses }
+      if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => state.plan }
       if (name === '@/lib/account/lifecycle') return { readAccountLifecycle: async () => ({ status: 'active', deletionAllowed: state.deletionAllowed }) }
       if (name === '@/lib/profile/student-profile') {
         const read = async () => { state.reads++; return state.profile }
@@ -179,4 +184,47 @@ test('Profile selection uses the student workspace for incomplete, complete and 
   assert.match(nodes(page).find(node => node.props?.className?.includes('student-surface'))?.props.className,
     /student-surface/)
   assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
+}))
+
+
+test('an unknown course lock withholds the form and asks for a refresh', async () => fixture(async f => {
+  for (const status of ['incomplete', 'complete']) {
+    f.state.profile = { status, revision: 0, firstName: 'Adaeze', options, ...(status === 'complete' ? { selection } : {}) }
+    f.state.courses = null
+    const page = await f.selectionPage()
+    assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
+    assert.equal(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message,
+      "We couldn't load your courses. Refresh the page to try again.")
+  }
+}))
+
+test('an unknown plan cannot allow a first pick without knowing whether it will lock', async () => fixture(async f => {
+  for (const status of ['unavailable', 'signed-out']) {
+    f.state.plan = { status }
+    const page = await f.selectionPage()
+    assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
+    assert.equal(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message,
+      "We couldn't load your courses. Refresh the page to try again.")
+  }
+  f.state.plan = { status: 'ok', entitlement: { tier: 'full', trial: { status: 'unavailable' } } }
+  assert.equal(nodes(await f.selectionPage()).find(node => node.type?.name === 'ProfileSelectionForm')?.props.mode, 'first-pick',
+    'a known active plan still shows the first-pick warning')
+}))
+
+test('locked courses have a title and description for the name edit only', async () => fixture(async f => {
+  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
+  f.state.courses = { state: 'locked', locked: true, lastDay: '2027-03-08' }
+  const page = await f.selectionPage()
+  assert.equal(page.props.title, 'Your details')
+  assert.equal(page.props.description, 'Update your first name.')
+  assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.mode, 'locked')
+}))
+
+
+test('a thrown course-read setup failure also withholds the form', async () => fixture(async f => {
+  f.state.clientError = true
+  const page = await f.selectionPage()
+  assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
+  assert.equal(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message,
+    "We couldn't load your courses. Refresh the page to try again.")
 }))

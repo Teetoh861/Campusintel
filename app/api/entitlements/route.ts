@@ -23,6 +23,7 @@ const HTTP_STATUS: Partial<Record<EntitlementResultStatus, number>> = {
   'already-claimed': 409,
   'early-access-active': 409,
   'trial-not-offered': 403,
+  'selection-changed': 409,
 }
 
 function privateJson(body: unknown, status: number, headers?: Headers): Response {
