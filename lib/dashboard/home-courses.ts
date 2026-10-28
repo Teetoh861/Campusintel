@@ -79,7 +79,8 @@ export function homeCoursesFrom(courses: ReadonlyArray<StudentCourse>, cbtBankSi
           : { practised: own.practised, total: cbtBankSizes.get(course.institutionalCourseId) ?? null,
             lastScore: own.lastScore } }
     }),
-    continuePractice: progress.status === 'ok' ? continuePracticeFrom(progress, courses) : null,
+    // An empty list shows only its sentence: nothing to continue, whatever was practised before.
+    continuePractice: progress.status === 'ok' && courses.length > 0 ? continuePracticeFrom(progress, courses) : null,
   }
 }
 

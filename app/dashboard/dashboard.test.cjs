@@ -69,6 +69,9 @@ test('sprint plan 23 Oct item 2: home is a real personalized command centre with
   for (const text of ['Welcome back, Ọlá', 'Business Administration', '200 Level', 'First Semester',
     'Your courses', 'Practice', 'All Courses', 'Bookmarks', 'Request Material', 'Help &amp; Support', 'Account', 'Waitlist']) assert.ok(html.includes(text), text)
   assert.doesNotMatch(html, /streak|GPA|credits remaining|Tobi|not-a-name@|Saved files/)
+  // The approved heading, with the student's own verified semester.
+  assert.match(courseCard(html), /<h2 id="my-courses-title">Your courses · First semester<\/h2>/)
+  assert.doesNotMatch(html, /This semester/)
   assert.equal(f.state.profileReads, 1)
   assert.equal(f.state.courseReads, 1)
   assert.deepEqual(f.state.progressReads, ['session'], 'one practice read for every course, for the verified session')
@@ -313,8 +316,10 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   assert.match(courseCard(await f.html()), /Your courses are not available yet\./)
   assert.doesNotMatch(courseCard(await f.html()), /0 courses|ready to study/)
   assert.equal(items(await f.html()).length, 0)
-  started(f, [['repository-0', { practised: 3, lastScore: { score: 2, total: 3 } }]])
-  f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-0', contentKey: 'course-0' } }
+  // Earlier practice in a real shelf course (GST111, Use of English), which the static shelf would otherwise resolve.
+  const GST111 = { courseId: '40000000-0000-4000-8000-000000000008', contentKey: 'use-of-english' }
+  started(f, [[GST111.courseId, { practised: 3, lastScore: { score: 2, total: 3 } }]])
+  f.state.progress = { ...f.state.progress, latest: GST111 }
   // EST's decision: an empty list shows that one sentence and no extra detail, even after earlier practice.
   const empty = await f.html()
   assert.deepEqual([...courseCard(empty).matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(match => match[1]),
@@ -324,7 +329,7 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   // My Courses would open empty, so the card offers no way there.
   assert.doesNotMatch(courseCard(empty), /View my courses|href="\/my-courses"/)
   assert.equal(courseCard(empty).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
-    'This semester Your courses Your courses are not available yet.')
+    'Your courses · First semester Your courses are not available yet.')
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()

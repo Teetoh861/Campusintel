@@ -70,7 +70,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">
     <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
     {home?.continuePractice && <ContinueCard next={home.continuePractice} />}
-    <PrimaryCards home={home} />
+    <PrimaryCards home={home} semester={profile.selection.academicPeriod.label} />
     <SupportingActions />
   </StudentPage></>
 }

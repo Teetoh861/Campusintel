@@ -37,16 +37,20 @@ function CourseList({ home }: { home: HomeCourses | null }): ReactElement {
   return <ul className="dashboard-course-list">{home.courses.map(course => <CourseItem key={course.id} course={course} />)}</ul>
 }
 
+/** "First Semester" → "First semester", for the approved heading "Your courses · First semester". */
+function sentenceCase(label: string): string {
+  return label.charAt(0) + label.slice(1).toLowerCase()
+}
+
 /** Two primary surfaces: the semester's courses and current/future personal practice. */
-export function PrimaryCards({ home }: { home: HomeCourses | null }): ReactElement {
+export function PrimaryCards({ home, semester }: { home: HomeCourses | null; semester: string }): ReactElement {
   const aiAvailable = isAiPracticeAvailable()
   return <section aria-label="Study and practice" className="dashboard-primary-grid">
     <section aria-labelledby="my-courses-title" className="dashboard-course-file student-enter student-enter-1">
-      <span className="dashboard-file-tab">This semester</span>
       <div className="dashboard-file-body">
         <CBrandTexture />
         <div className="dashboard-file-content">
-          <h2 id="my-courses-title">Your courses</h2>
+          <h2 id="my-courses-title">Your courses · {sentenceCase(semester)}</h2>
           <CourseList home={home} />
           {/* An empty list has nothing to view: My Courses would open empty. */}
           {(home === null || home.courses.length > 0) && <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}

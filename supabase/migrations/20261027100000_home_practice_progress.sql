@@ -27,6 +27,10 @@ begin
   if v_user is null then return jsonb_build_object('state', 'signed-out'); end if;
   perform pg_advisory_xact_lock(hashtextextended('practice-account:' || v_user::text, 0));
   perform private.close_overdue_practice(v_user);
+  -- Locks may have waited past logout or expiry: only a live session reads its progress.
+  if private.ai_practice_session_user(p_session_id) is distinct from v_user then
+    return jsonb_build_object('state', 'signed-out');
+  end if;
   return jsonb_build_object('state', 'ok', 'now', clock_timestamp(),
     -- The open attempt closest to its deadline (one per course at most).
     'open', (select jsonb_build_object('course_id', a.course_id, 'content_key', c.content_key,
