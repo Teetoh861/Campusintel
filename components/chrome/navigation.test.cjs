@@ -1,4 +1,5 @@
-// components/chrome/navigation.test.cjs — Restricted public chrome, shared session reconciliation and student-menu transitions.
+// components/chrome/navigation.test.cjs — First-render session state, restricted public chrome, shared session reconciliation
+// and student-menu transitions.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -15,6 +16,13 @@ const links = tree => nodes(tree).filter(node => node.props?.href)
 const accountControls = f => nodes(f.nav()).filter(node => node.type?.name === 'NavigationAccountControls')
   .flatMap(node => nodes(node.type(node.props)))
 
+function studentHeader(f) {
+  const html = header(f)
+  assert.doesNotMatch(html, /Sign in|Create account|href="\/login"|href="\/register"/)
+  assert.match(html, /href="\/courses"/)
+  assert.match(html, /Open menu/)
+}
+
 function publicHeader(f) {
   const html = header(f)
   assert.match(html, /Campus.*Intell/)
@@ -25,13 +33,21 @@ function publicHeader(f) {
   assert.equal(nodes(f.nav()).some(node => node.type === f.sheet.SheetContent), false)
 }
 
-test('initial, failed, malformed, disabled and signed-out session status never exposes app navigation', async () => fixture(async f => {
+function neutralHeader(f) {
+  const html = header(f)
+  assert.match(html, /Campus.*Intell/)
+  assert.doesNotMatch(html, /Sign in|Create account|Open menu|href="\/(?:login|register|courses|account)"/)
+  assert.equal((html.match(/<a /g) || []).length, 1, 'neutral chrome keeps only the brand link')
+  assert.equal(f.state().status, 'unknown')
+  assert.equal(f.state().signedIn, false)
+  assert.doesNotMatch(renderToStaticMarkup(f.footer()), forbidden)
+}
+
+test('definitive disabled and signed-out session status presents public navigation', async () => fixture(async f => {
   publicHeader(f)
-  for (const [body, status] of [[{ error: 'unavailable' }, 503], [{}, 200],
-    [{ enabled: true, signedIn: 'yes' }, 200], [{ enabled: false, signedIn: true }, 200],
-    [{ enabled: true, signedIn: false }, 200]]) {
+  for (const body of [{ enabled: false, signedIn: true }, { enabled: true, signedIn: false }]) {
     f.change(); publicHeader(f)
-    await f.respond(body, status); publicHeader(f)
+    await f.respond(body); publicHeader(f)
   }
   const footer = renderToStaticMarkup(f.footer())
   assert.doesNotMatch(footer, forbidden)
@@ -158,16 +174,19 @@ test('student sheet closes on link navigation, route changes, desktop resize and
   assert.equal(f.nav().props.open, false)
   open(); f.resize(1200)
   assert.equal(f.nav().props.open, false)
-  open(); f.change(); publicHeader(f)
+  open(); f.change(); f.nav()
+  assert.equal(f.nav().props.open, false, 'another document changing the account closes the sheet at once')
+  studentHeader(f)
   await f.respond({ enabled: true, signedIn: true })
   assert.equal(f.nav().props.open, false, 'replacement sign-in cannot restore an old open sheet')
-  open(); f.win.dispatchEvent(new Event(AUTH_STATUS_EVENT)); await f.settle(); publicHeader(f)
+  open(); f.win.dispatchEvent(new Event(AUTH_STATUS_EVENT)); await f.settle(); f.nav()
+  assert.equal(f.nav().props.open, false); studentHeader(f)
   await f.respond({ enabled: true, signedIn: false }); publicHeader(f)
   f.change(); await f.respond({ enabled: true, signedIn: true })
   assert.match(header(f), /href="\/dashboard"/)
 }))
 
-test('aborted delayed lookups cannot restore student navigation after sign-out or failure', async () => fixture(async f => {
+test('aborted delayed lookups cannot restore student navigation after sign-out', async () => fixture(async f => {
   const stale = f.requests[0]
   f.change()
   assert.equal(stale.options.signal.aborted, true)
@@ -175,21 +194,62 @@ test('aborted delayed lookups cannot restore student navigation after sign-out o
   await f.respond({ enabled: true, signedIn: true }, 200, stale); publicHeader(f)
   f.change(); await f.respond({ enabled: true, signedIn: true })
   assert.equal(f.state().signedIn, true)
-  f.change(); await f.respond({ error: 'unavailable' }, 503); publicHeader(f)
+  f.change(); await f.respond({ enabled: true, signedIn: false }); publicHeader(f)
   assert.doesNotMatch(renderToStaticMarkup(f.footer()), forbidden)
 }))
 
-test('focus, visibility and browser restore invalidate shared navigation presentation', async () => fixture(async f => {
-  for (const event of ['focus', 'pageshow']) {
-    await f.respond({ enabled: true, signedIn: true })
+test('a failed or malformed re-check becomes neutral until a definitive answer', async () => fixture(async f => {
+  await f.respond({ enabled: true, signedIn: true }); studentHeader(f)
+  for (const [body, status] of [[{ error: 'unavailable' }, 503], [{}, 200], [{ enabled: true, signedIn: 'yes' }, 200],
+    [{ enabled: true, signedIn: true }, 200]]) {
+    f.change(); await f.respond({ enabled: true, signedIn: true }); studentHeader(f)
+    f.change(); studentHeader(f)
+    // The last body is signed-in without a rendered logout identity, which is not an answer either.
+    await f.respond(status === 200 && body.signedIn === true ? { ...body, continuityToken: null } : body, status)
+    neutralHeader(f)
+    assert.equal(f.state().continuityToken, null, 'no logout identity survives an unanswered lookup')
+  }
+}))
+
+test('focus, visibility and browser restore re-check without presenting signed-out while waiting', async () => fixture(async f => {
+  await f.respond({ enabled: true, signedIn: true })
+  for (const event of ['focus', 'pageshow', 'visibilitychange']) {
+    const before = f.requests.length
     const restored = new Event(event)
     if (event === 'pageshow') Object.defineProperty(restored, 'persisted', { value: true })
-    f.win.dispatchEvent(restored); await f.settle(); publicHeader(f)
+    ;(event === 'visibilitychange' ? f.doc : f.win).dispatchEvent(restored); await f.settle()
+    assert.equal(f.requests.length, before + 1, `${event} starts a lookup`)
+    studentHeader(f)
+    assert.equal(f.state().version, 1, 'an ordinary re-check never closes open chrome')
+    await f.respond({ enabled: true, signedIn: true }); studentHeader(f)
   }
-  await f.respond({ enabled: true, signedIn: true })
-  f.doc.dispatchEvent(new Event('visibilitychange')); await f.settle(); publicHeader(f)
+  f.win.dispatchEvent(new Event('focus')); await f.settle(); studentHeader(f)
+  await f.respond({ enabled: true, signedIn: false }); publicHeader(f)
   assert.ok(f.requests.every(request => request.options.cache === 'no-store' && request.options.credentials === 'same-origin'))
 }))
+
+test('a signed-in first render presents student chrome before any lookup answers', async () => fixture(async f => {
+  assert.equal(f.requests.length, 1, 'the lookup still runs')
+  studentHeader(f)
+  assert.equal(f.state().continuityToken, null, 'logout identity still comes only from the lookup')
+  assert.match(renderToStaticMarkup(f.footer()), /class="student-footer"/)
+  await f.respond({ error: 'unavailable' }, 503); neutralHeader(f)
+  f.change(); await f.respond({ enabled: true, signedIn: false }); publicHeader(f)
+}, { initial: 'signed-in' }))
+
+test('an unknown first render shows neither account entry nor student navigation until the lookup answers', async () => fixture(async f => {
+  const neither = () => {
+    const html = header(f)
+    assert.doesNotMatch(html, /Sign in|Create account|Open menu|href="\/(?:login|register|courses|account)"/)
+    assert.doesNotMatch(renderToStaticMarkup(f.footer()), forbidden)
+  }
+  neither()
+  await f.respond({ enabled: true, signedIn: true }); studentHeader(f)
+}, { initial: 'unknown' }))
+
+test('a failed initial status check keeps the unknown account slot neutral', async () => fixture(async f => {
+  await f.respond({ error: 'unavailable' }, 503); neutralHeader(f)
+}, { initial: 'unknown' }))
 
 test('logout presentation requests rendered continuity and rejects signed-in responses missing it', async () => fixture(async f => {
   assert.equal(f.requests[0].options.headers['x-campus-logout-context'], 'true')

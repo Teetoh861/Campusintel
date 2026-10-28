@@ -189,14 +189,13 @@ test('learning routes are per-request, never prerendered, and covered by session
     assert.match(source, /export const dynamic = 'force-dynamic'/, file)
     assert.doesNotMatch(source, /generateStaticParams|'use client'/, file)
   }
-  for (const matcher of ['/courses/:path*', '/materials', '/bookmarks', '/account/:path*', '/dashboard/:path*', '/profile-selection']) {
-    assert.ok(config.matcher.includes(matcher), matcher)
+  const { unstable_doesMiddlewareMatch } = require('next/experimental/testing/server')
+  for (const url of ['/courses', '/courses/test/quiz', '/materials', '/bookmarks', '/account', '/dashboard', '/profile-selection']) {
+    assert.ok(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url }), url)
   }
 })
 
 test('homepage and account-entry/recovery/support routes stay outside the learning gate', () => {
-  const { config } = require(path.join(root, 'proxy.ts'))
-  assert.equal(config.matcher.includes('/'), false)
   for (const file of PUBLIC) {
     assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /StudentAccessGate/, file)
   }

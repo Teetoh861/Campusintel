@@ -117,7 +117,8 @@ test('auth and selection redirects terminate, including a completed student open
   assert.equal((await f.selectionPage()).props.title, 'Change selection')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
   assert.equal(getSafeReturnPath('/profile-selection'), '/profile-selection')
-  assert.ok(require('../../proxy.ts').config.matcher.includes('/profile-selection'))
+  const { unstable_doesMiddlewareMatch } = require('next/experimental/testing/server')
+  assert.ok(unstable_doesMiddlewareMatch({ config: require('../../proxy.ts').config, nextConfig: {}, url: '/profile-selection' }))
 }))
 
 test('missing, invariant, unavailable and disabled states remain controlled', async () => fixture(async f => {

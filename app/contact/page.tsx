@@ -8,6 +8,9 @@ import { CONTACT_EMAIL } from '@/lib/contact'
 
 import type { ReactElement } from 'react'
 
+// Per-request, so a signed-in student's header is right from the first render.
+export const dynamic = 'force-dynamic'
+
 const WRAP = 'app-container'
 
 // Pretty-print a digits-only number for display. Conservatively NG-specific:

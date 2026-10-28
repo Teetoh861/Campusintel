@@ -14,9 +14,14 @@ The browser submits email/password/OTP in same-origin POST bodies. It never call
 Supabase Auth. For login and confirmation, access and refresh tokens move directly from the Auth-only gateway
 into the request-scoped publishable-key SSR client. Supabase owns cookie names,
 chunking, rotation and expiry; the adapter enforces HttpOnly, SameSite=Lax, Path=/
-and Secure in production. Public pages remain static and bypass student-session proxy
-work. The nav reads booleans from `/api/auth/session` and rechecks on focus/visibility
-changes without blocking public content when Auth is unavailable.
+and Secure in production. The proxy runs on every page (not other API handlers or static
+files), so a refreshed session is saved wherever the student is. Every page is rendered
+per request: the proxy's live lifecycle answer reaches the root layout as the request-only
+`x-campus-chrome-state` header (always replaced, never taken from the client), and the
+header's first render uses it. It is presentation only. The nav then reads booleans from
+`/api/auth/session` and rechecks on focus/visibility changes. A pending recheck keeps
+the server-verified state. Any failed or inconclusive check shows neutral account controls:
+neither sign-in links nor the signed-in menu, until a definitive answer arrives.
 
 Confirmation and recovery emails display `{{ .Token }}` without action links.
 A GET never verifies a code. No email, code, hash or session credential is included

@@ -1,4 +1,4 @@
-// proxy.ts — Refresh the shared account session at student and operator boundaries.
+// proxy.ts — Refresh the shared account session on every page and at the auth boundary.
 import { refreshStudentSession } from '@/lib/supabase/proxy'
 import type { NextRequest } from 'next/server'
 
@@ -8,21 +8,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // Every page, so a refreshed session is always saved and the first render knows the live session. Other API
+  // handlers authenticate on their own; build output and files with an extension (icons, images) are skipped.
   matcher: [
-    '/account/:path*',
-    '/dashboard/:path*',
-    '/my-courses/:path*',
-    '/profile-selection',
-    '/courses/:path*',
-    '/materials',
-    '/bookmarks',
-    '/admin/:path*',
+    '/((?!api(?:/|$)|_next/|_vercel/|.*\\.[^/]+$).*)',
     '/api/auth/:path*',
-    '/login',
-    '/register',
-    '/confirm-email',
-    '/forgot-password',
-    '/reset-password',
-    '/resend-confirmation',
   ],
 }

@@ -10,7 +10,7 @@ require('react/jsx-runtime')
 const nodes = element => elementNodes(element)
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 
-async function fixture(run) {
+async function fixture(run, { initial = 'signed-out' } = {}) {
   const load = Module._load, tsx = Module._extensions['.tsx']
   const cache = new Map(Object.entries(require.cache))
   const saved = new Map(['window', 'document', 'fetch'].map(key => [key, global[key]]))
@@ -71,7 +71,7 @@ async function fixture(run) {
       while (effects.length) effects.shift()()
       return tree
     }
-    const sync = () => { presentation = render(NavigationSessionProvider).props.value }
+    const sync = () => { presentation = render(NavigationSessionProvider, { initial }).props.value }
     const settle = async () => { await new Promise(setImmediate); sync() }
     const respond = async (body, status = 200, request = requests.at(-1)) => {
       if (body?.enabled === true && body.signedIn === true && !('continuityToken' in body)) {
