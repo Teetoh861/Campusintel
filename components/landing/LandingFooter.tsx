@@ -1,7 +1,7 @@
 // components/landing/LandingFooter.tsx — Landing footer: product anchors, contact and social links.
 import Image from 'next/image'
 import Link from 'next/link'
-import { btnBase, btnGhost, btnSm, buttonClassName } from '@/components/chrome/ui'
+import { btnBase, btnGhost, btnNavy, btnSm, buttonClassName } from '@/components/chrome/ui'
 import { CONTACT_EMAIL, INSTAGRAM_URL, X_URL } from '@/lib/contact'
 import { landingContent } from '@/lib/landing/content'
 import { fillTemplate } from '@/lib/landing/format'
@@ -13,10 +13,12 @@ import type { ReactElement, ReactNode } from 'react'
 const { brand, footer } = landingContent
 const LINK = buttonClassName(btnBase, btnSm, btnGhost,
   'min-w-11 max-w-full justify-start border-transparent px-0 text-[16px] font-normal text-student-text-secondary hover:border-transparent hover:bg-transparent hover:text-ci-blue-600 [overflow-wrap:anywhere]')
+// On the white footer a white brand mark only appears inside a Navy button.
+const MARK_BUTTON = buttonClassName(btnBase, btnSm, btnNavy, 'my-1 rounded-full')
 
 function External({ href, brand, children }: { href: string; brand?: BrandName; children: ReactNode }): ReactElement {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={LINK}>
+    <a href={href} target="_blank" rel="noopener noreferrer" className={brand ? MARK_BUTTON : LINK}>
       {brand && <BrandIcon name={brand} />}{children}<span className="sr-only"> {landingContent.newTab}</span>
     </a>
   )
@@ -48,7 +50,8 @@ export function LandingFooter({ whatsAppUrl, year }: { whatsAppUrl: string | nul
           <h2>{footer.followHeading}</h2>
           <ul>
             <li><External href={INSTAGRAM_URL} brand="instagram">{footer.instagram}</External></li>
-            <li><External href={X_URL} brand="x">{footer.x}</External></li>
+            {/* Words alone until the official white X mark is added. */}
+            <li><External href={X_URL}>{footer.x}</External></li>
           </ul>
         </div>
       </div>

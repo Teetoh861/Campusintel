@@ -26,13 +26,12 @@ export function FinalCta({ communityUrl }: { communityUrl: string | null }): Rea
             {communityUrl && (
               <a href={communityUrl} target="_blank" rel="noopener noreferrer"
                 className={buttonClassName(btnBase, btnSm, btnGhostOnBlue, 'mt-5 border-transparent px-0 hover:border-transparent')}>
-                <BrandIcon name="whatsapp-on-navy" />
+                <BrandIcon name="whatsapp" />
                 {cta.community}<span className="sr-only"> {landingContent.newTab}</span>
               </a>
             )}
           </div>
           <div className={styles.botBig} aria-hidden="true">
-            <span className={styles.face} />
             <Image src={images.campusBot.src} width={images.campusBot.width} height={images.campusBot.height} alt=""
               sizes="260px" className={styles.botImg} />
           </div>

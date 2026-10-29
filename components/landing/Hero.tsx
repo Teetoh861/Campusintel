@@ -44,13 +44,11 @@ export function Hero({ earlyAccessUrl }: { earlyAccessUrl: string | null }): Rea
         </div>
 
         <div className={styles.visual} aria-hidden="true">
-          <div className={styles.circle} />
           <div className={styles.people}>
             <Image src={images.hero.src} width={images.hero.width} height={images.hero.height} alt=""
               sizes="(min-width: 961px) 540px, 92vw" preload fetchPriority="high" className={styles.peopleImg} />
           </div>
           <div className={styles.bot}>
-            <span className={styles.face} />
             <Image src={images.campusBot.src} width={images.campusBot.width} height={images.campusBot.height} alt=""
               sizes="110px" className={styles.botImg} />
           </div>

@@ -2,7 +2,7 @@
 'use client'
 
 import { useId, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { btnBase, btnGhost, buttonClassName } from '@/components/chrome/ui'
 import styles from './landing.module.css'
 import type { FaqItem } from '@/lib/landing/content'
@@ -29,7 +29,7 @@ export function FaqList({ items }: { items: FaqItem[] }): ReactElement {
               <button type="button" aria-expanded={expanded} aria-controls={answerId} onClick={() => toggle(index)}
                 className={buttonClassName(btnBase, btnGhost, 'w-full justify-between gap-4 border-transparent px-0 py-5 text-left text-[17px] font-bold text-student-primary hover:border-transparent hover:bg-transparent active:bg-transparent')}>
                 {item.question}
-                <span className={styles.faqSign} aria-hidden="true"><Plus size={18} /></span>
+                <span className={styles.faqSign} aria-hidden="true">{expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}</span>
               </button>
             </h3>
             <div id={answerId} hidden={!expanded} className={styles.faqAnswer}>{item.answer}</div>

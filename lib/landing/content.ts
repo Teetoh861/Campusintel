@@ -3,7 +3,7 @@
 export type LandingAnchor = 'features' | 'try' | 'how' | 'faq'
 export type TextLink = { label: string; href: string }
 export type IconName =
-  | 'past-questions' | 'notes' | 'upload' | 'theory' | 'exam' | 'tutors'
+  | 'past-questions' | 'notes' | 'gst-free' | 'upload' | 'theory' | 'exam' | 'tutors'
   | 'faculty' | 'vetted' | 'organised' | 'free-trial' | 'quiz-ready'
 
 export type LandingImage = { src: string; width: number; height: number; alt: string }
@@ -16,7 +16,6 @@ export type ShowcaseRow = {
   ticks: string[]
   phones: LandingImage[]
   chip?: { icon: IconName; label: string }
-  tone: 'cool' | 'warm'
   flip?: boolean
 }
 export type SampleQuestion = {
@@ -118,7 +117,6 @@ export const landingContent = {
         { src: '/landing/question.jpg', width: 432, height: 896, alt: 'A practice question generated from notes' },
       ],
       chip: { icon: 'quiz-ready', label: 'Quiz ready' },
-      tone: 'cool',
     },
     {
       eyebrow: 'Theory questions',
@@ -126,8 +124,8 @@ export const landingContent = {
       text: 'Theory is where marks are won and lost. Type your answer, then compare it with the model answer and its key points.',
       ticks: ['Model answer and key points for every question', 'See which points you made and missed',
         'Rewrite and try again until it sticks'],
-      phones: [{ src: '/landing/answer.jpg', width: 432, height: 896, alt: 'Writing a theory answer' }],
-      tone: 'warm',
+      // Text only until the designer supplies a self-marking screen.
+      phones: [],
       flip: true,
     },
   ] satisfies ShowcaseRow[],
@@ -147,7 +145,7 @@ export const landingContent = {
     promptExam: 'Exam mode: answers are revealed at the end.',
     savedExam: 'Answer saved. You will see the result at the end.',
     correct: 'Correct',
-    wrong: 'Wrong',
+    correctAnswer: 'Correct answer',
     yourAnswer: 'Your answer',
     explanationLabel: 'Why:',
     next: 'Next question',
@@ -229,7 +227,7 @@ export const landingContent = {
     waitlist: 'Join the waitlist',
     waitlistMessage: "I'd like to join the waitlist for my faculty.",
     items: [
-      { icon: 'notes', title: 'GST courses, free', text: 'Free for every UNILAG student, in every faculty.' },
+      { icon: 'gst-free', title: 'GST courses, free', text: 'Free for every UNILAG student, in every faculty.' },
       { icon: 'upload', title: 'Quiz yourself from your own PDFs', text: 'Upload your notes and generate practice questions.' },
       { icon: 'campus-bot', title: 'An AI tutor that teaches you', text: "Ask Campus Bot to explain anything you don't understand." },
     ] satisfies Array<{ icon: IconName | 'campus-bot'; title: string; text: string }>,

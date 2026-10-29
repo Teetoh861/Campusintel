@@ -16,7 +16,6 @@ function FeatureCard({ item }: { item: Feature }): ReactElement {
       {item.campusBot && (
         <div className={styles.dangle} aria-hidden="true">
           <div className={styles.dbot}>
-            <span className={styles.face} />
             <Image src={images.campusBot.src} width={images.campusBot.width} height={images.campusBot.height} alt=""
               sizes="92px" className={styles.botImg} />
           </div>

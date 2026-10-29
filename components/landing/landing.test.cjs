@@ -62,7 +62,7 @@ async function renderHome({ env = {}, signedIn = false, lookupFails = false } = 
 }
 
 const anchors = html => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attributes, inner]) => ({
-  href: /href="([^"]*)"/.exec(attributes)?.[1], text: inner.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(), attributes }))
+  href: /href="([^"]*)"/.exec(attributes)?.[1], text: inner.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(), attributes, inner }))
 const hrefsFor = (html, text) => anchors(html).filter(link => link.text === text).map(link => link.href)
 
 /** Drive a client component with a minimal hook harness: click handlers update state, then re-render. */
@@ -206,16 +206,22 @@ test('Try a question marks right and wrong answers with an icon and a word, then
     quiz.button(questions[0].options[questions[0].answer]).props.onClick()
     let answer = quiz.button(questions[0].options[questions[0].answer])
     assert.match(quiz.text(answer), /Correct$/)
-    assert.ok(elementNodes(answer).some(node => node.type?.displayName === 'Check' || /check/i.test(node.type?.displayName ?? '')))
+    assert.doesNotMatch(quiz.text(answer), /Correct answer/, 'a right pick says Correct')
+    assert.ok(elementNodes(answer).some(node => node.type?.displayName === 'CircleCheck'))
     assert.match(quiz.text(quiz.tree().find(node => node.props?.['aria-live'] === 'polite')), new RegExp(`Why: ${questions[0].explanation.slice(0, 20)}`))
 
     quiz.button('Next question').props.onClick()
     const wrong = questions[1].options.findIndex((_, i) => i !== questions[1].answer)
     quiz.button(questions[1].options[wrong]).props.onClick()
-    assert.match(quiz.text(quiz.button(questions[1].options[wrong])), /Wrong$/)
-    assert.match(quiz.text(quiz.button(questions[1].options[questions[1].answer])), /Correct$/)
+    const picked = quiz.button(questions[1].options[wrong])
+    const corrected = quiz.button(questions[1].options[questions[1].answer])
+    assert.match(quiz.text(picked), /Your answer$/)
+    assert.ok(elementNodes(picked).some(node => node.type?.displayName === 'CircleX'))
+    assert.match(quiz.text(corrected), /Correct answer$/)
+    assert.ok(elementNodes(corrected).some(node => node.type?.displayName === 'CircleCheck'))
     quiz.button(questions[1].options[questions[1].answer]).props.onClick()
-    assert.doesNotMatch(quiz.text(quiz.button(questions[1].options[questions[1].answer])), /Wrong/, 'a second tap changes nothing')
+    assert.match(quiz.text(quiz.button(questions[1].options[questions[1].answer])), /Correct answer$/, 'a second tap changes nothing')
+    assert.match(quiz.text(quiz.button(questions[1].options[wrong])), /Your answer$/)
 
     quiz.button('See your score').props.onClick()
     const end = quiz.tree()
@@ -230,7 +236,7 @@ test('Try a question marks right and wrong answers with an icon and a word, then
     examSwitch.props.onClick()
     quiz.button(questions[0].options[0]).props.onClick()
     assert.match(quiz.text(quiz.button(questions[0].options[0])), /Your answer$/)
-    assert.doesNotMatch(quiz.buttons().map(quiz.text).join(' '), /Correct|Wrong/, 'exam mode reveals nothing until the end')
+    assert.doesNotMatch(quiz.buttons().map(quiz.text).join(' '), /Correct/, 'exam mode reveals nothing until the end')
   } finally {
     delete global.requestAnimationFrame
   }
@@ -291,13 +297,47 @@ test('no emoji and no hand-drawn SVG: icons are lucide-react or official brand i
   assert.doesNotMatch(html.replace(/<svg[\s\S]*?<\/svg>/g, ''), EMOJI)
   const sources = [...html.matchAll(/<img [^>]*src="([^"]+)"/g)].map(([, src]) => src)
   for (const src of sources) assert.match(src, /^\/landing\/[\w/-]+\.(?:png|webp|jpe?g|gif)$/, src)
-  for (const brand of ['whatsapp-glyph-white.png', 'whatsapp-glyph-green.png', 'instagram-glyph.png', 'x-logo-black.png']) {
+  // Marks are white only, on Navy or Blue; the official white X mark is not added yet, so X shows its words alone.
+  for (const brand of WHITE_MARKS) {
     assert.ok(sources.includes(`/landing/icons/${brand}`), brand)
     assert.ok(fs.existsSync(path.join(root, 'public/landing/icons', brand)), brand)
   }
+  assert.deepEqual(fs.readdirSync(path.join(root, 'public/landing/icons')).sort(), [...WHITE_MARKS].sort())
   for (const file of fs.readdirSync(path.join(root, 'public/landing'), { recursive: true })) {
     if (fs.statSync(path.join(root, 'public/landing', file)).isFile()) assert.match(file, /\.(?:png|webp|jpe?g|gif|mp4|webm)$/, file)
   }
+})
+
+const WHITE_MARKS = ['instagram-glyph-white.png', 'whatsapp-glyph-white.png']
+// Retired by the design system: coloured or black marks, the icons with other meanings, and the AI-marking screenshot.
+const RETIRED = /whatsapp-glyph-green|x-logo-black|instagram-glyph\.png|instagram-glyph-gradient|\b(?:Gift|Zap|RotateCcw|ClipboardCheck)\b|answer\.jpg/
+
+test('marks are white, icons keep one meaning each, and retired assets are gone', async () => {
+  const sources = fs.readdirSync(__dirname).filter(file => /\.(tsx?|css)$/.test(file) && !/\.test\./.test(file))
+    .map(file => path.join(__dirname, file))
+    .concat(fs.readdirSync(path.join(root, 'lib/landing')).map(file => path.join(root, 'lib/landing', file)))
+  for (const file of sources) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), RETIRED, path.relative(root, file))
+  const html = await renderHome({ env: CONFIGURED })
+  assert.doesNotMatch(html, RETIRED)
+  assert.equal(fs.existsSync(path.join(root, 'public/landing/answer.jpg')), false)
+  // On the white footer each mark sits inside a Navy button; X keeps its words alone.
+  for (const [label, mark] of [['WhatsApp us', 'whatsapp'], ['Instagram', 'instagram'], ['Join the waitlist', 'whatsapp']]) {
+    const link = anchors(html).find(item => item.text.startsWith(label) && item.inner.includes('<img'))
+    assert.ok(link, label)
+    assert.match(link.attributes, /bg-student-primary/, `${label} mark sits in a Navy button`)
+    assert.match(link.inner, new RegExp(`/landing/icons/${mark}-glyph-white\\.png`), label)
+  }
+  const x = anchors(html).find(item => item.text.startsWith('X (Twitter)'))
+  assert.doesNotMatch(x.inner, /<img/, 'X shows its words alone')
+  const icons = fs.readFileSync(path.join(__dirname, 'icons.tsx'), 'utf8')
+  for (const name of ['ListChecks', 'FileText', 'BookOpen', 'FileUp', 'Library', 'Ticket', 'CircleCheck']) assert.match(icons, new RegExp(`\\b${name}\\b`), name)
+  const faq = fs.readFileSync(path.join(__dirname, 'FaqList.tsx'), 'utf8')
+  assert.match(faq, /expanded \? <ChevronUp[^:]*: <ChevronDown/)
+  const css = fs.readFileSync(path.join(__dirname, 'landing.module.css'), 'utf8')
+  assert.doesNotMatch(css, /\.(?:circle|face|phone|blobWarm)\b|radial-gradient/)
+  // The panel behind the notes screenshots is a flat Sky surface.
+  assert.match(css, /\.blob \{[^}]*background: var\(--l-bg\);/)
+  assert.doesNotMatch(css, /\.blob[^{]*\{[^}]*gradient/)
 })
 
 test('landing source keeps client code small, scripts out, colours on tokens and motion optional', () => {

@@ -9,14 +9,9 @@ import type { ReactElement } from 'react'
 
 const PHONE_SIZES = '(min-width: 521px) 232px, 44vw'
 
-function phoneClass(index: number, count: number): string {
-  if (count === 1) return styles.solo
-  return index === 0 ? styles.back : styles.front
-}
-
 function Row({ row }: { row: ShowcaseRow }): ReactElement {
   return (
-    <div className={`${styles.row} ${row.flip ? styles.flip : ''}`}>
+    <div className={`${styles.row} ${row.flip ? styles.flip : ''} ${row.phones.length === 0 ? styles.rowText : ''}`}>
       <div className={styles.copy}>
         <span className={styles.eyebrow}>{row.eyebrow}</span>
         <h2>{row.title}</h2>
@@ -27,12 +22,11 @@ function Row({ row }: { row: ShowcaseRow }): ReactElement {
           ))}
         </ul>
       </div>
-      <div className={styles.stage}>
-        <div className={`${styles.blob} ${row.tone === 'warm' ? styles.blobWarm : ''}`} />
+      {row.phones.length > 0 && <div className={styles.stage}>
+        <div className={styles.blob} />
         {row.phones.map((phone, phoneIndex) => (
-          <div key={phone.src} className={`${styles.phone} ${phoneClass(phoneIndex, row.phones.length)}`}>
-            <Image src={phone.src} width={phone.width} height={phone.height} alt={phone.alt} sizes={PHONE_SIZES} className={styles.phoneImg} />
-          </div>
+          <Image key={phone.src} src={phone.src} width={phone.width} height={phone.height} alt={phone.alt} sizes={PHONE_SIZES}
+            className={`${styles.screen} ${phoneIndex === 0 ? styles.screenBack : styles.screenFront}`} />
         ))}
         {row.chip && (
           <div className={`${styles.float} ${styles.s1}`} aria-hidden="true">
@@ -42,7 +36,7 @@ function Row({ row }: { row: ShowcaseRow }): ReactElement {
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   )
 }

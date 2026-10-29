@@ -1,7 +1,7 @@
 // components/landing/OtherFaculties.tsx — Sign-up and waitlist for students outside Management Sciences.
 import Image from 'next/image'
 import Link from 'next/link'
-import { btnAccent, btnBase, btnGhost, buttonClassName } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnNavy, buttonClassName } from '@/components/chrome/ui'
 import { landingContent } from '@/lib/landing/content'
 import { BrandIcon, LandingIcon } from './icons'
 import styles from './landing.module.css'
@@ -23,7 +23,7 @@ export function OtherFaculties({ waitlistUrl }: { waitlistUrl: string | null }):
             <div className={styles.ctas}>
               <Link href={other.signUp.href} prefetch={false} className={buttonClassName(btnBase, btnAccent, CTA)}>{other.signUp.label}</Link>
               {waitlistUrl && (
-                <a href={waitlistUrl} target="_blank" rel="noopener noreferrer" className={buttonClassName(btnBase, btnGhost, CTA, 'bg-student-surface')}>
+                <a href={waitlistUrl} target="_blank" rel="noopener noreferrer" className={buttonClassName(btnBase, btnNavy, CTA)}>
                   <BrandIcon name="whatsapp" />{other.waitlist}<span className="sr-only"> {landingContent.newTab}</span>
                 </a>
               )}

@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Check, Timer, X } from 'lucide-react'
+import { CircleCheck, CircleX, Timer } from 'lucide-react'
 import { btnAccent, btnBase, btnGhost, btnSm, buttonClassName } from '@/components/chrome/ui'
 import { fillTemplate } from '@/lib/landing/format'
 import styles from './landing.module.css'
@@ -94,7 +94,6 @@ export function TryQuestionQuiz({ copy, questions, intro, botSrc }: Props): Reac
       <div className={styles.quizWrap}>
         <p className={styles.bubble} aria-hidden="true">{bubble}</p>
         <div className={styles.qbot} aria-hidden="true">
-          <span className={styles.face} />
           <Image src={botSrc} width={420} height={400} alt="" sizes="92px" className={styles.botImg} />
         </div>
         <div className={styles.quiz} role="group" aria-label={copy.cardLabel}>
@@ -132,8 +131,9 @@ export function TryQuestionQuiz({ copy, questions, intro, botSrc }: Props): Reac
                         verdict === 'wrong' && styles.shake, answered && 'cursor-default')}>
                       <span className={`${styles.key} ${verdict ? KEY_STATE[verdict] : ''}`} aria-hidden="true">{LETTERS[optionIndex]}</span>
                       <span className={styles.optText}>{option}</span>
-                      {verdict === 'right' && <span className={`${styles.verdict} text-student-success`}><Check aria-hidden="true" size={16} />{copy.correct}</span>}
-                      {verdict === 'wrong' && <span className={`${styles.verdict} text-student-primary`}><X aria-hidden="true" size={16} />{copy.wrong}</span>}
+                      {verdict === 'right' && <span className={`${styles.verdict} text-student-success`}>
+                        <CircleCheck aria-hidden="true" size={16} />{pick === optionIndex ? copy.correct : copy.correctAnswer}</span>}
+                      {verdict === 'wrong' && <span className={`${styles.verdict} text-student-primary`}><CircleX aria-hidden="true" size={16} />{copy.yourAnswer}</span>}
                       {verdict === 'saved' && <span className={`${styles.verdict} text-student-link`}>{copy.yourAnswer}</span>}
                     </button>
                   )
