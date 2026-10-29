@@ -59,6 +59,8 @@ export function InstantAttempt(props: Props): ReactElement {
   const question = questions[current]!
   const shown = feedback[question.questionId]
   const isLast = current === questions.length - 1
+  // The topic names the run in the bar; an attempt from before topics falls back to the course.
+  const title = attempt.topic ?? props.courseTitle
   const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
 
   const send = useCallback(async (pick: PendingPick) => {
@@ -146,6 +148,7 @@ export function InstantAttempt(props: Props): ReactElement {
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent px-3')}>
           {INSTANT_COPY.exit}
         </Link>
+        <p className="student-instant-topic">{title}</p>
         <p className="student-instant-position" aria-label={`Question ${current + 1} of ${questions.length}`}>
           {current + 1} of {questions.length}
         </p>

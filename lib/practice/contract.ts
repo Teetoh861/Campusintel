@@ -17,6 +17,9 @@ const timestamp = z.string().min(1)
 const sequence = z.number().int().min(0).max(MAX_SAVE_REVISION)
 const revision = z.number().int().min(0).max(MAX_SAVE_REVISION)
 const option = z.number().int().min(0).max(MAX_OPTION_INDEX)
+// A topic is a question's section label, as the database trims it (20261029150000_practice_by_topic.sql).
+export const MAX_TOPIC_LENGTH = 200
+export const practiceTopic = z.string().min(1).max(MAX_TOPIC_LENGTH).refine(topic => topic === topic.trim())
 
 // A practice choice cannot be cleared, so a change is always one of the question's options.
 export const practiceChanges = z.record(uuid, option)
@@ -32,8 +35,8 @@ export const practiceCommandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('start'), courseSlug, attemptId: uuid, intent: z.enum(['new', 'redo']),
     redoOf: uuid.nullable(), expected: z.object({ questionCount: z.number().int().min(1).max(MAX_QUESTIONS),
       durationSeconds: z.number().int().min(1).max(10_800), wholeBank: z.boolean() }).strict() }).strict(),
-  // Instant feedback: no brief to confirm; the server's own size and closing time.
-  z.object({ action: z.literal('start-instant'), courseSlug, attemptId: uuid }).strict(),
+  // Instant feedback on one topic: no brief to confirm; the server's own size and closing time.
+  z.object({ action: z.literal('start-instant'), courseSlug, attemptId: uuid, topic: practiceTopic }).strict(),
   // One choice on an instant attempt: recorded and locked by the database, which returns that question's result.
   z.object({ action: z.literal('pick'), attemptId: uuid, questionId: uuid, option }).strict(),
   // One of the student's own attempts: open to resume, or graded for its result and review.
@@ -62,7 +65,9 @@ export type OpenQuestion = z.infer<typeof openQuestion>
 export type PracticeMode = 'exam' | 'instant'
 
 const meta = {
-  id: z.string().uuid(), courseId: z.string().uuid(), mode: z.enum(['exam', 'instant']), intent: z.enum(['new', 'redo']),
+  id: z.string().uuid(), courseId: z.string().uuid(), mode: z.enum(['exam', 'instant']),
+  // The topic an instant attempt was drawn from; null for an exam (and an instant attempt from before topics).
+  topic: z.string().min(1).nullable(), intent: z.enum(['new', 'redo']),
   redoOf: z.string().uuid().nullable(),
   startedAt: timestamp, deadlineAt: timestamp, durationSeconds: z.number().int().positive(),
   questionCount: z.number().int().positive(), bankSize: z.number().int().positive(),

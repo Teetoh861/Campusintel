@@ -1,5 +1,6 @@
-// app/courses/[slug]/quiz/InstantResult.tsx — The end of an instant-feedback attempt: correct out of answered, then
-// practise again or go back. Every answer was already explained as it was picked, so there is no review here.
+// app/courses/[slug]/quiz/InstantResult.tsx — The end of a topic's instant feedback: correct out of answered, then
+// the next questions of this topic, the next topic, or back to the course. Every answer was already explained as it was
+// picked, so there is no review here.
 'use client'
 
 import Link from 'next/link'
@@ -21,11 +22,14 @@ type Props = {
   courseHref: string
   repositoryOnly: boolean
   attempt: GradedAttempt
-  // A new attempt may start now (current access and a live bank).
+  // A new attempt on this topic may start now (current access, a live bank and a topic to draw from).
   canStartNew: boolean
+  // The course's next topic, when there is one and a new attempt may start.
+  nextTopic: string | null
   starting: boolean
   error: PracticeProblem | null
   onPractiseAgain: () => void
+  onNextTopic: () => void
   onRetry: () => void
 }
 
@@ -40,13 +44,15 @@ export function InstantResult(props: Props): ReactElement {
   useEffect(() => { heading.current?.focus() }, [])
 
   return <StudentPage band={<PageBand title={instantScoreLine(attempt.result.score, answered)} lede={lede}
-    context={<p>{identity.context}</p>} titleRef={heading} />}>
+    context={<p>{attempt.topic ?? identity.context}</p>} titleRef={heading} />}>
     {props.error ? <div className="mb-6 max-w-[720px]"><ProblemNotice problem={props.error} busy={props.starting}
       onRetry={props.onRetry} /></div> : null}
     {props.starting ? <p role="status" className="student-practice-help mb-6">{PRACTICE_COPY.starting}</p> : null}
     <div className="student-practice-row !mt-0">
       {props.canStartNew ? <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={props.starting}
         onClick={props.onPractiseAgain}>{INSTANT_COPY.practiseAgain}</button> : null}
+      {props.nextTopic !== null ? <button type="button" className={studentAction(btnGhost, 'bg-student-surface')}
+        disabled={props.starting} onClick={props.onNextTopic}>{INSTANT_COPY.nextTopic}</button> : null}
       <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
         {PRACTICE_COPY.backToCourse}
       </Link>

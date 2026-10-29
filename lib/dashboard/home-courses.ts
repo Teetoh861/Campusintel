@@ -62,7 +62,9 @@ function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok'
   }
   if (progress.latest !== null) {
     const target = practiceTarget(progress.latest, courses)
-    if (target !== null && !target.locked) return { kind: 'continue', code: target.code, title: target.title, href: target.href }
+    // Practice continues from the course's topic list, not the practice page.
+    if (target !== null && !target.locked) return { kind: 'continue', code: target.code, title: target.title,
+      href: target.href.replace(/\/quiz$/, '#cbtPractice') }
   }
   return null
 }

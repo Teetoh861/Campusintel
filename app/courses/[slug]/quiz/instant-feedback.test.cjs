@@ -16,7 +16,7 @@ const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 const identity = { courseCode: 'GST 112', courseTitle: 'Use of English', repositoryOnly: false }
 // Correct option is 1 for every question; question 0 has an explanation, the others none.
 const feedbackFor = (n, selected) => ({ selected, correctOption: 1, explanation: n === 0 ? 'Because it agrees.' : null })
-const openAttempt = (picked = {}, count = 3) => ({ status: 'in_progress', id: ATTEMPT, courseId: 'course-1', mode: 'instant',
+const openAttempt = (picked = {}, count = 3) => ({ status: 'in_progress', id: ATTEMPT, courseId: 'course-1', mode: 'instant', topic: 'Listening Skills',
   intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: NOW, durationSeconds: 10800, questionCount: count, bankSize: 100,
   saved: { revision: 0, answers: {} }, questions: Array.from({ length: count }, (_, n) => ({ questionId: Q(n),
     prompt: `Prompt ${n}`, options: ['A', 'B', 'C'], section: 'General',
@@ -145,7 +145,7 @@ function find(node, predicate, found = []) {
 test('a right pick: locked at once, marked only when the server answers, one haptic; Why with an explanation', async () => flow(async f => {
   const render = f.mount(openAttempt())
   let tree = render()
-  assert.match(text(f.html(tree)), /^Exit 1 of 3 /, 'the bar holds Exit and the position, nothing else')
+  assert.match(text(f.html(tree)), /^Exit Listening Skills 1 of 3 /, 'the bar holds Exit, the topic and the position, nothing else')
   assert.equal(f.nextButton(tree).props.disabled, true, 'Next waits for a result')
   assert.doesNotMatch(f.html(tree), /Correct|Why/)
   f.answers.push(picked(0, 1, openAttempt({ 0: 1 })))
@@ -248,22 +248,22 @@ test('the last pick ends the attempt; See result shows it', async () => flow(asy
   assert.equal(f.graded[0].result.score, 2)
 }))
 
-test('the start offers two choices; the end says how many were right and offers two actions', async () => withTsx(async () => {
-  const { ModeChoiceScreen } = require('./ModeChoiceScreen.tsx')
+test('the end says how many were right, then Practise again, Next topic and Back to course', async () => withTsx(async () => {
   const { InstantResult } = require('./InstantResult.tsx')
-  const start = renderToStaticMarkup(React.createElement(ModeChoiceScreen, { ...identity, courseHref: '/courses/use-of-english',
-    starting: false, error: null, lastResultHref: null, onInstant() {}, onExam() {}, onRetry() {} }))
-  assert.match(text(start), /Instant feedback See each answer as you go\. .*Exam mode Timed, results at the end\./)
-  assert.equal((start.match(/<button/g) ?? []).length, 2)
-  const end = renderToStaticMarkup(React.createElement(InstantResult, { ...identity, courseHref: '/courses/use-of-english',
-    attempt: gradedAttempt(7, [1, 1, 1, 1, 1, 1, 1, 0, 0, 0]), canStartNew: true, starting: false, error: null,
-    onPractiseAgain() {}, onRetry() {} }))
+  const end = renderToStaticMarkup(React.createElement(InstantResult, { ...identity, courseHref: '/courses/use-of-english#cbtPractice',
+    attempt: gradedAttempt(7, [1, 1, 1, 1, 1, 1, 1, 0, 0, 0]), canStartNew: true, nextTopic: 'The Sounds of English',
+    starting: false, error: null, onPractiseAgain() {}, onNextTopic() {}, onRetry() {} }))
   assert.match(end, /<h1[^>]*>7 of 10 right<\/h1>/)
-  assert.match(text(end), /Practise again Back to course$/)
+  assert.match(text(end), /Listening Skills 7 of 10 right Practise again Next topic Back to course$/, 'the topic names the run')
+  assert.match(end, /href="\/courses\/use-of-english#cbtPractice"/, 'Back to course returns to the topic list')
   assert.doesNotMatch(text(end), /You answered/, 'a finished attempt needs no second line')
+  const last = renderToStaticMarkup(React.createElement(InstantResult, { ...identity, courseHref: '/courses/use-of-english',
+    attempt: gradedAttempt(7, [1, 1, 1, 1, 1, 1, 1, 0, 0, 0]), canStartNew: true, nextTopic: null,
+    starting: false, error: null, onPractiseAgain() {}, onNextTopic() {}, onRetry() {} }))
+  assert.match(text(last), /Practise again Back to course$/, 'the last topic has no Next topic')
   const early = renderToStaticMarkup(React.createElement(InstantResult, { ...identity, courseHref: '/courses/use-of-english',
-    attempt: gradedAttempt(2, [1, 1, 0, null, null]), canStartNew: false, starting: false, error: null,
-    onPractiseAgain() {}, onRetry() {} }))
+    attempt: gradedAttempt(2, [1, 1, 0, null, null]), canStartNew: false, nextTopic: null, starting: false, error: null,
+    onPractiseAgain() {}, onNextTopic() {}, onRetry() {} }))
   assert.match(early, /<h1[^>]*>2 of 3 right<\/h1>/, 'correct out of answered')
   assert.doesNotMatch(early, /Practise again/, 'no new attempt without access')
 }))

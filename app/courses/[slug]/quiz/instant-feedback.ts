@@ -3,11 +3,6 @@
 import type { OpenQuestion, PickFeedback } from '@/lib/practice/contract'
 
 export const INSTANT_COPY = {
-  choiceTitle: 'Instant feedback',
-  choiceBody: 'See each answer as you go.',
-  examTitle: 'Exam mode',
-  examBody: 'Timed, results at the end.',
-  choose: 'Choose how you want to practise.',
   correct: 'Correct',
   yourAnswer: 'Your answer',
   correctAnswer: 'Correct answer',
@@ -20,6 +15,7 @@ export const INSTANT_COPY = {
   offline: 'No connection. Your answer is kept and will be checked when you’re back online.',
   signedOut: 'You’ve been signed out. Sign in again on this device. Your answer is kept.',
   practiseAgain: 'Practise again',
+  nextTopic: 'Next topic',
 } as const
 
 /** Resume on the first question not yet picked; the last question when every one has been. */

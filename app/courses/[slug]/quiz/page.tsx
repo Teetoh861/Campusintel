@@ -1,9 +1,10 @@
 // app/courses/[slug]/quiz/page.tsx — Practice entry. The student's own attempts come first: an attempt URL, then the
-// course's open attempt, then its latest graded one, whatever the student's access or the bank is now (an attempt
-// started may always finish, and its review stays the student's). Current access and a live bank decide only whether a
-// fresh attempt may start.
+// course's open attempt, whatever the student's access or the bank is now (an attempt started may always finish, and
+// its review stays the student's). Then ?topic= starts instant feedback on that topic and ?mode=exam opens the exam
+// (its latest unseen result first, then its brief); anything else goes back to the course's topic list. Current access
+// and a live bank decide only whether a fresh attempt may start.
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
@@ -16,7 +17,8 @@ import { STUDY_COPY } from '@/components/student/study-families'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
-import { readPracticeAttempt, readPracticeState } from '@/lib/practice/server'
+import { practicePolicyFor, readPracticeAttempt, readPracticeState } from '@/lib/practice/server'
+import { readPracticeTopics } from '@/lib/practice/topics'
 import { createClient } from '@/lib/supabase/server'
 import { QuizClient } from './QuizClient'
 import { PRACTICE_COPY, practiceContext } from './practice-presentation'
@@ -24,7 +26,9 @@ import type { QuizInitial } from './QuizClient'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
-type PageProps = { params: Promise<{ slug: string }>; searchParams: Promise<{ attempt?: string | string[] }> }
+type Search = { attempt?: string | string[]; topic?: string | string[]; mode?: string | string[] }
+type PageProps = { params: Promise<{ slug: string }>; searchParams: Promise<Search> }
+type Entry = { attemptId: string | null; topic: string | null; exam: boolean }
 
 // Account-gated per student; never prerender or share across viewers.
 export const dynamic = 'force-dynamic'
@@ -34,20 +38,23 @@ const MS_PER_MINUTE = 60_000
 /** Cross the student account boundary before any practice state is read. */
 export default async function QuizPage({ params, searchParams }: PageProps): Promise<ReactElement> {
   const { slug } = await params
-  const { attempt } = await searchParams
+  const { attempt, topic, mode } = await searchParams
+  const entry = { attemptId: typeof attempt === 'string' ? attempt : null,
+    topic: typeof topic === 'string' && topic.trim() !== '' ? topic.trim() : null, exam: mode === 'exam' }
   return <StudentAccessGate returnPath={`/courses/${slug}/quiz`}>
-    {continuityToken => <Quiz slug={slug} continuityToken={continuityToken}
-      attemptId={typeof attempt === 'string' ? attempt : null} />}
+    {continuityToken => <Quiz slug={slug} continuityToken={continuityToken} entry={entry} />}
   </StudentAccessGate>
 }
 
-async function Quiz({ slug, continuityToken, attemptId }: { slug: string; continuityToken: string; attemptId: string | null }):
+async function Quiz({ slug, continuityToken, entry }: { slug: string; continuityToken: string; entry: Entry }):
   Promise<ReactElement> {
+  const { attemptId } = entry
   const returnPath = `/courses/${slug}/quiz`
   let result: StudentCourseLookupResult
   let sessionId: string | null = null
+  let client: Awaited<ReturnType<typeof createClient>> | null = null
   try {
-    const client = await createClient()
+    client = await createClient()
     const context = await getStudentSessionContext(undefined, client)
     sessionId = context?.sessionId ?? null
     result = context === null ? { status: 'signed-out' } : await getStudentCourseBySlugForVerifiedStudent(client, slug)
@@ -76,10 +83,20 @@ async function Quiz({ slug, continuityToken, attemptId }: { slug: string; contin
   // A fresh attempt may start only with current access and a live bank; the database judges both again at start.
   const brief = course.content.state === 'ready' && course.content.study.cbtPractice && practice !== null
     ? { questionCount: practice.attemptSize, durationSeconds: practice.timerSeconds } : null
-  const client = (initial: QuizInitial, lastResultHref: string | null = null) => <QuizClient
+  // The course's topics in order, for an instant attempt's Next topic; none when they cannot be read now.
+  const topicsFor = async (): Promise<string[]> => {
+    try {
+      const policy = practicePolicyFor(route.slug)
+      if (client === null || policy === null) return []
+      return (await readPracticeTopics(client, course.repository.repositoryCourseId, policy.sections) ?? [])
+        .map(entry => entry.topic)
+    } catch { return [] }
+  }
+  const quiz = async (initial: QuizInitial, lastResultHref: string | null = null) => <QuizClient
     continuityToken={continuityToken} courseCode={context.code} courseTitle={context.title} courseSlug={route.slug}
     courseHref={route.href} repositoryOnly={result.status === 'repository-only'}
     repositoryCourseId={course.repository.repositoryCourseId} brief={brief} bankSize={practice?.bankSize ?? 0}
+    topics={initial.kind === 'topic' || ('attempt' in initial && initial.attempt.mode === 'instant') ? await topicsFor() : []}
     lastResultHref={lastResultHref} initial={initial} />
 
   // A reloadable attempt URL: the student's own attempt on this course, open or graded.
@@ -88,14 +105,14 @@ async function Quiz({ slug, continuityToken, attemptId }: { slug: string; contin
     if (outcome.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
     if ((outcome.status === 'ready' || outcome.status === 'graded') &&
         outcome.attempt.courseId === course.repository.repositoryCourseId) {
-      return client(outcome.attempt.status === 'in_progress'
+      return await quiz(outcome.attempt.status === 'in_progress'
         ? { kind: 'open', attempt: outcome.attempt, now: outcome.now }
         : { kind: 'graded', attempt: outcome.attempt, latest: false })
     }
     if (outcome.status === 'unavailable') return retry()
     return <StudentPage band={band}>
       <Notice tone="info" title={PRACTICE_COPY.resultMissingTitle} action={<>
-        <Link href={`${route.href}/quiz`} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Go to practice</Link>
+        <Link href={`${route.href}#cbtPractice`} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Go to practice</Link>
         {backToCourse}
       </>}>Open practice from the course page to see your attempts.</Notice>
     </StudentPage>
@@ -109,27 +126,34 @@ async function Quiz({ slug, continuityToken, attemptId }: { slug: string; contin
     const open = await readPracticeAttempt(sessionId, state.attempt.id)
     if (open.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
     if (open.status === 'ready' && open.attempt.status === 'in_progress') {
-      return client({ kind: 'open', attempt: open.attempt, now: open.now })
+      return await quiz({ kind: 'open', attempt: open.attempt, now: open.now })
     }
     if (open.status === 'graded' && open.attempt.status !== 'in_progress') {
-      return client({ kind: 'graded', attempt: open.attempt, latest: true })
+      return await quiz({ kind: 'graded', attempt: open.attempt, latest: true })
     }
     return retry()
   }
   if (state.status === 'open') {
     const left = Date.parse(state.attempt.deadlineAt) - Date.parse(state.now)
-    return client({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,
+    return await quiz({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,
       total: state.attempt.questionCount, minutesLeft: Math.max(0, Math.floor(left / MS_PER_MINUTE)) })
   }
-  const lastResultHref = state.status === 'graded' ? `${route.href}/quiz?attempt=${state.attempt.id}` : null
-  if (state.status === 'graded') {
-    // Shown first only when this device has not shown it yet; otherwise the briefing (when a start is allowed).
-    const latest = await readPracticeAttempt(sessionId, state.attempt.id)
-    if (latest.status === 'graded' && latest.attempt.status !== 'in_progress') {
-      return client({ kind: 'graded', attempt: latest.attempt, latest: true }, lastResultHref)
+  // Practice starts from the course's topic list, or from its Exam mode button.
+  if (entry.topic === null && !entry.exam) redirect(`${route.href}#cbtPractice`)
+  if (entry.topic !== null) {
+    if (brief !== null) return await quiz({ kind: 'topic', topic: entry.topic })
+  } else {
+    const lastExam = state.status === 'graded' && state.attempt.mode === 'exam' ? state.attempt.id : null
+    const lastResultHref = lastExam === null ? null : `${route.href}/quiz?attempt=${lastExam}`
+    if (lastExam !== null) {
+      // Shown first only when this device has not shown it yet; otherwise the briefing (when a start is allowed).
+      const latest = await readPracticeAttempt(sessionId, lastExam)
+      if (latest.status === 'graded' && latest.attempt.status !== 'in_progress') {
+        return await quiz({ kind: 'graded', attempt: latest.attempt, latest: true }, lastResultHref)
+      }
     }
+    if (brief !== null) return await quiz({ kind: 'intro' }, lastResultHref)
   }
-  if (brief !== null) return client({ kind: 'intro' }, lastResultHref)
 
   if (course.content.state === 'locked') {
     return <StudentPage band={band}><LockedCourseNotice backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} /></StudentPage>

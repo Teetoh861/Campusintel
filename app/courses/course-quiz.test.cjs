@@ -97,7 +97,14 @@ async function fixture(quiz, run) {
           assert.equal(sessionId, 'live-session')
           return publishedState.practice.attempts.get(attemptId) ?? { status: 'not-found' }
         },
+        practicePolicyFor: () => ({ size: 50, seconds: 1800, sections: ['First', 'Second'] }),
       }
+      // The course's topic list, for Next topic: counts only, read on the student's own client.
+      if (name === '@/lib/practice/topics') return { readPracticeTopics: async (_client, courseId, sections) => {
+        assert.equal(courseId, '40000000-0000-4000-8000-000000000007')
+        assert.deepEqual(sections, ['First', 'Second'])
+        return [{ topic: 'Bookkeeping & Errors', bankSize: 15 }, { topic: 'Cost & Management Accounting', bankSize: 24 }]
+      } }
       // The quiz route reads central one-course truth on a request-scoped client before any bank read.
       if (name === '@/lib/supabase/server') return { createClient: async () => ({ fixture: 'request-scoped client' }) }
       if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () =>
@@ -123,7 +130,8 @@ async function fixture(quiz, run) {
               timerSeconds: usable.timerSeconds } : null }
         },
       }
-      if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') } }
+      if (name === 'next/navigation') return { notFound: () => { throw new Error('notFound') },
+        redirect: href => { throw new Error(`redirect:${href}`) } }
       if (name === './QuizClient') return { QuizClient: function QuizClient() { return null } }
       // Gate behaviour is covered in components/auth; these tests exercise the granted content.
       if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate: ({ children }) => children }
@@ -147,10 +155,13 @@ async function fixture(quiz, run) {
 }
 
 const params = { params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({}) }
+// Exam mode's own entry from the course page.
+const exam = () => ({ params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({ mode: 'exam' }) })
+const withTopic = topic => ({ params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({ topic }) })
 const withAttempt = attempt => ({ params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({ attempt }) })
 const ATTEMPT = '33333333-3333-4333-8333-333333333333'
 const graded = (courseId = '40000000-0000-4000-8000-000000000007') => ({ status: 'graded', now: '2026-10-24T10:30:00Z',
-  attempt: { status: 'submitted', id: ATTEMPT, courseId, intent: 'new', redoOf: null, startedAt: '2026-10-24T10:00:00Z',
+  attempt: { status: 'submitted', id: ATTEMPT, courseId, mode: 'exam', topic: null, intent: 'new', redoOf: null, startedAt: '2026-10-24T10:00:00Z',
     deadlineAt: '2026-10-24T10:30:00Z', durationSeconds: 1800, questionCount: 50, bankSize: 150, questions: [],
     result: { score: 7, total: 50, timedOut: false, finishedAt: '2026-10-24T10:20:00Z' } } })
 
@@ -190,7 +201,7 @@ test('fixture restores loaders and the module cache after success and failure', 
 })
 
 test('a fresh start is briefed with the server count and time, and the page never carries a question', async () => fixture(validQuiz, async f => {
-  const route = await f.quizRoute(params)
+  const route = await f.quizRoute(exam())
   assert.deepEqual(route.props.initial, { kind: 'intro' })
   assert.deepEqual(route.props.brief, { questionCount: validQuiz.maxQuizQuestions,
     durationSeconds: validQuiz.quizDurationMinutes * 60 })
@@ -203,11 +214,23 @@ test('a fresh start is briefed with the server count and time, and the page neve
 test('published withdrawals affect the next brief; an empty bank is not built', async () => fixture(validQuiz, async f => {
   const question = f.publishedState.rows.find(row => row.kind === 'cbt_question')
   f.publishedState.rows = f.publishedState.rows.filter(row => row !== question)
-  assert.equal((await f.quizRoute(params)).props.bankSize, validQuiz.questions.length - 1)
+  assert.equal((await f.quizRoute(exam())).props.bankSize, validQuiz.questions.length - 1)
   f.publishedState.rows = f.publishedState.rows.filter(row => row.kind !== 'cbt_question')
-  const html = renderToStaticMarkup(await f.quizRoute(params))
+  const html = renderToStaticMarkup(await f.quizRoute(exam()))
   assert.match(html, /CBT practice is not available for this course/)
   assert.doesNotMatch(html, /temporarily unavailable|Try again/i, 'a bank that was never built is not a temporary failure')
+}))
+
+test('practice by topic: a bare visit goes to the course\'s topic list; a topic starts its instant feedback', async () => fixture(validQuiz, async f => {
+  await assert.rejects(f.quizRoute(params), new RegExp(`redirect:/courses/${course.slug}#cbtPractice`),
+    'there is no choice of mode: practice starts from the topic list')
+  const route = await f.quizRoute(withTopic('Bookkeeping & Errors'))
+  assert.deepEqual(route.props.initial, { kind: 'topic', topic: 'Bookkeeping & Errors' })
+  assert.deepEqual(route.props.topics, ['Bookkeeping & Errors', 'Cost & Management Accounting'], 'in order, for Next topic')
+  assert.doesNotMatch(JSON.stringify(route.props), /correct|options|explanation|"prompt"|"question"/i)
+  f.publishedState.locked = true
+  const html = renderToStaticMarkup(await f.quizRoute(withTopic('Bookkeeping & Errors')))
+  assert.match(html, /Included with full access/, 'a locked course starts no topic')
 }))
 
 test('the open attempt comes first: resume, whatever access is now (D7)', async () => fixture(validQuiz, async f => {
@@ -222,10 +245,10 @@ test('the open attempt comes first: resume, whatever access is now (D7)', async 
 }))
 
 test('the latest graded attempt is offered, and an attempt URL reloads its result', async () => fixture(validQuiz, async f => {
-  f.publishedState.practice.state = { status: 'graded', now: '2026-10-24T10:30:00Z', attempt: { id: ATTEMPT,
+  f.publishedState.practice.state = { status: 'graded', now: '2026-10-24T10:30:00Z', attempt: { id: ATTEMPT, mode: 'exam',
     deadlineAt: '2026-10-24T10:30:00Z', questionCount: 50, answered: 12, score: 7, bankSize: 150 } }
   f.publishedState.practice.attempts.set(ATTEMPT, graded())
-  let route = await f.quizRoute(params)
+  let route = await f.quizRoute(exam())
   assert.deepEqual([route.props.initial.kind, route.props.initial.latest], ['graded', true])
   assert.equal(route.props.lastResultHref, `${quizHref}?attempt=${ATTEMPT}`)
   route = await f.quizRoute(withAttempt(ATTEMPT))
@@ -245,7 +268,7 @@ test('the latest graded attempt is offered, and an attempt URL reloads its resul
 
 test('managed read unavailability fails closed on the quiz route', async () => fixture(validQuiz, async f => {
   f.publishedState.available = false
-  const html = renderToStaticMarkup(await f.quizRoute(params))
+  const html = renderToStaticMarkup(await f.quizRoute(exam()))
   assert.match(html, /temporarily unavailable/i)
   assert.match(html, /couldn’t load the practice questions just now/)
   assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
@@ -254,7 +277,7 @@ test('managed read unavailability fails closed on the quiz route', async () => f
 
 test('a locked course with no attempt of the student\'s shows the plan notice', async () => fixture(validQuiz, async f => {
   f.publishedState.locked = true
-  const html = renderToStaticMarkup(await f.quizRoute(params))
+  const html = renderToStaticMarkup(await f.quizRoute(exam()))
   assert.match(html, /Included with full access/)
   assert.match(html, /href="\/access"/)
   assert.doesNotMatch(html, /temporarily unavailable/i)
@@ -263,7 +286,7 @@ test('a locked course with no attempt of the student\'s shows the plan notice', 
 
 test('an unreadable practice state fails closed with a retry', async () => fixture(validQuiz, async f => {
   f.publishedState.practice.state = { status: 'unavailable' }
-  const html = renderToStaticMarkup(await f.quizRoute(params))
+  const html = renderToStaticMarkup(await f.quizRoute(exam()))
   assert.match(html, /couldn’t load the practice questions just now/)
   assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
 }))
@@ -272,7 +295,7 @@ test('missing or unusable quiz configuration makes the quiz route reject the att
   for (const quiz of [undefined, { ...validQuiz, maxQuizQuestions: 0 },
     { ...validQuiz, quizDurationMinutes: 0 }, { ...validQuiz, quizDurationMinutes: 1e308 }]) {
     await fixture(quiz, async f => {
-      const html = renderToStaticMarkup(await f.quizRoute(params))
+      const html = renderToStaticMarkup(await f.quizRoute(exam()))
       assert.match(html, /CBT practice is not available for this course/)
       assert.doesNotMatch(html, /QuizClient|Start practice/)
     })

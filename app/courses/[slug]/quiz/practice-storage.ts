@@ -9,6 +9,7 @@
 //     reconnect or reload (a pick is idempotent: resending can only return the result it already has).
 import { z } from 'zod'
 import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
+import { practiceTopic } from '@/lib/practice/contract'
 import type { UnsentSheet } from '@/lib/entitlements/exam-autosave'
 import type { PracticeBrief } from './types'
 
@@ -56,14 +57,14 @@ export function writeFlags(attemptId: string, flags: ReadonlySet<string>): void 
 }
 
 // A start in flight: retried with the same attempt id until the server answers, even across a reload. An exam start
-// carries the brief the student confirmed; an instant one carries none.
+// carries the brief the student confirmed; an instant one carries its topic.
 export type PendingStart = { attemptId: string; intent: 'new' | 'redo'; redoOf: string | null; expected: PracticeBrief & { wholeBank: boolean } }
-  | { attemptId: string; mode: 'instant' }
+  | { attemptId: string; mode: 'instant'; topic: string }
 const pendingKey = (courseSlug: string) => `practice-start:${courseSlug}`
 const pendingStart = z.union([z.object({ attemptId: uuid, intent: z.enum(['new', 'redo']), redoOf: uuid.nullable(),
   expected: z.object({ questionCount: z.number().int().min(1).max(MAX_QUESTIONS),
     durationSeconds: z.number().int().positive(), wholeBank: z.boolean() }).strict() }).strict(),
-  z.object({ attemptId: uuid, mode: z.literal('instant') }).strict()])
+  z.object({ attemptId: uuid, mode: z.literal('instant'), topic: practiceTopic }).strict()])
 
 export function readPendingStart(courseSlug: string): PendingStart | null {
   return read(session(), pendingKey(courseSlug), pendingStart)

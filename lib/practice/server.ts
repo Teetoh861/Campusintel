@@ -37,8 +37,8 @@ export const INSTANT_POLICY = { size: 10, seconds: 3 * 60 * 60 } as const
 export type PracticeDelta = { tab: string; sequence: number; baseRevision: number; changes: PracticeChanges }
 export type PracticeStart = { attemptId: string; courseId: string; intent: 'new' | 'redo'; redoOf: string | null
   policy: PracticePolicy; expected: { questionCount: number; durationSeconds: number; wholeBank: boolean } }
-  // Instant feedback: a fresh draw with the server's instant size and closing time, and no brief.
-  | { attemptId: string; courseId: string; mode: 'instant'; sections: string[] }
+  // Instant feedback: a fresh draw from one topic with the server's instant size and closing time, and no brief.
+  | { attemptId: string; courseId: string; mode: 'instant'; topic: string; sections: string[] }
 
 export type PracticeEnv = {
   start(start: PracticeStart): Promise<unknown>
@@ -61,7 +61,7 @@ const dbGradedQuestion = dbQuestion.extend({ item_id: z.string().uuid(), revisio
 const dbOpenQuestion = dbQuestion.extend({ selected: z.number().int().optional(), correct_option: z.number().int().optional(),
   explanation: z.string().nullable().optional() }).strict()
 const dbMeta = { id: z.string().uuid(), course_id: z.string().uuid(), mode: z.enum(['exam', 'instant']),
-  intent: z.enum(['new', 'redo']),
+  topic: z.string().min(1).nullable(), intent: z.enum(['new', 'redo']),
   redo_of: z.string().uuid().nullable(), started_at: timestamp, deadline_at: timestamp,
   duration_seconds: z.number().int(), question_count: z.number().int(), bank_size: z.number().int() }
 const dbAttempt = z.discriminatedUnion('status', [
@@ -81,7 +81,7 @@ const dbAnswer = z.discriminatedUnion('state', [
   z.object({ state: z.literal('policy-changed'), question_count: z.number().int(), duration_seconds: z.number().int(),
     bank_size: z.number().int() }).strict(),
   z.object({ state: z.enum(['signed-out', 'conflict', 'locked', 'not-found', 'questions-changed', 'unavailable',
-    'invalid-course', 'invalid-request']) }).strict(),
+    'invalid-course', 'unknown-topic', 'invalid-request']) }).strict(),
 ])
 // The practice functions raise this for a malformed request, such as an answer to a question outside the attempt.
 const INVALID_REQUEST_CODE = '22023'
@@ -109,7 +109,7 @@ function openQuestionFrom(question: DbOpenQuestion) {
 }
 
 function attemptFrom(row: z.infer<typeof dbAttempt>): PracticeAttempt | null {
-  const meta = { id: row.id, courseId: row.course_id, mode: row.mode, intent: row.intent, redoOf: row.redo_of, startedAt: row.started_at,
+  const meta = { id: row.id, courseId: row.course_id, mode: row.mode, topic: row.topic, intent: row.intent, redoOf: row.redo_of, startedAt: row.started_at,
     deadlineAt: row.deadline_at, durationSeconds: row.duration_seconds, questionCount: row.question_count,
     bankSize: row.bank_size }
   const mapped = row.status === 'in_progress'
@@ -146,7 +146,8 @@ export function practiceResultFrom(data: unknown): PracticeResult {
     return { status: 'policy-changed', questionCount: row.question_count, durationSeconds: row.duration_seconds,
       bankSize: row.bank_size }
   }
-  return { status: row.state === 'invalid-course' ? 'not-found' : row.state }
+  // A course or topic the database does not know started nothing.
+  return { status: row.state === 'invalid-course' || row.state === 'unknown-topic' ? 'not-found' : row.state }
 }
 
 /** The practice page's state for a course: the open attempt to resume, or the most recent graded one, or none. */
@@ -188,7 +189,8 @@ function createSupabasePracticeEnv(sessionId: string): PracticeEnv {
         const { data, error } = await service.rpc('practice_start', { p_session_id: sessionId,
           p_attempt_id: start.attemptId, p_course_id: start.courseId, p_intent: 'new', p_redo_of: null,
           p_size: INSTANT_POLICY.size, p_seconds: INSTANT_POLICY.seconds, p_sections: start.sections,
-          p_expected_size: null, p_expected_seconds: null, p_expected_whole_bank: null, p_mode: 'instant' })
+          p_expected_size: null, p_expected_seconds: null, p_expected_whole_bank: null, p_mode: 'instant',
+          p_topic: start.topic })
         return rpcAnswer(data, error)
       }
       const { data, error } = await service.rpc('practice_start', { p_session_id: sessionId, p_attempt_id: start.attemptId,
@@ -284,7 +286,7 @@ export async function runPracticeRequest(input: unknown, response: NextResponse,
     if (course.status !== 'ok') return { status: course.status }
     if (command.action === 'start-instant') {
       return practiceResultFrom(await env.start({ attemptId: command.attemptId, courseId: course.courseId, mode: 'instant',
-        sections: course.policy.sections }))
+        topic: command.topic, sections: course.policy.sections }))
     }
     return practiceResultFrom(await env.start({ attemptId: command.attemptId, courseId: course.courseId,
       intent: command.intent, redoOf: command.redoOf, policy: course.policy, expected: command.expected }))

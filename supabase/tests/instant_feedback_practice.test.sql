@@ -1,5 +1,6 @@
 -- supabase/tests/instant_feedback_practice.test.sql — Instant feedback practice
--- (20261029120000_instant_feedback_practice.sql): an instant attempt starts through practice_start, records and locks
+-- (20261029120000_instant_feedback_practice.sql; topics since 20261029150000_practice_by_topic.sql, whose own rules are in
+-- practice_by_topic.test.sql): an instant attempt starts through practice_start, records and locks
 -- each pick, and reveals a question's correct option and explanation only once it is picked; the same pick replays,
 -- a different one is refused with the original; it closes at its last pick or its deadline by counting its picks, so
 -- the sweep never fails on them; exam attempts keep their rules; home counts picks straight away.
@@ -16,10 +17,12 @@ create function pg_temp.a(n integer) returns uuid language sql immutable
   as $$ select ('f3000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid $$;
 create function pg_temp.c(n text) returns uuid language sql immutable
   as $$ select ('40000000-0000-4000-8000-0000000000' || n)::uuid $$;
--- Calls as the application server makes them (the caller sets the service role). Instant: 10 questions, 3 hours.
+-- Calls as the application server makes them (the caller sets the service role). Instant: 10 questions, 3 hours, on one
+-- topic: course 08's "Listening Skills" (20 questions) or course 09's "Islam and Political Culture" (9).
 create function pg_temp.istart(p_user integer, p_attempt integer, p_course text default '08') returns jsonb
   language sql as $$ select public.practice_start(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.c(p_course), 'new',
-    null, 10, 10800, '[]', null, null, null, 'instant') $$;
+    null, 10, 10800, '[]', null, null, null, 'instant',
+    case p_course when '08' then 'Listening Skills' when '09' then 'Islam and Political Culture' end) $$;
 create function pg_temp.estart(p_user integer, p_attempt integer, p_course text default '08') returns jsonb
   language sql as $$ select public.practice_start(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.c(p_course), 'new',
     null, 5, 1800, '[]', 5, 1800, false) $$;
@@ -88,7 +91,7 @@ select is(jsonb_build_array(private.practice_explanation('{"explanation":"Becaus
     private.practice_explanation('{"explanation":null}')),
   '["Because.", null, null, null]'::jsonb, 'an explanation is its text, or null when the question has none');
 
--- 2. Fixtures: 1 and 2 students with plans; course 08 (use-of-english, 100) and 13 (467, some explained) are free.
+-- 2. Fixtures: 1 and 2 students with plans; course 08 (use-of-english, 100) and 09 (nigerian-peoples-and-culture) are free.
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000000', pg_temp.u(n), 'authenticated', 'authenticated',
@@ -104,7 +107,7 @@ insert into outcome values ('replay', pg_temp.istart(1, 1));
 insert into outcome values ('replay-as-exam', public.practice_start(pg_temp.s(1), pg_temp.a(1), pg_temp.c('08'), 'new',
   null, 5, 1800, '[]', 5, 1800, false));
 insert into outcome values ('exam-while-open', pg_temp.estart(1, 2));
-insert into outcome values ('instant-elsewhere', pg_temp.istart(1, 3, '13'));
+insert into outcome values ('instant-elsewhere', pg_temp.istart(1, 3, '09'));
 reset role;
 select is(pg_temp.o('start') ->> 'state', 'ready', 'an instant attempt starts');
 select is(jsonb_build_object('mode', pg_temp.o('start') -> 'attempt' ->> 'mode',
@@ -112,7 +115,7 @@ select is(jsonb_build_object('mode', pg_temp.o('start') -> 'attempt' ->> 'mode',
     'questions', jsonb_array_length(pg_temp.o('start') -> 'attempt' -> 'questions'),
     'seconds', (pg_temp.row_of(1)).duration_seconds),
   '{"mode":"instant","count":10,"questions":10,"seconds":10800}'::jsonb,
-  'ten questions from the pool, closed by the server after three hours');
+  'ten questions from the topic, closed by the server after three hours');
 select is(pg_temp.leaks(pg_temp.o('start')), '{}'::text[],
   'no correct option, explanation or mark reaches the browser before a pick');
 select is(pg_temp.o('replay') -> 'attempt' ->> 'id', pg_temp.a(1)::text, 'a replayed start returns the same attempt');
@@ -125,9 +128,9 @@ select is(jsonb_build_object('state', pg_temp.o('exam-while-open') ->> 'state',
 select is(pg_temp.o('instant-elsewhere') ->> 'state', 'ready', 'another course may have its own open attempt');
 set local role service_role;
 select throws_ok($$ select public.practice_start(pg_temp.s(1), pg_temp.a(9), pg_temp.c('07'), 'new', null, 10, 10800,
-  '[]', 10, 10800, false, 'instant') $$, '22023', null, 'an instant start carries no brief');
+  '[]', 10, 10800, false, 'instant', 'Bookkeeping & Errors') $$, '22023', null, 'an instant start carries no brief');
 select throws_ok($$ select public.practice_start(pg_temp.s(1), pg_temp.a(9), pg_temp.c('07'), 'redo', pg_temp.a(1), 10,
-  10800, '[]', null, null, null, 'instant') $$, '22023', null, 'and is never a redo');
+  10800, '[]', null, null, null, 'instant', 'Bookkeeping & Errors') $$, '22023', null, 'and is never a redo');
 select throws_ok($$ select public.practice_start(pg_temp.s(1), pg_temp.a(9), pg_temp.c('07'), 'new', null, 10, 10800,
   '[]', null, null, null, 'topic') $$, '22023', null, 'an unknown mode is refused');
 select throws_ok($$ select public.practice_start(pg_temp.s(1), pg_temp.a(9), pg_temp.c('07'), 'new', null, 5, 1800,
@@ -136,7 +139,7 @@ reset role;
 -- Access is practice_can_start's, unchanged: a free-tier student cannot start a plan course in either mode.
 set local role service_role;
 insert into outcome values ('locked', public.practice_start(pg_temp.s(3), pg_temp.a(30), pg_temp.c('07'), 'new', null,
-  10, 10800, '[]', null, null, null, 'instant'));
+  10, 10800, '[]', null, null, null, 'instant', 'Bookkeeping & Errors'));
 reset role;
 select is(pg_temp.o('locked'), '{"state":"locked"}'::jsonb, 'starting needs course access, as for an exam');
 
@@ -260,7 +263,7 @@ select is((select c from jsonb_array_elements(pg_temp.o('progress-late') -> 'cou
   '{"practised":13,"score":2,"total":3}'::jsonb, 'an attempt left early scores correct out of the questions answered');
 
 -- 7. The sweep with picks recorded -----------------------------------------------------------------------------------
--- Attempt 3 (course 13, instant) gets picks, attempt 5 (student 2, exam) a saved sheet; both pass their deadline.
+-- Attempt 3 (course 09, instant) gets picks, attempt 5 (student 2, exam) a saved sheet; both pass their deadline.
 set local role service_role;
 select pg_temp.pick(1, 3, n, true) from generate_series(0, 3) n;
 insert into outcome values ('exam-start', pg_temp.estart(2, 5));
@@ -276,9 +279,9 @@ select is(jsonb_build_object('instant', jsonb_build_object('status', (pg_temp.ro
   '{"instant":{"status":"timed_out","score":4,"answers":4},"exam":{"status":"timed_out","score":1}}'::jsonb,
   'without failing or undoing its batch: the instant attempt counts its picks, the exam is graded from its sheet');
 select is(private.close_overdue_practice_all(), 0, 'and a second sweep finds nothing to close');
--- Attempt 8 (course 13): started, never picked, abandoned.
+-- Attempt 8 (course 09): started, never picked, abandoned.
 set local role service_role;
-select pg_temp.istart(1, 8, '13');
+select pg_temp.istart(1, 8, '09');
 reset role;
 update public.quiz_attempts set created_at = clock_timestamp() - interval '4 hours',
   deadline_at = clock_timestamp() - interval '1 minute' where id = pg_temp.a(8);
@@ -286,7 +289,7 @@ set local role service_role;
 insert into outcome values ('progress-abandoned', public.practice_progress(pg_temp.s(1)));
 reset role;
 select is(jsonb_build_object('status', (pg_temp.row_of(8)).status, 'course', (select c - 'course_id'
-    from jsonb_array_elements(pg_temp.o('progress-abandoned') -> 'courses') c where c ->> 'course_id' = pg_temp.c('13')::text)),
+    from jsonb_array_elements(pg_temp.o('progress-abandoned') -> 'courses') c where c ->> 'course_id' = pg_temp.c('09')::text)),
   '{"status":"timed_out","course":{"practised":4,"score":4,"total":4}}'::jsonb,
   'an instant attempt closed with no pick has no score, so the last score stays the one before it');
 

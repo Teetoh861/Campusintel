@@ -47,7 +47,9 @@ const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = new Map(Object.entries(require.cache))
   const calls = [], client = { name: 'verified detail client' }
-  const state = { result: full(), signedOut: false, sessionError: false, clientError: false }
+  // topics: the course's topic list as published_cbt_topics returns it (null: unreadable); progress per topic.
+  const state = { result: full(), signedOut: false, sessionError: false, clientError: false, topics: [], progress: null,
+    topicError: false }
   function StudentAccessGate() { return null }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -55,6 +57,7 @@ async function fixture(run) {
         jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
     }).outputText, file)
     const central = require(path.join(root, 'lib/courses/read-model.ts'))
+    const topicModel = require(path.join(root, 'lib/practice/topics.ts'))
     Module._load = function(name, ...args) {
       if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate }
       if (name === 'next/navigation') return {
@@ -73,6 +76,17 @@ async function fixture(run) {
         getStudentCourseBySlugForVerifiedStudent: async (supplied, slug) => {
           calls.push(['lookup', slug]); assert.equal(supplied, client); return state.result
         },
+      }
+      if (name === '@/lib/practice/server') return { practicePolicyFor: slug => {
+        assert.equal(slug, 'central-route'); return { size: 50, seconds: 1800, sections: ['Configured first'] }
+      } }
+      if (name === '@/lib/practice/topics') return { ...topicModel,
+        readPracticeTopics: async (supplied, courseId, sections) => {
+          calls.push(['topics', courseId, sections]); assert.equal(supplied, client)
+          if (state.topicError) throw new Error('private provider details')
+          return state.topics
+        },
+        readTopicProgress: async (sessionId, courseId) => { calls.push(['progress', sessionId, courseId]); return state.progress },
       }
       if (name === './BookmarkButton') return { BookmarkButton: props =>
         React.createElement('button', { type: 'button', 'data-bookmark': props.contentKey }, 'Bookmark control') }
@@ -105,7 +119,8 @@ async function fixture(run) {
 
 test('the gated page reads central truth once and institutional identity wins over static repository identity', async () => fixture(async f => {
   const html = await f.html()
-  assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
+  assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route'],
+    ['topics', 'repository-id', ['Configured first']], ['progress', 'live-session', 'repository-id']])
   assert.equal((html.match(/<h1\b/g) || []).length, 1)
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.match(html, /INST101 · Free/)
@@ -116,9 +131,11 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.match(html, /data-course-view-slug="central-route"/)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   assert.match(html, /data-bookmark="central-key"/)
-  assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, 1, 'exactly one Practice entry')
-  assert.match(text(html), /Questions available 111 Per attempt 50 Time 30 min/)
-  assert.match(html, /Start CBT practice/)
+  assert.equal(anchors(html).filter(link => link.includes('/courses/central-route/quiz')).length, 1,
+    'a course without topics offers Exam mode only')
+  assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/quiz?mode=exam"') && link.includes('Exam mode')))
+  assert.match(text(html), /Exam mode 50 questions · 30 min/)
+  assert.doesNotMatch(html, /Start CBT practice|Questions available|student-topic-list|Instant feedback/)
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/theory"') && link.includes('Start theory practice')))
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/materials"') && link.includes('Request material')))
   assert.ok(html.indexOf('id="notes"') < html.indexOf('id="cbtPractice"') && html.indexOf('id="cbtPractice"') < html.indexOf('id="theory"') &&
@@ -130,6 +147,31 @@ test('the gated page reads central truth once and institutional identity wins ov
     [['01', 'Notes'], ['02', 'CBT practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
   assert.match(html, /<\/aside><div class="student-detail-reading">/)
   assert.ok(html.indexOf('student-detail-rail') < html.indexOf('applicability-title'), 'the rail precedes the reading column')
+}))
+
+test('practice by topic: one row per topic in order, its count before practice and its progress after, then Exam mode', async () => fixture(async f => {
+  f.state.topics = [{ topic: 'Configured first', bankSize: 12 }, { topic: 'Ratios & Returns', bankSize: 1 },
+    { topic: 'Third', bankSize: 20 }]
+  f.state.progress = new Map([['Configured first', { practised: 8, lastScore: { score: 6, total: 8 } }],
+    ['Third', { practised: 3, lastScore: null }]])
+  const html = await f.html()
+  const rows = anchors(html).filter(link => link.includes('student-topic-row'))
+    .map(link => [link.match(/href="([^"]+)"/)[1].replace(/&amp;/g, '&'), text(link).trim().replace(/&amp;/g, '&')])
+  assert.deepEqual(rows, [
+    ['/courses/central-route/quiz?topic=Configured%20first', '1 Configured first 8 of 12 questions practised · Last score 6/8'],
+    ['/courses/central-route/quiz?topic=Ratios%20%26%20Returns', '2 Ratios & Returns 1 question'],
+    ['/courses/central-route/quiz?topic=Third', '3 Third 3 of 20 questions practised'],
+  ], 'number, title and one line; the count before practice, the progress after, never both')
+  assert.ok(html.indexOf('student-topic-list') < html.indexOf('?mode=exam'), 'Exam mode follows the topics')
+  assert.match(text(html), /Exam mode 50 questions · 30 min/)
+  // Progress that cannot be read leaves each topic's count; topics that cannot be read leave Exam mode only.
+  f.state.progress = null
+  assert.match(text(await f.html()), /1 Configured first 12 questions /)
+  f.state.topicError = true
+  const fallback = await f.html()
+  assert.doesNotMatch(fallback, /student-topic-list/)
+  assert.match(fallback, /href="\/courses\/central-route\/quiz\?mode=exam"/)
+  assert.match(fallback, /<h1[^>]*>Institutional title<\/h1>/, 'a failed topic read never makes the page unavailable')
 }))
 
 test('notes render plain, topic and calculator payloads with formulas and examples byte-identical', async () => fixture(async f => {
@@ -160,12 +202,12 @@ test('study families appear only from central flags, and Notes never comes from 
     for (const id of ['notes', 'cbtPractice', 'theory', 'overview', 'reading']) {
       assert.equal(html.includes(`id="${id}"`), present.includes(id), `${JSON.stringify(flags)} → ${id}`)
     }
-    assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, flags.cbtPractice ? 1 : 0)
+    assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz?mode=exam"')).length, flags.cbtPractice ? 1 : 0)
     assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/theory"')).length, flags.theory ? 1 : 0)
     assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   }
   f.state.result = { status: 'ok', course: institutional(ready({ cbtPractice: true })), learning, practice: null }
-  assert.doesNotMatch(await f.html(), /id="cbtPractice"|\/quiz"/, 'the page never builds practice without central metadata')
+  assert.doesNotMatch(await f.html(), /id="cbtPractice"|\/quiz[?"]/, 'the page never builds practice without central metadata')
 }))
 
 test('theory practice is offered only with a usable model answer, and numbering matches Theory practice', async () => fixture(async f => {
@@ -195,7 +237,7 @@ test('overview-only stays no-published-learning: identity, context and prominent
   assert.match(html, /Study materials are not available\./)
   assert.match(html, /role="status"/)
   assert.match(html, /id="overview"/)
-  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|\/quiz"/)
+  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|\/quiz[?"]/)
   const requests = anchors(html).filter(link => link.includes('href="/courses/central-route/materials"'))
   assert.equal(requests.length, 1)
   assert.match(requests[0], /Request material/)
@@ -212,7 +254,7 @@ test('temporary publication failure keeps confirmed identity and offers retry pl
   assert.match(html, /role="alert"/)
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route"') && link.includes('Try again')))
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/materials"')))
-  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|id="overview"|\/quiz"/)
+  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|id="overview"|\/quiz[?"]/)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   assert.match(html, /data-course-view-slug="central-route"/)
   assert.doesNotMatch(html, /student-detail-rail|Contents/, 'no empty contents rail without study sections')
@@ -227,7 +269,7 @@ test('a locked course keeps its identity, renders no study content or reading li
   assert.match(html, /Included with full access/)
   assert.match(html, /GST courses stay free/)
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
-  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|id="overview"|id="reading"|Core reading|\/quiz"|\/theory"|\/materials"/)
+  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|id="overview"|id="reading"|Core reading|\/quiz[?"]|\/theory"|\/materials"/)
   assert.doesNotMatch(html, /student-detail-rail|role="alert"/)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1, 'a locked course can still be bookmarked')
 }))
@@ -240,19 +282,19 @@ test('repository-only renders repository identity and content without any fabric
   assert.match(html, /Check that these materials match your course and syllabus/)
   assert.doesNotMatch(html, /INST101|Institutional title|Confirmed for|Business Administration|Insurance|200 Level|Semester|Free/)
   assert.match(html, /id="notes"/)
-  assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz"')).length, 1)
+  assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz?mode=exam"')).length, 1)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'no-published-learning', study: study({}) }),
     learning: { overview: learning.overview, notes: [], theoryQuestions: [], theoryPractice: false }, practice: null }
   const empty = await f.html()
   assert.match(empty, /Study materials are not available\./)
-  assert.doesNotMatch(empty, /\/quiz"|INST101/)
+  assert.doesNotMatch(empty, /\/quiz[?"]|INST101/)
   f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'temporarily-unavailable', reason: 'projection-failed' }),
     learning: null, practice: null }
   const failed = await f.html()
   assert.match(failed, /Study materials are temporarily unavailable\./)
   assert.match(failed, /Additional study material · STATIC 999/)
-  assert.doesNotMatch(failed, /id="overview"|\/quiz"/)
+  assert.doesNotMatch(failed, /id="overview"|\/quiz[?"]/)
 }))
 
 test('signed-out, not-found, unavailable and invariant failures never fall back to static identity', async () => fixture(async f => {
@@ -273,7 +315,7 @@ test('signed-out, not-found, unavailable and invariant failures never fall back 
     assert.match(html, /<h1[^>]*>Course<\/h1>/)
     assert.ok(html.includes(expectedTitle), status)
     assert.ok(anchors(html).some(link => link.includes(`href="${href}"`)), href)
-    assert.doesNotMatch(html, /INST101|Institutional title|STATIC 999|Static repository title|Bookmark control|data-course-view-slug|\/quiz"/)
+    assert.doesNotMatch(html, /INST101|Institutional title|STATIC 999|Static repository title|Bookmark control|data-course-view-slug|\/quiz[?"]/)
   }
   assert.ok(anchors(await f.html()).some(link => link.includes('href="/materials"')) === false, 'invariant failure routes to support, not material')
   f.state.result = { status: 'unavailable' }
