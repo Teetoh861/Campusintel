@@ -1,7 +1,7 @@
 // Root layout — shared navigation, student design tokens, and legacy styles.
 import { Hanken_Grotesk } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { headers } from 'next/headers'
+import { readStudentChromeState } from '@/lib/auth/server-chrome'
 
 import '../styles/campusintel.css'
 import './globals.css'
@@ -11,7 +11,6 @@ import '../styles/ai-practice.css'
 import { Nav } from '@/components/chrome/Nav'
 import { Footer } from '@/components/chrome/Footer'
 import { NavigationSessionProvider } from '@/components/auth/NavigationSession'
-import { CHROME_STATE_HEADER, parseChromeState } from '@/lib/auth/chrome-state'
 import type { Metadata, Viewport } from 'next'
 import type { ReactElement, ReactNode } from 'react'
 
@@ -46,12 +45,12 @@ export const viewport: Viewport = {
 }
 
 /** Share presentation state while keeping route authorization in the existing server boundaries.
- * The first render takes the proxy's live answer; reading it also keeps every page per-request.
+ * The first render shares verified identity and lifecycle with the gate and page.
  */
 export default async function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>): Promise<ReactElement> {
-  const chrome = parseChromeState((await headers()).get(CHROME_STATE_HEADER))
+  const chrome = await readStudentChromeState()
   return (
     <html lang="en" className={hanken.variable}>
       <body className="flex min-h-dvh flex-col font-sans">

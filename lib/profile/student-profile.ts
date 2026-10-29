@@ -1,5 +1,6 @@
 // Current-student profile domain. No client-supplied profile identity enters this module.
 import 'server-only'
+import { isStudentRenderClient, readRenderStudentSession } from '@/lib/auth/render-session'
 import { z } from 'zod'
 import { getStudentSessionContext, getStudentSessionUser } from '@/lib/auth/student-state'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -58,7 +59,7 @@ export type StudentProfileState =
 
 async function currentStudent(response?: NextResponse, includeSession = false): Promise<{ client: StudentClient; id: string; sessionId?: string } | null> {
   const client = await createClient(response)
-  if (includeSession) {
+  if (includeSession || (response === undefined && isStudentRenderClient(client))) {
     const context = await getStudentSessionContext(response, client)
     return context === null ? null : { client, id: context.user.id, sessionId: context.sessionId }
   }
@@ -126,6 +127,26 @@ function completeState(ids: SelectionIds, references: References, firstName: str
 }
 
 async function readStudentProfile(client: StudentClient, id: string): Promise<StudentProfileState> {
+  if (isStudentRenderClient(client)) {
+    const context = await readRenderStudentSession(client)
+    if (context === null || context.user.id !== id || context.snapshot.lifecycle.status !== 'active') return { status: 'signed-out' }
+    if (context.snapshot.profile === null) return { status: 'missing-profile' }
+    const profile = storedProfileSchema.extend({ selection_confirmed_at: z.string().datetime({ offset: true }).nullable() })
+      .safeParse(context.snapshot.profile)
+    if (!profile.success) return { status: 'invariant-failure' }
+    const { first_name, revision, selection_confirmed_at, ...ids } = profile.data
+    const stored = classifyStoredSelection(ids)
+    if (stored.kind === 'invariant-failure' || (stored.kind === 'incomplete') !== (selection_confirmed_at === null)) {
+      return { status: 'invariant-failure' }
+    }
+    const references = z.object({ departments: referenceRowSchema.array().min(1),
+      academicLevels: referenceRowSchema.array().min(1), academicPeriods: referenceRowSchema.array().min(1) })
+      .safeParse(context.snapshot.references)
+    if (!references.success) return { status: 'unavailable' }
+    return stored.kind === 'incomplete'
+      ? { status: 'incomplete', options: presentOptions(references.data), firstName: first_name, revision }
+      : completeState(stored.ids, references.data, first_name, revision)
+  }
   const stored = await readStoredSelection(client, id)
   if (stored.kind === 'missing-profile') return { status: 'missing-profile' }
   if (stored.kind === 'unavailable') return { status: 'unavailable' }

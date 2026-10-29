@@ -2,7 +2,7 @@
 import { refreshStudentSession } from '@/lib/supabase/proxy'
 import type { NextRequest } from 'next/server'
 
-/** Refresh account cookies; protected pages and handlers make their own authorization decisions. */
+/** Refresh cookies and preserve lifecycle routing; render consumers share the verified identity and profile. */
 export async function proxy(request: NextRequest) {
   return refreshStudentSession(request)
 }

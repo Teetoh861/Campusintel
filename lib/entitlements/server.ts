@@ -4,6 +4,8 @@
 // Reads use the student's own cookie-bound client; the activation write is a service-role function given the verified
 // session id, so the database derives the student itself (the same contract as AI practice and quiz attempts).
 import 'server-only'
+import { cache } from 'react'
+import { isStudentRenderClient, readRenderStudentSession } from '@/lib/auth/render-session'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { track } from '@vercel/analytics/server'
 import type { NextResponse } from 'next/server'
@@ -65,7 +67,12 @@ async function askDiscoveryEligibility(client: StudentClient): Promise<boolean> 
   const keys = readClaimHashKeys()
   if (keys === null) return false
   try {
+    const context = isStudentRenderClient(client) ? await readRenderStudentSession(client) : undefined
     const [{ data: userData, error: userError }, { data: claimsData, error: claimsError }] =
+      context !== undefined ? [
+        { data: { user: context?.user }, error: null },
+        { data: { claims: context ? { sub: context.user.id, session_id: context.sessionId } : null }, error: null },
+      ] :
       await Promise.all([client.auth.getUser(), client.auth.getClaims()])
     const user = userData?.user
     const claims = claimsData?.claims
@@ -85,10 +92,13 @@ async function askDiscoveryEligibility(client: StudentClient): Promise<boolean> 
  * Discovery offer read eligibility too (at most once per request); a caller that only needs course access (course
  * lists, lib/courses/read-model.ts) passes `discoveryEligibility: false` and gets `discovery_eligible: false`.
  */
+const readRenderEntitlement = cache(async (client: StudentClient) => client.rpc('get_my_entitlement'))
+
 export async function readEntitlementForVerifiedStudent(client: StudentClient,
   { discoveryEligibility = true }: { discoveryEligibility?: boolean } = {}): Promise<EntitlementRead> {
   try {
-    const { data, error } = await client.rpc('get_my_entitlement')
+    const { data, error } = await (isStudentRenderClient(client)
+      ? readRenderEntitlement(client) : client.rpc('get_my_entitlement'))
     if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
     const parsed = entitlementSummarySchema.safeParse(data)
     if (!parsed.success) return { status: 'unavailable' }
