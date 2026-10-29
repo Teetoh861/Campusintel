@@ -43,7 +43,6 @@ export function LandingFooter({ whatsAppUrl, year }: { whatsAppUrl: string | nul
           <ul>
             {whatsAppUrl && <li><External href={whatsAppUrl} brand="whatsapp">{footer.whatsApp}</External></li>}
             <li><a href={`mailto:${CONTACT_EMAIL}`} className={LINK}>{CONTACT_EMAIL}</a></li>
-            <li><External href={footer.website.href}>{footer.website.label}</External></li>
           </ul>
         </div>
         <div>

@@ -359,3 +359,72 @@ test('landing source keeps client code small, scripts out, colours on tokens and
   assert.deepEqual(fontUsers.sort(), ['app/layout.tsx', 'components/landing/fonts.ts'])
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8'), /Playfair|Source_Sans/)
 })
+
+/** Every `selector { declarations }` rule in a stylesheet, media queries flattened. */
+const cssRules = css => [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)]
+  .map(([, selector, body]) => ({ selector: selector.trim(), body }))
+
+test('green marks only a right answer: ticks are Blue, done steps Navy', async () => {
+  const css = fs.readFileSync(path.join(__dirname, 'landing.module.css'), 'utf8')
+  // Token definitions aside, the success colour is used by the right-answer key alone.
+  const green = cssRules(css).filter(rule =>
+    /var\(--l-ok|student-success/.test(rule.body.replace(/--l-ok(?:-soft)?:[^;]*;/g, '')))
+  assert.deepEqual(green.map(rule => rule.selector), ['.keyRight'])
+  const rule = selector => cssRules(css).find(item => item.selector === selector)?.body ?? ''
+  assert.match(rule('.trust svg'), /color: var\(--l-blue\)/)
+  assert.match(rule('.tick'), /background: var\(--l-blue\)/)
+  assert.match(rule('.tick'), /color: var\(--l-surface\)/)
+  assert.match(rule('.stepDone'), /background: var\(--l-navy\)/)
+  for (const file of fs.readdirSync(__dirname).filter(name => /\.tsx?$/.test(name) && name !== 'TryQuestionQuiz.tsx')) {
+    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, file), 'utf8'), /success|keyRight/, file)
+  }
+
+  const { tryQuestion } = await content()
+  const { questions, ...copy } = tryQuestion
+  const quiz = await interactive('TryQuestionQuiz.tsx', { copy, questions, intro: null, botSrc: '/landing/campus-bot.png' })
+  global.requestAnimationFrame = callback => callback()
+  const isGreen = node => /success|keyRight/.test(node.props?.className ?? '')
+  // Every green element sits inside an option whose word names the right answer; nothing else is green.
+  const greenOnly = rightLabel => {
+    const options = quiz.buttons().filter(node => questions.some(q => q.options.some(text => quiz.text(node).includes(text))))
+    assert.ok(options.length >= 2)
+    let inRight = 0
+    for (const option of options) {
+      const green = elementNodes(option).filter(isGreen).length
+      if (rightLabel !== null && new RegExp(`${rightLabel}$`).test(quiz.text(option))) { assert.ok(green > 0); inRight += green }
+      else assert.equal(green, 0, quiz.text(option))
+    }
+    assert.equal(quiz.tree().filter(isGreen).length, inRight)
+  }
+  try {
+    greenOnly(null)
+    quiz.button(questions[0].options[questions[0].answer]).props.onClick()
+    greenOnly('Correct')
+    quiz.button('Next question').props.onClick()
+    const wrong = questions[1].options.findIndex((_, i) => i !== questions[1].answer)
+    quiz.button(questions[1].options[wrong]).props.onClick()
+    greenOnly('Correct answer')
+  } finally {
+    delete global.requestAnimationFrame
+  }
+})
+
+test('the header is solid: no translucent background and no backdrop filter', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'landing.module.css'), 'utf8')
+  const header = cssRules(css).filter(rule => /\.header\b(?![A-Za-z])/.test(rule.selector))
+  assert.ok(header.length > 0)
+  for (const { selector, body } of header) {
+    assert.doesNotMatch(body, /backdrop-filter|transparent|opacity|rgba\(/, selector)
+  }
+  assert.match(header.find(rule => rule.selector === '.header').body, /background: var\(--l-bg\);/)
+})
+
+test('the footer Contact list has no link to the site itself', async () => {
+  const html = await renderHome({ env: CONFIGURED })
+  const footer = html.slice(html.lastIndexOf('<footer'))
+  const contact = /<h2>Contact<\/h2><ul>([\s\S]*?)<\/ul>/.exec(footer)
+  assert.ok(contact, 'Contact list')
+  assert.deepEqual(anchors(contact[1]).map(link => link.text), ['WhatsApp us (opens in a new tab)', 'hello@campusintell.com'])
+  for (const link of anchors(footer)) assert.doesNotMatch(link.href ?? '', /^https?:\/\/(www\.)?campusintell\.com/, link.text)
+  assert.equal('website' in (await content()).footer, false)
+})

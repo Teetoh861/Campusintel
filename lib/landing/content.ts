@@ -270,7 +270,6 @@ export const landingContent = {
     ] satisfies TextLink[],
     contactHeading: 'Contact',
     whatsApp: 'WhatsApp us',
-    website: { label: 'www.campusintell.com', href: 'https://campusintell.com' },
     followHeading: 'Follow',
     instagram: 'Instagram',
     x: 'X (Twitter)',
