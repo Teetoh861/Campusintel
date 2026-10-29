@@ -183,18 +183,34 @@ test('one h1, labelled landmarks, lazy decorative images and a single preloaded 
   assert.doesNotMatch(html, /data:image|base64|<script|fonts\.googleapis/)
 })
 
-test('the sample questions are BUA 201 bank questions with their real answers', async () => {
+// The owner's official GST111 bank lives outside the repository; set CAMPUSINTEL_OFFICIAL_BANKS to check it elsewhere.
+const GST111_BANK = path.join(process.env.CAMPUSINTEL_OFFICIAL_BANKS
+  ?? path.join(require('node:os').homedir(), 'Desktop/CampusIntell-official-banks'), 'batch-1/GST111/GST111_Platform.json')
+
+test('the sample questions come from the free GST111 bank', async () => {
   const { tryQuestion } = await content()
-  const bank = await withModules({}, {}, () => require(path.join(root, 'lib/data/quizzes.ts')).getQuizByCourseSlug('principles-business-administration'))
-  assert.equal(bank.courseCode, 'BUA201')
   assert.equal(tryQuestion.questions.length, 2)
+  assert.equal(new Set(tryQuestion.questions.map(sample => sample.questionId)).size, 2)
   for (const sample of tryQuestion.questions) {
-    const source = bank.questions.find(question => question.questionId === sample.questionId)
-    assert.ok(source, sample.questionId)
+    assert.match(sample.questionId, /^(GST111|G111N\d)-\d{3,4}$/, 'a GST111 bank ID')
+    assert.match(sample.course, /^GST 111 · /)
+    assert.doesNotMatch(`${sample.course} ${sample.question}`, /BUA/)
+  }
+})
+
+test('each sample is copied word for word from the official GST111 bank', { skip: !fs.existsSync(GST111_BANK) && 'official bank not on this machine' }, async () => {
+  const { tryQuestion } = await content()
+  const bank = JSON.parse(fs.readFileSync(GST111_BANK, 'utf8'))
+  assert.equal(bank.course, 'GST111')
+  for (const sample of tryQuestion.questions) {
+    const matches = bank.questions.filter(question => question.id === sample.questionId)
+    assert.equal(matches.length, 1, sample.questionId)
+    const [source] = matches
+    const keys = Object.keys(source.options).sort()
     assert.equal(sample.question, source.question)
-    assert.deepEqual(sample.options, source.options)
-    assert.equal(sample.answer, source.correctAnswer)
-    assert.ok(sample.explanation.length > 0)
+    assert.deepEqual(sample.options, keys.map(key => source.options[key]))
+    assert.equal(sample.answer, keys.indexOf(source.answer))
+    assert.equal(sample.explanation, source.explanation)
   }
 })
 
