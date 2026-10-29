@@ -37,7 +37,7 @@ export default function HomePage(): ReactElement {
         <OtherFaculties waitlistUrl={links.waitlist} />
         <Faq />
         <FinalCta communityUrl={links.community} />
-        <LandingFooter whatsAppUrl={links.whatsApp} year={new Date().getFullYear()} />
+        <LandingFooter whatsAppUrl={links.whatsApp} communityUrl={links.community} year={new Date().getFullYear()} />
       </div>
     </PublicHomeBoundary>
   )

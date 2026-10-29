@@ -26,7 +26,7 @@ function Row({ row }: { row: ShowcaseRow }): ReactElement {
         <div className={styles.blob} />
         {row.phones.map((phone, phoneIndex) => (
           <Image key={phone.src} src={phone.src} width={phone.width} height={phone.height} alt={phone.alt} sizes={PHONE_SIZES}
-            className={`${styles.screen} ${phoneIndex === 0 ? styles.screenBack : styles.screenFront}`} />
+            className={`${styles.screen} ${row.phones.length === 1 ? '' : phoneIndex === 0 ? styles.screenBack : styles.screenFront}`} />
         ))}
         {row.chip && (
           <div className={`${styles.float} ${styles.s1}`} aria-hidden="true">
