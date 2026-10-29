@@ -1,63 +1,53 @@
-// components/dashboard/PrimaryCards.tsx — The student's semester courses (owner's sprint plan of 23 Oct, item 2: open or
-// locked, with progress once practised) and the complete Practice proposition.
+// components/dashboard/PrimaryCards.tsx — Course-file navigation and the complete Practice proposition.
 import Link from 'next/link'
 import { CBrandTexture } from '@/components/student/CBrandTexture'
 import { StatusRail } from '@/components/student/StatusRail'
 import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
-import { studentFocusControl, studentFocusDark } from '@/components/student/ui'
+import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
+import { isActionableStudentCourse } from '@/lib/courses/read-model'
 import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
-import { formatCourseProgress } from '@/lib/dashboard/home-courses'
+import { STUDY_FAMILIES } from '@/components/student/study-families'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
-import type { HomeCourse, HomeCourseStatus, HomeCourses } from '@/lib/dashboard/home-courses'
+import type { StudentCourse } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
-const STATUS_LABELS: Record<HomeCourseStatus, string> = {
-  open: 'Open', locked: 'Locked', missing: 'No materials yet', temporary: 'Unavailable right now',
+function courseSummary(courses: ReadonlyArray<StudentCourse>): string {
+  const total = `${courses.length} ${courses.length === 1 ? 'course' : 'courses'}`
+  const ready = courses.filter(isActionableStudentCourse).length
+  return ready > 0 ? `${total} · ${ready} ready to study` : total
 }
 
-function CourseItem({ course }: { course: HomeCourse }): ReactElement {
+function CourseFile({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
+  const empty = courses?.length === 0
   const body = <>
-    <span className="dashboard-course-heading">
-      <span className="dashboard-course-code">{course.code}</span>
-      <span className="dashboard-course-status" data-status={course.status}>{STATUS_LABELS[course.status]}</span>
-    </span>
-    <span className="dashboard-course-title">{course.title}</span>
-    {course.progress !== null && <span className="dashboard-course-progress">{formatCourseProgress(course.progress)}</span>}
+    {!empty && <span className="dashboard-file-tab">{courses === null
+      ? 'Course information is temporarily unavailable.' : courseSummary(courses)}</span>}
+    <div className="dashboard-file-body">
+      <CBrandTexture />
+      <div className="dashboard-file-content">
+        {empty ? <p className="dashboard-primary-copy">{EMPTY_COURSES_MESSAGE}</p> : <>
+          <h2 id="my-courses-title">{STUDENT_DESTINATIONS.myCourses.label}</h2>
+          <p className="dashboard-primary-copy">Your semester, in one place.</p>
+          <div className="dashboard-file-index" aria-hidden="true">
+            {['Overview', ...STUDY_FAMILIES.map(family => family.label)].map((label, index) =>
+              <span key={label}><span>{String(index + 1).padStart(2, '0')}</span>{label}</span>)}
+          </div>
+          <span className="dashboard-primary-action">View my courses</span>
+        </>}
+      </div>
+    </div>
   </>
-  return <li>{course.href === null
-    ? <div className="dashboard-course-item">{body}</div>
-    : <Link href={course.href} prefetch={false} className={`dashboard-course-item ${studentFocusDark}`}>{body}</Link>}
-  </li>
+  return empty
+    ? <section aria-label="My Courses" className="dashboard-course-file student-enter student-enter-1">{body}</section>
+    : <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+      className={`dashboard-course-file student-interactive-card student-enter student-enter-1 ${studentFocusCard}`}>{body}</Link>
 }
 
-/** The semester's courses, or a neutral line when they cannot be read or none are listed. */
-function CourseList({ home }: { home: HomeCourses | null }): ReactElement {
-  if (home === null) return <p className="dashboard-primary-copy">Course information is temporarily unavailable.</p>
-  if (home.courses.length === 0) return <p className="dashboard-primary-copy">{EMPTY_COURSES_MESSAGE}</p>
-  return <ul className="dashboard-course-list">{home.courses.map(course => <CourseItem key={course.id} course={course} />)}</ul>
-}
-
-/** "First Semester" → "First semester", for the approved heading "Your courses · First semester". */
-function sentenceCase(label: string): string {
-  return label.charAt(0) + label.slice(1).toLowerCase()
-}
-
-/** Two primary surfaces: the semester's courses and current/future personal practice. */
-export function PrimaryCards({ home, semester }: { home: HomeCourses | null; semester: string }): ReactElement {
+/** Two primary surfaces: current semester study and current/future personal practice. */
+export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
   const aiAvailable = isAiPracticeAvailable()
   return <section aria-label="Study and practice" className="dashboard-primary-grid">
-    <section aria-labelledby="my-courses-title" className="dashboard-course-file student-enter student-enter-1">
-      <div className="dashboard-file-body">
-        <CBrandTexture />
-        <div className="dashboard-file-content">
-          <h2 id="my-courses-title">Your courses · {sentenceCase(semester)}</h2>
-          <CourseList home={home} />
-          {/* An empty list has nothing to view: My Courses would open empty. */}
-          {(home === null || home.courses.length > 0) && <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
-            className={`dashboard-primary-action ${studentFocusControl}`}>View my courses</Link>}
-        </div>
-      </div>
-    </section>
+    <CourseFile courses={courses} />
     <article aria-labelledby="practice-title" className="dashboard-practice student-enter student-enter-2">
       <p className="dashboard-practice-eyebrow">Verified CBT practice</p>
       <div className="dashboard-practice-heading">

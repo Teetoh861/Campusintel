@@ -1,5 +1,4 @@
-// app/dashboard/page.tsx — Request-scoped Student App home: the student's semester courses, and once they have started
-// practising, a Continue card and their own progress (owner's sprint plan of 23 Oct, item 2). Full rows stay at /my-courses.
+// app/dashboard/page.tsx — Request-scoped Student App home with course-file navigation and personal Continue practice.
 import Link from 'next/link'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { ContinueCard } from '@/components/dashboard/ContinueCard'
@@ -62,15 +61,16 @@ export default async function DashboardPage(): Promise<ReactElement> {
     readEntitlementForVerifiedStudent(client), readPracticeProgress(context.sessionId)])
   if (current.status === 'signed-out' || current.status === 'incomplete') redirectForStudentState(current.status, STUDENT_HOME_PATH)
   // A selection changed during this request must not produce mismatched courses or figures.
-  const home = current.status === 'ok' &&
+  const matching = current.status === 'ok' &&
     current.selection.departmentId === profile.selection.department.id &&
     current.selection.academicLevelId === profile.selection.academicLevel.id &&
     current.selection.academicPeriodId === profile.selection.academicPeriod.id
-    ? homeCoursesFrom(current.courses, current.cbtBankSizes, progress) : null
+    ? current : null
+  const home = matching === null ? null : homeCoursesFrom(matching.courses, matching.cbtBankSizes, progress)
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">
     <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
     {home?.continuePractice && <ContinueCard next={home.continuePractice} />}
-    <PrimaryCards home={home} semester={profile.selection.academicPeriod.label} />
+    <PrimaryCards courses={matching?.courses ?? null} />
     <SupportingActions />
   </StudentPage></>
 }

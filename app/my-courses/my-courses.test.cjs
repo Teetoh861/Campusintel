@@ -32,6 +32,13 @@ const noLearning = course('empty-id', 'BUA207', shelved('empty-slug'), { state: 
 const unavailable = course('failed-id', 'BUA209', shelved('failed-slug'),
   { state: 'temporarily-unavailable', reason: 'publication-read-failed' })
 
+const gst111 = course('gst111-id', 'GST111', {
+  state: 'shelved', repositoryCourseId: 'gst111-repository', contentKey: 'use-of-english', isShared: true,
+  route: { href: '/courses/use-of-english', course: { slug: 'use-of-english', contentKey: 'use-of-english',
+    code: 'GST111', title: 'Use of English' } },
+}, { state: 'ready', study: study({ notes: true, cbtPractice: true }) })
+const FIGURES = /questions? practised|Last score|\d+ of \d+|completion|streak|\d+%/i
+const rows = html => [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map(match => match[1])
 const nodes = element => elementNodes(element)
 
 async function fixture(run) {
@@ -42,7 +49,10 @@ async function fixture(run) {
   const loadingFile = require.resolve('./loading.tsx')
   const state = {
     enabled: true, context: { user: { id: 'current-student' }, sessionId: 'live-session' },
-    contextError: null, tokenError: null, result: { status: 'ok', selection, courses: [ready, unbuilt, broken] },
+    contextError: null, tokenError: null, result: { status: 'ok', selection, courses: [ready, unbuilt, broken],
+      cbtBankSizes: new Map() },
+    progressError: null, progressReads: [], progress: { status: 'ok', now: '2026-10-29T09:00:00.000Z',
+      open: null, latest: null, courses: new Map() },
     profile, domainCalls: [], profileReads: 0, clientReads: 0, contextReads: 0,
     client: { source: 'request-scoped RLS client' },
   }
@@ -71,9 +81,18 @@ async function fixture(run) {
           return `page:${id}:${sessionId}`
         },
       }
+      if (name === '@/lib/practice/progress') return { readPracticeProgress: async sessionId => {
+        state.progressReads.push(sessionId)
+        if (state.progressError) throw state.progressError
+        return state.progress
+      } }
       if (name === '@/lib/courses/read-model') return {
         // Real central predicates; only the verified-student read is replaced by fixture state.
         ...originalLoad.call(this, local('lib/courses/read-model.ts'), ...args),
+        getStudentCatalogueForVerifiedStudent: async client => {
+          assert.equal(client, state.client)
+          return { status: 'ok', courses: state.result.courses }
+        },
         getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
           assert.equal(client, state.client)
           assert.equal(user, state.context.user)
@@ -118,6 +137,8 @@ test('verified student sees the PageBand, real context/counts and every course i
   const tree = await f.page(), html = renderToStaticMarkup(tree)
   assert.equal(nodes(tree).find(node => node.type?.name === 'AuthFlowSync').props.continuityToken, 'page:current-student:live-session')
   assert.deepEqual(f.state.domainCalls, [[f.state.client, f.state.context.user]])
+  assert.deepEqual(f.state.progressReads, ['live-session'])
+  assert.doesNotMatch(html, FIGURES)
   assert.deepEqual([f.state.clientReads, f.state.contextReads, f.state.profileReads], [1, 1, 1])
   assert.match(html, /class="student-page-band"/)
   assert.match(html, /<h1[^>]*>My Courses<\/h1>/)
@@ -204,6 +225,7 @@ test('signed-out and incomplete students follow existing login/selection routes'
   f.state.context = null
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fmy-courses/)
   assert.equal(f.state.domainCalls.length, 0)
+  assert.deepEqual(f.state.progressReads, [])
   f.state.context = { user: { id: 'current-student' }, sessionId: 'live-session' }
   f.state.result = { status: 'signed-out' }
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fmy-courses/)
@@ -236,6 +258,8 @@ test('domain failures retain truthful recovery and never look like an empty seme
 }))
 
 test('every selection mismatch fails closed before rendering mixed context/courses', async () => fixture(async f => {
+  f.state.progress.courses = new Map([['resolved-slug-repository', { practised: 8, lastScore: { score: 6, total: 8 } }]])
+  f.state.result.cbtBankSizes = new Map([['ready-id', 12]])
   for (const dimension of ['department', 'academicLevel', 'academicPeriod']) {
     f.state.profile = { ...profile, selection: { ...profile.selection,
       [dimension]: { ...profile.selection[dimension], id: 'changed-selection' },
@@ -244,6 +268,7 @@ test('every selection mismatch fails closed before rendering mixed context/cours
     assert.match(html, /selection changed/)
     assert.ok(anchor(html, '/my-courses'))
     assert.doesNotMatch(html, /BUA201|Business Administration|Your courses are not available yet/)
+    assert.doesNotMatch(html, FIGURES)
   }
   f.state.contextError = new Error('provider secret')
   assert.doesNotMatch(await f.render(), /provider secret/)
@@ -271,7 +296,7 @@ test('loading reuses the PageBand/register and inert, static accessible skeleton
   assert.equal((html.match(/<li\b/g) || []).length, 6)
   assert.match(html, /aria-hidden="true"/)
   assert.match(html, /animate-none/)
-  assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b|animate-pulse|Business Administration|BUA201|\d+%/)
+  assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b|animate-pulse|Business Administration|BUA201|practised|Last score|\d+%/)
 }))
 
 test('actionability needs a shelved route and ready content; overview alone is never Notes', async () => fixture(async f => {
@@ -292,4 +317,107 @@ test('actionability needs a shelved route and ready content; overview alone is n
   assert.equal(anchors(html).filter(link => link.includes('href="/materials"')).length, 1, 'overview-only is missing content')
   f.state.result = { status: 'ok', selection, courses: [broken, unavailable] }
   assert.equal(anchors(await f.render()).filter(link => link.includes('href="/materials"')).length, 0, 'temporary states do not request material')
+}))
+
+test('day one and an open ungraded attempt show no figures despite known bank sizes', async () => fixture(async f => {
+  f.state.result = { status: 'ok', selection, courses: [gst111, ready],
+    cbtBankSizes: new Map([['gst111-id', 12], ['ready-id', 40]]) }
+  assert.doesNotMatch(await f.render(), FIGURES)
+  f.state.progress.open = { courseId: 'gst111-repository', contentKey: 'use-of-english',
+    deadlineAt: '2026-10-29T09:15:00.000Z' }
+  assert.doesNotMatch(await f.render(), FIGURES)
+  assert.deepEqual(f.state.progressReads, ['live-session', 'live-session'])
+}))
+
+test('a graded GST111 attempt appears only below its title using the shared course progress formatter', async () => fixture(async f => {
+  f.state.result = { status: 'ok', selection, courses: [ready, gst111, unbuilt],
+    cbtBankSizes: new Map([['gst111-id', 12], ['ready-id', 40]]) }
+  f.state.progress.courses = new Map([['gst111-repository', { practised: 8, lastScore: { score: 6, total: 8 } }]])
+  const html = await f.render(), courseRows = rows(html)
+  assert.equal(courseRows.length, 3)
+  assert.match(courseRows[1], /<h3[^>]*>GST111 institutional title<\/h3><p[^>]*>8 of 12 questions practised · Last score 6\/8<\/p>/)
+  assert.doesNotMatch(courseRows[0], FIGURES)
+  assert.doesNotMatch(courseRows[2], FIGURES)
+  assert.equal((html.match(/Last score/g) || []).length, 1)
+  assert.deepEqual(f.state.progressReads, ['live-session'])
+}))
+
+test('figures follow course identity through reordered rows and never include courses outside the selection', async () => fixture(async f => {
+  f.state.result = { status: 'ok', selection, courses: [gst111, noLearning, ready],
+    cbtBankSizes: new Map([['gst111-id', 12], ['ready-id', 25]]) }
+  f.state.progress.courses = new Map([
+    ['resolved-slug-repository', { practised: 1, lastScore: { score: 0, total: 1 } }],
+    ['outside-repository', { practised: 99, lastScore: { score: 9, total: 9 } }],
+    ['gst111-repository', { practised: 8, lastScore: { score: 6, total: 8 } }],
+  ])
+  for (const courses of [[gst111, noLearning, ready], [ready, gst111, noLearning]]) {
+    f.state.result.courses = courses
+    const courseRows = rows(await f.render())
+    const gst = courseRows.find(row => row.includes('GST111'))
+    const bua = courseRows.find(row => row.includes('BUA201'))
+    assert.match(gst, /8 of 12 questions practised · Last score 6\/8/)
+    assert.match(bua, /1 of 25 questions practised · Last score 0\/1/)
+    assert.doesNotMatch(courseRows.find(row => row.includes('BUA207')), FIGURES)
+    assert.doesNotMatch(courseRows.join(''), /99|9\/9/)
+  }
+}))
+
+test('uncountable banks omit totals and locked courses retain only their own graded history', async () => fixture(async f => {
+  const locked = { ...gst111, content: { state: 'locked' } }
+  f.state.result = { status: 'ok', selection, courses: [locked, ready, unbuilt], cbtBankSizes: new Map() }
+  f.state.progress.courses = new Map([
+    ['gst111-repository', { practised: 8, lastScore: { score: 6, total: 8 } }],
+    ['resolved-slug-repository', { practised: 1, lastScore: { score: 1, total: 1 } }],
+  ])
+  const courseRows = rows(await f.render())
+  assert.match(courseRows[0], /8 questions practised · Last score 6\/8/)
+  assert.match(courseRows[0], /student-course-row-locked/)
+  assert.match(courseRows[1], /1 question practised · Last score 1\/1/)
+  assert.doesNotMatch(courseRows.join(''), / of \d+/)
+  assert.doesNotMatch(courseRows[2], FIGURES)
+}))
+
+test('unavailable and signed-out progress reads leave usable course rows with no figures', async () => fixture(async f => {
+  for (const status of ['unavailable', 'signed-out']) {
+    f.state.progress = { status }
+    const html = await f.render()
+    assert.equal(rows(html).length, 3)
+    assert.ok(anchor(html, '/courses/resolved-slug'))
+    assert.doesNotMatch(html, FIGURES)
+    assert.doesNotMatch(html, /Courses temporarily unavailable|role="alert"/)
+  }
+}))
+
+test('All Courses never reads or receives progress even when the student has graded history', async () => fixture(async f => {
+  f.state.result.courses = [gst111, ready]
+  f.state.result.cbtBankSizes = new Map([['gst111-id', 12]])
+  f.state.progress.courses = new Map([['gst111-repository', { practised: 8, lastScore: { score: 6, total: 8 } }]])
+  const page = require('../courses/page.tsx').default
+  const gated = page()
+  const tree = await gated.props.children.type(gated.props.children.props)
+  const directory = nodes(tree).find(node => node.type?.name === 'CourseDirectory')
+  assert.ok(directory)
+  const html = directory.props.items.map(item => renderToStaticMarkup(item.row)).join('')
+  assert.match(html, /GST111/)
+  assert.doesNotMatch(html, FIGURES)
+  assert.deepEqual(f.state.progressReads, [])
+  for (const item of directory.props.items) assert.equal(item.row.props.progress, undefined)
+}))
+
+test('My Courses remains dynamic and composes existing reads and formatting without new progress logic', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8')
+  assert.match(source, /export const dynamic = 'force-dynamic'/)
+  assert.match(source, /readPracticeProgress\(context\.sessionId\)/)
+  assert.match(source, /homeCoursesFrom\(result\.courses, result\.cbtBankSizes, progress\)/)
+  assert.match(source, /formatCourseProgress\(/)
+  assert.doesNotMatch(source, /use client|cache\(|unstable_cache|use cache|\.rpc\(|createServiceClient/)
+})
+
+test('a rejected practice read also leaves the page usable without figures or provider details', async () => fixture(async f => {
+  f.state.progressError = new Error('private progress provider failure')
+  const html = await f.render()
+  assert.equal(rows(html).length, 3)
+  assert.ok(anchor(html, '/courses/resolved-slug'))
+  assert.doesNotMatch(html, FIGURES)
+  assert.doesNotMatch(html, /provider failure|Courses temporarily unavailable|role="alert"/)
 }))

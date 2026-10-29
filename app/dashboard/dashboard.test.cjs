@@ -1,6 +1,4 @@
-// app/dashboard/dashboard.test.cjs — Real identity, command-centre hierarchy and private server boundaries. The course
-// list, Continue card and progress follow the owner's sprint plan of 23 Oct, item 2, which replaced the earlier rule
-// that home shows no semester rows and no progress.
+// app/dashboard/dashboard.test.cjs — Personalized course-file navigation and unchanged private Continue behavior.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -65,13 +63,13 @@ async function fixture(run) {
 }
 
 test('sprint plan 23 Oct item 2: home is a real personalized command centre with no fabricated activity', async () => fixture(async f => {
+  f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
   for (const text of ['Welcome back, Ọlá', 'Business Administration', '200 Level', 'First Semester',
-    'Your courses', 'Practice', 'All Courses', 'Bookmarks', 'Request Material', 'Help &amp; Support', 'Account', 'Waitlist']) assert.ok(html.includes(text), text)
+    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request Material', 'Help &amp; Support', 'Account', 'Waitlist']) assert.ok(html.includes(text), text)
   assert.doesNotMatch(html, /streak|GPA|credits remaining|Tobi|not-a-name@|Saved files/)
-  // The approved heading, with the student's own verified semester.
-  assert.match(courseCard(html), /<h2 id="my-courses-title">Your courses · First semester<\/h2>/)
-  assert.doesNotMatch(html, /This semester/)
+  assert.match(courseCard(html), /<h2 id="my-courses-title">My Courses<\/h2>/)
+  assert.doesNotMatch(html, /This semester|Your courses ·/)
   assert.equal(f.state.profileReads, 1)
   assert.equal(f.state.courseReads, 1)
   assert.deepEqual(f.state.progressReads, ['session'], 'one practice read for every course, for the verified session')
@@ -148,9 +146,9 @@ test('Dashboard actions stay arrow-free with their labels, destinations and keyb
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
   const actions = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
-    .filter(([, attributes]) => /class="[^"]*\bdashboard-(?:primary-action|practice-action|material-card|utility-row)\b/.test(attributes))
+    .filter(([, attributes]) => /class="[^"]*\bdashboard-(?:course-file|practice-action|material-card|utility-row)\b/.test(attributes))
   const expected = [
-    ['/my-courses', 'View my courses', 'control'], ['/my-courses', 'Choose a course', 'control'],
+    ['/my-courses', 'View my courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
     ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse the library', 'card'],
     ['/materials', 'Request course material', 'card'], ['/tutors', 'Tutors', 'row'],
     ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Account', 'row'],
@@ -198,33 +196,44 @@ const mappedCourse = (index, state) => ({ institutionalCourseId: `course-${index
       : state === 'locked' ? { state: 'locked' }
         : state === 'overview-only' ? { state: 'no-published-learning', study: study({}) }
           : { state: 'temporarily-unavailable', reason: 'publication-read-failed' } })
-const courseCard = html => html.match(/<section aria-labelledby="my-courses-title"[\s\S]*?<\/section>/)?.[0]
+const courseCard = html => html.match(/<(a|section)\b[^>]*class="dashboard-course-file\b[^"]*"[^>]*>[\s\S]*?<\/\1>/)?.[0]
 const items = html => [...(courseCard(html) ?? '').matchAll(/<li>([\s\S]*?)<\/li>/g)].map(match => match[1])
 const continueCard = html => html.match(/<a\b[^>]*class="dashboard-continue[^>]*>([\s\S]*?)<\/a>/)?.[0]
 const FIGURES = /practised|Last score|\d+ of \d+|progress|completion|streak|%/i
 const started = (f, courses) => { f.state.progress = { ...f.state.progress, courses: new Map(courses) } }
 const minutesFromNow = minutes => new Date(Date.parse(NOW) + minutes * 60_000).toISOString()
 
-test('sprint plan 23 Oct item 2: day-one home lists the chosen courses, open or locked, with nothing started and no figures', async () => fixture(async f => {
-  const states = ['ready', 'locked', 'not-built', 'overview-only', 'unshelved', 'unavailable']
-  f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
-  f.state.current.cbtBankSizes = new Map([['course-0', 40], ['course-4', 12]])
-  const html = await f.html(), rows = items(html)
-  assert.equal(rows.length, 6, 'every chosen course, in the read model\'s order')
-  const expected = [['COURSE0', 'Open', '/courses/course-0'], ['COURSE1', 'Locked', '/courses/course-1'],
-    ['COURSE2', 'No materials yet', null], ['COURSE3', 'No materials yet', '/courses/course-3'],
-    ['COURSE4', 'Unavailable right now', null], ['COURSE5', 'Unavailable right now', '/courses/course-5']]
-  for (const [index, [code, status, href]] of expected.entries()) {
-    assert.ok(rows[index].includes(`>${code}<`), code)
-    assert.ok(rows[index].includes(`Course ${index} title`), `${code}: title`)
-    assert.ok(rows[index].includes(`>${status}<`), `${code}: ${status}`)
-    if (href === null) assert.doesNotMatch(rows[index], /<a\b/, `${code}: no route, no link`)
-    else assert.ok(rows[index].includes(`href="${href}"`), `${code}: ${href}`)
-  }
-  assert.doesNotMatch(courseCard(html), FIGURES, 'a bank size alone is not progress')
+
+test('day-one course file shows seven courses and three ready without listing identities or figures', async () => fixture(async f => {
+  f.state.current.courses = ['ready', 'ready', 'ready', 'locked', 'not-built', 'unshelved', 'overview-only']
+    .map((state, index) => mappedCourse(index, state))
+  f.state.current.cbtBankSizes = new Map([['course-0', 12]])
+  const html = await f.html(), card = courseCard(html)
+  assert.ok(card)
+  assert.match(card, /^<a\b[^>]*href="\/my-courses"/)
+  assert.match(card, /class="dashboard-file-tab">7 courses · 3 ready to study<\/span>/)
+  assert.match(card, /<h2 id="my-courses-title">My Courses<\/h2>/)
+  assert.match(card, /Your semester, in one place\./)
+  assert.match(card, />View my courses<\/span>/)
+  for (const label of ['Overview', 'Notes', 'CBT practice', 'Theory']) assert.ok(card.includes(label), label)
+  assert.equal((card.match(/<a\b/g) || []).length, 1, 'the whole card is one target')
+  assert.doesNotMatch(card, /<ul\b|<li\b|<button\b|Available study materials vary by course/)
+  assert.doesNotMatch(html, /COURSE\d|Course \d title|This semester|Your courses ·/)
+  assert.doesNotMatch(card, FIGURES, 'bank sizes do not produce progress')
   assert.equal(continueCard(html), undefined)
-  assert.doesNotMatch(html, /Resume practice|Continue practising/)
-  assert.doesNotMatch(courseCard(html), /200 Level|First Semester|Business Administration/, 'academic details stay in the band')
+}))
+
+test('course-file tab derives readiness from actionable courses and handles singular and none ready', async () => fixture(async f => {
+  for (const [states, expected] of [
+    [['ready'], '1 course · 1 ready to study'],
+    [['locked', 'not-built', 'unshelved', 'overview-only', 'unavailable', 'not-built', 'locked'], '7 courses'],
+    [['not-built'], '1 course'],
+  ]) {
+    f.state.current.courses = states.map((state, index) => mappedCourse(index, state))
+    const card = courseCard(await f.html())
+    assert.ok(card.includes(`class="dashboard-file-tab">${expected}</span>`), expected)
+    assert.doesNotMatch(card, /0 ready|COURSE\d|Course \d title|Study materials are not available/)
+  }
 }))
 
 test('sprint plan 23 Oct item 2: after a graded attempt, a Continue card and that course\'s own progress', async () => fixture(async f => {
@@ -232,15 +241,14 @@ test('sprint plan 23 Oct item 2: after a graded attempt, a Continue card and tha
   f.state.current.cbtBankSizes = new Map([['course-0', 40], ['course-1', 25]])
   f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-0', contentKey: 'course-0' } }
   started(f, [['repository-0', { practised: 10, lastScore: { score: 6, total: 10 } }]])
-  const html = await f.html(), rows = items(html)
+  const html = await f.html()
   const next = continueCard(html)
   assert.match(next, /href="\/courses\/course-0\/quiz"/)
   assert.match(next, /data-continue="continue"/)
   assert.match(next, />Continue practising COURSE0</)
   assert.match(next, />Course 0 title</)
   assert.ok(html.indexOf('dashboard-continue') < html.indexOf('my-courses-title'), 'the Continue card comes first')
-  assert.match(rows[0], />10 of 40 questions practised · Last score 6\/10</)
-  assert.doesNotMatch(rows[1], FIGURES, 'a course not yet practised shows no figures')
+  assert.doesNotMatch(courseCard(html), FIGURES)
 }))
 
 test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it has left', async () => fixture(async f => {
@@ -250,14 +258,13 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
     deadlineAt: minutesFromNow(11.5) }, latest: { courseId: 'repository-0', contentKey: 'course-0' } }
   // The open attempt's course has no graded attempt yet, so the database sends no figures for it.
   started(f, [['repository-0', { practised: 10, lastScore: { score: 6, total: 10 } }]])
-  const html = await f.html(), rows = items(html)
+  const html = await f.html()
   const next = continueCard(html)
   assert.match(next, /data-continue="resume"/)
   assert.match(next, /href="\/courses\/course-1\/quiz"/)
   assert.match(next, />Resume practice: COURSE1, 12 min left</)
   assert.equal((html.match(/class="dashboard-continue /g) || []).length, 1, 'one next step only')
-  assert.doesNotMatch(rows[1], FIGURES, 'an open attempt adds nothing until it is graded')
-  assert.match(rows[0], />10 of 40 questions practised · Last score 6\/10</)
+  assert.doesNotMatch(courseCard(html), FIGURES)
   for (const [minutes, text] of [[60, '1 hr left'], [95, '1 hr 35 min left'], [0.2, '1 min left']]) {
     f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: minutesFromNow(minutes) } }
     assert.match(continueCard(await f.html()), new RegExp(`>Resume practice: COURSE1, ${text}<`))
@@ -266,31 +273,35 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
   assert.match(continueCard(await f.html()), />Continue practising COURSE0</, 'an attempt whose time is up is never offered')
 }))
 
-test('sprint plan 23 Oct item 2: several courses keep their own figures, matched by course and never mixed', async () => fixture(async f => {
-  f.state.current.courses = [0, 1, 2, 3].map(index => mappedCourse(index, 'ready'))
-  f.state.current.cbtBankSizes = new Map([['course-0', 40], ['course-1', 25], ['course-2', 30], ['course-3', 8]])
-  started(f, [['repository-3', { practised: 8, lastScore: { score: 8, total: 8 } }],
-    ['repository-1', { practised: 1, lastScore: { score: 0, total: 1 } }],
-    ['repository-unknown', { practised: 99, lastScore: { score: 9, total: 9 } }]])
-  const rows = items(await f.html())
-  assert.doesNotMatch(rows[0], FIGURES)
-  assert.match(rows[1], />1 of 25 questions practised · Last score 0\/1</)
-  assert.doesNotMatch(rows[2], FIGURES)
-  assert.match(rows[3], />8 of 8 questions practised · Last score 8\/8</)
-  assert.doesNotMatch(rows.join(''), /99|9\/9/, 'a course outside the semester adds nothing')
+
+test('the course file stays identical after a graded GST111 attempt while Continue appears', async () => fixture(async f => {
+  const gst = { ...mappedCourse(0, 'ready'), code: 'GST111', title: 'Use of English',
+    repository: { ...shelved(0), contentKey: 'use-of-english', route: { href: '/courses/use-of-english',
+      course: { slug: 'use-of-english', contentKey: 'use-of-english', code: 'GST111', title: 'Use of English' } } } }
+  f.state.current.courses = [gst, ...['ready', 'ready', 'locked', 'not-built', 'unshelved', 'overview-only']
+    .map((state, index) => mappedCourse(index + 1, state))]
+  f.state.current.cbtBankSizes = new Map([['course-0', 12]])
+  const before = courseCard(await f.html())
+  f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-0', contentKey: 'use-of-english' } }
+  started(f, [['repository-0', { practised: 8, lastScore: { score: 6, total: 8 } }]])
+  const html = await f.html()
+  assert.equal(courseCard(html), before)
+  assert.match(continueCard(html), />Continue practising GST111</)
+  assert.match(continueCard(html), /href="\/courses\/use-of-english\/quiz"/)
+  assert.doesNotMatch(courseCard(html), /GST111|Use of English/)
+  assert.doesNotMatch(html, /questions? practised|Last score/)
 }))
 
-test('sprint plan 23 Oct item 2: a course without a question bank shows no total, and none it cannot count', async () => fixture(async f => {
+
+test('a course without a countable bank has no figures on home and a locked course offers no Continue', async () => fixture(async f => {
   f.state.current.courses = [mappedCourse(0, 'overview-only'), mappedCourse(1, 'locked'), mappedCourse(2, 'ready')]
   f.state.current.cbtBankSizes = new Map()
   started(f, [['repository-1', { practised: 3, lastScore: { score: 2, total: 3 } }],
     ['repository-2', { practised: 1, lastScore: { score: 1, total: 1 } }]])
   f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-1', contentKey: 'course-1' } }
-  const html = await f.html(), rows = items(html)
-  assert.doesNotMatch(rows[0], FIGURES, 'no bank, never practised: nothing')
-  assert.match(rows[1], />3 questions practised · Last score 2\/3</, 'a locked course keeps the student\'s own figures')
-  assert.doesNotMatch(rows[1], / of \d+/, 'and no total it may not count now')
-  assert.match(rows[2], />1 question practised · Last score 1\/1</)
+  const html = await f.html()
+  assert.match(courseCard(html), />3 courses · 1 ready to study</)
+  assert.doesNotMatch(courseCard(html), FIGURES)
   assert.equal(continueCard(html), undefined, 'no Continue card into a course the plan now locks')
 }))
 
@@ -300,7 +311,7 @@ test('sprint plan 23 Oct item 2: an unavailable or signed-out practice read show
   for (const status of ['unavailable', 'signed-out']) {
     f.state.progress = { status }
     const html = await f.html()
-    assert.match(items(html)[0], />Open</)
+    assert.match(courseCard(html), />1 course · 1 ready to study</)
     assert.doesNotMatch(html, /Resume practice|Continue practising|practised|Last score/)
   }
 }))
@@ -321,6 +332,8 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   started(f, [[GST111.courseId, { practised: 3, lastScore: { score: 2, total: 3 } }]])
   f.state.progress = { ...f.state.progress, latest: GST111 }
   // EST's decision: an empty list shows that one sentence and no extra detail, even after earlier practice.
+  f.state.profile.selection.department.label = 'Accounting'
+  f.state.profile.selection.academicLevel.label = '300 Level'
   const empty = await f.html()
   assert.deepEqual([...courseCard(empty).matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(match => match[1]),
     ['Your courses are not available yet.'])
@@ -329,7 +342,7 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   // My Courses would open empty, so the card offers no way there.
   assert.doesNotMatch(courseCard(empty), /View my courses|href="\/my-courses"/)
   assert.equal(courseCard(empty).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
-    'Your courses · First semester Your courses are not available yet.')
+    'Your courses are not available yet.')
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()
@@ -386,4 +399,45 @@ test('semantic focus, official C texture and reduced motion have shared owners',
   assert.match(css, /forced-colors: active/)
   assert.match(css, /c-pattern-white\.png/)
   assert.doesNotMatch(css, /text-decoration: underline|0 -3px 0|Geist|Playfair|Myriad/)
+})
+
+test('course-file CSS restores the reference tab, index, focus and equal-height cards without list styles', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../styles/student-app.css'), 'utf8')
+  assert.match(css, /\.dashboard-primary-grid \{[^}]*grid-auto-rows: 1fr;[^}]*align-items: stretch;/)
+  for (const selector of ['.dashboard-file-tab', '.dashboard-file-index', '.dashboard-course-file:focus-visible']) {
+    assert.ok(css.includes(selector), selector)
+  }
+  assert.doesNotMatch(css, /\.dashboard-course-(?:list|item|heading|code|status|title|progress)\b/)
+  assert.ok(css.indexOf('[data-student-app] .dashboard-course-file:focus-visible') >
+    css.indexOf('[data-student-app] .student-focus-card:focus-visible'), 'course-file focus overrides the shared card focus')
+})
+
+test('Dashboard uses its section gap after the plan notice and Continue at phone and desktop widths', () => {
+  const css = require('postcss').parse(fs.readFileSync(path.join(__dirname, '../../styles/student-app.css'), 'utf8'))
+  function declaration(selector, property, width) {
+    let value
+    css.walkRules(rule => {
+      if (!rule.selectors.includes(selector)) return
+      for (let parent = rule.parent; parent; parent = parent.parent) {
+        if (parent.type !== 'atrule' || parent.name !== 'media') continue
+        const min = /min-width:\s*(\d+)px/.exec(parent.params)
+        const max = /max-width:\s*(\d+)px/.exec(parent.params)
+        if ((min && width < Number(min[1])) || (max && width > Number(max[1]))) return
+      }
+      rule.walkDecls(property, item => { value = item.value })
+    })
+    return value
+  }
+  function margin(selector, property, width) {
+    const value = declaration(selector, property, width)
+    const variable = /^var\((--[^,)]+)/.exec(value ?? '')
+    return Number.parseFloat(variable ? declaration('.dashboard-workspace', variable[1], width) : value)
+  }
+  for (const [width, expected] of [[375, 32], [1199, 32], [1200, 36], [1280, 36]]) {
+    const section = margin('.dashboard-section', 'margin-top', width)
+    assert.equal(section, expected, `section gap at ${width}px`)
+    assert.equal(margin('.dashboard-workspace > [data-access-notice]', 'margin-bottom', width), section,
+      `gap after the plan notice at ${width}px`)
+    assert.equal(margin('.dashboard-continue', 'margin-bottom', width), section, `gap after Continue at ${width}px`)
+  }
 })
