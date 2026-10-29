@@ -26,6 +26,8 @@ export type CourseRowPresentation = CourseRowIdentity & (
 )
 
 type CourseRowProps = CourseRowPresentation & {
+  // Supplied only by My Courses after composing the verified student's graded practice read.
+  progress?: string
   // A sibling control beside the course target; never nested inside the link.
   trailingAction?: ReactNode
 }
@@ -37,6 +39,7 @@ export function CourseRow(props: CourseRowProps): ReactElement {
       ? <p className="student-course-row-code" data-identity="repository">{REPOSITORY_COURSE_LABEL}</p>
       : <p className="student-course-row-code">{props.code}</p>}
     <h3 className="student-course-row-title">{props.title}</h3>
+    {props.progress !== undefined && <p className="student-course-row-progress">{props.progress}</p>}
     <div className="student-course-row-meta">
       {props.locked ? <p className="student-course-row-locked">
         <Lock aria-hidden="true" size={14} strokeWidth={1.75} /><span>{STUDY_COPY.locked}</span>

@@ -21,6 +21,8 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { getCurrentStudentCoursesForVerifiedStudent, getStudentCourseUnavailability,
   isActionableStudentCourse } from '@/lib/courses/read-model'
+import { formatCourseProgress, homeCoursesFrom } from '@/lib/dashboard/home-courses'
+import { readPracticeProgress } from '@/lib/practice/progress'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -94,8 +96,9 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
   if (verified === null) redirectForStudentState('signed-out', MY_COURSES_PATH)
   const { client, context, continuityToken } = verified
 
-  const [result, entitlement] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
-    readEntitlementForVerifiedStudent(client)])
+  const [result, entitlement, progress] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
+    readEntitlementForVerifiedStudent(client),
+    readPracticeProgress(context.sessionId).catch(() => ({ status: 'unavailable' as const }))])
   if (result.status === 'signed-out' || result.status === 'incomplete') redirectForStudentState(result.status, MY_COURSES_PATH)
   const continuity = <AuthFlowSync signedIn continuityToken={continuityToken} />
   if (result.status !== 'ok') return <>{continuity}<MyCoursesError state={result.status} /></>
@@ -112,6 +115,9 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
     return <>{continuity}<MyCoursesError state="selection-changed" /></>
   }
 
+  const progressByCourse = new Map(homeCoursesFrom(result.courses, result.cbtBankSizes, progress).courses
+    .map(course => [course.id, course.progress === null ? undefined : formatCourseProgress(course.progress)]))
+
   return <>{continuity}<StudentPage band={<SemesterContext selection={profile.selection} total={result.courses.length}
     ready={result.courses.filter(isActionableStudentCourse).length} />}>
     {result.courses.length === 0
@@ -120,7 +126,8 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
         <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
         <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
         <CourseRegister label="Your semester courses">
-          {result.courses.map(course => <StudentCourseRow key={course.institutionalCourseId} course={course} />)}
+          {result.courses.map(course => <StudentCourseRow key={course.institutionalCourseId} course={course}
+            progress={progressByCourse.get(course.institutionalCourseId)} />)}
         </CourseRegister>
         {result.courses.some(course => getStudentCourseUnavailability(course) === 'missing') &&
           <div className="student-register-request">

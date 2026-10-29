@@ -28,9 +28,10 @@ export function presentStudentCourseRow(course: PresentableStudentCourse): Cours
 }
 
 /** Present actionability, canonical route and study labels without reconstructing any of them. */
-export function StudentCourseRow({ course, trailingAction }: {
+export function StudentCourseRow({ course, progress, trailingAction }: {
   course: PresentableStudentCourse
+  progress?: string
   trailingAction?: ReactNode
 }): ReactElement {
-  return <CourseRow {...presentStudentCourseRow(course)} trailingAction={trailingAction} />
+  return <CourseRow {...presentStudentCourseRow(course)} progress={progress} trailingAction={trailingAction} />
 }
