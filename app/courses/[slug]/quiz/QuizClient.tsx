@@ -1,5 +1,5 @@
-// QuizClient — the Practice screens around one server-run attempt: the briefing, the resume card, the attempt itself
-// (ActiveAttempt), the result and the review. The server owns every attempt; this file only moves between screens.
+// QuizClient — the Practice screens around one server-run attempt: the choice of mode, the exam briefing, the resume
+// card, the attempt itself (ActiveAttempt for an exam, InstantAttempt for instant feedback), the result and the review. The server owns every attempt; this file only moves between screens.
 // A start names a fresh attempt id kept on this device until the server answers, so a lost response is retried with
 // the same id and never starts a second attempt. Every attempt has a reloadable URL (?attempt=<id>).
 'use client'
@@ -7,7 +7,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { postPracticeCommand } from '@/lib/practice/client'
 import { ActiveAttempt } from './ActiveAttempt'
+import { InstantAttempt } from './InstantAttempt'
+import { InstantResult } from './InstantResult'
 import { IntroScreen } from './IntroScreen'
+import { ModeChoiceScreen } from './ModeChoiceScreen'
 import { ReportQuestionDialog } from './ReportQuestionDialog'
 import { ResultsScreen } from './ResultsScreen'
 import { ResumeScreen } from './ResumeScreen'
@@ -64,6 +67,8 @@ type Props = {
 }
 
 type View =
+  // The start: Instant feedback or Exam mode. 'intro' is the exam's brief.
+  | { screen: 'choose' }
   | { screen: 'intro' }
   | { screen: 'resume' }
   | { screen: 'active'; attempt: OpenAttempt; now: string }
@@ -73,7 +78,7 @@ function initialView(initial: QuizInitial): View {
   if (initial.kind === 'resume') return { screen: 'resume' }
   if (initial.kind === 'open') return { screen: 'active', attempt: initial.attempt, now: initial.now }
   if (initial.kind === 'graded') return { screen: 'results', attempt: initial.attempt, unsent: false }
-  return { screen: 'intro' }
+  return { screen: 'choose' }
 }
 
 export function QuizClient(props: Props): ReactElement | null {
@@ -112,7 +117,7 @@ export function QuizClient(props: Props): ReactElement | null {
     if (decided.current) return
     decided.current = true
     if (initial.kind === 'graded' && initial.latest && props.brief !== null && resultSeen(initial.attempt.id)) {
-      setView({ screen: 'intro' })
+      setView({ screen: 'choose' })
     }
   }, [initial, props.brief])
   useEffect(() => {
@@ -127,8 +132,10 @@ export function QuizClient(props: Props): ReactElement | null {
     writePendingStart(courseSlug, pending)
     let outcome: PracticeResult = { status: 'unavailable' }
     for (let tries = 0; tries < START_TRIES; tries += 1) {
-      outcome = await postPracticeCommand({ action: 'start', courseSlug, attemptId: pending.attemptId,
-        intent: pending.intent, redoOf: pending.redoOf, expected: pending.expected }, continuityToken)
+      outcome = await postPracticeCommand('mode' in pending
+        ? { action: 'start-instant', courseSlug, attemptId: pending.attemptId }
+        : { action: 'start', courseSlug, attemptId: pending.attemptId, intent: pending.intent, redoOf: pending.redoOf,
+          expected: pending.expected }, continuityToken)
       if (outcome.status !== 'unavailable') break
       await new Promise(resolve => setTimeout(resolve, START_RETRY_MS * (tries + 1)))
     }
@@ -162,10 +169,16 @@ export function QuizClient(props: Props): ReactElement | null {
 
   const start = useCallback((intent: 'new' | 'redo', redoOf: string | null, expected: PracticeBrief) => {
     const kept = readPendingStart(courseSlug)
-    const same = kept !== null && kept.intent === intent && kept.redoOf === redoOf
+    const same = kept !== null && !('mode' in kept) && kept.intent === intent && kept.redoOf === redoOf
     void begin(same ? kept : { attemptId: crypto.randomUUID(), intent, redoOf,
       expected: { ...expected, wholeBank: bankSize <= expected.questionCount } })
   }, [courseSlug, begin, bankSize])
+
+  // Instant feedback has no brief: a start kept from a lost response is retried with its own attempt id.
+  const startInstant = useCallback(() => {
+    const kept = readPendingStart(courseSlug)
+    void begin(kept !== null && 'mode' in kept ? kept : { attemptId: crypto.randomUUID(), mode: 'instant' })
+  }, [courseSlug, begin])
 
   // A start whose response was lost before a reload: ask for that same attempt instead of offering a new one.
   useEffect(() => {
@@ -196,6 +209,10 @@ export function QuizClient(props: Props): ReactElement | null {
 
   const identity = { courseCode: props.courseCode, courseTitle: props.courseTitle, repositoryOnly: props.repositoryOnly }
 
+  if (view.screen === 'active' && view.attempt.mode === 'instant') {
+    return <InstantAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken}
+      courseHref={props.courseHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)} />
+  }
   if (view.screen === 'active') {
     return <ActiveAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken} courseHref={props.courseHref}
       attempt={view.attempt} serverNow={view.now} onGraded={onGraded} />
@@ -224,6 +241,10 @@ export function QuizClient(props: Props): ReactElement | null {
         onRestoreFocus={event => { if (focusFirst(reportReturnFocus.current)) event.preventDefault() }} /> : null}
     </>
   }
+  if (view.screen === 'results' && view.attempt.mode === 'instant') {
+    return <InstantResult {...identity} courseHref={props.courseHref} attempt={view.attempt} canStartNew={brief !== null}
+      starting={busy} error={problem} onRetry={retry} onPractiseAgain={startInstant} />
+  }
   if (view.screen === 'results') {
     const { attempt } = view
     return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={brief !== null}
@@ -236,7 +257,12 @@ export function QuizClient(props: Props): ReactElement | null {
   }
   // The page renders the briefing only when a fresh attempt may start, so a missing brief renders nothing here.
   if (brief === null) return null
+  if (view.screen === 'choose') {
+    return <ModeChoiceScreen {...identity} courseHref={props.courseHref} starting={busy} error={problem} onRetry={retry}
+      lastResultHref={props.lastResultHref} onInstant={startInstant}
+      onExam={() => { setProblem(null); setView({ screen: 'intro' }) }} />
+  }
   return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief} wholeBank={bankSize <= brief.questionCount}
     briefingVersion={briefingVersion} starting={busy} error={problem} onRetry={retry} lastResultHref={props.lastResultHref}
-    onStart={() => start('new', null, brief)} />
+    onStart={() => start('new', null, brief)} onBack={() => { setProblem(null); setView({ screen: 'choose' }) }} />
 }

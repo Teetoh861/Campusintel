@@ -29,11 +29,13 @@ type Props = {
   lastResultHref: string | null
   onStart: () => void
   onRetry: () => void
+  // Back to the choice of mode.
+  onBack: () => void
 }
 
 /** Readiness is tied to the briefing version, so changed conditions always ask again. */
-export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, brief, wholeBank, briefingVersion,
-  starting, error, lastResultHref, onStart, onRetry }: Props): ReactElement {
+export function IntroScreen({ courseCode, courseTitle, repositoryOnly, brief, wholeBank, briefingVersion,
+  starting, error, lastResultHref, onStart, onRetry, onBack }: Props): ReactElement {
   const [readyVersion, setReadyVersion] = useState<number | null>(null)
   const id = useId()
   const ready = readyVersion === briefingVersion
@@ -68,7 +70,8 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
     <div className="student-practice-row">
       <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={!ready || starting}
         aria-describedby={`${id}-help`} onClick={() => { if (ready && !starting) onStart() }}>Start practice</button>
-      <Link href={courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>{PRACTICE_COPY.backToCourse}</Link>
+      <button type="button" className={studentAction(btnGhost, 'bg-student-surface')} disabled={starting} onClick={onBack}>
+        Back</button>
     </div>
     <p id={`${id}-help`} className="student-practice-help">
       {ready ? 'The timer starts as soon as you press Start practice.' : 'Confirm you’re ready to start.'}

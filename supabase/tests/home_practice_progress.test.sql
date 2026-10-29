@@ -87,7 +87,7 @@ select is(pg_temp.o('unknown-session'), '{"state":"signed-out"}'::jsonb, 'a sess
 select is(pg_temp.o('start-1') ->> 'state', 'ready', 'fixture: the first attempt started');
 select is((pg_temp.o('open') -> 'open') - 'deadline_at',
   jsonb_build_object('course_id', pg_temp.c('08'), 'content_key', (select content_key from public.courses
-    where id = pg_temp.c('08'))), 'an open attempt is offered with its course and route key');
+    where id = pg_temp.c('08')), 'mode', 'exam'), 'an open attempt is offered with its course and route key');
 select is((pg_temp.o('open') -> 'open' ->> 'deadline_at')::timestamptz,
   (select deadline_at from public.quiz_attempts where id = pg_temp.a(1)), 'and its own deadline');
 select is(pg_temp.o('open') -> 'latest', 'null'::jsonb, 'nothing graded yet');
@@ -153,8 +153,8 @@ select is(pg_temp.figures(pg_temp.o('first-again')) -> '08', '{"practised":4,"sc
 
 -- 8. Counts and identities only ---------------------------------------------------------------------------------------
 select is(pg_temp.keys_anywhere(pg_temp.o('first-again')),
-  array['content_key', 'course_id', 'courses', 'deadline_at', 'latest', 'now', 'open', 'practised', 'score', 'state',
-    'total'], 'no question, option, answer or key leaves the database');
+  array['content_key', 'course_id', 'courses', 'deadline_at', 'latest', 'mode', 'now', 'open', 'practised', 'score',
+    'state', 'total'], 'no question, option, answer or key leaves the database');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"e2000000-0000-4000-8000-000000000001"}';
 select throws_ok($$ select public.practice_progress('e2000000-0000-4000-8000-000000000001') $$, '42501', null,

@@ -1,4 +1,5 @@
-// app/api/practice/route.ts — Start, resume, save, sync or submit one of the student's own server-run practice attempts.
+// app/api/practice/route.ts — Start, resume, save, sync, submit or (instant feedback) pick on one of the student's own
+// server-run practice attempts.
 // The body names the course (start only), the attempt and the student's choices; the student, the questions, the
 // deadline, the size, the duration and every grade come from the server and the database.
 import { NextResponse } from 'next/server'
@@ -23,6 +24,8 @@ const HTTP_STATUS: Partial<Record<PracticeResultStatus, number>> = {
   'questions-changed': 409,
   'policy-changed': 409,
   'too-many-tabs': 409,
+  // A different choice after the lock: the body carries the original result.
+  'answer-locked': 409,
   'unavailable': 503,
 }
 

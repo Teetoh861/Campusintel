@@ -104,6 +104,18 @@ async function Quiz({ slug, continuityToken, attemptId }: { slug: string; contin
   const state = await readPracticeState(sessionId, course.repository.repositoryCourseId)
   if (state.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (state.status === 'unavailable') return retry()
+  // An open instant attempt has no clock to show: it reopens on its next unanswered question.
+  if (state.status === 'open' && state.attempt.mode === 'instant') {
+    const open = await readPracticeAttempt(sessionId, state.attempt.id)
+    if (open.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
+    if (open.status === 'ready' && open.attempt.status === 'in_progress') {
+      return client({ kind: 'open', attempt: open.attempt, now: open.now })
+    }
+    if (open.status === 'graded' && open.attempt.status !== 'in_progress') {
+      return client({ kind: 'graded', attempt: open.attempt, latest: true })
+    }
+    return retry()
+  }
   if (state.status === 'open') {
     const left = Date.parse(state.attempt.deadlineAt) - Date.parse(state.now)
     return client({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,

@@ -167,7 +167,7 @@ test('the briefing states the server brief, requires readiness and names reposit
   const { IntroScreen } = require(QUIZ + 'IntroScreen.tsx')
   const render = props => renderToStaticMarkup(React.createElement(IntroScreen, { ...identity,
     brief: { questionCount: 50, durationSeconds: 3600 }, wholeBank: false, briefingVersion: 0, starting: false, error: null,
-    lastResultHref: null, onStart() {}, ...props }))
+    lastResultHref: null, onStart() {}, onBack() {}, ...props }))
   const html = render({})
   assert.equal(count(html, /<h1\b/g), 1)
   assert.match(html, /<h1[^>]*>Practice<\/h1>/)
@@ -180,7 +180,7 @@ test('the briefing states the server brief, requires readiness and names reposit
   assert.match(html, /I’m ready to start a 60-minute attempt of 50 questions\./)
   assert.match(html, /<button[^>]*disabled=""[^>]*>Start practice<\/button>/)
   assert.match(html, /Confirm you’re ready to start\./)
-  assert.match(html, /href="\/courses\/bua-216"[^>]*>Back to course/)
+  assert.match(html, /<button[^>]*>Back<\/button>/, 'the brief goes back to the choice of mode')
   assert.doesNotMatch(html, /practice target|Bank sections|study guide|BUA202|last result/i)
   const whole = render({ brief: { questionCount: 50, durationSeconds: 1800 }, wholeBank: true })
   assert.match(text(whole), /Questions 50 questions All 50 questions in this course, in a new order each time\./)

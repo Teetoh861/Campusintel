@@ -273,6 +273,21 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
   assert.match(continueCard(await f.html()), />Continue practising COURSE0</, 'an attempt whose time is up is never offered')
 }))
 
+test('instant feedback: an open attempt is resumed with no clock, and picks show as practised before any score', async () => fixture(async f => {
+  f.state.current.courses = [mappedCourse(0, 'ready'), mappedCourse(1, 'ready')]
+  f.state.current.cbtBankSizes = new Map([['course-0', 40], ['course-1', 25]])
+  f.state.progress = { ...f.state.progress, open: { courseId: 'repository-1', contentKey: 'course-1',
+    deadlineAt: minutesFromNow(170), mode: 'instant' } }
+  started(f, [['repository-1', { practised: 3, lastScore: null }]])
+  const next = continueCard(await f.html())
+  assert.match(next, />Resume practice: COURSE1</)
+  assert.doesNotMatch(next, /(min|hr) left/, 'instant feedback shows no clock')
+  const { formatCourseProgress } = require('../../lib/dashboard/home-courses.ts')
+  assert.equal(formatCourseProgress({ practised: 3, total: 25, lastScore: null }), '3 of 25 questions practised')
+  assert.equal(formatCourseProgress({ practised: 3, total: 25, lastScore: { score: 2, total: 3 } }),
+    '3 of 25 questions practised · Last score 2/3')
+}))
+
 
 test('the course file stays identical after a graded GST111 attempt while Continue appears', async () => fixture(async f => {
   const gst = { ...mappedCourse(0, 'ready'), code: 'GST111', title: 'Use of English',

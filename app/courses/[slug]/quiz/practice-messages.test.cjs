@@ -15,7 +15,7 @@ const ATTEMPT = '11111111-1111-4111-8111-111111111111'
 const NOW = '2026-10-27T09:00:00.000Z', DEADLINE = '2026-10-27T09:30:00.000Z'
 const BANNED = /may already be running|couldn.t be confirmed|Nothing was started/i
 const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-const openAttempt = id => ({ status: 'in_progress', id, courseId: 'course-1', intent: 'new', redoOf: null, startedAt: NOW,
+const openAttempt = (id, mode = 'exam') => ({ status: 'in_progress', id, courseId: 'course-1', mode, intent: 'new', redoOf: null, startedAt: NOW,
   deadlineAt: DEADLINE, durationSeconds: 1800, questionCount: 1, bankSize: 214,
   saved: { revision: 0, answers: {} }, questions: [{ questionId: 'q-1', prompt: 'Prompt', options: ['A', 'B'], section: 'One' }] })
 const identity = { courseCode: 'BUA 216', courseTitle: 'Financial Management', repositoryOnly: false }
@@ -90,6 +90,9 @@ async function flow(initial, run) {
 
 test('no reply to a start: the automatic re-check runs, then "No connection. Reconnect and tap Try again."; Try again opens the attempt with its real time left', async () => flow({ kind: 'intro' }, async f => {
   f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
+  const choice = f.render()
+  assert.equal(choice.type.name, 'ModeChoiceScreen', 'practice starts with the choice of mode')
+  choice.props.onExam()
   f.render().props.onStart()
   await f.settle()
   const intro = f.render()
@@ -110,6 +113,7 @@ test('no reply to a start: the automatic re-check runs, then "No connection. Rec
 
 test('a start the server refused: "We couldn’t start your practice. Try again."; Try again asks for a new start', async () => flow({ kind: 'intro' }, async f => {
   f.answers.push({ status: 'not-found' })
+  f.render().props.onExam()
   f.render().props.onStart()
   await f.settle()
   const intro = f.render()
@@ -120,6 +124,31 @@ test('a start the server refused: "We couldn’t start your practice. Try again.
   await f.settle()
   assert.notEqual(f.requests[1].attemptId, f.requests[0].attemptId, 'a refused start is not repeated; a new one is asked for')
   assert.equal(f.render().type.name, 'ActiveAttempt')
+}))
+
+test('instant feedback starts straight from the choice, with no brief; a lost reply keeps the same attempt id', async () => flow({ kind: 'intro' }, async f => {
+  f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
+  f.render().props.onInstant()
+  await f.settle()
+  const choice = f.render()
+  assert.equal(choice.type.name, 'ModeChoiceScreen')
+  assert.deepEqual(Object.keys(f.requests[0]).sort(), ['action', 'attemptId', 'courseSlug'], 'no brief, size or time')
+  assert.equal(f.requests[0].action, 'start-instant')
+  assert.deepEqual(choice.props.error, { title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true })
+  f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
+  choice.props.onRetry()
+  await f.settle()
+  assert.equal(new Set(f.requests.map(request => request.attemptId)).size, 1, 'a replayed start can only find this attempt')
+  assert.equal(f.render().type.name, 'InstantAttempt')
+}))
+
+test('an exam brief goes back to the choice of mode', async () => flow({ kind: 'intro' }, async f => {
+  f.render().props.onExam()
+  const intro = f.render()
+  assert.equal(intro.type.name, 'IntroScreen')
+  intro.props.onBack()
+  assert.equal(f.render().type.name, 'ModeChoiceScreen')
+  assert.equal(f.requests.length, 0, 'choosing starts nothing')
 }))
 
 test('resume with no connection: "No connection. Reconnect and tap Try again."; Try again continues the attempt', async () => flow(
@@ -171,7 +200,7 @@ test('the briefing says once that the timer keeps running after Start', async ()
   const { IntroScreen } = require('./IntroScreen.tsx')
   const html = text(renderToStaticMarkup(React.createElement(IntroScreen, { ...identity, courseHref: `/courses/${COURSE}`,
     brief: { questionCount: 50, durationSeconds: 1800 }, wholeBank: false, briefingVersion: 0, starting: false,
-    error: null, lastResultHref: null, onStart() {}, onRetry() {} })))
+    error: null, lastResultHref: null, onStart() {}, onRetry() {}, onBack() {} })))
   const line = 'Once you start, the timer keeps running, even if you leave or lose connection.'
   assert.equal(html.split(line).length - 1, 1)
   assert.doesNotMatch(html, /keeps running even if you leave this page/)

@@ -1,0 +1,42 @@
+/* styles/instant-practice.css — Practice start choice and instant feedback, on the Practice primitives of student-app.css.
+   Phone first: 32px between sections, 16px inside cards; marks are never colour alone (icon + label on every mark). */
+
+/* The start: two choices, full width on a phone. */
+.student-practice-modes { display: grid; gap: 16px; max-width: 720px; }
+.student-practice-mode { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 72px; padding: 16px; border: 1px solid var(--student-control-border); border-radius: 16px; background: var(--student-surface); color: var(--student-primary); font: inherit; text-align: left; cursor: pointer; }
+.student-practice-mode:hover { background: var(--student-surface-muted); border-color: var(--student-border-hover); }
+.student-practice-mode:disabled { cursor: default; opacity: .6; }
+.student-practice-mode-icon { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--student-brand-surface); color: var(--student-primary); }
+.student-practice-mode-text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.student-practice-mode-text > b { font-size: 17px; font-weight: 700; line-height: 1.3; }
+.student-practice-mode-text > span { color: var(--student-text-muted); font-size: 14px; line-height: 1.4; }
+.student-practice-mode-go { flex: none; color: var(--student-text-muted); }
+
+/* The attempt: Exit and position in the bar, the question, Next pinned to the bottom of the screen. */
+.student-instant { display: flex; flex-direction: column; min-height: 100dvh; }
+.student-instant-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--student-practice-bar); }
+.student-instant-position { margin: 0; color: var(--student-primary); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.student-instant-main { flex: 1; padding-block: 24px 32px; }
+.student-instant-main > * { max-width: 720px; }
+.student-instant-prompt { margin-top: 0; }
+.student-instant-prompt:focus { outline: none; }
+.student-instant-options { display: flex; flex-direction: column; gap: 10px; margin: 24px 0 0; padding: 0; border: 0; min-width: 0; }
+.student-instant-option { flex-wrap: wrap; }
+.student-instant-tag { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; padding-top: 5px; font-size: 13px; font-weight: 650; line-height: 1; }
+.student-practice-option.student-instant-option[data-locked='true'] { border-color: var(--student-primary); box-shadow: inset 0 0 0 1px var(--student-primary); background: var(--student-brand-surface); }
+.student-practice-option.student-instant-option[data-locked='true'] .student-instant-tag { color: var(--student-primary); }
+.student-practice-option.student-instant-option[data-mark='correct'] { border-color: var(--student-success); box-shadow: inset 0 0 0 1px var(--student-success); background: var(--student-success-surface); }
+.student-practice-option.student-instant-option[data-mark='incorrect'] { border-color: var(--student-error); box-shadow: inset 0 0 0 1px var(--student-error); background: var(--student-error-surface); }
+.student-practice-option.student-instant-option[data-mark='correct'] .student-instant-tag { color: var(--student-success); }
+.student-practice-option.student-instant-option[data-mark='incorrect'] .student-instant-tag { color: var(--student-error); }
+.student-practice-option.student-instant-option[data-mark] .student-practice-option-text { color: var(--student-primary); font-weight: 600; }
+.student-instant-status { margin-top: 16px; }
+.student-instant-why { margin-top: 32px; padding: 16px; border-radius: 16px; background: var(--student-surface-muted); }
+.student-instant-why > h2 { margin: 0; color: var(--student-primary); font-size: 15px; font-weight: 700; line-height: 1.3; }
+.student-instant-why > p { margin: 8px 0 0; color: var(--student-text-secondary); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-line; }
+.student-instant-next { position: sticky; bottom: 0; z-index: 30; padding-block: 12px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--student-border); background: var(--student-surface); }
+.student-instant-next .student-workspace > * { max-width: 720px; }
+
+@media (forced-colors: active) {
+  .student-practice-option.student-instant-option[data-mark] { border-width: 2px; }
+}

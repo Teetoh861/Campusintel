@@ -80,7 +80,7 @@ create function pg_temp.leaks(p_value jsonb) returns text[] language sql immutab
 
 -- 1. Structure, privileges and policy --------------------------------------------------------------------------------
 select is((select count(*)::integer from unnest(array[
-    'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer,boolean)',
+    'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer,boolean,text)',
     'public.practice_state(uuid,uuid)', 'public.practice_attempt(uuid,uuid)',
     'public.practice_save(uuid,uuid,uuid,integer,integer,jsonb)',
     'public.practice_submit(uuid,uuid,uuid,integer,integer,jsonb)']) fn
@@ -109,7 +109,7 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid 
       where t in ('timestamptz'::regtype, 'timestamp'::regtype, 'interval'::regtype, 'date'::regtype))), 0,
   'no practice entry point takes a time from its caller');
 select ok(not exists (select 1 from unnest((select proargnames from pg_proc
-    where oid = 'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer,boolean)'::regprocedure)) arg
+    where oid = 'public.practice_start(uuid,uuid,uuid,text,uuid,integer,integer,jsonb,integer,integer,boolean,text)'::regprocedure)) arg
   where arg ~ '(question|answer|item|option|deadline|score)'),
   'a start names no question, answer, deadline or score: the database chooses and decides them');
 select is((select jsonb_build_object('tabs', attempt_tabs, 'batch', sweep_batch, 'legacy', legacy_window)

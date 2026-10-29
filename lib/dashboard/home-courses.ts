@@ -16,12 +16,14 @@ export type HomeCourse = {
   status: HomeCourseStatus
   // The course page when the shelf has one; null leaves the row as text.
   href: string | null
-  // Null until the student has a graded attempt in this course; an open attempt adds nothing until it is graded.
-  progress: { practised: number; total: number | null; lastScore: { score: number; total: number } } | null
+  // Null until the student has a graded attempt or an instant pick in this course; an open exam adds nothing until
+  // it is graded. lastScore is null until an attempt with an answer has finished.
+  progress: { practised: number; total: number | null; lastScore: { score: number; total: number } | null } | null
 }
 
 export type ContinuePractice =
-  | { kind: 'resume'; code: string; title: string; href: string; minutesLeft: number }
+  // minutesLeft is null for instant feedback, which shows no clock.
+  | { kind: 'resume'; code: string; title: string; href: string; minutesLeft: number | null }
   | { kind: 'continue'; code: string; title: string; href: string }
 
 export type HomeCourses = { courses: HomeCourse[]; continuePractice: ContinuePractice | null }
@@ -55,7 +57,7 @@ function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok'
     const left = Date.parse(progress.open.deadlineAt) - Date.parse(progress.now)
     if (target !== null && Number.isFinite(left) && left > 0) {
       return { kind: 'resume', code: target.code, title: target.title, href: target.href,
-        minutesLeft: Math.ceil(left / MS_PER_MINUTE) }
+        minutesLeft: progress.open.mode === 'instant' ? null : Math.ceil(left / MS_PER_MINUTE) }
     }
   }
   if (progress.latest !== null) {
@@ -91,10 +93,12 @@ export function formatTimeLeft(minutes: number): string {
   return rest === 0 ? `${hours} hr left` : `${hours} hr ${rest} min left`
 }
 
-/** "8 of 40 questions practised · Last score 6/10"; the total only when the course's bank can be counted now. */
+/** "8 of 40 questions practised · Last score 6/10"; the total only when the course's bank can be counted now, the score
+ * only once there is one. */
 export function formatCourseProgress(progress: NonNullable<HomeCourse['progress']>): string {
   const questions = progress.total === null
     ? `${progress.practised} ${progress.practised === 1 ? 'question' : 'questions'} practised`
     : `${progress.practised} of ${progress.total} questions practised`
-  return `${questions} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
+  return progress.lastScore === null ? questions
+    : `${questions} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
 }

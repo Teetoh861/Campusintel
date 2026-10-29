@@ -4,7 +4,9 @@
 //   * flags (D2), per attempt, in local storage, so they survive reload, Exit and resume on this device;
 //   * a start in flight, per course, in session storage, so a lost start response is recovered by asking for the same
 //     attempt id again instead of starting another;
-//   * this tab's unsent choices, per attempt, in session storage, so a reload sends them instead of losing them.
+//   * this tab's unsent choices, per attempt, in session storage, so a reload sends them instead of losing them;
+//   * an instant-feedback pick the server has not answered yet, per attempt, in session storage, so it is sent again on
+//     reconnect or reload (a pick is idempotent: resending can only return the result it already has).
 import { z } from 'zod'
 import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
 import type { UnsentSheet } from '@/lib/entitlements/exam-autosave'
@@ -53,12 +55,15 @@ export function writeFlags(attemptId: string, flags: ReadonlySet<string>): void 
   else write(local(), flagsKey(attemptId), [...flags])
 }
 
-// A start in flight: retried with the same attempt id until the server answers, even across a reload.
+// A start in flight: retried with the same attempt id until the server answers, even across a reload. An exam start
+// carries the brief the student confirmed; an instant one carries none.
 export type PendingStart = { attemptId: string; intent: 'new' | 'redo'; redoOf: string | null; expected: PracticeBrief & { wholeBank: boolean } }
+  | { attemptId: string; mode: 'instant' }
 const pendingKey = (courseSlug: string) => `practice-start:${courseSlug}`
-const pendingStart = z.object({ attemptId: uuid, intent: z.enum(['new', 'redo']), redoOf: uuid.nullable(),
+const pendingStart = z.union([z.object({ attemptId: uuid, intent: z.enum(['new', 'redo']), redoOf: uuid.nullable(),
   expected: z.object({ questionCount: z.number().int().min(1).max(MAX_QUESTIONS),
-    durationSeconds: z.number().int().positive(), wholeBank: z.boolean() }).strict() }).strict()
+    durationSeconds: z.number().int().positive(), wholeBank: z.boolean() }).strict() }).strict(),
+  z.object({ attemptId: uuid, mode: z.literal('instant') }).strict()])
 
 export function readPendingStart(courseSlug: string): PendingStart | null {
   return read(session(), pendingKey(courseSlug), pendingStart)
@@ -80,6 +85,15 @@ export function readUnsent(attemptId: string, options: ReadonlyMap<string, numbe
 /** True only when this exact pending sheet can be read back from this device. */
 export function writeUnsent(attemptId: string, sheet: UnsentSheet): boolean { return write(session(), unsentKey(attemptId), sheet) }
 export function clearUnsent(attemptId: string): void { remove(session(), unsentKey(attemptId)) }
+
+// An instant pick sent but not yet answered: one at a time, since the next question waits for this one's result.
+export type PendingPick = { questionId: string; option: number }
+const pickKey = (attemptId: string) => `practice-pick:${attemptId}`
+const pendingPick = z.object({ questionId: uuid, option: z.number().int().min(0).max(7) }).strict()
+
+export function readPendingPick(attemptId: string): PendingPick | null { return read(session(), pickKey(attemptId), pendingPick) }
+export function writePendingPick(attemptId: string, pick: PendingPick): void { write(session(), pickKey(attemptId), pick) }
+export function clearPendingPick(attemptId: string): void { remove(session(), pickKey(attemptId)) }
 
 // Results this device has shown, so a course page visit shows a result the student has not seen yet (time ran out
 // while away, or a submission's response was lost) exactly once, and the briefing afterwards.
