@@ -39,7 +39,7 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}/theory`)
   if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
-    <LockedCourseNotice backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course" />
+    <LockedCourseNotice outsideList={result.outsideList} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course" />
   </StudentPage>
   if (result.status !== 'ready') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
     <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}

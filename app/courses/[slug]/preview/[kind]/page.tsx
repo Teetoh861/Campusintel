@@ -62,7 +62,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   const { repository, content } = lookup.course
   const route = repository.route
   // A course the student can already read in full needs no preview.
-  if (content.state !== 'locked') redirect(route.href)
+  if (content.state !== 'locked' || content.reason === 'outside-list') redirect(route.href)
   // Previews belong to courses offered now; a repository-only or retired course has none.
   if (lookup.status !== 'ok' || !hasActiveCourseOffering(lookup.course)) return notFound()
   const course: CourseIdentity = { href: route.href, slug: route.slug, code: lookup.course.code,

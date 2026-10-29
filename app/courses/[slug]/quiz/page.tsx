@@ -120,7 +120,7 @@ async function Quiz({ slug, continuityToken, attemptId }: { slug: string; contin
   if (brief !== null) return client({ kind: 'intro' }, lastResultHref)
 
   if (course.content.state === 'locked') {
-    return <StudentPage band={band}><LockedCourseNotice backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} /></StudentPage>
+    return <StudentPage band={band}><LockedCourseNotice outsideList={course.content.reason === 'outside-list'} backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} /></StudentPage>
   }
   if (course.content.state === 'temporarily-unavailable') return retry()
   return <StudentPage band={band}>

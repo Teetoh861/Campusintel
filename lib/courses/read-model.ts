@@ -5,7 +5,8 @@ import { z } from 'zod'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { getCourseByContentKey, getCourseBySlug } from '@/lib/data/courses'
 import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
-import { courseAccessFrom, readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { getCourseAccessForVerifiedStudent } from '@/lib/courses/access'
+import type { CourseDecision } from '@/lib/courses/access'
 import { getPublishedCbtBankSizesWithVerifiedClient, getPublishedManagedContentWithVerifiedClient }
   from '@/lib/managed-content/published'
 import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
@@ -15,7 +16,6 @@ import { projectTheoryPractice } from '@/lib/theory-practice/projection'
 import type { User } from '@supabase/supabase-js'
 import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion, StudentLearning }
   from '@/lib/managed-content/student-projection'
-import type { CourseAccess } from '@/lib/entitlements/contract'
 import type { CbtBankSize } from '@/lib/managed-content/published'
 import type { SelectionIds } from '@/lib/profile/selection'
 import type { createClient } from '@/lib/supabase/server'
@@ -53,7 +53,7 @@ export type StudentCourseContent =
   | { state: 'not-built'; reason: 'unlinked' }
   | { state: 'ready'; study: StudyAvailability }
   | { state: 'no-published-learning'; study: StudyAvailability }
-  | { state: 'locked' }
+  | { state: 'locked'; reason?: 'outside-list' }
   | { state: 'temporarily-unavailable'; reason: 'publication-read-failed' | 'projection-failed' | 'access-read-failed' }
 
 export type StudentCourse = {
@@ -252,16 +252,26 @@ function deriveStudy(learning: StudentLearning, repository: LinkedRepository, ba
 
 type ResolvedPublication = { content: LinkedContent } & StudentCourseDetail
 
-/** The student's plan, read at most once per reader call and only when a non-free course needs it. */
-type AccessReader = () => Promise<CourseAccess | 'signed-out'>
+/** Per-course decisions, shared within this request only. Free courses need no grant/projection read. */
+type AccessReader = (institutionalCourseId: string) => Promise<CourseDecision | 'signed-out' | 'unavailable'>
+const ACCESS_BATCH_SIZE = 200
 
-function accessReader(client: StudentClient): AccessReader {
-  let pending: Promise<CourseAccess | 'signed-out'> | null = null
-  return () => {
-    // Course access only: a course list never renders a Discovery offer, so it never reads eligibility.
-    pending ??= readEntitlementForVerifiedStudent(client, { discoveryEligibility: false }).then(read =>
-      read.status === 'signed-out' ? 'signed-out' : courseAccessFrom(read))
-    return pending
+function accessReader(client: StudentClient, courseIds: readonly string[]): AccessReader {
+  let pending: Promise<Map<string, CourseDecision> | 'signed-out' | 'unavailable'> | null = null
+  const load = async (): Promise<Map<string, CourseDecision> | 'signed-out' | 'unavailable'> => {
+    const ids = [...new Set(courseIds)]
+    const decisions = new Map<string, CourseDecision>()
+    for (let offset = 0; offset < ids.length; offset += ACCESS_BATCH_SIZE) {
+      const read = await getCourseAccessForVerifiedStudent(client, ids.slice(offset, offset + ACCESS_BATCH_SIZE))
+      if (read.status !== 'ok') return read.status
+      for (const [id, decision] of read.decisions) decisions.set(id, decision)
+    }
+    return decisions
+  }
+  return async id => {
+    pending ??= load()
+    const read = await pending
+    return typeof read === 'string' ? read : read.get(id) ?? 'unavailable'
   }
 }
 
@@ -269,17 +279,20 @@ function accessReader(client: StudentClient): AccessReader {
 type BankSizeReader = (repositoryCourseId: string) => Promise<CbtBankSize | 'signed-out'>
 
 /** One published_cbt_summary read for every course of this reader call the student may read now (free, or included
- * in a full plan); locked courses are never asked about. */
+ * in the per-course decision); locked courses are never asked about. */
 function bankSizeReader(
-  client: StudentClient, candidates: ReadonlyArray<{ repositoryCourseId: string; isFree: boolean }>, access: AccessReader,
+  client: StudentClient, candidates: ReadonlyArray<{ repositoryCourseId: string; institutionalCourseId: string;
+    isFree: boolean }>, access: AccessReader,
 ): BankSizeReader {
   let pending: Promise<Map<string, CbtBankSize> | 'signed-out'> | null = null
   const load = async (): Promise<Map<string, CbtBankSize> | 'signed-out'> => {
-    let plan: CourseAccess | 'signed-out' | null = null
-    if (candidates.some(candidate => !candidate.isFree)) plan = await access()
-    if (plan === 'signed-out') return 'signed-out'
-    const readable = candidates.filter(candidate => candidate.isFree || plan === 'full')
-      .map(candidate => candidate.repositoryCourseId)
+    const readable: string[] = []
+    for (const candidate of candidates) {
+      if (candidate.isFree) { readable.push(candidate.repositoryCourseId); continue }
+      const decision = await access(candidate.institutionalCourseId)
+      if (decision === 'signed-out') return 'signed-out'
+      if (decision !== 'unavailable' && decision.allowed) readable.push(candidate.repositoryCourseId)
+    }
     const read = await getPublishedCbtBankSizesWithVerifiedClient(client, readable)
     return read.status === 'signed-out' ? 'signed-out' : read.sizes
   }
@@ -293,16 +306,17 @@ function bankSizeReader(
 /** Read one linked repository's publication on the caller's verified client. A non-free course the plan does not
  * include is never read; the database refuses that read too (CI403), so a race still yields `locked`. */
 async function resolvePublication(
-  client: StudentClient, repository: LinkedRepository, isFree: boolean, access: AccessReader,
+  client: StudentClient, repository: LinkedRepository, institutionalCourseId: string, isFree: boolean, access: AccessReader,
   bankSizes: BankSizeReader,
 ): Promise<ResolvedPublication | 'signed-out'> {
   if (!isFree) {
-    const plan = await access()
-    if (plan === 'signed-out') return 'signed-out'
-    if (plan === 'unknown') {
+    const decision = await access(institutionalCourseId)
+    if (decision === 'signed-out') return 'signed-out'
+    if (decision === 'unavailable' || ['needs-selection', 'missing-calendar', 'unavailable'].includes(decision.reason)) {
       return { content: { state: 'temporarily-unavailable', reason: 'access-read-failed' }, learning: null, practice: null }
     }
-    if (plan === 'free') return { content: { state: 'locked' }, learning: null, practice: null }
+    if (!decision.allowed) return { content: decision.reason === 'outside-list'
+      ? { state: 'locked', reason: 'outside-list' } : { state: 'locked' }, learning: null, practice: null }
   }
   const [published, bankSize] = await Promise.all([
     getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId),
@@ -334,9 +348,9 @@ type ResolvedContent = { content: StudentCourseContent; practiceBankSize: number
 
 /** Catalogue readers keep only availability and the practice bank size; payload bodies never reach catalogue rows. */
 async function resolvePublishedContent(
-  client: StudentClient, repository: LinkedRepository, isFree: boolean, access: AccessReader, bankSizes: BankSizeReader,
+  client: StudentClient, repository: LinkedRepository, institutionalCourseId: string, isFree: boolean, access: AccessReader, bankSizes: BankSizeReader,
 ): Promise<ResolvedContent | 'signed-out'> {
-  const resolved = await resolvePublication(client, repository, isFree, access, bankSizes)
+  const resolved = await resolvePublication(client, repository, institutionalCourseId, isFree, access, bankSizes)
   return resolved === 'signed-out' ? resolved
     : { content: resolved.content, practiceBankSize: resolved.practice?.bankSize ?? null }
 }
@@ -348,7 +362,7 @@ function resolveContent(
   if (repository.state === 'unlinked') {
     return Promise.resolve({ content: { state: 'not-built', reason: 'unlinked' }, practiceBankSize: null })
   }
-  return resolvePublishedContent(client, repository, structure.isFree, access, bankSizes)
+  return resolvePublishedContent(client, repository, structure.institutionalCourseId, structure.isFree, access, bankSizes)
 }
 
 type ResolvedCourses = { courses: StudentCourse[]; cbtBankSizes: Map<string, number> }
@@ -357,9 +371,10 @@ type ResolvedCourses = { courses: StudentCourse[]; cbtBankSizes: Map<string, num
 async function resolveCourses(
   client: StudentClient, structures: ReadonlyArray<Structure>,
 ): Promise<ResolvedCourses | 'signed-out'> {
-  const access = accessReader(client)
+  const access = accessReader(client, structures.filter(course => !course.isFree).map(course => course.institutionalCourseId))
   const bankSizes = bankSizeReader(client, structures.flatMap(structure => structure.repository.state === 'unlinked' ? []
-    : [{ repositoryCourseId: structure.repository.repositoryCourseId, isFree: structure.isFree }]), access)
+    : [{ repositoryCourseId: structure.repository.repositoryCourseId, institutionalCourseId: structure.institutionalCourseId,
+      isFree: structure.isFree }]), access)
   const contents = await Promise.all(structures.map(structure => resolveContent(client, structure, access, bankSizes)))
   const courses: StudentCourse[] = []
   const cbtBankSizes = new Map<string, number>()
@@ -547,9 +562,10 @@ export async function getStudentCourseBySlugForVerifiedStudent(
         route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course },
       }
       // Without an institutional owner nothing marks the course free, so the student's plan decides.
-      const access = accessReader(client)
-      const resolved = await resolvePublication(client, repository, false, access,
-        bankSizeReader(client, [{ repositoryCourseId, isFree: false }], access))
+      // An unowned repository cannot match a student's list. Only the database operator exception may open it.
+      const access = accessReader(client, [repositoryCourseId])
+      const resolved = await resolvePublication(client, repository, repositoryCourseId, false, access,
+        bankSizeReader(client, [{ repositoryCourseId, institutionalCourseId: repositoryCourseId, isFree: false }], access))
       return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'repository-only',
         course: { repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
     }
@@ -562,9 +578,10 @@ export async function getStudentCourseBySlugForVerifiedStudent(
       return { status: 'invariant-failure' }
     }
     const repository = structure.repository
-    const access = accessReader(client)
-    const resolved = await resolvePublication(client, repository, structure.isFree, access,
-      bankSizeReader(client, [{ repositoryCourseId, isFree: structure.isFree }], access))
+    const access = accessReader(client, [structure.institutionalCourseId])
+    const resolved = await resolvePublication(client, repository, structure.institutionalCourseId, structure.isFree, access,
+      bankSizeReader(client, [{ repositoryCourseId, institutionalCourseId: structure.institutionalCourseId,
+        isFree: structure.isFree }], access))
     return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok',
       course: { ...structure, repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
   } catch {

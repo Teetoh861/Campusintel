@@ -66,6 +66,10 @@ select ok((select bool_and(content_revision > 0 and question_id is not null) fro
 
 -- Non-free published content needs an active plan since 20261017100000_trial_entitlements.sql; these fixtures
 -- exercise content and attempt rules, so every student holds one. The gate itself is tested in trial_entitlements.
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id in ('11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222');
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
   select id, 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test' from auth.users
   where email like '%@example.test' and id not in (select user_id from public.entitlement_grants);

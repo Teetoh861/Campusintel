@@ -314,3 +314,13 @@ test('loading boundary is inert: one announcement, no identity, no actions', asy
   assert.doesNotMatch(html, /<a\b|<button\b|Bookmark|Practice|INST|animate-pulse/)
   assert.match(html, /aria-hidden="true"/)
 }))
+
+test('outside-list detail shows the support lock without asking for a pass or rendering learning', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason: 'outside-list' }), learning: null, practice: null }
+  const html = await f.html()
+  assert.match(html, /Institutional title/)
+  assert.match(text(html), /Not in your courses this semester\. Message us to add it\./)
+  assert.ok(anchors(html).some(link => /Message us/.test(link) && /href="\/contact"/.test(link)))
+  assert.doesNotMatch(html, /Included with full access|Discovery|Confirmed for|id="notes"|id="cbtPractice"|id="theory"|id="reading"/)
+  assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
+}))
