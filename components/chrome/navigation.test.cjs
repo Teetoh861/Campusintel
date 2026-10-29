@@ -138,6 +138,20 @@ test('Footer separates unchanged public support from compact authenticated Stude
   assert.equal(renderToStaticMarkup(f.footer()), publicHtml, 'logout restores the same public footer')
 }))
 
+test('on the landing page, signed-out visitors get its own header and footer instead of the shared chrome', async () => fixture(async f => {
+  f.path('/')
+  await f.respond({ enabled: true, signedIn: false })
+  assert.equal(renderToStaticMarkup(f.nav()), '')
+  assert.equal(renderToStaticMarkup(f.footer()), '')
+  f.path('/login')
+  assert.match(renderToStaticMarkup(f.nav()), /href="\/register"/)
+  assert.match(renderToStaticMarkup(f.footer()), /mailto:/)
+  f.path('/')
+  f.change(); await f.respond({ enabled: true, signedIn: true })
+  assert.match(renderToStaticMarkup(f.nav()), /href="\/dashboard"/, 'a signed-in student keeps the app header everywhere')
+  assert.match(renderToStaticMarkup(f.footer()), /class="student-footer"/)
+}))
+
 test('shared chrome uses the official white/navy wordmark artwork inside one named home link', async () => fixture(async f => {
   for (const signedIn of [false, true]) {
     if (signedIn) await f.respond({ enabled: true, signedIn: true })

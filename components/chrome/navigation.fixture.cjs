@@ -15,7 +15,8 @@ async function fixture(run, { initial = 'signed-out' } = {}) {
   const cache = new Map(Object.entries(require.cache))
   const saved = new Map(['window', 'document', 'fetch'].map(key => [key, global[key]]))
   const states = new Map(), effects = [], requests = [], subscriptions = new Set()
-  let active, index, pathname = '/', width = 390, presentation = { signedIn: false, version: 0 }
+  // Public chrome is exercised on /login: the landing page at / brings its own header and footer.
+  let active, index, pathname = '/login', width = 390, presentation = { signedIn: false, version: 0 }
   const win = new EventTarget(), doc = new EventTarget(), media = new EventTarget()
   doc.visibilityState = 'visible'
   Object.defineProperty(media, 'matches', { get: () => width >= 1200 })
