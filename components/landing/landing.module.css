@@ -48,7 +48,7 @@
 .pill { border-radius: 999px; }
 
 /* header */
-.header { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--l-bg) 82%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 1px 0 var(--l-line); }
+.header { position: sticky; top: 0; z-index: 50; background: var(--l-bg); box-shadow: 0 1px 0 var(--l-line); }
 .headerBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--l-header); }
 .logo { height: 32px; width: auto; }
 .headerLinks { display: none; align-items: center; gap: 4px; }
@@ -71,7 +71,7 @@
 .earlyAccess { margin-top: 14px; }
 .trust { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
 .trust li { display: inline-flex; align-items: center; gap: 8px; background: var(--l-surface); border: 1px solid var(--l-line); padding: 8px 14px; border-radius: 12px; font-weight: 600; font-size: .92rem; color: var(--l-navy); }
-.trust svg { color: var(--l-ok); flex: none; }
+.trust svg { color: var(--l-blue); flex: none; }
 .rise { animation: rise .8s cubic-bezier(.2,.8,.2,1) both; }
 .d1 { animation-delay: .06s; } .d2 { animation-delay: .14s; } .d3 { animation-delay: .22s; } .d4 { animation-delay: .3s; } .d5 { animation-delay: .38s; }
 @media (min-width: 961px) { .heroGrid { grid-template-columns: 1.02fr .98fr; gap: 40px; padding-block: 56px 72px; } }
@@ -139,7 +139,7 @@
 .copyText { color: var(--l-muted); margin-top: 16px; font-size: 1.12rem; }
 .ticks { margin-top: 24px; display: grid; gap: 12px; }
 .ticks li { display: flex; gap: 12px; align-items: flex-start; font-weight: 600; }
-.tick { flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%; background: var(--l-ok); color: var(--student-elevated-surface); display: grid; place-items: center; }
+.tick { flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%; background: var(--l-blue); color: var(--l-surface); display: grid; place-items: center; }
 .stage { position: relative; display: flex; justify-content: center; align-items: center; padding: 36px 0; min-height: 440px; }
 .blob { position: absolute; inset: 6%; border-radius: 44px; background: var(--l-bg); border: 1px solid var(--l-line); }
 .s1 { right: 2%; top: 14%; z-index: 4; }
@@ -186,7 +186,7 @@
 .quizFoot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; font-size: .85rem; color: var(--l-muted); }
 .steps { display: flex; gap: 5px; }
 .stepDot { width: 18px; height: 6px; border-radius: 3px; background: var(--l-line); transition: background .3s; }
-.stepDone { background: var(--l-ok); }
+.stepDone { background: var(--l-navy); }
 .stepNow { background: var(--l-blue); }
 .end { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 28px 8px; min-height: 360px; }
 .big { font-family: var(--l-display); font-size: 3.4rem; font-weight: 800; color: var(--l-navy); line-height: 1; }
