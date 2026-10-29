@@ -21,11 +21,10 @@ const ICONS: Record<IconName, LucideIcon> = {
   'quiz-ready': CircleCheck,
 }
 
-/** Official white brand glyphs (WhatsApp Brand Resource Center, Instagram brand asset pack), scaled only.
+/** Official white brand glyph (WhatsApp Brand Resource Center), scaled only.
  * Marks appear only on Navy or Blue; on white or Sky they sit inside a Navy button, otherwise the words stand alone. */
 export const BRAND_ICONS = {
   whatsapp: { src: '/landing/icons/whatsapp-glyph-white.png', width: 96, height: 96 },
-  instagram: { src: '/landing/icons/instagram-glyph-white.png', width: 96, height: 96 },
 } as const
 
 export type BrandName = keyof typeof BRAND_ICONS

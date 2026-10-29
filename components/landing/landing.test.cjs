@@ -109,7 +109,7 @@ test('landing copy carries none of the retired claims, arrows or marks', async (
     assert.equal(html.includes(phrase), false, `page: ${phrase}`)
   }
   assert.doesNotMatch(html, /&rarr;|AI tutor chat|partial credit|marked instantly/)
-  for (const phrase of ['Theory answers, model answers', 'Write your answer. Compare and mark.',
+  for (const phrase of ['Theory answers, model answers', 'Write your answer. Compare and improve.',
     'Upload your notes. Get a quiz in seconds.', 'Works with PDF, Word and text files',
     'Start a free 72-hour Discovery Pass to try your department courses. GST courses are always free.',
     'Every course across the 8 departments of the Faculty of Management Sciences, from 100 to 300 level.']) {
@@ -150,7 +150,9 @@ test('setting-controlled buttons render only when their setting is a valid https
   assert.doesNotMatch(unset, /wa\.me|chat\.whatsapp|tel:/)
 
   const set = await renderHome({ env: CONFIGURED })
-  assert.deepEqual(hrefsFor(set, 'Join the WhatsApp community (opens in a new tab)'), [CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL])
+  // The closing section and the footer's Community column both link to the community.
+  assert.deepEqual(hrefsFor(set, 'Join the WhatsApp community (opens in a new tab)'),
+    [CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL, CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL])
   assert.deepEqual(hrefsFor(set, 'Before launch: join Early Access for a free month (opens in a new tab)'),
     [CONFIGURED.NEXT_PUBLIC_EARLY_ACCESS_FORM_URL])
   assert.deepEqual(hrefsFor(set, 'Join the waitlist (opens in a new tab)'),
@@ -308,9 +310,9 @@ test('no emoji and no hand-drawn SVG: icons are lucide-react or official brand i
   }
 })
 
-const WHITE_MARKS = ['instagram-glyph-white.png', 'whatsapp-glyph-white.png']
+const WHITE_MARKS = ['whatsapp-glyph-white.png']
 // Retired by the design system: coloured or black marks, the icons with other meanings, and the AI-marking screenshot.
-const RETIRED = /whatsapp-glyph-green|x-logo-black|instagram-glyph\.png|instagram-glyph-gradient|\b(?:Gift|Zap|RotateCcw|ClipboardCheck)\b|answer\.jpg/
+const RETIRED = /whatsapp-glyph-green|x-logo-black|instagram-glyph(?:\.png|-gradient|-white)|\b(?:Gift|Zap|RotateCcw|ClipboardCheck)\b|answer\.jpg/
 
 test('marks are white, icons keep one meaning each, and retired assets are gone', async () => {
   const sources = fs.readdirSync(__dirname).filter(file => /\.(tsx?|css)$/.test(file) && !/\.test\./.test(file))
@@ -320,13 +322,11 @@ test('marks are white, icons keep one meaning each, and retired assets are gone'
   const html = await renderHome({ env: CONFIGURED })
   assert.doesNotMatch(html, RETIRED)
   assert.equal(fs.existsSync(path.join(root, 'public/landing/answer.jpg')), false)
-  // On the white footer each mark sits inside a Navy button; X keeps its words alone.
-  for (const [label, mark] of [['WhatsApp us', 'whatsapp'], ['Instagram', 'instagram'], ['Join the waitlist', 'whatsapp']]) {
-    const link = anchors(html).find(item => item.text.startsWith(label) && item.inner.includes('<img'))
-    assert.ok(link, label)
-    assert.match(link.attributes, /bg-student-primary/, `${label} mark sits in a Navy button`)
-    assert.match(link.inner, new RegExp(`/landing/icons/${mark}-glyph-white\\.png`), label)
-  }
+  // On white a mark sits inside a Navy button; X keeps its words alone.
+  const waitlist = anchors(html).find(item => item.text.startsWith('Join the waitlist') && item.inner.includes('<img'))
+  assert.ok(waitlist, 'Join the waitlist')
+  assert.match(waitlist.attributes, /bg-student-primary/, 'the waitlist mark sits in a Navy button')
+  assert.match(waitlist.inner, /\/landing\/icons\/whatsapp-glyph-white\.png/)
   const x = anchors(html).find(item => item.text.startsWith('X (Twitter)'))
   assert.doesNotMatch(x.inner, /<img/, 'X shows its words alone')
   const icons = fs.readFileSync(path.join(__dirname, 'icons.tsx'), 'utf8')
@@ -427,4 +427,95 @@ test('the footer Contact list has no link to the site itself', async () => {
   assert.deepEqual(anchors(contact[1]).map(link => link.text), ['WhatsApp us (opens in a new tab)', 'hello@campusintell.com'])
   for (const link of anchors(footer)) assert.doesNotMatch(link.href ?? '', /^https?:\/\/(www\.)?campusintell\.com/, link.text)
   assert.equal('website' in (await content()).footer, false)
+})
+
+const footerOf = html => html.slice(html.lastIndexOf('<footer'))
+const isNavyButton = link => /bg-student-primary/.test(link.attributes)
+const communityColumn = footer => /<h2>Community<\/h2>([\s\S]*?)<\/div>/.exec(footer)?.[1]
+const COMMUNITY_LABEL = 'Join the WhatsApp community (opens in a new tab)'
+
+test('the footer has one Navy button: the community button with the white WhatsApp mark, after Follow', async () => {
+  const footer = footerOf(await renderHome({ env: CONFIGURED }))
+  const buttons = anchors(footer).filter(isNavyButton)
+  assert.deepEqual(buttons.map(link => [link.text, link.href]), [[COMMUNITY_LABEL, CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL]])
+  assert.match(buttons[0].attributes, /target="_blank"/)
+  assert.match(buttons[0].inner, /src="\/landing\/icons\/whatsapp-glyph-white\.png"/)
+  assert.equal(footer.match(/<img [^>]*src="\/landing\/icons\//g)?.length, 1, 'the community button holds the only brand mark')
+  assert.ok(footer.indexOf('<h2>Follow</h2>') < footer.indexOf('<h2>Community</h2>'), 'Community comes after Follow')
+
+  // Unset or unsafe: the button is hidden and the footer has no Navy button or mark at all.
+  for (const env of [{}, { NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: 'http://chat.whatsapp.com/fixture-community' }]) {
+    const hidden = footerOf(await renderHome({ env }))
+    assert.equal(anchors(hidden).filter(isNavyButton).length, 0)
+    assert.doesNotMatch(hidden, /\/landing\/icons\/|Join the WhatsApp community/)
+  }
+})
+
+test('footer Contact and Follow links are plain text, styled like the email link', async () => {
+  const footer = footerOf(await renderHome({ env: CONFIGURED }))
+  const list = heading => anchors(new RegExp(`<h2>${heading}</h2><ul>([\\s\\S]*?)</ul>`).exec(footer)[1])
+  const email = list('Contact').find(link => link.href.startsWith('mailto:'))
+  const plain = [...list('Contact'), ...list('Follow')]
+  assert.deepEqual(plain.map(link => link.text), ['WhatsApp us (opens in a new tab)', 'hello@campusintell.com',
+    'Instagram (opens in a new tab)', 'X (Twitter) (opens in a new tab)'])
+  for (const link of plain) {
+    assert.doesNotMatch(link.inner, /<img/, link.text)
+    assert.equal(/class="([^"]*)"/.exec(link.attributes)[1], /class="([^"]*)"/.exec(email.attributes)[1], link.text)
+  }
+})
+
+test('the closing section keeps its community link and the footer shows it too', async () => {
+  const html = await renderHome({ env: CONFIGURED })
+  const closing = /<section aria-labelledby="final-cta-title">([\s\S]*?)<\/section>/.exec(html)[1]
+  assert.deepEqual(hrefsFor(closing, COMMUNITY_LABEL), [CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL])
+  assert.equal(anchors(closing).filter(link => /^(Start for free|Log in)$/.test(link.text)).length, 2)
+  assert.deepEqual(hrefsFor(footerOf(html), COMMUNITY_LABEL), [CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL])
+})
+
+test('the Community column says the newsletter is coming, with no newsletter link, form or email field', async () => {
+  for (const [env, links] of [[CONFIGURED, [COMMUNITY_LABEL]], [{}, []]]) {
+    const column = communityColumn(footerOf(await renderHome({ env })))
+    assert.ok(column, 'Community column')
+    assert.match(column, /<p[^>]*>Newsletter coming soon\.<\/p>/)
+    assert.deepEqual(anchors(column).map(link => link.text), links)
+    assert.doesNotMatch(column, /<form|<input|type="email"|mailto:/)
+  }
+})
+
+/** Width and height from a WebP header (lossy, lossless or extended). */
+function webpSize(buffer) {
+  assert.equal(buffer.toString('ascii', 0, 4), 'RIFF')
+  assert.equal(buffer.toString('ascii', 8, 12), 'WEBP')
+  const chunk = buffer.toString('ascii', 12, 16)
+  if (chunk === 'VP8X') return { width: 1 + buffer.readUIntLE(24, 3), height: 1 + buffer.readUIntLE(27, 3) }
+  if (chunk === 'VP8 ') return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff }
+  const bits = buffer.readUInt32LE(21)
+  return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 }
+}
+
+const THEORY_IMAGE_MAX_BYTES = 150 * 1024
+
+test('the theory section shows its real screenshot as a raster file, sized like the notes screenshots', async () => {
+  const html = await renderHome()
+  const start = html.indexOf('Write your answer. Compare and improve.')
+  assert.ok(start > 0, 'theory section')
+  const row = html.slice(html.lastIndexOf('<div class="row', start), html.indexOf('</section>', start))
+  const images = [...row.matchAll(/<img ([^>]*)>/g)].map(([, attributes]) => attributes)
+  assert.equal(images.length, 1)
+  assert.match(images[0], /src="\/landing\/theory\.webp"/)
+  assert.match(images[0], /alt="A theory answer beside the model answer"/)
+  const file = path.join(root, 'public/landing/theory.webp')
+  const buffer = fs.readFileSync(file)
+  assert.ok(buffer.length < THEORY_IMAGE_MAX_BYTES, `${buffer.length} bytes`)
+  const { showcase } = await content()
+  const [notes] = showcase[0].phones
+  assert.deepEqual(webpSize(buffer), { width: notes.width, height: notes.height })
+  assert.deepEqual(showcase[1].phones.map(({ width, height }) => ({ width, height })), [{ width: notes.width, height: notes.height }])
+})
+
+test('landing copy promises only what theory practice does: no key points, scoring or self-marking', async () => {
+  const text = (await renderHome({ env: CONFIGURED })).replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'")
+  assert.doesNotMatch(text, /key points|mark yourself|self-mark|marking guide|Compare and mark|points you made|theory marking|score yourself/i)
+  for (const claim of ['Write your answer. Compare and improve.', 'Compare your answer with a model answer',
+    "Note what you'd improve", 'Rewrite and try again until it sticks']) assert.ok(text.includes(claim), claim)
 })
