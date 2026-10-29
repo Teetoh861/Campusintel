@@ -17,7 +17,7 @@ import { ResultsScreen } from './ResultsScreen'
 import { ResumeScreen } from './ResumeScreen'
 import { ReviewScreen } from './ReviewScreen'
 import { focusFirst } from './focus-return'
-import { PRACTICE_COPY } from './practice-presentation'
+import { PRACTICE_COPY, attemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingStart, resultSeen, writePendingStart } from './practice-storage'
 import type { GradedAttempt, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
@@ -159,6 +159,12 @@ export function QuizClient(props: Props): ReactElement | null {
     retryStart.current = null
     clearPendingStart(courseSlug)
     if (outcome.status === 'ready' || outcome.status === 'in-progress' || outcome.status === 'graded') { show(outcome); return }
+    // An exam is open in this course: practice waits, and the exam is one tap away.
+    if (outcome.status === 'exam-open') {
+      setProblem({ title: PRACTICE_COPY.examOpenTitle, body: PRACTICE_COPY.examOpenBody,
+        action: { label: PRACTICE_COPY.resumeExam, href: attemptHref(props.courseHref, outcome.attempt.id) } })
+      return
+    }
     if (outcome.status === 'policy-changed') {
       setBrief({ questionCount: outcome.questionCount, durationSeconds: outcome.durationSeconds })
       setBankSize(outcome.bankSize)
@@ -168,7 +174,7 @@ export function QuizClient(props: Props): ReactElement | null {
     const known = 'mode' in pending && outcome.status === 'not-found' ? PROBLEMS['topic-missing'] : PROBLEMS[outcome.status]
     if (known === undefined) retryStart.current = { ...pending, attemptId: crypto.randomUUID() }
     setProblem(known ?? PROBLEMS['start-refused']!)
-  }, [courseSlug, continuityToken, show])
+  }, [courseSlug, continuityToken, show, props.courseHref])
 
   const retry = useCallback(() => {
     const next = retryStart.current

@@ -44,11 +44,20 @@ export const PRACTICE_COPY = {
   saved: 'Result saved to your account.',
   lastResult: 'See your last result',
   resultMissingTitle: 'This practice result isn’t available.',
+  // Practice by topic waits while an exam is open in the course, so no answer is marked during it.
+  examOpenTitle: 'Finish your exam first.',
+  examOpenBody: 'Practice opens again once your exam is submitted or its time runs out.',
+  resumeExam: 'Resume exam',
   bandNote: 'Practice feedback for this attempt only. Not an official grade.',
 } as const
 
-/** A start or resume problem; `retry` offers Try again, which repeats the same request. */
-export type PracticeProblem = { title: string; body: string; retry?: boolean }
+/** A start or resume problem; `retry` offers Try again, which repeats the same request; `action` links onward. */
+export type PracticeProblem = { title: string; body: string; retry?: boolean; action?: { label: string; href: string } }
+
+/** The practice page of one attempt, reloadable. */
+export function attemptHref(courseHref: string, attemptId: string): string {
+  return `${courseHref}/quiz?attempt=${attemptId}`
+}
 
 export const PRACTICE_BAND_THRESHOLDS = { strong: 70, target: 50 } as const
 export const LOW_TIME_SECONDS = 5 * 60

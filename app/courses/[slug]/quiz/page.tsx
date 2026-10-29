@@ -21,7 +21,7 @@ import { practicePolicyFor, readPracticeAttempt, readPracticeState } from '@/lib
 import { readPracticeTopics } from '@/lib/practice/topics'
 import { createClient } from '@/lib/supabase/server'
 import { QuizClient } from './QuizClient'
-import { PRACTICE_COPY, practiceContext } from './practice-presentation'
+import { PRACTICE_COPY, attemptHref, practiceContext } from './practice-presentation'
 import type { QuizInitial } from './QuizClient'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
@@ -126,12 +126,26 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     const open = await readPracticeAttempt(sessionId, state.attempt.id)
     if (open.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
     if (open.status === 'ready' && open.attempt.status === 'in_progress') {
+      // Another topic chosen: its start closes this run (the database keeps its picks and score).
+      if (entry.topic !== null && entry.topic !== open.attempt.topic && brief !== null) {
+        return await quiz({ kind: 'topic', topic: entry.topic })
+      }
       return await quiz({ kind: 'open', attempt: open.attempt, now: open.now })
     }
     if (open.status === 'graded' && open.attempt.status !== 'in_progress') {
       return await quiz({ kind: 'graded', attempt: open.attempt, latest: true })
     }
     return retry()
+  }
+  // Practice waits while an exam is open in this course, so no answer is marked during it.
+  if (state.status === 'open' && entry.topic !== null) {
+    return <StudentPage band={band}>
+      <Notice tone="info" title={PRACTICE_COPY.examOpenTitle} action={<>
+        <Link href={attemptHref(route.href, state.attempt.id)} prefetch={false}
+          className={studentAction(btnNavy, studentFocusDark)}>{PRACTICE_COPY.resumeExam}</Link>
+        {backToCourse}
+      </>}>{PRACTICE_COPY.examOpenBody}</Notice>
+    </StudentPage>
   }
   if (state.status === 'open') {
     const left = Date.parse(state.attempt.deadlineAt) - Date.parse(state.now)

@@ -158,6 +158,28 @@ test('a topic the course no longer has: "This topic isn’t available.", with no
   assert.deepEqual(starting.props.error, { title: 'This topic isn’t available.', body: 'Choose another topic from the course page.' })
 }))
 
+test('a topic while an exam is open: "Finish your exam first.", with Resume exam and no Try again', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+  f.answers.push({ status: 'exam-open', now: NOW, attempt: openAttempt(ATTEMPT) })
+  f.render()
+  await f.settle()
+  const starting = f.render()
+  assert.equal(f.requests.length, 1, 'refused once, not re-checked')
+  assert.deepEqual(starting.props.error, { title: 'Finish your exam first.',
+    body: 'Practice opens again once your exam is submitted or its time runs out.',
+    action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } })
+}))
+
+test('the exam-open notice links to the exam and offers no Try again', async () => withTsx(async () => {
+  const { InstantStarting } = require('./InstantStarting.tsx')
+  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, courseHref: `/courses/${COURSE}#cbtPractice`,
+    topic: 'Capital Budgeting', busy: false, onRetry() {}, error: { title: 'Finish your exam first.',
+      body: 'Practice opens again once your exam is submitted or its time runs out.',
+      action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } } }))
+  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Practice opens again .* Resume exam Back to course$/)
+  assert.match(html, new RegExp(`href="/courses/${COURSE}/quiz\\?attempt=${ATTEMPT}"`))
+  assert.doesNotMatch(html, /Try again/)
+}))
+
 test('the end of a topic: Practise again draws this topic again, Next topic starts the next one, none after the last', async () => {
   const graded = (topic) => ({ kind: 'graded', latest: false, attempt: { status: 'submitted', id: ATTEMPT, courseId: 'course-1',
     mode: 'instant', topic, intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: DEADLINE, durationSeconds: 10800,

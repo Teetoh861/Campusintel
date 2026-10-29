@@ -72,7 +72,7 @@ const dbAttempt = z.discriminatedUnion('status', [
       .strict() }).strict(),
 ])
 const dbAnswer = z.discriminatedUnion('state', [
-  z.object({ state: z.enum(['ready', 'graded', 'in-progress']), now: timestamp, attempt: dbAttempt }).strict(),
+  z.object({ state: z.enum(['ready', 'graded', 'in-progress', 'exam-open']), now: timestamp, attempt: dbAttempt }).strict(),
   z.object({ state: z.enum(['picked', 'answer-locked']), now: timestamp, attempt: dbAttempt,
     pick: z.object({ question_id: z.string().uuid(), selected: z.number().int(), correct_option: z.number().int(),
       is_correct: z.boolean(), explanation: z.string().nullable() }).strict() }).strict(),
@@ -128,7 +128,7 @@ export function practiceResultFrom(data: unknown): PracticeResult {
   const parsed = dbAnswer.safeParse(data)
   if (!parsed.success) return { status: 'unavailable' }
   const row = parsed.data
-  if (row.state === 'ready' || row.state === 'graded' || row.state === 'in-progress') {
+  if (row.state === 'ready' || row.state === 'graded' || row.state === 'in-progress' || row.state === 'exam-open') {
     const attempt = attemptFrom(row.attempt)
     return attempt === null ? { status: 'unavailable' } : { status: row.state, now: row.now, attempt }
   }

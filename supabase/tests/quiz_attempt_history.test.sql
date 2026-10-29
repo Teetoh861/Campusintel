@@ -12,7 +12,9 @@ select columns_are('public', 'quiz_attempts', array[
   'deadline_at', 'duration_seconds', 'intent', 'redo_of', 'bank_size',
   'saved_answers', 'saved_at', 'saved_revision', 'saved_sources', 'score',
   -- Instant feedback practice (20261029120000_instant_feedback_practice.sql).
-  'mode'
+  'mode',
+  -- Practice by topic (20261029150000_practice_by_topic.sql).
+  'topic'
 ], 'attempts contain exactly the required columns');
 select columns_are('public', 'quiz_attempt_answers', array[
   'attempt_id', 'question_id', 'ordinal', 'option_index', 'is_correct',
@@ -33,7 +35,8 @@ select is(
     'deadline_at:timestamp with time zone:YES', 'duration_seconds:integer:YES',
     'intent:text:YES', 'redo_of:uuid:YES', 'bank_size:integer:YES',
     'saved_answers:jsonb:YES', 'saved_at:timestamp with time zone:YES',
-    'saved_revision:integer:NO', 'saved_sources:jsonb:NO', 'score:integer:YES', 'mode:text:YES'
+    'saved_revision:integer:NO', 'saved_sources:jsonb:NO', 'score:integer:YES', 'mode:text:YES',
+    'topic:text:YES'
   ]::text[],
   'attempt column types and nullability match the contract'
 );
@@ -78,7 +81,8 @@ select is(
     'quiz_attempts_pkey',
     'quiz_attempts_question_count_check', 'quiz_attempts_redo_check', 'quiz_attempts_redo_of_fkey',
     'quiz_attempts_revision_check', 'quiz_attempts_saved_check', 'quiz_attempts_score_check',
-    'quiz_attempts_server_run_check', 'quiz_attempts_status_check', 'quiz_attempts_user_id_fkey'
+    'quiz_attempts_server_run_check', 'quiz_attempts_status_check', 'quiz_attempts_topic_check',
+    'quiz_attempts_user_id_fkey'
   ]::text[],
   'all required attempt keys and checks exist'
 );

@@ -233,6 +233,28 @@ test('practice by topic: a bare visit goes to the course\'s topic list; a topic 
   assert.match(html, /Included with full access/, 'a locked course starts no topic')
 }))
 
+test('switching topics: another topic starts (closing the open run); the same topic reopens it; an open exam blocks practice', async () => fixture(validQuiz, async f => {
+  const OPEN = '55555555-5555-4555-8555-555555555555'
+  const openInstant = { status: 'ready', now: '2026-10-24T10:00:00Z', attempt: { status: 'in_progress', id: OPEN,
+    courseId: '40000000-0000-4000-8000-000000000007', mode: 'instant', topic: 'Bookkeeping & Errors', intent: 'new',
+    redoOf: null, startedAt: '2026-10-24T10:00:00Z', deadlineAt: '2026-10-24T13:00:00Z', durationSeconds: 10800,
+    questionCount: 10, bankSize: 15, saved: { revision: 0, answers: {} },
+    questions: [{ questionId: OPEN, prompt: 'P', options: ['A', 'B'], section: 'Bookkeeping & Errors' }] } }
+  f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: OPEN, mode: 'instant',
+    deadlineAt: '2026-10-24T13:00:00Z', questionCount: 10, answered: 3, score: null, bankSize: 15 } }
+  f.publishedState.practice.attempts.set(OPEN, openInstant)
+  assert.deepEqual((await f.quizRoute(withTopic('Cost & Management Accounting'))).props.initial,
+    { kind: 'topic', topic: 'Cost & Management Accounting' }, 'another topic starts; the database closes the open run')
+  assert.equal((await f.quizRoute(withTopic('Bookkeeping & Errors'))).props.initial.kind, 'open', 'the same topic reopens it')
+  assert.equal((await f.quizRoute(params)).props.initial.kind, 'open', 'a bare visit resumes the open run')
+  f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: ATTEMPT, mode: 'exam',
+    deadlineAt: '2026-10-24T10:18:30Z', questionCount: 50, answered: 12, score: null, bankSize: 150 } }
+  const html = renderToStaticMarkup(await f.quizRoute(withTopic('Bookkeeping & Errors')))
+  assert.match(html, /Finish your exam first\./)
+  assert.match(html, new RegExp(`href="${quizHref}\\?attempt=${ATTEMPT}"[^>]*>Resume exam<`))
+  assert.doesNotMatch(html, /QuizClient/, 'no practice starts while the exam is open')
+}))
+
 test('the open attempt comes first: resume, whatever access is now (D7)', async () => fixture(validQuiz, async f => {
   f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: ATTEMPT,
     deadlineAt: '2026-10-24T10:18:30Z', questionCount: 50, answered: 12, score: null, bankSize: 150 } }

@@ -6,6 +6,9 @@
 --     Exam mode only.
 --   * An instant attempt now names its topic and is drawn only from it: up to its size, in practice_draw's tiers
 --     (never given first). A topic outside the course's pool is refused, and nothing starts. Exam starts are unchanged.
+--   * Starting another topic closes the open instant run of that course (its picks and score stand) and starts the new
+--     one in the same transaction; the same topic returns the open run. While an exam is open in the course, an
+--     instant start is refused (exam-open, with the exam to resume), so practice never marks answers during an exam.
 --   * published_cbt_topics: each topic's question count, behind the boundary of published_cbt_summary.
 --   * practice_topic_progress: per topic, the questions practised and the last instant score on it.
 --   * practice_can_start is unchanged.
@@ -134,7 +137,8 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Start: the 20261029120000 start with a topic. An instant start must name one, an exam start never does. The topic
 -- is judged with every lock held, like access: one outside the course's pool (or a catch-all label) starts nothing.
--- An instant attempt's bank_size is its topic's size.
+-- An instant attempt's bank_size is its topic's size. An open instant run of another topic is closed (as submitted, by
+-- its picks) only once the new start is certain to go ahead, so a refused start leaves it open.
 -- ---------------------------------------------------------------------------
 drop function public.practice_start(uuid, uuid, uuid, text, uuid, integer, integer, jsonb, integer, integer, boolean,
   text);
@@ -154,6 +158,7 @@ declare
   v_origin public.quiz_attempts;
   v_bank integer;
   v_size integer;
+  v_switch uuid;
 begin
   if p_attempt_id is null or p_course_id is null or p_intent is null or p_intent not in ('new', 'redo')
       or (p_intent = 'redo') <> (p_redo_of is not null)
@@ -187,10 +192,18 @@ begin
     end if;
     return private.practice_answer(case when v_attempt.status = 'in_progress' then 'ready' else 'graded' end, v_attempt);
   end if;
-  -- One open attempt per course, whatever its mode or topic: the open one is returned for the student to finish.
+  -- One open attempt per course. An open exam blocks practice (exam-open) and is returned to resume; an open instant run
+  -- of the same topic is returned to finish, one of another topic is closed below when this start goes ahead. Any other
+  -- start is returned the open attempt, as before.
   select * into v_attempt from public.quiz_attempts where user_id = v_user and course_id = p_course_id
     and status = 'in_progress' and deadline_at is not null;
-  if v_attempt.id is not null then return private.practice_answer('in-progress', v_attempt); end if;
+  if v_attempt.id is not null then
+    if v_attempt.mode = 'exam' and p_mode = 'instant' then return private.practice_answer('exam-open', v_attempt); end if;
+    if not (v_attempt.mode = 'instant' and p_mode = 'instant' and v_attempt.topic is distinct from p_topic) then
+      return private.practice_answer('in-progress', v_attempt);
+    end if;
+    v_switch := v_attempt.id;
+  end if;
 
   if not exists (select 1 from public.courses where id = p_course_id) then
     return jsonb_build_object('state', 'invalid-course');
@@ -236,6 +249,8 @@ begin
       'bank_size', v_bank);
   end if;
 
+  -- Switching topics: the open run closes now, keeping its picks and their score, and the new run starts.
+  if v_switch is not null then perform private.practice_finish_instant(v_switch, 'submitted', v_now); end if;
   insert into public.quiz_attempts (id, user_id, course_id, question_count, deadline_at, duration_seconds, intent,
       redo_of, bank_size, mode, topic)
     values (p_attempt_id, v_user, p_course_id, v_size, v_now + make_interval(secs => p_seconds), p_seconds, p_intent,

@@ -20,6 +20,8 @@ const HTTP_STATUS: Partial<Record<PracticeResultStatus, number>> = {
   'invalid-request': 400,
   'not-found': 404,
   'conflict': 409,
+  // Practice waits for the open exam: the body names it to resume.
+  'exam-open': 409,
   'locked': 403,
   'questions-changed': 409,
   'policy-changed': 409,

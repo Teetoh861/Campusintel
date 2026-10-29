@@ -178,17 +178,16 @@ select is(pg_temp.o('replay-other-topic'), '{"state":"conflict"}'::jsonb,
 -- Run 2: the ten not yet seen. Three picked, then left open.
 set local role service_role;
 insert into outcome values ('run2', pg_temp.tstart(1, 2, '08', 'Listening Skills'));
-insert into outcome values ('elsewhere-while-open', pg_temp.tstart(1, 3, '08', 'The Sounds of English'));
+insert into outcome values ('same-topic-while-open', pg_temp.tstart(1, 3, '08', 'Listening Skills'));
 select pg_temp.pick(1, 2, n, true) from generate_series(0, 2) n;
 insert into outcome values ('progress-open', public.practice_topic_progress(pg_temp.s(1), pg_temp.c('08')));
 reset role;
 select is(pg_temp.o('run2') ->> 'state', 'ready', 'Practise again starts the next run');
 select is((select count(*)::integer from unnest(pg_temp.pinned(2)) q where q = any(pg_temp.pinned(1))), 0,
   'never-seen first: the second run shares no question with the first');
-select is(jsonb_build_object('state', pg_temp.o('elsewhere-while-open') ->> 'state',
-    'id', pg_temp.o('elsewhere-while-open') -> 'attempt' ->> 'id'),
-  jsonb_build_object('state', 'in-progress', 'id', pg_temp.a(2)),
-  'one open attempt per course, whatever its topic: the open one is returned');
+select is(jsonb_build_object('state', pg_temp.o('same-topic-while-open') ->> 'state',
+    'id', pg_temp.o('same-topic-while-open') -> 'attempt' ->> 'id'),
+  jsonb_build_object('state', 'in-progress', 'id', pg_temp.a(2)), 'the same topic returns its open run to finish');
 select is(pg_temp.progress_of(pg_temp.o('progress-open'), 'Listening Skills'),
   '{"practised":13,"score":6,"total":10}'::jsonb,
   'picks count as practised straight away; the last score is the last finished run''s');
@@ -218,11 +217,51 @@ select is(jsonb_build_object('count', (pg_temp.o('small') -> 'attempt' ->> 'ques
     'topics', to_jsonb(pg_temp.pinned_topics(5))),
   '{"count":9,"topics":["Islam and Political Culture"]}'::jsonb, 'a topic of nine questions gives nine');
 
--- 6. Exams are unchanged: no topic, the whole pool -------------------------------------------------------------------
+-- 6. Switching topics (student 2, course 08) ---------------------------------------------------------------------------
+-- Run 10 on The Sounds of English: 2 right, 1 wrong, left open. Then another topic.
 set local role service_role;
-insert into outcome values ('exam', public.practice_start(pg_temp.s(2), pg_temp.a(6), pg_temp.c('08'), 'new', null, 50,
-  1800, '[]', 50, 1800, false));
+select pg_temp.tstart(2, 10, '08', 'The Sounds of English');
+select pg_temp.pick(2, 10, n, n < 2) from generate_series(0, 2) n;
+insert into outcome values ('switch', pg_temp.tstart(2, 11, '08', 'Comprehension & Summary'));
+insert into outcome values ('switch-progress', public.practice_topic_progress(pg_temp.s(2), pg_temp.c('08')));
+insert into outcome values ('switch-refused', pg_temp.tstart(2, 12, '08', 'No Such Topic'));
 reset role;
+-- Read straight after the refused start, before the next switch closes the run.
+insert into outcome values ('after-refused', (select to_jsonb(status) from public.quiz_attempts where id = pg_temp.a(11)));
+set local role service_role;
+insert into outcome values ('switch-back', pg_temp.tstart(2, 13, '08', 'The Sounds of English'));
+reset role;
+select is(jsonb_build_object('state', pg_temp.o('switch') ->> 'state', 'topic', pg_temp.o('switch') -> 'attempt' ->> 'topic'),
+  '{"state":"ready","topic":"Comprehension & Summary"}'::jsonb, 'another topic starts in one step');
+select is(jsonb_build_object('status', (select status from public.quiz_attempts where id = pg_temp.a(10)),
+    'score', (select score from public.quiz_attempts where id = pg_temp.a(10)),
+    'picks', (select count(*)::integer from public.quiz_attempt_answers where attempt_id = pg_temp.a(10))),
+  '{"status":"submitted","score":2,"picks":3}'::jsonb, 'the run it replaces closes with its picks and their score');
+select is(pg_temp.progress_of(pg_temp.o('switch-progress'), 'The Sounds of English'),
+  '{"practised":3,"score":2,"total":3}'::jsonb, 'and counts as that topic''s last score: 2/3');
+select is(jsonb_build_object('refused', pg_temp.o('switch-refused') ->> 'state',
+    'open', pg_temp.o('after-refused')),
+  '{"refused":"unknown-topic","open":"in_progress"}'::jsonb, 'a refused switch leaves the open run as it was');
+select is(jsonb_build_object('state', pg_temp.o('switch-back') ->> 'state',
+    'closed', (select status from public.quiz_attempts where id = pg_temp.a(11)),
+    'open', (select count(*)::integer from public.quiz_attempts where user_id = pg_temp.u(2) and course_id = pg_temp.c('08')
+      and status = 'in_progress')),
+  '{"state":"ready","closed":"submitted","open":1}'::jsonb, 'switching again leaves one open run per course');
+
+-- 7. An open exam blocks practice (student 3, course 08: free) --------------------------------------------------------
+set local role service_role;
+insert into outcome values ('exam', public.practice_start(pg_temp.s(3), pg_temp.a(6), pg_temp.c('08'), 'new', null, 50,
+  1800, '[]', 50, 1800, false));
+insert into outcome values ('during-exam', pg_temp.tstart(3, 14, '08', 'Listening Skills'));
+reset role;
+select is(jsonb_build_object('state', pg_temp.o('during-exam') ->> 'state',
+    'exam', pg_temp.o('during-exam') -> 'attempt' ->> 'id', 'mode', pg_temp.o('during-exam') -> 'attempt' ->> 'mode'),
+  jsonb_build_object('state', 'exam-open', 'exam', pg_temp.a(6), 'mode', 'exam'),
+  'a practice start during an open exam is refused, naming the exam to resume');
+select is((select count(*)::integer from jsonb_array_elements(pg_temp.o('during-exam') -> 'attempt' -> 'questions') q
+  where q ? 'correct_option' or q ? 'explanation' or q ? 'selected'), 0, 'and reveals nothing of it');
+select is((select string_agg(mode || ':' || status, ',') from public.quiz_attempts where user_id = pg_temp.u(3)),
+  'exam:in_progress', 'nothing starts and the exam is untouched');
 select is(jsonb_build_object('state', pg_temp.o('exam') ->> 'state', 'topic', pg_temp.o('exam') -> 'attempt' -> 'topic',
     'topics', jsonb_array_length(to_jsonb(pg_temp.pinned_topics(6))) > 1),
   '{"state":"ready","topic":null,"topics":true}'::jsonb, 'an exam names no topic and draws from every topic');

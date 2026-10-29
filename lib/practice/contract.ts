@@ -98,6 +98,8 @@ const PLAIN_STATUSES = ['signed-out', 'session-changed', 'invalid-request', 'not
 export const practiceResultSchema = z.discriminatedUnion('status', [
   // `now` is the database clock at the answer; with `deadlineAt` it sets the countdown, never the device clock.
   z.object({ status: z.enum(['ready', 'graded', 'in-progress']), now: timestamp, attempt: practiceAttemptSchema }).strict(),
+  // An instant start while an exam is open in the course: nothing started; the open exam is returned to resume.
+  z.object({ status: z.literal('exam-open'), now: timestamp, attempt: practiceAttemptSchema }).strict(),
   z.object({ status: z.enum(['picked', 'answer-locked']), now: timestamp, pick, attempt: practiceAttemptSchema }).strict(),
   z.object({ status: z.enum(['saved', 'stale', 'too-many-tabs']), now: timestamp, deadlineAt: timestamp, revision,
     answers: sampleAnswers }).strict(),
