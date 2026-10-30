@@ -23,17 +23,31 @@ The request UUID is the future fulfillment hook. A later trusted payment service
 
 ## Lock order
 
-Policy when needed → sorted Auth accounts → sorted entitlement-account advisory locks → sorted profiles → shared academic calendar → feature locks → resources. Decisions use a fresh wall clock after waits. Direct profile updates enter holding the profile row; their triggers never acquire entitlement-account or practice-account advisory locks. Early Access enrollment on an Auth confirmation uses nonwaiting profile locks and defers on contention. Calendar writers take their exclusive calendar lock without later account/profile locks.
+Policy when needed → sorted Auth accounts → sorted entitlement-account advisory locks → sorted profiles → shared academic calendar → feature locks → resources. Decisions use a fresh wall clock after waits. Direct profile updates enter holding the profile row; their lifecycle check takes no Auth lock, and their triggers never acquire entitlement-account or practice-account advisory locks or bind grants. Binding and its entitlement-event Auth FK wait until the next read or operator command, under the ordered prefix. Selection audit takes Auth KEY SHARE NOWAIT to protect its existing FK; contention becomes CI409 (the profile API's normal retry message), never a raw lock error or an account wait. Scheduling and purge lock the profile before changing its lifecycle, so a queued save rechecks the committed session restriction. Early Access enrollment on an Auth confirmation uses nonwaiting profile locks and defers on contention. Calendar writers take their exclusive calendar lock without later account/profile locks.
 
 Read opening: `auth.uid` → `open_course_access_read` (lock-free live-session check and binding precheck; eligible Early Access reconciliation before the lock prefix) → Auth SHARE → entitlement-account SHARED when no binding is needed, otherwise EXCLUSIVE → profile SHARE → calendar SHARED → `bind_pending_course_grants` only on the exclusive path → `require_course_access_account` → fresh-clock `course_access_decision`. An unbound grant found on the shared path does not count; reads never upgrade their account lock.
 
-Write opening: `lock_course_access_scope` → Auth SHARE → entitlement-account EXCLUSIVE → profile protection → calendar SHARED → feature lock where needed → `bind_pending_course_grants` → resource rows → fresh-clock session/access decision. `practice_start` keeps its practice-account feature lock before binding and CBT item locks. Operator selection correction uses profile UPDATE protection in the same order. The direct profile-update exception above remains in force.
+Write opening: `lock_course_access_scope` → Auth SHARE → entitlement-account EXCLUSIVE → profile protection → calendar SHARED → feature lock where needed → `bind_pending_course_grants` → resource rows → fresh-clock session/access decision. `practice_start` keeps its practice-account feature lock before binding and CBT item locks. Operator selection correction uses profile UPDATE protection in the same order and explicitly binds after updating the selection. The direct profile-update exception above remains in force.
 
-Early Access callers: text-account locking is used by import; array-account locking is used by member changes and Early Access grant restore. Both wait on profiles before group/member/grant locks: their Auth SHARE locks are compatible with a direct save, which takes no account advisory lock. Array Auth NOWAIT contention is caught as `deferred` by both callers. Confirmation reconciliation uses profile NOWAIT and returns `deferred`; sweeps skip held profiles and complete deferred enrollment. No operator caller exposes raw 55P03.
+Early Access callers: text-account locking is used by import; array-account locking is used by member changes and Early Access grant restore. Both wait on profiles before group/member/grant locks. Direct saves never wait on Auth or account advisory locks, including when deletion is queued behind the caller's Auth SHARE; selection-audit protection uses NOWAIT and a handled retry refusal. Array Auth NOWAIT contention is caught as `deferred` by both callers. Confirmation reconciliation uses profile NOWAIT and returns `deferred`; sweeps skip held profiles and complete deferred enrollment. No operator caller exposes raw 55P03.
 
-A stale selection with an unlocked list asks the student to confirm their courses. A locked semester mismatch goes through the existing audited `admin_change_course_selection` correction to the current semester; students cannot correct it themselves. Student first picks, changes and rollover confirmations reject a different running semester with CI422 and a concise form error. Calendar data stays private.
+A stale selection with an unlocked list asks the student to confirm their courses. A locked semester mismatch goes through the existing audited `admin_change_course_selection` correction to the current semester; students cannot correct it themselves. Student first picks, changes and rollover confirmations reject a different running semester with CI422 and a concise form error. An unchanged open selection with no rollover can save a new name without a semester check or a new confirmation. Calendar data stays private.
 
 Full-plan operator corrections retain the semester and lock; an attempted transfer to another semester is refused. Current-term department corrections update grant calendar scope with an audit and retain original grant dates.
+
+## Local verification
+
+Run the three A1 database suites serially on an explicitly selected disposable stack:
+
+```sh
+ACCESS_SCOPE_DB_TEST=1 ACCESS_SCOPE_DB_CONTAINER="supabase_db_ci-access-own-<project>" node --test --test-concurrency=1 lib/courses/access-profile-deletion.database.test.cjs lib/courses/access-review.database.test.cjs lib/courses/access-scope.database.test.cjs
+```
+
+The populated upgrade proof uses `ACCESS_SCOPE_UPGRADE_DB_TEST=1` and `ACCESS_SCOPE_UPGRADE_DB_CONTAINER` with the same isolated-container naming rule, against the predecessor schema before A1. It rolls back the real amended migration and its fixtures. The callback used to insert that SQL preserves PostgreSQL dollar quoting.
+
+Round 2 local evidence (2026-10-30): TypeScript, 89 reader/profile/form unit tests, 790 SQL assertions, all 30 database races and the 23-assertion populated upgrade proof passed. Races cover both practice/save orders, fresh-clock expiry, shared readers, grant binding, revoke/add idempotency, Early Access contention, schedule/purge against profile saves (including pending grants), and import with deletion queued behind it. Purge must report zero failures; a swallowed deadlock is a failure too. The caller enforces power preflight; selected touched tests remain runnable below 20%.
+
+Still owed after battery fell below 20%: two-account browser checks at 375 and 1280px for own-course access, the outside-course notice and row, and rollover with selection open and locked. These are NOT RUN; automated coverage does not approve the customer experience.
 
 ## Test-site rollout
 

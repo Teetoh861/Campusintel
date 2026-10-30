@@ -336,21 +336,22 @@ async function resolvePublication(
   return resolveAllowedPublication(client, repository, bankSizes)
 }
 
-/** Resolve material only after per-course admission or a verified database operator role. */
+/** The database authorizes material; request the bank count only after that read succeeds. */
 async function resolveAllowedPublication(
   client: StudentClient, repository: LinkedRepository, bankSizes: BankSizeReader,
 ): Promise<ResolvedPublication | 'signed-out'> {
-  const [published, bankSize] = await Promise.all([
-    getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId),
-    bankSizes(repository.repositoryCourseId)])
-  if (published.status === 'signed-out' || bankSize === 'signed-out') return 'signed-out'
-  if (published.status === 'locked' || bankSize === 'locked') {
+  const published = await getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId)
+  if (published.status === 'signed-out') return 'signed-out'
+  if (published.status === 'locked') return { content: { state: 'locked' }, learning: null, practice: null }
+  if (published.status !== 'ok') {
+    return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
+  }
+  const bankSize = await bankSizes(repository.repositoryCourseId)
+  if (bankSize === 'signed-out') return 'signed-out'
+  if (bankSize === 'locked') {
     return { content: { state: 'locked' }, learning: null, practice: null }
   }
   if (bankSize === 'unavailable') {
-    return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
-  }
-  if (published.status !== 'ok') {
     return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
   }
   const projected = projectStudentLearning(published.content)
@@ -583,14 +584,8 @@ export async function getStudentCourseBySlugForVerifiedStudent(
         isShared: repositoryParsed.data.is_shared,
         route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course },
       }
-      // An unowned repository is not addable to a student's institutional list. Only the current operator
-      // exception may resolve its material. Never send a repository id to the institutional projection.
-      const user = await getStudentSessionUser(undefined, client)
-      if (user === null) return { status: 'signed-out' }
-      const role = await client.from('profiles').select('role').eq('id', user.id).maybeSingle()
-      if (role.error || !role.data || !['student', 'operator'].includes(role.data.role)) return { status: 'unavailable' }
-      if (role.data.role !== 'operator') return { status: 'repository-only',
-        course: { repository, content: { state: 'not-available' } }, learning: null, practice: null }
+      // The material RPC decides the current operator exception and refuses students. A refusal is
+      // not available; an unowned repository cannot be added to an institutional list.
       const resolved = await resolveAllowedPublication(client, repository, async id => {
         const read = await getPublishedCbtBankSizesWithVerifiedClient(client, [id])
         return read.status === 'signed-out' ? 'signed-out' : read.sizes.get(id) ?? 'unavailable'

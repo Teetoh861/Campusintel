@@ -484,3 +484,12 @@ test('a non-running semester refusal names only the choice to fix and focuses it
   await f.submit()
   assert.deepEqual(f.navigations,[['replace','/dashboard']])
 }))
+
+test('open selection: changing only the name sends the saved courses and accepts the server save', async () => fixture(async f => {
+  f.setName('Amara')
+  f.respond(async () => response(200, { ...f.saved(), firstName: 'Amara' }))
+  await f.submit()
+  assert.deepEqual(JSON.parse(f.requests[0][1].body), { departmentId: f.ids.department,
+    academicLevelId: f.ids.level, academicPeriodId: f.ids.period, first_name: 'Amara', expectedRevision: 0 })
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
+}, true))

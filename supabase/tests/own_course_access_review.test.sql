@@ -73,13 +73,20 @@ select is((select reason from public.get_my_course_access(array[pg_temp.c('BUA20
 select ok((select count(*)>0 from public.read_published_managed_content('40000000-0000-4000-8000-000000000002')),'corrected student can read actual material');
 reset role;
 
--- Re-confirming a legacy wrong choice while open is still a student selection save.
+-- Same open courses without a rollover are a name-only save, even on a legacy semester mismatch.
 select pg_temp.student(13);
 update public.profiles set academic_period_id='30000000-0000-4000-8000-000000000002' where id=pg_temp.u(13);
 set local role authenticated;
 select pg_temp.claims(13);
-select throws_ok($$update public.profiles set academic_period_id=academic_period_id where id=pg_temp.u(13)$$,
-  'CI422',null,'an open same-choice save cannot confirm a non-running semester');
+create temporary table name_before as select selection_confirmed_at, revision from public.profiles where id=pg_temp.u(13);
+select lives_ok($$update public.profiles set first_name='Amara',department_id=department_id,
+  academic_level_id=academic_level_id,academic_period_id=academic_period_id where id=pg_temp.u(13)$$,
+  'an open same-course name save ignores a non-running semester when no rollover is due');
+select is((select first_name from public.profiles where id=pg_temp.u(13)),'Amara','the name actually changes');
+select is((select selection_confirmed_at from public.profiles where id=pg_temp.u(13)),
+  (select selection_confirmed_at from name_before),'name-only save keeps the confirmation');
+select is((select revision from public.profiles where id=pg_temp.u(13)),
+  (select revision+1 from name_before),'name-only save increments the CAS revision');
 reset role;
 
 -- First pick, normal change, rollover re-pick. The dedicated code leaves every saved profile value intact.

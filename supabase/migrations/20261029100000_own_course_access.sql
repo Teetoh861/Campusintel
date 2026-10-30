@@ -1,7 +1,8 @@
 -- Part 1: full plans cover one semester and only the student's confirmed list plus audited team additions.
 -- Discovery, AI and existing attempt/review permissions are intentionally unchanged (part 2).
 -- Lock order: policy when required; auth account; entitlement-account; profile; shared calendar; feature; resources.
--- A direct profile UPDATE already owns its profile row: its trigger never takes an account advisory/feature lock.
+-- A direct profile UPDATE already owns its profile row: no waiting Auth/account/feature lock or grant binding.
+-- Selection audit uses Auth KEY SHARE NOWAIT, returning CI409 on contention instead of waiting out of order.
 
 alter table public.entitlement_grants
   add column course_term_id uuid references private.academic_terms(id) on delete restrict,
@@ -105,7 +106,7 @@ create function private.bind_pending_course_grants(p_user uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 declare g record;
 begin
-  -- The caller protects profile/calendar before any grant row. Direct profile UPDATE keeps its exception.
+  -- Every caller owns the Auth/account/profile/calendar prefix. Direct profile UPDATE never binds grants.
   for g in select b.*, e.course_department_id as previous_department_id
       from private.pending_course_grant_bindings(p_user, clock_timestamp()) b
       join public.entitlement_grants e on e.id = b.grant_id order by e.id for update of e loop
@@ -151,19 +152,41 @@ begin
 end;
 $$;
 
-create function private.bind_profile_course_scope() returns trigger
+-- A profile UPDATE already holds its row. Binding here would invert Auth/profile order both
+-- explicitly and through entitlement_events.user_id's FK. The next read or operator command binds instead.
+-- The lifecycle guard must also avoid require_live_account's waiting Auth lock on this path.
+create function private.guard_profile_account_write() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
-  -- No advisory account lock here: a direct UPDATE owns the profile already.
-  perform 1 from auth.users where id = new.id for share;
-  perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
-  perform private.bind_pending_course_grants(new.id);
-  return null;
+  -- Scheduling and purge both lock this profile before restricting/removing it. Once this row is
+  -- ours, a fresh live-session check suffices; a queued save observes the committed restriction.
+  if current_setting('role', true) = 'authenticated' and not private.has_live_account_session() then
+    raise exception 'Account session required' using errcode = '42501';
+  end if;
+  return new;
 end;
 $$;
-create trigger profiles_bind_course_scope after update of department_id, academic_level_id,
-  academic_period_id, selection_confirmed_at on public.profiles for each row
-  execute function private.bind_profile_course_scope();
+revoke all on function private.guard_profile_account_write() from public, anon, authenticated, service_role;
+drop trigger profiles_guard_account_lifecycle on public.profiles;
+create trigger profiles_guard_account_lifecycle before update on public.profiles
+  for each row execute function private.guard_profile_account_write();
+
+-- Selection changes still retain their audit/FK. Protect its Auth reference without ever waiting
+-- behind deletion (or a queued deletion behind an Early Access reader) while holding the profile.
+-- Ordered operator callers already hold a compatible Auth lock and cannot hit this refusal.
+create or replace function private.log_course_selection_event(p_user_id uuid, p_term_id uuid, p_department_id uuid,
+  p_event text, p_actor text, p_detail jsonb default '{}'::jsonb) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  begin
+    perform 1 from auth.users where id = p_user_id for key share nowait;
+  exception when lock_not_available then
+    raise exception 'Account changes are in progress. Please try again.' using errcode = 'CI409';
+  end;
+  insert into private.course_selection_events(user_id, term_id, department_id, event, actor, detail)
+    values(p_user_id, p_term_id, p_department_id, p_event, p_actor, coalesce(p_detail, '{}'::jsonb));
+end;
+$$;
 
 -- Existing records keep all dates/allowances/history. An old grant binds using its own original issuance window.
 do $$ declare u uuid;
@@ -370,7 +393,7 @@ revoke all on function private.access_term_at(uuid, timestamptz), private.curren
   private.lock_course_access_scope(uuid), private.require_course_access_account(),
   private.pending_course_grant_bindings(uuid, timestamptz), private.open_course_access_read(uuid),
   private.bind_full_course_grant(), private.bind_pending_course_grants(uuid),
-  private.bind_profile_course_scope(), private.course_access_decision(uuid, uuid, timestamptz),
+  private.course_access_decision(uuid, uuid, timestamptz),
   public.get_my_course_access(uuid[]), public.admin_add_student_course(uuid, uuid, uuid, bigint, uuid, text, text),
   public.admin_student_course_status(uuid), public.admin_revoke_student_course(uuid, uuid, bigint, text, text)
   from public, anon, authenticated, service_role;
@@ -479,6 +502,8 @@ begin
         'academic_period_id', v_period)));
   update public.profiles set department_id = v_department, academic_level_id = v_level, academic_period_id = v_period
     where id = p_user_id returning * into v_profile;
+  -- The direct-save trigger never binds. This operator command already owns the ordered prefix.
+  perform private.bind_pending_course_grants(p_user_id);
   return jsonb_build_object('state', 'changed', 'revision', v_profile.revision,
     'lock', private.course_selection_state(p_user_id));
 end;
@@ -555,9 +580,9 @@ begin
     v_locked := v_locked || v_account;
   end loop;
   for v_account in select unnest(v_locked) order by 1 loop
-    -- Safe to wait: only Auth SHARE and account advisory locks precede this profile. Direct profile saves
-    -- never request an account advisory lock; their Auth SHARE is compatible with ours. No member/grant row
-    -- is locked yet. Auth confirmation instead uses reconcile_early_access's NOWAIT/deferred path.
+    -- No member/grant row is locked yet. Direct saves neither wait on Auth/account locks nor bind grants;
+    -- selection auditing uses Auth KEY SHARE NOWAIT even when deletion is queued behind our Auth SHARE.
+    -- Thus waiting for the profile cannot close a cycle. Confirmation uses NOWAIT/deferred instead.
     perform 1 from public.profiles where id = v_account for share;
   end loop;
   perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
@@ -579,9 +604,9 @@ begin
     v_locked := v_locked || v_account;
   end loop;
   for v_account in select unnest(v_locked) order by 1 loop
-    -- Safe to wait: only Auth SHARE and account advisory locks precede this profile. Direct profile saves
-    -- never request an account advisory lock; their Auth SHARE is compatible with ours. No member/grant row
-    -- is locked yet. Auth confirmation instead uses reconcile_early_access's NOWAIT/deferred path.
+    -- No member/grant row is locked yet. Direct saves neither wait on Auth/account locks nor bind grants;
+    -- selection auditing uses Auth KEY SHARE NOWAIT even when deletion is queued behind our Auth SHARE.
+    -- Thus waiting for the profile cannot close a cycle. Confirmation uses NOWAIT/deferred instead.
     perform 1 from public.profiles where id = v_account for share;
   end loop;
   perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
@@ -928,7 +953,7 @@ begin
     -- Only a student's selection save is restricted. The shared calendar lock is already held;
     -- use the fresh post-wait clock and the same running-term convention as course access. Invalid/inactive
     -- references keep their existing RLS refusal instead of being reported as a semester mismatch.
-    if v_state <> 'locked' and current_setting('role', true) = 'authenticated'
+    if v_state = 'reselect' and current_setting('role', true) = 'authenticated'
         and exists (select 1 from public.departments where id = new.department_id and is_active)
         and exists (select 1 from public.academic_levels where id = new.academic_level_id and is_active)
         and exists (select 1 from public.academic_periods where id = new.academic_period_id and is_active) then
