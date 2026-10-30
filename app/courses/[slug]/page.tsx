@@ -58,7 +58,7 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
     const client = await createClient()
     const context = await getStudentSessionContext(undefined, client)
     result = context === null ? { status: 'signed-out' } : await getStudentCourseBySlugForVerifiedStudent(client, slug)
-    if (result.status === 'ok' && result.course.content.state === 'locked' && result.course.content.reason !== 'outside-list' && hasActiveCourseOffering(result.course)) {
+    if (result.status === 'ok' && result.course.content.state === 'locked' && result.course.content.reason === undefined && hasActiveCourseOffering(result.course)) {
       const read = await readEntitlementForVerifiedStudent(client)
       const entitlement = read.status === 'ok' ? read.entitlement : null
       passOffered = trialWording(entitlement).passAvailable
@@ -103,8 +103,8 @@ function CourseStudyHub({ result, pass, passOffered }: {
   const title = institutional?.title ?? route.course.title
   const materialsHref = `${route.href}/materials`
   const locked = content.state === 'locked'
-  const outsideList = content.state === 'locked' && content.reason === 'outside-list'
-  const sections = locked ? [] : studySections({
+  const scopeNotice = content.state === 'locked' && content.reason !== undefined
+  const sections = locked || content.state === 'not-available' ? [] : studySections({
     study: content.state === 'ready' ? content.study : null,
     learning, practice, textbooks: route.course.textbooks.length,
   })
@@ -122,19 +122,20 @@ function CourseStudyHub({ result, pass, passOffered }: {
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
       {institutional
-        ? !outsideList && <section aria-labelledby="applicability-title" className="student-detail-section">
+        ? !scopeNotice && <section aria-labelledby="applicability-title" className="student-detail-section">
           <h2 id="applicability-title" className="student-section-title">Confirmed for</h2>
           <ApplicabilityList applicability={institutional.applicability} />
         </section>
-        : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
+        : content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
-      {locked && (outsideList || pass === null ? <LockedCourseNotice passOffered={passOffered} outsideList={outsideList} />
+      {locked && (scopeNotice || pass === null ? <LockedCourseNotice passOffered={passOffered} reason={content.reason} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />
       </>}>We couldn’t load the study materials for this course just now.</Notice>}
+      {content.state === 'not-available' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>}
       {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
         action={<RequestMaterialLink href={materialsHref} prominent />}>
         Notes, CBT practice and theory questions are not available for this course. You can request study material below.

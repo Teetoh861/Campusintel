@@ -83,28 +83,71 @@ $$;
 create trigger entitlement_grants_bind_course before insert on public.entitlement_grants
   for each row execute function private.bind_full_course_grant();
 
+-- One predicate for both the lock-free read precheck and the binding writer. Only rows whose binding
+-- would actually change are returned. Already bound terms never move to another term.
+create function private.pending_course_grant_bindings(p_user uuid, p_at timestamptz)
+returns table (grant_id uuid, term_id uuid, department_id uuid)
+language sql stable security definer set search_path = '' as $$
+  select g.id, target.term_id,
+    case when g.course_term_id is null or target.term_id = current_term.term_id
+      then p.department_id else g.course_department_id end
+  from public.entitlement_grants g join public.profiles p on p.id = g.user_id
+  left join lateral private.access_term_at(p.department_id, p_at) current_term on true
+  left join lateral private.access_term_at(p.department_id, greatest(g.created_at, g.starts_at)) issued on true
+  cross join lateral (select coalesce(g.course_term_id, issued.term_id) as term_id) target
+  where g.user_id = p_user and (g.source <> 'trial' or g.trial_policy = 'seven-day')
+    and p.department_id is not null
+    and (target.term_id is distinct from g.course_term_id
+      or (target.term_id = current_term.term_id and p.department_id is distinct from g.course_department_id));
+$$;
+
 create function private.bind_pending_course_grants(p_user uuid) returns void
 language plpgsql security definer set search_path = '' as $$
-declare p public.profiles; g record; v_term uuid; v_current uuid;
+declare g record;
 begin
-  select * into p from public.profiles where id = p_user;
-  select term_id into v_current from private.access_term_at(p.department_id, clock_timestamp());
-  for g in select * from public.entitlement_grants where user_id = p_user
-      and (source <> 'trial' or trial_policy = 'seven-day') order by id for update loop
-    v_term := g.course_term_id;
-    if v_term is null and p.department_id is not null then
-      select term_id into v_term from private.access_term_at(p.department_id, greatest(g.created_at, g.starts_at));
-    end if;
-    if v_term is distinct from g.course_term_id or (v_term = v_current
-        and p.department_id is distinct from g.course_department_id) then
-      update public.entitlement_grants set course_term_id = v_term,
-        course_department_id = case when v_term = v_current then p.department_id else g.course_department_id end
-        where id = g.id;
-      perform private.log_entitlement_event(p_user, g.id, 'course.grant-bound', 'system:selection',
-        jsonb_build_object('term_id', v_term, 'from_department_id', g.course_department_id,
-          'department_id', p.department_id));
-    end if;
+  -- The caller protects profile/calendar before any grant row. Direct profile UPDATE keeps its exception.
+  for g in select b.*, e.course_department_id as previous_department_id
+      from private.pending_course_grant_bindings(p_user, clock_timestamp()) b
+      join public.entitlement_grants e on e.id = b.grant_id order by e.id for update of e loop
+    update public.entitlement_grants set course_term_id = g.term_id, course_department_id = g.department_id
+      where id = g.grant_id;
+    perform private.log_entitlement_event(p_user, g.grant_id, 'course.grant-bound', 'system:selection',
+      jsonb_build_object('term_id', g.term_id, 'from_department_id', g.previous_department_id,
+        'department_id', g.department_id));
   end loop;
+end;
+$$;
+
+-- The read opening shared with published content/counts and the future published_cbt_topics reader.
+create function private.open_course_access_read(p_user uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+declare v_bind boolean; v_shared boolean; v_key bigint := hashtextextended('entitlement-account:' || p_user::text, 0);
+begin
+  if p_user is null or not private.has_live_account_session() then
+    raise exception 'Account session required' using errcode = '42501';
+  end if;
+  -- A caller can make multiple reads in one transaction. Remember the actual lock, including when calendar
+  -- repair or the launch clock makes binding/enrollment possible only after its first shared read.
+  select exists (select 1 from pg_catalog.pg_locks where locktype = 'advisory' and pid = pg_backend_pid()
+    and mode = 'ShareLock' and classid = ((v_key >> 32) & 4294967295)::oid
+    and objid = (v_key & 4294967295)::oid and objsubid = 1) into v_shared;
+  select exists (select 1 from private.pending_course_grant_bindings(p_user, clock_timestamp())) into v_bind;
+  v_bind := v_bind and not v_shared;
+  -- Reconciliation may issue a grant and must finish its policy/account prefix before the read opening.
+  if not v_shared and private.early_access_status(p_user)->>'status' = 'eligible' then
+    perform private.reconcile_early_access(p_user, 'system:course-read');
+  end if;
+  -- Decide BEFORE any account lock. Never upgrade a shared lock: simultaneous upgrades would deadlock.
+  perform 1 from auth.users where id = p_user for share;
+  if v_bind then
+    perform pg_advisory_xact_lock(hashtextextended('entitlement-account:' || p_user::text, 0));
+  else
+    perform pg_advisory_xact_lock_shared(hashtextextended('entitlement-account:' || p_user::text, 0));
+  end if;
+  perform 1 from public.profiles where id = p_user for share;
+  perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
+  if v_bind then perform private.bind_pending_course_grants(p_user); end if;
+  -- A grant appearing unbound on the shared path does not qualify in course_access_decision. A later read binds it.
 end;
 $$;
 
@@ -187,7 +230,7 @@ begin
   if not on_list and not team_added then return next; return; end if;
   select max(least(g.ends_at, e.ends_at)) into v_full_end from public.entitlement_grants g
     join private.academic_term_ends(g.course_department_id) e on e.term_id = g.course_term_id
-    where g.user_id = p_user and g.course_term_id = v_scope_term and g.course_department_id is not null
+    where g.user_id = p_user and g.course_term_id = v_scope_term and g.course_department_id = (s->>'department_id')::uuid
       and (g.source <> 'trial' or g.trial_policy = 'seven-day') and g.revoked_at is null
       and g.starts_at <= p_at and least(g.ends_at, e.ends_at) > p_at;
   if v_full_end is null then reason := 'needs-plan'; return next; return; end if;
@@ -221,12 +264,7 @@ begin
       or array_position(p_institutional_course_ids, null) is not null then
     raise exception 'Course identities required' using errcode = '22023';
   end if;
-  -- Preserve automatic Early Access enrollment; its policy/account prefix precedes profile/calendar/feature locks.
-  if private.early_access_status(v_user)->>'status' = 'eligible' then
-    perform private.reconcile_early_access(v_user, 'system:course-read');
-  end if;
-  perform private.lock_course_access_scope(v_user);
-  perform private.bind_pending_course_grants(v_user);
+  perform private.open_course_access_read(v_user);
   v_user := private.require_course_access_account();
   v_now := clock_timestamp();
   return query select c.id, d.allowed, d.reason, d.on_list, d.team_added, d.ends_at
@@ -257,16 +295,25 @@ begin
       is distinct from (p_user_id, p_institutional_course_id, p_term_id, p_actor, p_reason) then
       return jsonb_build_object('state', 'request-conflict');
     end if;
-    return jsonb_build_object('state', 'existing', 'id', a.id, 'revision', a.revision, 'ends_at', a.ends_at);
+    return jsonb_build_object('state', case when a.revoked_at is null then 'existing' else 'revoked' end,
+      'id', a.id, 'revision', a.revision, 'ends_at', a.ends_at, 'revoked_at', a.revoked_at);
   end if;
   select * into p from public.profiles where id = p_user_id;
   if p.revision is distinct from p_expected_profile_revision then return jsonb_build_object('state', 'conflict'); end if;
+  perform private.bind_pending_course_grants(p_user_id);
   v_now := clock_timestamp(); s := private.current_course_scope(p_user_id, v_now);
   if s->>'state' <> 'ready' or (s->>'term_id')::uuid is distinct from p_term_id then
     return jsonb_build_object('state', 'invalid-term');
   end if;
   if not exists (select 1 from public.institutional_courses where id = p_institutional_course_id) then
     return jsonb_build_object('state', 'invalid-course');
+  end if;
+  if not exists (select 1 from public.entitlement_grants g
+      join private.academic_term_ends(g.course_department_id) e on e.term_id = g.course_term_id
+      where g.user_id = p_user_id and g.course_term_id = p_term_id and g.course_department_id = p.department_id
+        and (g.source <> 'trial' or g.trial_policy = 'seven-day') and g.revoked_at is null
+        and g.starts_at <= v_now and least(g.ends_at, e.ends_at) > v_now) then
+    return jsonb_build_object('state', 'needs-plan');
   end if;
   if exists (select 1 from public.institutional_courses where id = p_institutional_course_id and is_free)
       or exists (select 1 from public.course_applicability where institutional_course_id = p_institutional_course_id
@@ -321,6 +368,7 @@ $$;
 
 revoke all on function private.access_term_at(uuid, timestamptz), private.current_course_scope(uuid, timestamptz),
   private.lock_course_access_scope(uuid), private.require_course_access_account(),
+  private.pending_course_grant_bindings(uuid, timestamptz), private.open_course_access_read(uuid),
   private.bind_full_course_grant(), private.bind_pending_course_grants(uuid),
   private.bind_profile_course_scope(), private.course_access_decision(uuid, uuid, timestamptz),
   public.get_my_course_access(uuid[]), public.admin_add_student_course(uuid, uuid, uuid, bigint, uuid, text, text),
@@ -353,7 +401,8 @@ begin
   end if;
   select id, source, trial_policy into v_grant from public.entitlement_grants
     where user_id = p_user_id and revoked_at is null and starts_at <= p_at and ends_at > p_confirmed_at
-      and ((source = 'trial' and trial_policy = 'discovery') or v_next.term_id is null or course_term_id = v_next.term_id)
+      and ((source = 'trial' and trial_policy = 'discovery') or v_next.term_id is null
+        or course_term_id is null or course_term_id = v_next.term_id)
     order by (ends_at > p_at) desc, ends_at desc, id
     limit 1;
   if v_grant.id is null then
@@ -444,6 +493,7 @@ declare
   v_status jsonb;
   v_policy private.entitlement_policy;
   v_grant public.entitlement_grants;
+  v_now timestamptz;
 begin
   -- Lock-free answer for states a launch cannot change.
   v_status := private.early_access_status(p_user_id);
@@ -471,6 +521,13 @@ begin
   v_status := private.early_access_status(p_user_id);
   if v_status->>'status' <> 'eligible' then return v_status; end if;
 
+  -- Every enrollment lock is now held. Decide the enrollment window on the wall clock after waits.
+  -- Keep the established recorded grant window: current entitlement/AI readers use transaction time.
+  v_now := clock_timestamp();
+  if v_policy.actual_launch_at > v_now then return jsonb_build_object('status', 'awaiting-launch'); end if;
+  if v_now > v_policy.actual_launch_at + make_interval(days => v_policy.early_access_enrollment_days) then
+    return jsonb_build_object('status', 'enrollment-closed');
+  end if;
   insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, reference, created_by)
     values (p_user_id, 'early_access', now(), now() + v_policy.early_access_duration, 'uncapped',
       jsonb_build_object('member_id', v_status->>'member_id'), p_actor)
@@ -498,7 +555,10 @@ begin
     v_locked := v_locked || v_account;
   end loop;
   for v_account in select unnest(v_locked) order by 1 loop
-    perform 1 from public.profiles where id = v_account for share nowait;
+    -- Safe to wait: only Auth SHARE and account advisory locks precede this profile. Direct profile saves
+    -- never request an account advisory lock; their Auth SHARE is compatible with ours. No member/grant row
+    -- is locked yet. Auth confirmation instead uses reconcile_early_access's NOWAIT/deferred path.
+    perform 1 from public.profiles where id = v_account for share;
   end loop;
   perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
   return v_locked;
@@ -519,7 +579,10 @@ begin
     v_locked := v_locked || v_account;
   end loop;
   for v_account in select unnest(v_locked) order by 1 loop
-    perform 1 from public.profiles where id = v_account for share nowait;
+    -- Safe to wait: only Auth SHARE and account advisory locks precede this profile. Direct profile saves
+    -- never request an account advisory lock; their Auth SHARE is compatible with ours. No member/grant row
+    -- is locked yet. Auth confirmation instead uses reconcile_early_access's NOWAIT/deferred path.
+    perform 1 from public.profiles where id = v_account for share;
   end loop;
   perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
   return v_locked;
@@ -676,9 +739,8 @@ language plpgsql security definer set search_path = '' as $$
 declare
   v_user uuid;
 begin
-  v_user := private.require_live_account();
-  perform private.lock_course_access_scope(v_user);
-  perform private.bind_pending_course_grants(v_user);
+  v_user := auth.uid();
+  perform private.open_course_access_read(v_user);
   v_user := private.require_course_access_account();
   if p_course_id is null then
     raise exception using errcode = '22023', message = 'Course identity required';
@@ -711,9 +773,8 @@ declare
   v_user uuid;
   v_course uuid;
 begin
-  v_user := private.require_live_account();
-  perform private.lock_course_access_scope(v_user);
-  perform private.bind_pending_course_grants(v_user);
+  v_user := auth.uid();
+  perform private.open_course_access_read(v_user);
   v_user := private.require_course_access_account();
   if p_course_ids is null or cardinality(p_course_ids) not between 1 and 200
       or array_position(p_course_ids, null) is not null then
@@ -833,5 +894,98 @@ begin
       from public.quiz_attempt_questions q where q.attempt_id = v_origin.id;
   end if;
   return private.practice_answer('ready', v_attempt);
+end;
+$$;
+
+-- A student cannot confirm a different running semester; operator correction remains audited and unchanged.
+create or replace function private.guard_course_selection() returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_now timestamptz;
+  v_state text;
+  v_operator boolean;
+  v_period uuid;
+begin
+  if tg_op = 'INSERT' then
+    new.selection_confirmed_at := case when new.department_id is not null then clock_timestamp() end;
+    return new;
+  end if;
+  -- The confirmation belongs to this trigger: a direct write of it is ignored.
+  new.selection_confirmed_at := old.selection_confirmed_at;
+  if old.department_id is null and new.department_id is null then return new; end if;
+  -- An extension committing at the semester end and this decision are serialized (extensions hold it exclusively).
+  perform pg_advisory_xact_lock_shared(hashtextextended('academic-calendar', 0));
+  v_now := clock_timestamp();
+  v_state := private.course_selection_state_for(old.id, old.department_id, old.selection_confirmed_at, v_now)->>'state';
+
+  if (new.department_id, new.academic_level_id, new.academic_period_id)
+      is not distinct from (old.department_id, old.academic_level_id, old.academic_period_id) then
+    -- A name-only save, or the same courses again. It never moves the confirmation, except that confirming the same
+    -- courses after the semester ended is the re-pick for the new semester.
+    -- Only a student's selection save is restricted. The shared calendar lock is already held;
+    -- use the fresh post-wait clock and the same running-term convention as course access. Invalid/inactive
+    -- references keep their existing RLS refusal instead of being reported as a semester mismatch.
+    if v_state <> 'locked' and current_setting('role', true) = 'authenticated'
+        and exists (select 1 from public.departments where id = new.department_id and is_active)
+        and exists (select 1 from public.academic_levels where id = new.academic_level_id and is_active)
+        and exists (select 1 from public.academic_periods where id = new.academic_period_id and is_active) then
+      select academic_period_id into v_period from private.access_term_at(new.department_id, v_now);
+      if v_period is not null and new.academic_period_id is distinct from v_period then
+        raise exception 'That semester is not running now' using errcode = 'CI422';
+      end if;
+    end if;
+    if v_state = 'reselect' then
+      new.selection_confirmed_at := v_now;
+      perform private.log_course_selection_event(old.id, null, old.department_id, 'selection.confirmed-again',
+        private.course_selection_actor(),
+        jsonb_build_object('department_id', new.department_id, 'academic_level_id', new.academic_level_id,
+          'academic_period_id', new.academic_period_id));
+    end if;
+    return new;
+  end if;
+
+  v_operator := exists (select 1 from private.course_selection_events
+    where txid = txid_current() and user_id = old.id and event = 'operator.selection-changed'
+      and detail -> 'to' = jsonb_build_object('department_id', new.department_id,
+        'academic_level_id', new.academic_level_id, 'academic_period_id', new.academic_period_id));
+  if v_operator then
+    -- A different department can have an earlier semester end. Judge the resulting scope at the same instant,
+    -- under the calendar lock; an exception also rolls back the operator's audit and profile revision.
+    if v_state = 'locked' and private.course_selection_state_for(old.id, new.department_id,
+        old.selection_confirmed_at, v_now)->>'state' is distinct from 'locked' then
+      raise exception 'Course correction would unlock this student' using errcode = 'CI423';
+    end if;
+    -- An operator change never unlocks: the confirmation stays, unless the student had not picked for this semester.
+    if v_state in ('incomplete', 'reselect') then new.selection_confirmed_at := v_now; end if;
+    return new;
+  end if;
+
+  if v_state = 'locked' then
+    raise exception 'Course selection is set for this semester' using errcode = 'CI423';
+  end if;
+  -- Only a student's selection save is restricted. The shared calendar lock is already held;
+  -- use the fresh post-wait clock and the same running-term convention as course access. Invalid/inactive
+  -- references keep their existing RLS refusal instead of being reported as a semester mismatch.
+  if current_setting('role', true) = 'authenticated'
+      and exists (select 1 from public.departments where id = new.department_id and is_active)
+      and exists (select 1 from public.academic_levels where id = new.academic_level_id and is_active)
+      and exists (select 1 from public.academic_periods where id = new.academic_period_id and is_active) then
+    select academic_period_id into v_period from private.access_term_at(new.department_id, v_now);
+    if v_period is not null and new.academic_period_id is distinct from v_period then
+      raise exception 'That semester is not running now' using errcode = 'CI422';
+    end if;
+  end if;
+  new.selection_confirmed_at := case when new.department_id is not null then v_now end;
+  perform private.log_course_selection_event(old.id, null, new.department_id, 'selection.changed',
+    private.course_selection_actor(),
+    jsonb_build_object('state_before', v_state,
+      'from', jsonb_build_object('department_id', old.department_id, 'academic_level_id', old.academic_level_id,
+        'academic_period_id', old.academic_period_id),
+      'to', jsonb_build_object('department_id', new.department_id, 'academic_level_id', new.academic_level_id,
+        'academic_period_id', new.academic_period_id)));
+  return new;
 end;
 $$;

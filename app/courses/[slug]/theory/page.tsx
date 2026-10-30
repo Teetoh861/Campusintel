@@ -9,6 +9,7 @@ import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction } from '@/components/student/ui'
+import { STUDY_COPY } from '@/components/student/study-families'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
@@ -39,7 +40,10 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}/theory`)
   if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
-    <LockedCourseNotice outsideList={result.outsideList} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course" />
+    <LockedCourseNotice outsideList={result.outsideList} reason={result.reason} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course" />
+  </StudentPage>
+  if (result.status === 'unavailable' && result.notAvailable) return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
+    <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>
   </StudentPage>
   if (result.status !== 'ready') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
     <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}

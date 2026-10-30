@@ -17,13 +17,21 @@ node scripts/entitlements/ops.cjs course-add --user <student-uuid> --course <ins
 node scripts/entitlements/ops.cjs course-revoke --user <student-uuid> --addition <addition-uuid> --expected-revision <revision> --actor <operator-name> --reason <reason>
 ```
 
-An addition can be recorded before the plan is issued, but opens material only with an active full plan for the same term. It ends no later than the student's current semester and its stored end; grant expiry/revocation also closes it. It never changes the student's list, issues a full plan or rolls into a new semester. An identical request key returns the same record; conflicting reuse is refused. Revoke retains the record and audit. To re-add a revoked course, use a new request key and reason.
+An addition requires an active full plan for the same term. Pending grants are bound first; without a qualifying plan the command returns `needs-plan` and records no addition. It ends no later than the student's current semester and its stored end; grant expiry/revocation also closes it. It never changes the student's list, issues a full plan or rolls into a new semester. An identical request key returns the same record and its current revocation state (`revoked` with `revoked_at` after revocation); conflicting reuse is refused. Revoke retains the record and audit. To re-add a revoked course, use a new request key and reason.
 
 The request UUID is the future fulfillment hook. A later trusted payment service must verify the exact student, institutional course, term and paid order line before invoking this operation idempotently. Refunds must revoke that addition. No payment integration is included here.
 
 ## Lock order
 
 Policy when needed → sorted Auth accounts → sorted entitlement-account advisory locks → sorted profiles → shared academic calendar → feature locks → resources. Decisions use a fresh wall clock after waits. Direct profile updates enter holding the profile row; their triggers never acquire entitlement-account or practice-account advisory locks. Early Access enrollment on an Auth confirmation uses nonwaiting profile locks and defers on contention. Calendar writers take their exclusive calendar lock without later account/profile locks.
+
+Read opening: `auth.uid` → `open_course_access_read` (lock-free live-session check and binding precheck; eligible Early Access reconciliation before the lock prefix) → Auth SHARE → entitlement-account SHARED when no binding is needed, otherwise EXCLUSIVE → profile SHARE → calendar SHARED → `bind_pending_course_grants` only on the exclusive path → `require_course_access_account` → fresh-clock `course_access_decision`. An unbound grant found on the shared path does not count; reads never upgrade their account lock.
+
+Write opening: `lock_course_access_scope` → Auth SHARE → entitlement-account EXCLUSIVE → profile protection → calendar SHARED → feature lock where needed → `bind_pending_course_grants` → resource rows → fresh-clock session/access decision. `practice_start` keeps its practice-account feature lock before binding and CBT item locks. Operator selection correction uses profile UPDATE protection in the same order. The direct profile-update exception above remains in force.
+
+Early Access callers: text-account locking is used by import; array-account locking is used by member changes and Early Access grant restore. Both wait on profiles before group/member/grant locks: their Auth SHARE locks are compatible with a direct save, which takes no account advisory lock. Array Auth NOWAIT contention is caught as `deferred` by both callers. Confirmation reconciliation uses profile NOWAIT and returns `deferred`; sweeps skip held profiles and complete deferred enrollment. No operator caller exposes raw 55P03.
+
+A stale selection with an unlocked list asks the student to confirm their courses. A locked semester mismatch goes through the existing audited `admin_change_course_selection` correction to the current semester; students cannot correct it themselves. Student first picks, changes and rollover confirmations reject a different running semester with CI422 and a concise form error. Calendar data stays private.
 
 Full-plan operator corrections retain the semester and lock; an attempted transfer to another semester is refused. Current-term department corrections update grant calendar scope with an audit and retain original grant dates.
 

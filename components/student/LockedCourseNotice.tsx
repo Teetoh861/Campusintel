@@ -1,9 +1,12 @@
 // components/student/LockedCourseNotice.tsx — The one explanation of a course the student's plan does not include.
 import Link from 'next/link'
 import { LockKeyhole } from 'lucide-react'
-import { courseChangeContact } from '@/lib/whatsapp'
+import { courseAdditionContact, courseChangeContact } from '@/lib/whatsapp'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from './Notice'
+import { STUDY_COPY } from './study-families'
+import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import type { CourseLockReason } from '@/lib/courses/read-model'
 import { studentAction, studentFocusDark } from './ui'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { ReactElement, ReactNode } from 'react'
@@ -13,26 +16,31 @@ import type { ReactElement, ReactNode } from 'react'
  * this student is eligible for a Discovery Pass (trialWording().passAvailable, which requires the server's eligibility
  * read); otherwise the pass is not mentioned at all, and no reason is given.
  */
-export function LockedCourseNotice({ backHref, backLabel, passOffered = false, outsideList = false }: {
-  backHref?: string; backLabel?: string; passOffered?: boolean; outsideList?: boolean
+export function LockedCourseNotice({ backHref, backLabel, passOffered = false, outsideList = false, reason }: {
+  backHref?: string; backLabel?: string; passOffered?: boolean; outsideList?: boolean; reason?: CourseLockReason
 }): ReactElement {
   const back: ReactNode = backHref && backLabel
     ? <Link href={backHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>{backLabel}</Link>
     : null
-  if (outsideList) {
-    const contact = courseChangeContact(STUDENT_DESTINATIONS.contact.href)
+  const confirm = reason === 'needs-selection'
+  const selectionLocked = reason === 'selection-locked'
+  if (outsideList || reason === 'outside-list' || confirm || selectionLocked) {
+    const contact = selectionLocked ? courseChangeContact(STUDENT_DESTINATIONS.contact.href)
+      : courseAdditionContact(STUDENT_DESTINATIONS.contact.href)
     return <div className="student-notice" data-tone="info" role="status" aria-atomic="true">
       <LockKeyhole aria-hidden="true" size={20} strokeWidth={1.75} />
       <div className="student-notice-body">
-        <h2 className="student-notice-title">Not in your courses this semester.</h2>
-        <p className="student-notice-text">Message us to add it.</p>
+        <h2 className="student-notice-title">{confirm ? STUDY_COPY.confirmCourses
+          : selectionLocked ? STUDY_COPY.selectionLocked : STUDY_COPY.outsideList}</h2>
+        {!confirm && !selectionLocked && <p className="student-notice-text">Message us to add it.</p>}
         <div className="student-notice-action">
-          {contact.external
+          {confirm ? <Link href={PROFILE_SELECTION_PATH} prefetch={false}
+            className={studentAction(btnNavy, studentFocusDark)}>Confirm my courses</Link> : contact.external
             ? <a href={contact.href} target="_blank" rel="noopener noreferrer"
               className={studentAction(btnNavy, studentFocusDark)}>Message us</a>
             : <Link href={contact.href} prefetch={false}
               className={studentAction(btnNavy, studentFocusDark)}>Message us</Link>}
-          {back}
+          {!confirm && !selectionLocked && back}
         </div>
       </div>
     </div>
