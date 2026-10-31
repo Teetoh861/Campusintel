@@ -106,7 +106,10 @@ insert into outcome values ('start', pg_temp.istart(1, 1));
 insert into outcome values ('replay', pg_temp.istart(1, 1));
 insert into outcome values ('replay-as-exam', public.practice_start(pg_temp.s(1), pg_temp.a(1), pg_temp.c('08'), 'new',
   null, 5, 1800, '[]', 5, 1800, false));
-insert into outcome values ('exam-while-open', pg_temp.estart(1, 2));
+-- An exam start over the open run closes it once it goes ahead (practice_by_topic.test.sql, section 10). One the
+-- database refuses (here a brief that no longer matches) leaves the run open.
+insert into outcome values ('exam-while-open', public.practice_start(pg_temp.s(1), pg_temp.a(2), pg_temp.c('08'), 'new',
+  null, 5, 1800, '[]', 4, 1800, false));
 insert into outcome values ('instant-elsewhere', pg_temp.istart(1, 3, '09'));
 reset role;
 select is(pg_temp.o('start') ->> 'state', 'ready', 'an instant attempt starts');
@@ -122,9 +125,8 @@ select is(pg_temp.o('replay') -> 'attempt' ->> 'id', pg_temp.a(1)::text, 'a repl
 select is((select count(*)::integer from public.quiz_attempts where user_id = pg_temp.u(1) and course_id = pg_temp.c('08')),
   1, 'and starts nothing more');
 select is(pg_temp.o('replay-as-exam'), '{"state":"conflict"}'::jsonb, 'the same attempt id in another mode is a conflict');
-select is(jsonb_build_object('state', pg_temp.o('exam-while-open') ->> 'state',
-    'id', pg_temp.o('exam-while-open') -> 'attempt' ->> 'id'),
-  jsonb_build_object('state', 'in-progress', 'id', pg_temp.a(1)), 'one open attempt per course across both modes');
+select is(jsonb_build_object('state', pg_temp.o('exam-while-open') ->> 'state', 'open', (pg_temp.row_of(1)).status),
+  '{"state":"policy-changed","open":"in_progress"}'::jsonb, 'a refused exam start leaves the open instant run as it was');
 select is(pg_temp.o('instant-elsewhere') ->> 'state', 'ready', 'another course may have its own open attempt');
 set local role service_role;
 select throws_ok($$ select public.practice_start(pg_temp.s(1), pg_temp.a(9), pg_temp.c('07'), 'new', null, 10, 10800,

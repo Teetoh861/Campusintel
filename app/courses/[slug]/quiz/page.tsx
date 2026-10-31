@@ -121,8 +121,13 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
   const state = await readPracticeState(sessionId, course.repository.repositoryCourseId)
   if (state.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (state.status === 'unavailable') return retry()
-  // An open instant attempt has no clock to show: it reopens on its next unanswered question.
-  if (state.status === 'open' && state.attempt.mode === 'instant') {
+  const openTopic = state.status === 'open' && state.attempt.mode === 'instant'
+  // Exam mode always opens on the exam's brief. Starting the exam closes an open topic run (the database keeps its picks
+  // and score); without a brief, the notices below explain why no exam can start.
+  if (openTopic && entry.exam) {
+    if (brief !== null) return await quiz({ kind: 'intro' })
+  } else if (openTopic) {
+    // An open instant attempt has no clock to show: it reopens on its next unanswered question.
     const open = await readPracticeAttempt(sessionId, state.attempt.id)
     if (open.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
     if (open.status === 'ready' && open.attempt.status === 'in_progress') {
@@ -136,9 +141,8 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
       return await quiz({ kind: 'graded', attempt: open.attempt, latest: true })
     }
     return retry()
-  }
-  // Practice waits while an exam is open in this course, so no answer is marked during it.
-  if (state.status === 'open' && entry.topic !== null) {
+  } else if (state.status === 'open' && entry.topic !== null) {
+    // Practice waits while an exam is open in this course, so no answer is marked during it.
     return <StudentPage band={band}>
       <Notice tone="info" title={PRACTICE_COPY.examOpenTitle} action={<>
         <Link href={attemptHref(route.href, state.attempt.id)} prefetch={false}
@@ -147,7 +151,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
       </>}>{PRACTICE_COPY.examOpenBody}</Notice>
     </StudentPage>
   }
-  if (state.status === 'open') {
+  if (state.status === 'open' && !openTopic) {
     const left = Date.parse(state.attempt.deadlineAt) - Date.parse(state.now)
     return await quiz({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,
       total: state.attempt.questionCount, minutesLeft: Math.max(0, Math.floor(left / MS_PER_MINUTE)) })

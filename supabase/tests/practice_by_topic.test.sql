@@ -336,5 +336,112 @@ select is(pg_temp.o('revoked'), '{"state":"locked"}'::jsonb, 'after a revoke, an
 select is((select status from public.quiz_attempts where id = pg_temp.a(22)), 'in_progress',
   'and the refused switch leaves the open run as it was');
 
+-- 9. A closed topic run reveals the keys of its picked questions only ---------------------------------------------------
+-- Questions of a view carrying any key (a pick, the correct option, the explanation or the review's item identity).
+create function pg_temp.keyed(p_view jsonb) returns integer language sql immutable
+  as $$ select count(*)::integer from jsonb_array_elements(p_view -> 'attempt' -> 'questions') q
+    where q ? 'selected' or q ? 'correct_option' or q ? 'explanation' or q ? 'item_id' or q ? 'revision' $$;
+-- Keyed questions that the student never answered.
+create function pg_temp.unanswered_keyed(p_view jsonb) returns integer language sql stable security definer
+  set search_path = '' as $$ select count(*)::integer from jsonb_array_elements(p_view -> 'attempt' -> 'questions') q
+    where (q ? 'selected' or q ? 'correct_option' or q ? 'explanation' or q ? 'item_id')
+      and not exists (select 1 from public.quiz_attempt_answers a where a.attempt_id = (p_view -> 'attempt' ->> 'id')::uuid
+        and a.question_id = (q ->> 'question_id')::uuid) $$;
+-- Run 10 (student 2) was closed by a topic switch in section 6 with 3 of its 10 questions picked.
+set local role service_role;
+insert into outcome values ('closed-read', public.practice_attempt(pg_temp.s(2), pg_temp.a(10)));
+insert into outcome values ('closed-replay', pg_temp.tstart(2, 10, '08', 'The Sounds of English'));
+insert into outcome values ('closed-late-pick', public.practice_pick(pg_temp.s(2), pg_temp.a(10), pg_temp.q(10, 7), 0));
+insert into outcome values ('closed-state', public.practice_state(pg_temp.s(2), pg_temp.c('08')));
+reset role;
+select is(jsonb_build_object('state', pg_temp.o('closed-read') ->> 'state', 'keyed', pg_temp.keyed(pg_temp.o('closed-read')),
+    'unanswered', pg_temp.unanswered_keyed(pg_temp.o('closed-read')),
+    'questions', jsonb_array_length(pg_temp.o('closed-read') -> 'attempt' -> 'questions')),
+  '{"state":"graded","keyed":3,"unanswered":0,"questions":10}'::jsonb,
+  'a closed topic run shows the answer of its 3 picked questions and nothing of the 7 it was never asked');
+select is((select jsonb_agg(distinct (select jsonb_agg(k order by k) from jsonb_object_keys(q) k)) from
+    jsonb_array_elements(pg_temp.o('closed-read') -> 'attempt' -> 'questions') q where not (q ? 'selected')),
+  '[["options","prompt","question_id","section"]]'::jsonb, 'an unanswered question is the question and nothing else');
+select is(jsonb_build_array(pg_temp.o('closed-replay') ->> 'state', pg_temp.keyed(pg_temp.o('closed-replay')),
+    pg_temp.unanswered_keyed(pg_temp.o('closed-replay'))), '["graded", 3, 0]'::jsonb,
+  'a replayed start of the closed run shows the same');
+select is(jsonb_build_array(pg_temp.o('closed-late-pick') ->> 'state', pg_temp.keyed(pg_temp.o('closed-late-pick')),
+    pg_temp.unanswered_keyed(pg_temp.o('closed-late-pick')),
+    (select count(*)::integer from public.quiz_attempt_answers where attempt_id = pg_temp.a(10))),
+  '["graded", 3, 0, 3]'::jsonb, 'a late pick on an unanswered question records nothing and reveals nothing');
+select ok(pg_temp.o('closed-state')::text !~ 'correct_option|explanation', 'the course''s practice state carries no key');
+
+-- A topic run whose time runs out closes the same way (student 30, course 08: free).
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', pg_temp.u(n), 'authenticated', 'authenticated',
+  'topic-' || n || '@example.test', 'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()
+from unnest(array[30, 31]) n;
+insert into auth.sessions (id, user_id, created_at, updated_at)
+select pg_temp.s(n), pg_temp.u(n), now(), now() from unnest(array[30, 31]) n;
+set local role service_role;
+select pg_temp.tstart(30, 30, '08', 'Listening Skills');
+select pg_temp.pick(30, 30, 0, false);
+reset role;
+update public.quiz_attempts set deadline_at = clock_timestamp() + interval '50 milliseconds' where id = pg_temp.a(30);
+select pg_sleep(0.1);
+set local role service_role;
+insert into outcome values ('timed-out-read', public.practice_attempt(pg_temp.s(30), pg_temp.a(30)));
+reset role;
+select is(jsonb_build_array(pg_temp.o('timed-out-read') -> 'attempt' ->> 'status', pg_temp.keyed(pg_temp.o('timed-out-read')),
+    pg_temp.unanswered_keyed(pg_temp.o('timed-out-read'))), '["timed_out", 1, 0]'::jsonb,
+  'a timed-out topic run shows its one picked answer only');
+
+-- An exam's review after submission is unchanged: every question with its key (student 3's exam from section 7).
+set local role service_role;
+insert into outcome values ('exam-review', public.practice_submit(pg_temp.s(3), pg_temp.a(6),
+  'f7000000-0000-4000-8000-000000000001', 1, 0, '{}'));
+reset role;
+select is(jsonb_build_array(pg_temp.o('exam-review') ->> 'state', pg_temp.keyed(pg_temp.o('exam-review')),
+    (pg_temp.o('exam-review') -> 'attempt' ->> 'question_count')::integer),
+  '["graded", 50, 50]'::jsonb, 'a submitted exam reviews all 50 questions, answered or not');
+
+-- 10. Exam mode over an open topic run (student 31, course 08) ----------------------------------------------------------
+create function pg_temp.estart(p_user integer, p_attempt integer, p_expected integer default 50) returns jsonb
+  language sql as $$ select public.practice_start(pg_temp.s(p_user), pg_temp.a(p_attempt), pg_temp.c('08'), 'new', null,
+    50, 1800, '[]', p_expected, 1800, false) $$;
+set local role service_role;
+select pg_temp.tstart(31, 31, '08', 'Listening Skills');
+select pg_temp.pick(31, 31, 0, true);
+select pg_temp.pick(31, 31, 1, false);
+insert into outcome values ('exam-refused', pg_temp.estart(31, 32, 49));
+reset role;
+insert into outcome values ('topic-after-refused', (select to_jsonb(status) from public.quiz_attempts where id = pg_temp.a(31)));
+set local role service_role;
+insert into outcome values ('exam-over-topic', pg_temp.estart(31, 33));
+reset role;
+insert into outcome values ('topic-closed', (select jsonb_build_object('status', status, 'score', score,
+  'finished_at', finished_at, 'picks', (select count(*) from public.quiz_attempt_answers where attempt_id = a.id))
+  from public.quiz_attempts a where id = pg_temp.a(31)));
+set local role service_role;
+insert into outcome values ('exam-replay', pg_temp.estart(31, 33));
+insert into outcome values ('exam-second-tab', pg_temp.estart(31, 34));
+insert into outcome values ('topic-during-exam', pg_temp.tstart(31, 35, '08', 'The Sounds of English'));
+reset role;
+select is(jsonb_build_array(pg_temp.o('exam-refused') ->> 'state', pg_temp.o('topic-after-refused')),
+  '["policy-changed", "in_progress"]'::jsonb, 'a refused exam start leaves the topic run open');
+select is(jsonb_build_object('state', pg_temp.o('exam-over-topic') ->> 'state',
+    'mode', pg_temp.o('exam-over-topic') -> 'attempt' ->> 'mode',
+    'timed', (pg_temp.o('exam-over-topic') -> 'attempt' ->> 'duration_seconds')::integer),
+  '{"state":"ready","mode":"exam","timed":1800}'::jsonb, 'an exam starts over an open topic run');
+select is(pg_temp.o('topic-closed') - 'finished_at', '{"status":"submitted","score":1,"picks":2}'::jsonb,
+  'which closes, keeping its 2 picks and their score, as a topic switch does');
+select is(jsonb_build_object('replay', pg_temp.o('exam-replay') ->> 'state',
+    'replay_id', pg_temp.o('exam-replay') -> 'attempt' ->> 'id', 'tab', pg_temp.o('exam-second-tab') ->> 'state',
+    'tab_id', pg_temp.o('exam-second-tab') -> 'attempt' ->> 'id',
+    'topic_finished_once', (select finished_at from public.quiz_attempts where id = pg_temp.a(31))
+      = (pg_temp.o('topic-closed') ->> 'finished_at')::timestamptz),
+  jsonb_build_object('replay', 'ready', 'replay_id', pg_temp.a(33), 'tab', 'in-progress', 'tab_id', pg_temp.a(33),
+    'topic_finished_once', true),
+  'a replayed start returns the exam; a second tab is handed the same exam; the topic run closed once');
+select is((select string_agg(mode || ':' || status, ',' order by created_at, id) from public.quiz_attempts
+    where user_id = pg_temp.u(31)), 'instant:submitted,exam:in_progress', 'one open attempt: the exam');
+select is(pg_temp.o('topic-during-exam') ->> 'state', 'exam-open', 'the open exam still blocks topic runs');
+
 select * from finish();
 rollback;

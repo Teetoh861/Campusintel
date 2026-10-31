@@ -233,7 +233,7 @@ test('practice by topic: a bare visit goes to the course\'s topic list; a topic 
   assert.match(html, /Included with full access/, 'a locked course starts no topic')
 }))
 
-test('switching topics: another topic starts (closing the open run); the same topic reopens it; an open exam blocks practice', async () => fixture(validQuiz, async f => {
+test('switching topics: another topic starts (closing the open run); the same topic reopens it; Exam mode opens its brief; an open exam blocks practice', async () => fixture(validQuiz, async f => {
   const OPEN = '55555555-5555-4555-8555-555555555555'
   const openInstant = { status: 'ready', now: '2026-10-24T10:00:00Z', attempt: { status: 'in_progress', id: OPEN,
     courseId: '40000000-0000-4000-8000-000000000007', mode: 'instant', topic: 'Bookkeeping & Errors', intent: 'new',
@@ -247,6 +247,15 @@ test('switching topics: another topic starts (closing the open run); the same to
     { kind: 'topic', topic: 'Cost & Management Accounting' }, 'another topic starts; the database closes the open run')
   assert.equal((await f.quizRoute(withTopic('Bookkeeping & Errors'))).props.initial.kind, 'open', 'the same topic reopens it')
   assert.equal((await f.quizRoute(params)).props.initial.kind, 'open', 'a bare visit resumes the open run')
+  // Exam mode always opens on the exam's brief; starting it closes the open run in the database.
+  const brief = await f.quizRoute(exam())
+  assert.deepEqual([brief.props.initial, brief.props.brief], [{ kind: 'intro' }, { questionCount: 50, durationSeconds: 1800 }],
+    'Exam mode shows the brief, not the open topic run')
+  f.publishedState.locked = true
+  const lockedHtml = renderToStaticMarkup(await f.quizRoute(exam()))
+  assert.match(lockedHtml, /Included with full access/, 'with no exam to start, Exam mode explains why')
+  assert.doesNotMatch(lockedHtml, /QuizClient/, 'and never resumes the topic run as if it were the exam')
+  f.publishedState.locked = false
   f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: ATTEMPT, mode: 'exam',
     deadlineAt: '2026-10-24T10:18:30Z', questionCount: 50, answered: 12, score: null, bankSize: 150 } }
   const html = renderToStaticMarkup(await f.quizRoute(withTopic('Bookkeeping & Errors')))

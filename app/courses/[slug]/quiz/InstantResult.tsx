@@ -12,7 +12,7 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { ProblemNotice } from './ProblemNotice'
 import { INSTANT_COPY, instantScoreLine } from './instant-feedback'
 import { PRACTICE_COPY, practiceIdentity } from './practice-presentation'
-import type { GradedAttempt } from '@/lib/practice/contract'
+import type { ClosedInstantAttempt } from '@/lib/practice/contract'
 import type { PracticeProblem } from './practice-presentation'
 import type { ReactElement } from 'react'
 
@@ -21,7 +21,7 @@ type Props = {
   courseTitle: string
   courseHref: string
   repositoryOnly: boolean
-  attempt: GradedAttempt
+  attempt: ClosedInstantAttempt
   // A new attempt on this topic may start now (current access, a live bank and a topic to draw from).
   canStartNew: boolean
   // The course's next topic, when there is one and a new attempt may start.
@@ -35,7 +35,7 @@ type Props = {
 
 export function InstantResult(props: Props): ReactElement {
   const { attempt } = props
-  const answered = attempt.questions.filter(question => question.selected !== null).length
+  const answered = attempt.questions.filter(question => question.feedback !== undefined).length
   const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
   // Only an attempt left part-way says how far it got; a finished one needs no second line.
   const lede = answered < attempt.questions.length && answered > 0

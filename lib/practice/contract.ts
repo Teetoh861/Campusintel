@@ -1,8 +1,8 @@
 // lib/practice/contract.ts — Server-run CBT practice as it may cross the client boundary
 // (20261025100000_server_run_practice.sql). The database draws each attempt, fixes its deadline, keeps the sheet saved
 // before it and grades it once. An open attempt carries prompts, options and sections only; correct options and
-// explanations exist in this contract only on a graded attempt, or on an instant attempt's question once it is picked
-// (20261029120000_instant_feedback_practice.sql). Every shape is strict, so a key that leaks into an open attempt fails
+// explanations exist in this contract only on a graded exam, or on an instant attempt's question once it is picked,
+// whether the attempt is open or closed (20261029120000_instant_feedback_practice.sql). Every shape is strict, so a key that leaks into an open attempt fails
 // the whole answer closed.
 import { z } from 'zod'
 import { MAX_SAVE_REVISION, sampleAnswers } from '@/lib/entitlements/discovery-contract'
@@ -72,12 +72,15 @@ const meta = {
   startedAt: timestamp, deadlineAt: timestamp, durationSeconds: z.number().int().positive(),
   questionCount: z.number().int().positive(), bankSize: z.number().int().positive(),
 }
-export const practiceAttemptSchema = z.discriminatedUnion('status', [
+const closed = { status: z.enum(['submitted', 'timed_out']), ...meta,
+  result: z.object({ score: z.number().int().nonnegative(), total: z.number().int().positive(), timedOut: z.boolean(),
+    finishedAt: timestamp }).strict() }
+export const practiceAttemptSchema = z.union([
   z.object({ status: z.literal('in_progress'), ...meta, questions: z.array(openQuestion).min(1).max(MAX_QUESTIONS),
     saved: z.object({ revision, answers: sampleAnswers }).strict() }).strict(),
-  z.object({ status: z.enum(['submitted', 'timed_out']), ...meta, questions: z.array(gradedQuestion).min(1).max(MAX_QUESTIONS),
-    result: z.object({ score: z.number().int().nonnegative(), total: z.number().int().positive(), timedOut: z.boolean(),
-      finishedAt: timestamp }).strict() }).strict(),
+  z.object({ ...closed, mode: z.literal('exam'), questions: z.array(gradedQuestion).min(1).max(MAX_QUESTIONS) }).strict(),
+  // A closed instant attempt keeps the open shape: feedback on picked questions only, never the keys it was not asked.
+  z.object({ ...closed, mode: z.literal('instant'), questions: z.array(openQuestion).min(1).max(MAX_QUESTIONS) }).strict(),
 ])
   // An open exam never carries feedback.
   .refine(attempt => attempt.status !== 'in_progress' || attempt.mode === 'instant'
@@ -85,6 +88,8 @@ export const practiceAttemptSchema = z.discriminatedUnion('status', [
 export type PracticeAttempt = z.infer<typeof practiceAttemptSchema>
 export type OpenAttempt = Extract<PracticeAttempt, { status: 'in_progress' }>
 export type GradedAttempt = Exclude<PracticeAttempt, OpenAttempt>
+export type GradedExam = Extract<GradedAttempt, { mode: 'exam' }>
+export type ClosedInstantAttempt = Extract<GradedAttempt, { mode: 'instant' }>
 
 // The result of one pick: `picked` for a choice recorded now or replayed, `answer-locked` when a different choice was
 // already recorded (its result is returned). The attempt is as the database holds it after the pick.

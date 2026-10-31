@@ -13,7 +13,7 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { wholeBankAttempt } from '@/lib/practice/contract'
 import { ProblemNotice } from './ProblemNotice'
 import { PRACTICE_COPY, minutesOf, plural, practiceBand, practiceIdentity } from './practice-presentation'
-import type { GradedAttempt } from '@/lib/practice/contract'
+import type { GradedExam } from '@/lib/practice/contract'
 import type { PracticeProblem } from './practice-presentation'
 import type { ReactElement } from 'react'
 
@@ -22,7 +22,7 @@ type Props = {
   courseTitle: string
   courseHref: string
   repositoryOnly: boolean
-  attempt: GradedAttempt
+  attempt: GradedExam
   // A new attempt may start now (current access and a live bank): only then are next attempts offered.
   canStartNew: boolean
   // This tab still held answers the server never received when time ran out.
@@ -38,7 +38,7 @@ type Props = {
 const SECONDS_PER_MINUTE = 60
 
 /** Whole minutes between the server's start and finish, rounded up and never more than the attempt's duration. */
-export function minutesUsedOf(attempt: GradedAttempt): number {
+export function minutesUsedOf(attempt: GradedExam): number {
   const used = Math.max(0, (Date.parse(attempt.result.finishedAt) - Date.parse(attempt.startedAt)) / 1000)
   return Math.min(minutesOf(attempt.durationSeconds), Math.ceil(used / SECONDS_PER_MINUTE))
 }

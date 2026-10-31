@@ -21,10 +21,11 @@ const openAttempt = (picked = {}, count = 3) => ({ status: 'in_progress', id: AT
   saved: { revision: 0, answers: {} }, questions: Array.from({ length: count }, (_, n) => ({ questionId: Q(n),
     prompt: `Prompt ${n}`, options: ['A', 'B', 'C'], section: 'General',
     ...(n in picked ? { feedback: feedbackFor(n, picked[n]) } : {}) })) })
+// A closed topic run: feedback on its picked questions only (null: never answered).
 const gradedAttempt = (score, selections) => ({ ...openAttempt(), status: 'submitted',
   result: { score, total: selections.length, timedOut: false, finishedAt: NOW },
   questions: selections.map((selected, n) => ({ questionId: Q(n), prompt: `Prompt ${n}`, options: ['A', 'B', 'C'],
-    section: 'General', itemId: Q(50 + n), revision: 1, selected, correctOption: 1, explanation: null })) })
+    section: 'General', ...(selected === null ? {} : { feedback: { selected, correctOption: 1, explanation: null } }) })) })
 const picked = (n, selected, attempt) => ({ status: 'picked', now: NOW, attempt,
   pick: { questionId: Q(n), selected, correctOption: 1, isCorrect: selected === 1, explanation: n === 0 ? 'Because it agrees.' : null } })
 

@@ -111,7 +111,9 @@ as $$
   select * from private.practice_draw_from(p_user_id, p_course_id, p_attempt_id, p_size, p_sections, null);
 $$;
 
--- An attempt as its student sees it now names its topic (null for an exam).
+-- An attempt as its student sees it now names its topic (null for an exam). A topic run, open or closed, reveals the
+-- answer and explanation of picked questions only: closing a run part-way never releases the keys it was not asked.
+-- An exam's graded review is unchanged.
 create or replace function private.practice_view(p_attempt public.quiz_attempts) returns jsonb
 language sql
 stable
@@ -124,8 +126,7 @@ as $$
     'started_at', p_attempt.deadline_at - make_interval(secs => p_attempt.duration_seconds),
     'deadline_at', p_attempt.deadline_at, 'duration_seconds', p_attempt.duration_seconds,
     'question_count', p_attempt.question_count, 'bank_size', p_attempt.bank_size,
-    'questions', case when p_attempt.mode = 'instant' and p_attempt.status = 'in_progress'
-      then private.practice_instant_questions(p_attempt.id)
+    'questions', case when p_attempt.mode = 'instant' then private.practice_instant_questions(p_attempt.id)
       else private.practice_questions(p_attempt.id, p_attempt.status <> 'in_progress') end,
     'saved', case when p_attempt.status = 'in_progress' then jsonb_build_object('revision', p_attempt.saved_revision,
       'answers', coalesce(p_attempt.saved_answers, '{}'::jsonb)) end,
@@ -137,8 +138,9 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Start: the 20261029120000 start with a topic. An instant start must name one, an exam start never does. The topic
 -- is judged with every lock held, like access: one outside the course's pool (or a catch-all label) starts nothing.
--- An instant attempt's bank_size is its topic's size. An open instant run of another topic is closed (as submitted, by
--- its picks) only once the new start is certain to go ahead, so a refused start leaves it open.
+-- An instant attempt's bank_size is its topic's size. An open instant run is closed (as submitted, by its picks) by an
+-- exam start or a start on another topic, only once the new start is certain to go ahead, so a refused start leaves it
+-- open.
 -- ---------------------------------------------------------------------------
 drop function public.practice_start(uuid, uuid, uuid, text, uuid, integer, integer, jsonb, integer, integer, boolean,
   text);
@@ -195,13 +197,13 @@ begin
     return private.practice_answer(case when v_attempt.status = 'in_progress' then 'ready' else 'graded' end, v_attempt);
   end if;
   -- One open attempt per course. An open exam blocks practice (exam-open) and is returned to resume; an open instant run
-  -- of the same topic is returned to finish, one of another topic is closed below when this start goes ahead. Any other
-  -- start is returned the open attempt, as before.
+  -- of the same topic is returned to finish. An exam start, or an instant start on another topic, closes an open instant
+  -- run below, once this start is certain to go ahead. Any other start is returned the open attempt, as before.
   select * into v_attempt from public.quiz_attempts where user_id = v_user and course_id = p_course_id
     and status = 'in_progress' and deadline_at is not null;
   if v_attempt.id is not null then
     if v_attempt.mode = 'exam' and p_mode = 'instant' then return private.practice_answer('exam-open', v_attempt); end if;
-    if not (v_attempt.mode = 'instant' and p_mode = 'instant' and v_attempt.topic is distinct from p_topic) then
+    if not (v_attempt.mode = 'instant' and (p_mode = 'exam' or v_attempt.topic is distinct from p_topic)) then
       return private.practice_answer('in-progress', v_attempt);
     end if;
     v_switch := v_attempt.id;
@@ -251,7 +253,7 @@ begin
       'bank_size', v_bank);
   end if;
 
-  -- Switching topics: the open run closes now, keeping its picks and their score, and the new run starts.
+  -- Switching topics, or to the exam: the open run closes now, keeping its picks and their score, and the new one starts.
   if v_switch is not null then perform private.practice_finish_instant(v_switch, 'submitted', v_now); end if;
   insert into public.quiz_attempts (id, user_id, course_id, question_count, deadline_at, duration_seconds, intent,
       redo_of, bank_size, mode, topic)

@@ -19,7 +19,7 @@ import { ReviewScreen } from './ReviewScreen'
 import { focusFirst } from './focus-return'
 import { PRACTICE_COPY, attemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingStart, resultSeen, writePendingStart } from './practice-storage'
-import type { GradedAttempt, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
+import type { GradedAttempt, GradedExam, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
 import type { PendingStart } from './practice-storage'
 import type { PracticeProblem } from './practice-presentation'
@@ -79,7 +79,9 @@ type View =
   | { screen: 'starting'; topic: string }
   | { screen: 'resume' }
   | { screen: 'active'; attempt: OpenAttempt; now: string }
-  | { screen: 'results' | 'review'; attempt: GradedAttempt; unsent: boolean }
+  | { screen: 'results'; attempt: GradedAttempt; unsent: boolean }
+  // Only an exam has a review; a topic's answers were explained as they were picked.
+  | { screen: 'review'; attempt: GradedExam; unsent: boolean }
 
 function initialView(initial: QuizInitial): View {
   if (initial.kind === 'resume') return { screen: 'resume' }
@@ -266,21 +268,21 @@ export function QuizClient(props: Props): ReactElement | null {
         onRestoreFocus={event => { if (focusFirst(reportReturnFocus.current)) event.preventDefault() }} /> : null}
     </>
   }
-  if (view.screen === 'results' && view.attempt.mode === 'instant') {
-    const { topic } = view.attempt
-    const next = topic === null ? -1 : props.topics.indexOf(topic) + 1
-    const nextTopic = next > 0 ? props.topics[next] ?? null : null
-    return <InstantResult {...identity} courseHref={topicsHref} attempt={view.attempt}
-      canStartNew={brief !== null && topic !== null} nextTopic={brief !== null ? nextTopic : null}
-      starting={busy} error={problem} onRetry={retry}
-      onPractiseAgain={() => { if (topic !== null) startInstant(topic) }}
-      onNextTopic={() => { if (nextTopic !== null) startInstant(nextTopic) }} />
-  }
   if (view.screen === 'results') {
     const { attempt } = view
+    if (attempt.mode === 'instant') {
+      const { topic } = attempt
+      const next = topic === null ? -1 : props.topics.indexOf(topic) + 1
+      const nextTopic = next > 0 ? props.topics[next] ?? null : null
+      return <InstantResult {...identity} courseHref={topicsHref} attempt={attempt}
+        canStartNew={brief !== null && topic !== null} nextTopic={brief !== null ? nextTopic : null}
+        starting={busy} error={problem} onRetry={retry}
+        onPractiseAgain={() => { if (topic !== null) startInstant(topic) }}
+        onNextTopic={() => { if (nextTopic !== null) startInstant(nextTopic) }} />
+    }
     return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={brief !== null}
       unsentAtDeadline={view.unsent} starting={busy} error={problem} onRetry={retry}
-      onReview={() => setView({ ...view, screen: 'review' })}
+      onReview={() => setView({ screen: 'review', attempt, unsent: view.unsent })}
       onRetake={() => { if (brief !== null) start('new', null, brief) }}
       onRedo={() => {
         if (brief !== null) start('redo', attempt.id, { questionCount: attempt.questionCount, durationSeconds: brief.durationSeconds })
