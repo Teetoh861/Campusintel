@@ -254,7 +254,18 @@ begin
   end if;
 
   -- Switching topics, or to the exam: the open run closes now, keeping its picks and their score, and the new one starts.
-  if v_switch is not null then perform private.practice_finish_instant(v_switch, 'submitted', v_now); end if;
+  -- It was read before the waits above: one that reached its deadline meanwhile times out at that deadline, as
+  -- close_overdue_practice would close it, and one the sweep has already closed is left as it is.
+  if v_switch is not null then
+    select * into v_attempt from public.quiz_attempts where id = v_switch for update;
+    if v_attempt.status = 'in_progress' then
+      if v_attempt.deadline_at <= v_now then
+        perform private.practice_finish_instant(v_switch, 'timed_out', v_attempt.deadline_at);
+      else
+        perform private.practice_finish_instant(v_switch, 'submitted', v_now);
+      end if;
+    end if;
+  end if;
   insert into public.quiz_attempts (id, user_id, course_id, question_count, deadline_at, duration_seconds, intent,
       redo_of, bank_size, mode, topic)
     values (p_attempt_id, v_user, p_course_id, v_size, v_now + make_interval(secs => p_seconds), p_seconds, p_intent,

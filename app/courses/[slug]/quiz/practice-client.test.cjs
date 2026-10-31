@@ -57,6 +57,20 @@ test('a start in flight and this tab\'s unsent choices are validated on every re
   })
 })
 
+test('Exam mode recovers only an exam start; a topic start kept from a lost response stays for its topic', () => {
+  const local = memory(), session = memory()
+  withWindow({ localStorage: local, sessionStorage: session }, () => {
+    const s = storageModule()
+    const topicStart = { attemptId: ATTEMPT, mode: 'instant', topic: 'Listening Skills' }
+    s.writePendingStart('x', topicStart)
+    assert.equal(s.readPendingExamStart('x'), null)
+    assert.deepEqual(s.readPendingStart('x'), topicStart, 'reading for Exam mode leaves the topic start in place')
+    const examStart = { attemptId: ATTEMPT, intent: 'new', redoOf: null, expected: { questionCount: 50, durationSeconds: 1800, wholeBank: false } }
+    s.writePendingStart('x', examStart)
+    assert.deepEqual(s.readPendingExamStart('x'), examStart)
+  })
+})
+
 test('storage that is missing or throws is never fatal', () => {
   const throwing = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') },
     removeItem() { throw new Error('blocked') } }

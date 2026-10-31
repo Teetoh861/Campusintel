@@ -69,6 +69,11 @@ const pendingStart = z.union([z.object({ attemptId: uuid, intent: z.enum(['new',
 export function readPendingStart(courseSlug: string): PendingStart | null {
   return read(session(), pendingKey(courseSlug), pendingStart)
 }
+// Exam mode recovers only an exam start: a topic start kept from a lost response stays for its own topic's entry.
+export function readPendingExamStart(courseSlug: string): Extract<PendingStart, { intent: 'new' | 'redo' }> | null {
+  const kept = readPendingStart(courseSlug)
+  return kept === null || 'mode' in kept ? null : kept
+}
 export function writePendingStart(courseSlug: string, start: PendingStart): void { write(session(), pendingKey(courseSlug), start) }
 export function clearPendingStart(courseSlug: string): void { remove(session(), pendingKey(courseSlug)) }
 

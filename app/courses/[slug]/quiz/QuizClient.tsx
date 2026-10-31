@@ -18,7 +18,7 @@ import { ResumeScreen } from './ResumeScreen'
 import { ReviewScreen } from './ReviewScreen'
 import { focusFirst } from './focus-return'
 import { PRACTICE_COPY, attemptHref } from './practice-presentation'
-import { clearPendingStart, markResultSeen, readPendingStart, resultSeen, writePendingStart } from './practice-storage'
+import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, writePendingStart } from './practice-storage'
 import type { GradedAttempt, GradedExam, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
 import type { PendingStart } from './practice-storage'
@@ -208,7 +208,9 @@ export function QuizClient(props: Props): ReactElement | null {
   // A start whose response was lost before a reload: ask for that same attempt instead of offering a new one.
   useEffect(() => {
     if (initial.kind !== 'intro' && !(initial.kind === 'graded' && initial.latest)) return
-    const kept = readPendingStart(courseSlug)
+    // Exam mode (its brief, or its last result) keeps to exam starts; a lost topic start never replaces the brief.
+    const examEntry = initial.kind === 'intro' || initial.attempt.mode === 'exam'
+    const kept = examEntry ? readPendingExamStart(courseSlug) : readPendingStart(courseSlug)
     if (kept === null) return
     void (async () => {
       const outcome = await postPracticeCommand({ action: 'attempt', attemptId: kept.attemptId }, continuityToken)
