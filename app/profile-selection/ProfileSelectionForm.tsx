@@ -166,6 +166,8 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open' }
           return
         }
         setNotice({ message: 'We couldn’t confirm your changes were saved. Reload the page to check.', reload: true })
+      } else if (body && typeof body === 'object' && 'status' in body && body.status === 'semester-not-running') {
+        setNotice({ message: "That semester isn't running now. Choose the current semester.", field: 'academicPeriodId' })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invalid-selection') {
         setNotice({ message: 'Review your first name and choices, or reload if a choice is no longer available.', reload: true })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'missing-profile') {

@@ -18,6 +18,7 @@ type StoredState = (Exclude<ReturnType<typeof classifyStoredSelection>, { kind: 
 const PROFILE_COLUMNS = 'department_id,academic_level_id,academic_period_id,first_name,revision'
 // The database's refusal of a selection change while the courses are set for the semester (20261026100000).
 const COURSES_SET_CODE = 'CI423'
+const SEMESTER_NOT_RUNNING_CODE = 'CI422'
 const storedProfileSchema = z.object({
   department_id: z.string().uuid().nullable(),
   academic_level_id: z.string().uuid().nullable(),
@@ -52,7 +53,7 @@ type Selection = {
 }
 
 export type StudentProfileState =
-  | { status: 'signed-out' | 'session-changed' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' | 'conflict' | 'locked' }
+  | { status: 'signed-out' | 'session-changed' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' | 'conflict' | 'locked' | 'semester-not-running' }
   | { status: 'incomplete'; revision: number; options: Options; firstName: string | null; selection?: Selection }
   | { status: 'complete'; revision: number; options: Options; selection: Selection; firstName: string }
 
@@ -193,7 +194,8 @@ export async function saveCurrentStudentProfileSelection(
       academic_period_id: selection.academicPeriodId,
       first_name: selection.first_name,
     }).eq('id', student.id).eq('revision', selection.expectedRevision).select(PROFILE_COLUMNS).maybeSingle()
-    if (error) return { status: error.code === COURSES_SET_CODE ? 'locked' : 'unavailable' }
+    if (error) return { status: error.code === COURSES_SET_CODE ? 'locked'
+      : error.code === SEMESTER_NOT_RUNNING_CODE ? 'semester-not-running' : 'unavailable' }
     if (data === null) {
       // The row existed at preflight. A lost CAS is never a reason to retry a write.
       // Re-read through the same owner/live-session RLS boundary, not elevated access.

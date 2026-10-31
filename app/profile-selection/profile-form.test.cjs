@@ -465,3 +465,31 @@ test('the database refusal (CI423, sent as locked) shows the locked view, never 
   await f.submit()
   assert.equal(JSON.parse(f.requests[1][1].body).departmentId, f.ids.department)
 }, true))
+
+
+test('a non-running semester refusal names only the choice to fix and focuses it',async()=>fixture(async f=>{
+  f.choose('department',f.ids.department); f.choose('academic-level',f.ids.level); f.choose('academic-period',f.ids.secondPeriod)
+  const focused=[]
+  f.select('academic-period').props.ref.current={focus:()=>focused.push('semester')}
+  f.respond(async()=>response(409,{status:'semester-not-running'}))
+  await f.submit(); f.render(); f.flushEffects()
+  assert.equal(f.notice(),"That semester isn't running now. Choose the current semester.")
+  assert.equal(f.select('academic-period').props['aria-invalid'],true)
+  assert.equal(f.select('academic-period').props['aria-describedby'],'academic-period-error')
+  assert.equal(focused.at(-1),'semester')
+  assert.deepEqual(f.navigations,[])
+  f.choose('academic-period',f.ids.period)
+  assert.equal(f.notice(),undefined)
+  f.respond(async()=>response(200,f.saved()))
+  await f.submit()
+  assert.deepEqual(f.navigations,[['replace','/dashboard']])
+}))
+
+test('open selection: changing only the name sends the saved courses and accepts the server save', async () => fixture(async f => {
+  f.setName('Amara')
+  f.respond(async () => response(200, { ...f.saved(), firstName: 'Amara' }))
+  await f.submit()
+  assert.deepEqual(JSON.parse(f.requests[0][1].body), { departmentId: f.ids.department,
+    academicLevelId: f.ids.level, academicPeriodId: f.ids.period, first_name: 'Amara', expectedRevision: 0 })
+  assert.deepEqual(f.navigations, [['replace', '/dashboard']])
+}, true))

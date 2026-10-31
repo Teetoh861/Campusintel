@@ -6,6 +6,10 @@
 begin;
 select no_plan();
 
+-- These tests replace the calendar with fictional dates. Detach pre-existing course scopes only inside
+-- this rolled-back fixture transaction; keep all saved accounts, grant records and dates after the test.
+delete from private.student_course_additions;
+update public.entitlement_grants set course_term_id=null, course_department_id=null;
 delete from private.academic_term_extensions;
 delete from private.academic_terms;
 delete from private.course_selection_events;

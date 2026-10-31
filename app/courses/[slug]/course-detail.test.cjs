@@ -74,6 +74,9 @@ async function fixture(run) {
           calls.push(['lookup', slug]); assert.equal(supplied, client); return state.result
         },
       }
+      if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => {
+        calls.push('entitlement'); return { status: 'unavailable' }
+      } }
       if (name === './BookmarkButton') return { BookmarkButton: props =>
         React.createElement('button', { type: 'button', 'data-bookmark': props.contentKey }, 'Bookmark control') }
       if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
@@ -313,4 +316,41 @@ test('loading boundary is inert: one announcement, no identity, no actions', asy
   assert.equal((html.match(/Loading course\./g) || []).length, 1)
   assert.doesNotMatch(html, /<a\b|<button\b|Bookmark|Practice|INST|animate-pulse/)
   assert.match(html, /aria-hidden="true"/)
+}))
+
+test('outside-list detail shows the support lock without asking for a pass or rendering learning', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason: 'outside-list' }), learning: null, practice: null }
+  const html = await f.html()
+  assert.match(html, /Institutional title/)
+  assert.match(text(html), /Not in your courses this semester\. Message us to add it\./)
+  assert.ok(anchors(html).some(link => /Message us/.test(link) && /href="\/contact"/.test(link)))
+  assert.doesNotMatch(html, /Included with full access|Discovery|Confirmed for|id="notes"|id="cbtPractice"|id="theory"|id="reading"/)
+  assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
+}))
+
+
+test('course detail gives each selection recovery one notice and never asks for a pass', async () => fixture(async f => {
+  for (const [reason, title, action] of [
+    ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
+    ['selection-locked', 'Your courses are set for another semester.', 'Message us'],
+  ]) {
+    f.calls.length = 0
+    f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason }), learning: null, practice: null }
+    const html = await f.html()
+    assert.ok(html.includes(title))
+    assert.ok(html.includes('>' + action + '</a>'))
+    assert.equal((html.match(/class="student-notice"/g) || []).length, 1)
+    assert.equal(anchors(html).length, 1)
+    assert.doesNotMatch(html, /Included with full access|Discovery|Confirmed for|id="notes"|id="reading"/)
+    assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
+  }
+}))
+
+test('repository-only detail shows not-available without material sections or plan and add offers', async () => fixture(async f => {
+  f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'not-available' }), learning: null, practice: null }
+  const html = await f.html()
+  assert.match(html, /Static repository title|Additional study material/)
+  assert.match(html, /Study materials are not available./)
+  assert.doesNotMatch(html, /Message us|Included with full access|See how to unlock|Core reading|id="notes"|id="reading"|Request material/)
+  assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
 }))

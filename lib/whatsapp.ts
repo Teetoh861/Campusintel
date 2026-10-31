@@ -34,3 +34,11 @@ export function courseChangeContact(fallback: string, number: string = WHATSAPP_
     ? { href: `${WA_BASE}${number}?text=${encodeURIComponent(COURSE_CHANGE_MESSAGE)}`, external: true }
     : { href: fallback, external: false }
 }
+
+export const COURSE_ADDITION_MESSAGE = "Hello CampusIntell, I'd like to add a course for this semester."
+
+/** A generic course-addition chat, without student or course data, or Help & Support if unconfigured. */
+export function courseAdditionContact(fallback: string, number: string = WHATSAPP_NUMBER): { href: string; external: boolean } {
+  const href = whatsAppChatUrl(COURSE_ADDITION_MESSAGE, number)
+  return href ? { href, external: true } : { href: fallback, external: false }
+}
