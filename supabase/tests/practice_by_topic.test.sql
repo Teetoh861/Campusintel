@@ -2,7 +2,7 @@
 -- are the distinct section labels of its pool in configured order, then first appearance, without unlabelled questions
 -- or catch-all labels; the count read sits behind the content boundary; an instant start names one of the course's
 -- topics and draws only from it, never-seen first across runs; a topic outside the course starts nothing; progress per
--- topic matches the student's own rows.
+-- topic matches the student's own rows; topics and starts follow the student's own course access.
 begin;
 select no_plan();
 
@@ -267,6 +267,74 @@ select is(jsonb_build_object('state', pg_temp.o('exam') ->> 'state', 'topic', pg
   '{"state":"ready","topic":null,"topics":true}'::jsonb, 'an exam names no topic and draws from every topic');
 select throws_ok($$ update public.quiz_attempts set topic = 'Listening Skills' where id = pg_temp.a(6) $$, '23514', null,
   'only an instant attempt has a topic');
+
+-- 8. Course access (20261029100000_own_course_access.sql) ---------------------------------------------------------------
+-- Students 20 and 21: Business Administration 200L first semester with a plan. BUA201 (02) is on their list, BUA202 (11)
+-- is not. 21's and 22's grants are still pending their semester binding.
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', pg_temp.u(n), 'authenticated', 'authenticated',
+  'topic-' || n || '@example.test', 'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()
+from unnest(array[20, 21, 22]) n;
+insert into auth.sessions (id, user_id, created_at, updated_at)
+select pg_temp.s(n), pg_temp.u(n), now(), now() from unnest(array[20, 21, 22]) n;
+update public.profiles set first_name = 'Ada', department_id = '10000000-0000-4000-8000-000000000002',
+  academic_level_id = '20000000-0000-4000-8000-000000000002', academic_period_id = '30000000-0000-4000-8000-000000000001'
+where id in (pg_temp.u(20), pg_temp.u(21), pg_temp.u(22));
+insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
+select pg_temp.u(n), 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test' from unnest(array[20, 21, 22]) n;
+update public.entitlement_grants set course_term_id = null, course_department_id = null
+where user_id in (pg_temp.u(21), pg_temp.u(22));
+delete from private.entitlement_events where user_id in (pg_temp.u(21), pg_temp.u(22)) and event = 'course.grant-bound';
+create function pg_temp.bindings(p_user integer) returns integer language sql stable security definer set search_path = ''
+  as $$ select count(*)::integer from private.entitlement_events where user_id = pg_temp.u(p_user)
+    and event = 'course.grant-bound' $$;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"f4000000-0000-4000-8000-000000000020","role":"authenticated","session_id":"f5000000-0000-4000-8000-000000000020"}';
+select ok((select count(*) from public.published_cbt_topics(pg_temp.c('02'), '[]')) > 0, 'an own course lists its topics');
+select throws_ok($$ select * from public.published_cbt_topics(pg_temp.c('11'), '[]') $$, 'CI403', null,
+  'a course outside the student''s list has no topic list (CI403)');
+set local request.jwt.claims = '{"sub":"f4000000-0000-4000-8000-000000000022","role":"authenticated","session_id":"f5000000-0000-4000-8000-000000000022"}';
+select ok((select count(*) from public.published_cbt_topics(pg_temp.c('02'), '[]')) > 0,
+  'a pending grant is bound by the topic read, which then lists the topics');
+reset role;
+select is(pg_temp.bindings(22), 1, 'bound once');
+set local role service_role;
+insert into outcome values ('outside-topic', pg_temp.tstart(20, 20, '11',
+  'Week 10 — Nigeria''s Banking, Financial System, and Securities Market'));
+insert into outcome values ('outside-exam', public.practice_start(pg_temp.s(20), pg_temp.a(21), pg_temp.c('11'), 'new', null,
+  5, 1800, '[]', 5, 1800, false));
+insert into outcome values ('own-topic', pg_temp.tstart(20, 22, '02', 'Ethics & CSR'));
+reset role;
+select is(jsonb_build_array(pg_temp.o('outside-topic'), pg_temp.o('outside-exam')),
+  '[{"state":"locked"},{"state":"locked"}]'::jsonb, 'a topic or exam start for a course outside the list is refused');
+select is((select count(*)::integer from public.quiz_attempts where user_id = pg_temp.u(20) and course_id = pg_temp.c('11')),
+  0, 'and pins no attempt');
+select is(pg_temp.o('own-topic') ->> 'state', 'ready', 'an own course''s topic starts');
+
+-- A pending grant binds once, inside the start, which then goes ahead; a replay binds nothing more.
+select is(pg_temp.bindings(21), 0, 'student 21''s grant is pending');
+set local role service_role;
+insert into outcome values ('pending', pg_temp.tstart(21, 23, '02', 'Ethics & CSR'));
+insert into outcome values ('pending-replay', pg_temp.tstart(21, 23, '02', 'Ethics & CSR'));
+reset role;
+select is(jsonb_build_object('state', pg_temp.o('pending') ->> 'state', 'replay', pg_temp.o('pending-replay') ->> 'state',
+    'bindings', pg_temp.bindings(21),
+    'bound', (select course_term_id is not null and course_department_id is not null from public.entitlement_grants
+      where user_id = pg_temp.u(21))),
+  '{"state":"ready","replay":"ready","bindings":1,"bound":true}'::jsonb,
+  'a start with a pending grant binds it once, then starts');
+
+-- A revoked plan starts no topic.
+select is(public.admin_change_grant((select id from public.entitlement_grants where user_id = pg_temp.u(20)), 'revoke',
+  null, null, 'Ops', 'test') ->> 'state', 'changed', 'the plan is revoked');
+set local role service_role;
+insert into outcome values ('revoked', pg_temp.tstart(20, 24, '02', 'Accounting & Operations'));
+reset role;
+select is(pg_temp.o('revoked'), '{"state":"locked"}'::jsonb, 'after a revoke, another topic is refused');
+select is((select status from public.quiz_attempts where id = pg_temp.a(22)), 'in_progress',
+  'and the refused switch leaves the open run as it was');
 
 select * from finish();
 rollback;

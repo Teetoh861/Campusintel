@@ -175,7 +175,9 @@ begin
   end if;
   v_user := private.ai_practice_session_user(p_session_id);
   if v_user is null then return jsonb_build_object('state', 'signed-out'); end if;
+  perform private.lock_course_access_scope(v_user);
   perform pg_advisory_xact_lock(hashtextextended('practice-account:' || v_user::text, 0));
+  perform private.bind_pending_course_grants(v_user);
   perform private.close_overdue_practice(v_user);
   -- Locks may have waited past logout or expiry. D7 waives course access, never a live session.
   if private.ai_practice_session_user(p_session_id) is distinct from v_user then
@@ -271,7 +273,7 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- The course page's topic list: each topic's question count, never a question. Same boundary as
--- published_cbt_summary: a live account session, and CI403 when the course is not readable.
+-- published_cbt_summary: the course access read opening, and CI403 when the access decision does not allow the course.
 -- ---------------------------------------------------------------------------
 create function public.published_cbt_topics(p_course_id uuid, p_sections jsonb)
 returns table (ordinal integer, topic text, bank_size integer)
@@ -279,7 +281,9 @@ language plpgsql security definer set search_path = '' as $$
 declare
   v_user uuid;
 begin
-  v_user := private.require_live_account();
+  v_user := auth.uid();
+  perform private.open_course_access_read(v_user);
+  v_user := private.require_course_access_account();
   if p_course_id is null or p_sections is null or jsonb_typeof(p_sections) <> 'array'
       or jsonb_array_length(p_sections) > 100
       or exists (select 1 from jsonb_array_elements(p_sections) s where jsonb_typeof(s) <> 'string') then

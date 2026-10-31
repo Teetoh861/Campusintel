@@ -232,7 +232,9 @@ begin
   end if;
   v_user := private.ai_practice_session_user(p_session_id);
   if v_user is null then return jsonb_build_object('state', 'signed-out'); end if;
+  perform private.lock_course_access_scope(v_user);
   perform pg_advisory_xact_lock(hashtextextended('practice-account:' || v_user::text, 0));
+  perform private.bind_pending_course_grants(v_user);
   perform private.close_overdue_practice(v_user);
   -- Locks may have waited past logout or expiry. D7 waives course access, never a live session.
   if private.ai_practice_session_user(p_session_id) is distinct from v_user then
