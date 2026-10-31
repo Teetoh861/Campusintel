@@ -104,3 +104,15 @@ test('repository-only identity shows the shared label instead of a code and neve
   assert.doesNotMatch(html, /undefined|null/)
   assert.equal(require('./CourseRow.tsx').REPOSITORY_COURSE_LABEL, 'Additional study material')
 })
+
+
+test('locked row text follows the access reason without changing ordinary plan locks',()=>{
+  for(const [reason,text] of [[undefined,'Included with full access.'],['outside-list','Not in your courses this semester.'],
+    ['needs-selection','Confirm your courses for this semester.'],['selection-locked','Your courses are set for another semester.']]) {
+    const html=renderToStaticMarkup(React.createElement(CourseRow,{code:'BUA202',title:'Business',href:'/courses/business',locked:true,lockReason:reason}))
+    assert.ok(html.includes(text))
+    assert.match(html,/student-course-row-locked/)
+    assert.match(html,/<svg/)
+    if(reason) assert.doesNotMatch(html,/Included with full access/)
+  }
+})

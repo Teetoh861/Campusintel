@@ -28,6 +28,7 @@
 //       A student's course selection and the semester calendar: see scripts/entitlements/course-selection.cjs.
 const fs = require('node:fs')
 const { courseSelectionCall } = require('./course-selection.cjs')
+const { courseAdditionCall } = require('./course-additions.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
@@ -251,7 +252,8 @@ async function run(args, env = process.env, transport = fetch, write = text => p
     case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
     case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
     default: {
-      const call = courseSelectionCall(command, opts, { required, integer, note })
+      const call = courseAdditionCall(command, opts, { required, integer, note }) ??
+        courseSelectionCall(command, opts, { required, integer, note })
       if (call === null) throw new Error('usage: see the header of scripts/entitlements/ops.cjs')
       return print(await rpc(call.fn, call.body))
     }

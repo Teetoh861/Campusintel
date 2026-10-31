@@ -135,6 +135,10 @@ select '00000000-0000-0000-0000-000000000000', pg_temp.u(n), 'authenticated', 'a
 from unnest(array[1, 2, 3, 5, 6, 7]) n;
 insert into auth.sessions (id, user_id, created_at, updated_at)
 select pg_temp.s(n), pg_temp.u(n), now(), now() from unnest(array[1, 2, 3, 5, 6, 7]) n;
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id in (select pg_temp.u(n) from unnest(array[1,2,3,5,6,7]) n);
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
 select pg_temp.u(n), 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test'
 from unnest(array[1, 2, 5, 7]) n;
@@ -637,11 +641,15 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
 values ('00000000-0000-0000-0000-000000000000', pg_temp.u(8), 'authenticated', 'authenticated', 'practice-8@example.test',
   'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values (pg_temp.s(8), pg_temp.u(8), now(), now());
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id=pg_temp.u(8);
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
 values (pg_temp.u(8), 'manual', now() - interval '1 day', clock_timestamp() + interval '1 second', 'none', 'test');
 select pg_sleep(1.2);
-select ok(private.can_read_course_content(pg_temp.u(8), pg_temp.c('07')),
-  'fixture: at the transaction''s start time the grant still reads as active');
+select ok(not private.can_read_course_content(pg_temp.u(8), pg_temp.c('07')),
+  'the content gate also uses the wall clock, never the expired transaction-start time');
 set local role service_role;
 select is(pg_temp.start(8, 70, '07'), '{"state":"locked"}'::jsonb,
   'but a start after it ended, on the wall clock, is locked');

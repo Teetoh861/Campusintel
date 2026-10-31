@@ -20,4 +20,7 @@ export const STUDY_COPY = {
   notYetAvailable: 'Study materials are not available.',
   temporarilyUnavailable: 'Study materials are temporarily unavailable.',
   locked: 'Included with full access.',
+  outsideList: 'Not in your courses this semester.',
+  confirmCourses: 'Confirm your courses for this semester.',
+  selectionLocked: 'Your courses are set for another semester.',
 } as const

@@ -124,3 +124,29 @@ test('loading announces once and contains no answer fields or unverified course 
   assert.match(html, /aria-busy="true"/)
   assert.doesNotMatch(html, /<textarea|<button|INST201|Explain management/)
 }))
+
+
+test('theory selection recovery renders the matching single action without a plan or answers', async () => fixture(async f => {
+  for (const [reason, title, action] of [
+    ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
+    ['selection-locked', 'Your courses are set for another semester.', 'Message us'],
+  ]) {
+    f.state.result = { status: 'locked', reason }
+    const tree = await f.workspace()
+    assert.equal(elementNodes(tree).find(node => node.type?.name === 'LockedCourseNotice').props.reason, reason)
+    const html = renderToStaticMarkup(tree)
+    assert.ok(html.includes(title))
+    assert.ok(html.includes('>' + action + '</a>'))
+    assert.equal((html.match(/<a\b/g) || []).length, 1)
+    assert.doesNotMatch(html, /Included with full access|Discovery|data-attempt-id|textarea|Explain management/)
+    if (reason === 'needs-selection') assert.ok(html.includes('href="/profile-selection"'))
+  }
+}))
+
+test('unavailable repository theory has the existing unavailable copy with no add or plan offer', async () => fixture(async f => {
+  f.state.result = { status: 'unavailable', notAvailable: true }
+  const html = await f.html()
+  assert.match(html, /Study materials are not available./)
+  assert.doesNotMatch(html, /Message us|Included with full access|See how to unlock|data-attempt-id|textarea/)
+  assert.ok(!html.includes('href="/access"'))
+}))

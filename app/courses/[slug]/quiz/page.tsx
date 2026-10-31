@@ -170,8 +170,11 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
   }
 
   if (course.content.state === 'locked') {
-    return <StudentPage band={band}><LockedCourseNotice backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} /></StudentPage>
+    return <StudentPage band={band}><LockedCourseNotice reason={course.content.reason} backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} /></StudentPage>
   }
+  if (course.content.state === 'not-available') return <StudentPage band={band}>
+    <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={backToCourse}>{null}</Notice>
+  </StudentPage>
   if (course.content.state === 'temporarily-unavailable') return retry()
   return <StudentPage band={band}>
     <Notice tone="info" title={PRACTICE_COPY.notBuiltTitle} action={backToCourse}>{PRACTICE_COPY.notBuiltBody}</Notice>

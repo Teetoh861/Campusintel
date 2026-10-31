@@ -48,6 +48,17 @@ insert into auth.sessions(id, user_id, created_at, updated_at) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', now(), now()),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', now(), now());
 
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id='22222222-2222-4222-8222-222222222222';
+
+-- The mutable workflow courses are explicitly on this student's list; they are not unowned repository bypasses.
+insert into public.institutional_courses(id,course_code,display_title,repository_course_id,is_free)
+  select id, 'TEST-'||right(id::text,3), content_key, id, false from public.courses where content_key like 'managed-test-%';
+insert into public.course_applicability(institutional_course_id,department_id,academic_level_id,academic_period_id)
+  select id,'10000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001' from public.institutional_courses where course_code like 'TEST-%';
 -- Non-free published content needs an active plan since 20261017100000_trial_entitlements.sql; these fixtures
 -- exercise content and attempt rules, so every student holds one. The gate itself is tested in trial_entitlements.
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
