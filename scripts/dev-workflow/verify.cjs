@@ -2,6 +2,7 @@
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { base, branch, changed, git, lines0, sha } = require('./repo.cjs')
+const { DATABASE_SUITE, RETIRED_SUITES, TEST_STACK, projectId, suiteEnvironment } = require('./database-suites.cjs')
 
 const TEST_RUNNER = path.join(__dirname, 'run-tests.cjs')
 const APPLICATION_TEST_LOADER = './lib/auth/test-loader.cjs'
@@ -13,7 +14,7 @@ function testCommand(files, { loader } = {}) {
     args: [...(loader ? ['--require', loader] : []), TEST_RUNNER, ...files] }
 }
 
-/** Collect application and workflow test files exactly as Git tracks them.
+/** Collect application, database race and workflow test files exactly as Git tracks them.
  * The review flow never stages, so a suite deleted in the working tree is still in the index;
  * it is excluded here rather than reported as a failed test file.
  */
@@ -22,16 +23,17 @@ function collectTestFiles(root) {
   const files = lines0(git(root, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']).stdout)
     .filter(file => /\.test\.(?:cjs|ts)$/.test(file) && !deleted.has(file))
   return {
-    application: files.filter(file => !file.startsWith('scripts/dev-workflow/')),
+    application: files.filter(file => !file.startsWith('scripts/dev-workflow/') && !DATABASE_SUITE.test(file)),
+    database: files.filter(file => DATABASE_SUITE.test(file)),
     workflow: files.filter(file => file.startsWith('scripts/dev-workflow/') && file.endsWith('.test.cjs')),
   }
 }
 
+// Database and app code, and the checks that test them: a change to any of these runs the pgTAP and race suites.
 const DB_PREFIXES = [
-  'supabase/', 'lib/supabase/', 'lib/auth/', 'lib/managed-content/',
-  'lib/quiz-attempts/', 'lib/operator/', 'lib/bookmarks/', 'lib/profile/',
-  'app/api/',
+  'supabase/', 'app/', 'lib/', 'components/', 'hooks/', 'scripts/dev-workflow/', '.github/workflows/',
 ]
+const DB_FILES = ['proxy.ts', 'next.config.mjs', 'package.json', 'pnpm-lock.yaml']
 
 /** Decide whether changed paths require database and managed-content checks. */
 function scope(paths) {
@@ -40,8 +42,15 @@ function scope(paths) {
     file === 'supabase/migrations/20261002130000_repository_content_seed.sql' ||
     file === 'supabase/tests/repository_content_parity.test.sql')
   const db = content || paths.some(file => DB_PREFIXES.some(prefix => file.startsWith(prefix)) ||
-    file === 'lib/data/course-registry.ts')
+    DB_FILES.includes(file))
   return { db, content }
+}
+
+/** node:test's end-of-run counts in a TAP stream, undefined where absent. */
+function testCounts(output) {
+  const [pass, fail, skipped, tests, cancelled] = ['pass', 'fail', 'skipped', 'tests', 'cancelled'].map(key =>
+    new RegExp(`^# ${key} (\\d+)$`, 'm').exec(output)?.[1])
+  return { pass, fail, skipped, tests, cancelled }
 }
 
 /** Retain each TAP failure's title, source location and opening error lines, including nested tests. */
@@ -89,15 +98,14 @@ function runVerification(repo, options = {}) {
       cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: environment,
     })
     const output = `${result.stdout || ''}\n${result.stderr || ''}`
-    const counts = ['pass', 'fail', 'skipped', 'tests', 'cancelled'].map(key =>
-      new RegExp(`^# ${key} (\\d+)$`, 'm').exec(output)?.[1])
+    const counts = testCounts(output)
     // A test batch with input files that executed nothing is a discovery failure, not a pass.
-    const nothingRan = expectTests && (counts[3] === undefined || counts[3] === '0')
+    const nothingRan = expectTests && (counts.tests === undefined || counts.tests === '0')
     // node:test reports a test that ran out of time as cancelled; here it is a failure like any other.
-    const failedTests = Number(counts[1] || 0) + Number(counts[4] || 0)
+    const failedTests = Number(counts.fail || 0) + Number(counts.cancelled || 0)
     const testSummary = nothingRan ? 'no tests executed for the supplied files'
-      : counts[0] === undefined ? null
-        : `${counts[0]} passed, ${failedTests} failed, ${counts[2] || '0'} skipped`
+      : counts.pass === undefined ? null
+        : `${counts.pass} passed, ${failedTests} failed, ${counts.skipped || '0'} skipped`
     const blockedBuild = name === 'Production build' && result.status !== 0 &&
       /binding to a port[\s\S]*Operation not permitted/.test(output)
     const blockedDb = name === 'Database tests' && result.status !== 0 &&
@@ -117,7 +125,7 @@ function runVerification(repo, options = {}) {
     }
   }
 
-  const { application: tests, workflow: toolingTests } = collectTestFiles(root)
+  const { application: tests, database: databaseSuites, workflow: toolingTests } = collectTestFiles(root)
   if (tests.length === 0) {
     rows.push({ name: 'Application tests', status: 'FAIL', detail: 'no test files found' })
   } else {
@@ -166,8 +174,60 @@ function runVerification(repo, options = {}) {
     } else {
       check('Database tests', 'supabase', ['test', 'db', '--local'], 'supabase test db --local')
     }
+    raceTests(health.error || health.status !== 0)
   } else {
-    rows.push({ name: 'Database tests', status: 'SKIP', detail: 'no database/Supabase paths changed' })
+    rows.push({ name: 'Database tests', status: 'SKIP', detail: 'no database or app code changed' })
+    rows.push({ name: 'Database race tests', status: 'SKIP', detail: 'no database or app code changed' })
+  }
+
+  /** Run each database race suite alone, since they share database state; any failed or skipped test fails. */
+  function raceTests(unavailable) {
+    const name = 'Database race tests'
+    const project = projectId(root, environment)
+    if (unavailable) {
+      rows.push({ name, status: 'BLOCKED', detail: 'local Supabase service unavailable; run supabase start' })
+      return
+    }
+    if (!TEST_STACK.test(project ?? '')) {
+      rows.push({ name, status: 'BLOCKED', detail: `they commit rows, so they need a test stack, not ${project}: ` +
+        'start one with SUPABASE_PROJECT_ID=ci-access-own-<name> (or SUPABASE_WORKDIR)' })
+      return
+    }
+    const env = { ...environment, ...suiteEnvironment(`supabase_db_${project}`) }
+    const suites = databaseSuites.filter(file => !RETIRED_SUITES.has(file))
+    const failed = []
+    let passed = 0
+    const started = Date.now()
+    for (const file of suites) {
+      const command = testCommand([file], { loader: APPLICATION_TEST_LOADER })
+      const result = execute(command.program, command.args, {
+        cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env,
+      })
+      const output = `${result.stdout || ''}\n${result.stderr || ''}`
+      const counts = testCounts(output)
+      const problems = [
+        result.error && 'could not run',
+        Number(counts.fail || 0) + Number(counts.cancelled || 0) > 0 &&
+          `${Number(counts.fail || 0) + Number(counts.cancelled || 0)} failed`,
+        Number(counts.skipped || 0) > 0 && `${counts.skipped} skipped (its opt-in flag or container is not set)`,
+        Number(counts.tests || 0) === 0 && 'no tests executed',
+        !result.error && result.status !== 0 && `exit ${result.status}`,
+      ].filter(Boolean)
+      passed += Number(counts.pass || 0)
+      if (problems.length === 0) continue
+      failed.push(file)
+      const stuck = output.match(/^run-tests: .* the batch was stopped$/gm) ?? []
+      failureDetails.push([`${name}: ${file} — ${problems.join(', ')}`,
+        ...stuck.map(line => `  ${line}`), ...testFailures(output)].join('\n'))
+    }
+    const seconds = Math.round((Date.now() - started) / 1000)
+    const retired = [...RETIRED_SUITES.keys()].filter(file => databaseSuites.includes(file)).length
+    rows.push(failed.length
+      ? { name, status: 'FAIL', detail: `${failed.length} of ${suites.length} files failed: ${failed.join(', ')}` }
+      : { name, status: suites.length ? 'PASS' : 'FAIL', detail: suites.length
+        ? `${suites.length} files one at a time, ${passed} passed in ${seconds} s` +
+          (retired ? ` (${retired} retired suite not run)` : '')
+        : 'no database race suites found' })
   }
 
   const exitCode = rows.some(row => row.status === 'FAIL' || row.status === 'BLOCKED') ? 1 : 0
@@ -187,4 +247,4 @@ function runVerification(repo, options = {}) {
   return { output, exitCode, rows, scope: needed }
 }
 
-module.exports = { collectTestFiles, runVerification, scope, testCommand }
+module.exports = { collectTestFiles, runVerification, scope, testCommand, testCounts }
