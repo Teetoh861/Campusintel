@@ -3,7 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
-import { CHROME_STATE_HEADER } from '@/lib/auth/chrome-state'
+import { CHROME_STATE_HEADER, STUDENT_RENDER_PATH_HEADER } from '@/lib/auth/chrome-state'
 import { canonicalizeStudentSessionCookieHeaderForDownstream,
   resolveStudentSessionNamespaceFromCookieHeader } from '@/lib/auth/session-generation'
 import type { ChromeState } from '@/lib/auth/chrome-state'
@@ -14,11 +14,14 @@ import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
 
 /** Return the same response carrying cookie writes and all SSR cache-safety headers.
  * Claims are refresh plumbing only; callers authenticate through getStudentSessionUser.
- * Page GETs also hand the first render the live lifecycle answer, as presentation state only.
+ * Keep lifecycle routing here: client navigations can reuse the root layout without rendering it again.
  */
 export async function refreshStudentSession(request: NextRequest): Promise<NextResponse> {
   const requestHeaders = new Headers(request.headers)
   requestHeaders.delete(CHROME_STATE_HEADER)
+  requestHeaders.delete(STUDENT_RENDER_PATH_HEADER)
+  const renderPage = request.method === 'GET' && !request.nextUrl.pathname.startsWith('/api/')
+  if (renderPage) requestHeaders.set(STUDENT_RENDER_PATH_HEADER, request.nextUrl.pathname)
   if (!isStudentAuthEnabled()) {
     requestHeaders.set(CHROME_STATE_HEADER, 'signed-out' satisfies ChromeState)
     return NextResponse.next({ request: { headers: requestHeaders } })
@@ -53,7 +56,7 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
     if (error !== null) failed = true
     else if (data === null) chrome = 'signed-out'
     else if (typeof data?.claims?.sub !== 'string' || !data.claims.sub) failed = true
-    else if (request.method === 'GET' && !request.nextUrl.pathname.startsWith('/api/')) {
+    else if (renderPage) {
       const lifecycle = await readAccountLifecycle(client)
       chrome = lifecycle.status === 'signed-out' ? 'signed-out' : 'signed-in'
       restricted = (lifecycle.status === 'scheduled' || lifecycle.status === 'expired') &&

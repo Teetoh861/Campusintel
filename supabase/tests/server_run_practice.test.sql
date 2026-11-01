@@ -545,11 +545,11 @@ update public.entitlement_grants set revoked_at = now(), revoked_by = 'test', re
   where user_id = pg_temp.u(5);
 select ok(not private.can_read_course_content(pg_temp.u(5), pg_temp.c('07')), 'fixture: access has ended');
 set local role service_role;
-select is(public.practice_attempt(pg_temp.s(5), pg_temp.a(40)) ->> 'state', 'ready', 'the open attempt still resumes');
+select is(public.practice_attempt(pg_temp.s(5), pg_temp.a(40)) ->> 'state', 'locked', 'revocation cannot reopen the pinned question material');
 select is(pg_temp.save(5, 40, 1, 1, 0, pg_temp.sheet(40, 2, 0)) ->> 'state', 'saved', 'saves');
 select is(pg_temp.submit(5, 40, 1, 1, 1, '{}') -> 'attempt' -> 'result' -> 'score', '2', 'and is graded');
-select ok(public.practice_attempt(pg_temp.s(5), pg_temp.a(40)) -> 'attempt' -> 'questions' -> 0 ? 'correct_option',
-  'its review stays open to the student');
+select is(public.practice_attempt(pg_temp.s(5), pg_temp.a(40)) -> 'attempt' -> 'questions','[]'::jsonb,
+  'its score stays available while the past answers require an active plan');
 select is(pg_temp.start(5, 41, '07') ->> 'state', 'locked', 'but no new attempt starts');
 reset role;
 
@@ -677,8 +677,8 @@ select is((select jsonb_build_object('state', r ->> 'state', 'score', r -> 'atte
     'keyed', (select count(*) from jsonb_array_elements(r -> 'attempt' -> 'questions') e
       where e ? 'correct_option' and e ->> 'prompt' <> ''))
   from (select pg_temp.o('x1-late') r) x),
-  '{"state":"graded","score":2,"bank_size":149,"questions":50,"keyed":50}'::jsonb,
-  'after access ended and the whole bank was unpublished, the owner still opens the full graded review by id, with the bank size at its start (149: one question was withdrawn in section 11)');
+  '{"state":"graded","score":2,"bank_size":149,"questions":0,"keyed":0}'::jsonb,
+  'after access ended and the whole bank was unpublished, the owner keeps the score by id without a graded answer review, with the bank size at its start (149: one question was withdrawn in section 11)');
 set local role service_role;
 select is(public.practice_state(pg_temp.s(5), pg_temp.c('07')) -> 'attempt' ->> 'id', pg_temp.a(40)::text,
   'and the course state still leads to it');

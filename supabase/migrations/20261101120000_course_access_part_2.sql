@@ -2,6 +2,10 @@
 -- Lock prefix is A1's: Auth -> entitlement account -> profile -> calendar -> feature -> resources.
 -- Scores, snapshots, grants and bookmark records are retained.
 
+-- Signed Storage uploads execute with Storage's service capability. Bind the reserved slot to the
+-- verified session so the eventual object insert can recheck scope even after the URL was signed.
+alter table public.ai_practice_documents add column if not exists upload_session_id uuid;
+
 create or replace function private.course_session_user(p_session uuid) returns uuid
 language sql stable security definer set search_path = '' as $$
   select s.user_id from auth.sessions s join auth.users u on u.id=s.user_id
@@ -114,6 +118,8 @@ begin
   if private.course_session_user(p_session_id) is distinct from v_user_id then
     return jsonb_build_object('state','signed-out');
   end if;
+  if exists(select 1 from public.institutional_courses where repository_course_id=p_course_id and is_free) then
+    return jsonb_build_object('state','free-course'); end if;
   if not private.discovery_course_allowed(v_user_id,p_course_id,clock_timestamp()) then
     return jsonb_build_object('state','not-offered');
   end if;
@@ -446,6 +452,7 @@ declare
   v_today integer;
   v_key_state text;
   v_revision bigint;
+  v_now timestamptz;
 begin
   if not private.discovery_claim_hashes_valid(p_claim_hashes) then
     raise exception 'Invalid activation request' using errcode = '22023';
@@ -458,6 +465,7 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('discovery-claim-keys',0));
   perform pg_advisory_xact_lock(hashtextextended('discovery-claim:' || (p_claim_hashes->0->>'hash'),0));
   perform pg_advisory_xact_lock(hashtextextended('discovery-activation-global-day',0));
+  v_now := clock_timestamp();
   if private.course_session_user(p_session_id) is distinct from v_user_id then
     return jsonb_build_object('state','signed-out'); end if;
   if not private.discovery_email_allowed(v_user_id)
@@ -517,14 +525,14 @@ begin
   -- is fixed here; later policy edits never change a running pass.
   insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units,
       created_by)
-    values (v_user_id, 'trial', 'discovery', clock_timestamp(), clock_timestamp() + make_interval(hours => v_policy.discovery_hours), 'capped',
+    values (v_user_id, 'trial', 'discovery', v_now, v_now + make_interval(hours => v_policy.discovery_hours), 'capped',
       v_policy.discovery_ai_generations, 'student')
     returning * into v_grant;
   -- An expired claim of the same address (not yet purged) is replaced by the new one.
-  insert into private.discovery_pass_claims (claim_hash, key_version, user_id, grant_id, expires_at)
-    values (v_claim_hash, v_key_version, v_user_id, v_grant.id, clock_timestamp() + v_policy.discovery_claim_retention)
+  insert into private.discovery_pass_claims (claim_hash, key_version, user_id, grant_id, claimed_at, expires_at)
+    values (v_claim_hash, v_key_version, v_user_id, v_grant.id, v_now, v_now + v_policy.discovery_claim_retention)
     on conflict (claim_hash) do update set key_version = excluded.key_version, user_id = excluded.user_id,
-      grant_id = excluded.grant_id, claimed_at = clock_timestamp(), expires_at = excluded.expires_at;
+      grant_id = excluded.grant_id, claimed_at = excluded.claimed_at, expires_at = excluded.expires_at;
   perform private.log_entitlement_event(v_user_id, v_grant.id, 'discovery.activated', 'student',
     jsonb_build_object('ends_at', v_grant.ends_at, 'ai_units', v_grant.ai_units, 'policy', 'discovery',
       'profile_revision', p_expected_profile_revision));
@@ -567,26 +575,42 @@ language sql stable security definer set search_path = '' as $$
 $$;
 
 
+create or replace function private.attempt_resume_allowed(p_attempt public.quiz_attempts) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select private.attempt_material_allowed(p_attempt) or (
+    p_attempt.status='in_progress' and p_attempt.mode='exam' and p_attempt.deadline_at>clock_timestamp()
+    and exists(select 1 from public.institutional_courses c
+      where c.repository_course_id=p_attempt.course_id
+        and private.course_on_current_list(p_attempt.user_id,c.id,clock_timestamp()))
+    and exists(select 1 from public.entitlement_grants g
+      where g.user_id=p_attempt.user_id and (g.source<>'trial' or g.trial_policy='seven-day')
+        and g.revoked_at is null and g.starts_at<=p_attempt.deadline_at-make_interval(secs=>p_attempt.duration_seconds)
+        and g.ends_at>p_attempt.deadline_at-make_interval(secs=>p_attempt.duration_seconds)
+        and g.course_term_id=(private.current_course_scope(p_attempt.user_id,clock_timestamp())->>'term_id')::uuid));
+$$;
+revoke all on function private.attempt_resume_allowed(public.quiz_attempts) from public,anon,authenticated,service_role;
+
 create or replace function private.practice_view(p_attempt public.quiz_attempts) returns jsonb
 language sql
 stable
 security definer
 set search_path = ''
 as $$
+  with permission as materialized (select private.attempt_material_allowed(p_attempt) as allowed)
   select jsonb_build_object('id', p_attempt.id, 'course_id', p_attempt.course_id, 'mode', p_attempt.mode,
     'topic', p_attempt.topic,
     'intent', p_attempt.intent, 'redo_of', p_attempt.redo_of, 'status', p_attempt.status,
     'started_at', p_attempt.deadline_at - make_interval(secs => p_attempt.duration_seconds),
     'deadline_at', p_attempt.deadline_at, 'duration_seconds', p_attempt.duration_seconds,
     'question_count', p_attempt.question_count, 'bank_size', p_attempt.bank_size,
-    'questions', case when not private.attempt_material_allowed(p_attempt) then '[]'::jsonb when p_attempt.mode = 'instant' then private.practice_instant_questions(p_attempt.id)
+    'questions', case when not allowed and (p_attempt.status<>'in_progress' or not private.attempt_resume_allowed(p_attempt)) then '[]'::jsonb when p_attempt.mode = 'instant' then private.practice_instant_questions(p_attempt.id)
       else private.practice_questions(p_attempt.id, p_attempt.status <> 'in_progress') end,
     'saved', case when p_attempt.status = 'in_progress' then jsonb_build_object('revision', p_attempt.saved_revision,
       'answers', coalesce(p_attempt.saved_answers, '{}'::jsonb)) end,
     'result', case when p_attempt.status <> 'in_progress' then jsonb_build_object('score', p_attempt.score,
       'total', p_attempt.question_count, 'timed_out', p_attempt.status = 'timed_out',
       'finished_at', p_attempt.finished_at) end) || case when p_attempt.status<>'in_progress'
-      then jsonb_build_object('review_available',private.attempt_material_allowed(p_attempt)) else '{}'::jsonb end;
+      then jsonb_build_object('review_available',allowed) else '{}'::jsonb end from permission;
 $$;
 
 create or replace function private.practice_answer(p_state text, p_attempt public.quiz_attempts) returns jsonb
@@ -595,7 +619,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select case when p_attempt.status='in_progress' and not private.attempt_material_allowed(p_attempt)
+  select case when p_attempt.status='in_progress' and not private.attempt_resume_allowed(p_attempt)
     then jsonb_build_object('state','locked') else jsonb_build_object('state', p_state, 'now', clock_timestamp(), 'attempt', private.practice_view(p_attempt)) end;
 $$;
 
@@ -808,7 +832,7 @@ begin
     return jsonb_build_object('state', 'signed-out');
   end if;
   if v_attempt.id is null then return jsonb_build_object('state', 'none', 'now', clock_timestamp()); end if;
-  if v_attempt.status='in_progress' and not private.attempt_material_allowed(v_attempt) then
+  if v_attempt.status='in_progress' and not private.attempt_resume_allowed(v_attempt) then
     return jsonb_build_object('state','none','now',clock_timestamp()); end if;
   return jsonb_build_object('state', case when v_attempt.status = 'in_progress' then 'open' else 'graded' end,
     'now', clock_timestamp(), 'attempt', jsonb_build_object('id', v_attempt.id, 'mode', v_attempt.mode,
@@ -1006,13 +1030,15 @@ $$;
 -- Direct correctness reads cannot bypass the service projections. History and score rows stay readable.
 create or replace function private.can_read_attempt_answers(p_attempt uuid) returns boolean
 language plpgsql security definer set search_path = '' as $$
-declare u uuid:=auth.uid(); a public.quiz_attempts;
+declare u uuid:=auth.uid(); sid uuid; a public.quiz_attempts;
 begin
-  if u is null then return false; end if;
+  if u is null or not private.has_live_account_session() then return false; end if;
+  sid := (auth.jwt()->>'session_id')::uuid;
   perform private.open_course_access_read(u);
-  perform private.require_course_access_account();
   select * into a from public.quiz_attempts where id=p_attempt and user_id=u;
-  return a.id is not null and private.attempt_material_allowed(a);
+  return private.course_session_user(sid)=u and a.id is not null and a.status<>'in_progress'
+    and private.attempt_material_allowed(a);
+exception when insufficient_privilege then return false;
 end;
 $$;
 drop policy "Quiz answers are selectable by their attempt owner" on public.quiz_attempt_answers;
@@ -1022,12 +1048,13 @@ create policy "Quiz answers are selectable by their attempt owner" on public.qui
 
 create or replace function private.can_read_ai_course(p_course uuid) returns boolean
 language plpgsql security definer set search_path = '' as $$
-declare u uuid:=auth.uid();
+declare u uuid:=auth.uid(); sid uuid;
 begin
-  if u is null then return false; end if;
+  if u is null or not private.has_live_account_session() then return false; end if;
+  sid := (auth.jwt()->>'session_id')::uuid;
   perform private.open_course_access_read(u);
-  perform private.require_course_access_account();
-  return private.ai_course_allowed(u,p_course,clock_timestamp());
+  return private.course_session_user(sid)=u and private.ai_course_allowed(u,p_course,clock_timestamp());
+exception when insufficient_privilege then return false;
 end;
 $$;
 drop policy "Students read their own AI practice documents" on public.ai_practice_documents;
@@ -1093,7 +1120,6 @@ begin
     return jsonb_build_object('status','not-entitled'); end if;
   v_allowance := private.ai_allowance_admission(v_user_id, p_accepted_sources);
   if v_allowance ->> 'state' <> 'active' then return jsonb_build_object('status', v_allowance ->> 'state'); end if;
-  perform pg_advisory_xact_lock(hashtextextended('ai-practice-upload:' || v_user_id::text, 0));
   select count(*) into v_today from public.ai_practice_documents
     where user_id = v_user_id and created_at > clock_timestamp() - interval '1 day';
   if v_today >= v_policy.uploads_per_day then return jsonb_build_object('status', 'upload-limit'); end if;
@@ -1105,9 +1131,9 @@ begin
     end if;
   end if;
   insert into public.ai_practice_documents (id, user_id, institutional_course_id, storage_path, file_name,
-    media_type, declared_bytes, expires_at, discovery_grant_id)
+    media_type, declared_bytes, expires_at, discovery_grant_id, upload_session_id)
   values (v_id, v_user_id, p_institutional_course_id, v_user_id::text || '/' || v_id::text, p_file_name,
-    p_media_type, p_declared_bytes, clock_timestamp() + make_interval(days => v_policy.source_retention_days), v_grant_id);
+    p_media_type, p_declared_bytes, clock_timestamp() + make_interval(days => v_policy.source_retention_days), v_grant_id, p_session_id);
   return jsonb_build_object('status', 'created', 'document_id', v_id,
     'storage_path', v_user_id::text || '/' || v_id::text);
 end;
@@ -1243,7 +1269,14 @@ begin
   select * into v_existing from public.ai_practice_generations where user_id=v_user_id and request_id=p_request_id;
   if v_existing.id is not null and v_existing.document_id=p_document_id and v_existing.status='generated' then
     return jsonb_build_object('state','existing','generation_id',v_existing.id,'status',v_existing.status); end if;
-  if v_document.id is null or not private.ai_course_allowed(v_user_id,v_document.institutional_course_id,clock_timestamp()) then
+  v_allowance:=private.ai_allowance_admission(v_user_id,p_accepted_sources);
+  if v_allowance->>'state'='not-entitled' then return v_allowance; end if;
+  if v_document.id is null then return jsonb_build_object('state','document-unavailable'); end if;
+  if not private.ai_course_allowed(v_user_id,v_document.institutional_course_id,clock_timestamp()) then
+    if private.course_on_current_list(v_user_id,v_document.institutional_course_id,clock_timestamp()) then
+      v_allowance:=private.ai_allowance_admission(v_user_id,p_accepted_sources);
+      if v_allowance->>'state'<>'active' then return v_allowance; end if;
+    end if;
     return jsonb_build_object('state','not-entitled'); end if;
   perform private.release_abandoned_ai_generations(v_user_id, v_policy.reservation_minutes);
 
@@ -1286,7 +1319,6 @@ begin
     end if;
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended('ai-practice-global-day', 0));
   select count(*) into v_today from public.ai_usage_events
     where reserved_at >= date_trunc('day', clock_timestamp() at time zone 'utc') at time zone 'utc';
   if v_today >= v_policy.global_daily_generations then
@@ -1341,11 +1373,10 @@ begin
   perform private.lock_course_access_scope(p_user_id);
   perform pg_advisory_xact_lock(hashtextextended('ai-practice-generation:' || p_user_id::text,0));
   perform private.bind_pending_course_grants(p_user_id);
-  perform 1 from public.ai_usage_events where id=(select usage_event_id from public.ai_practice_generations
-    where id=p_generation_id and user_id=p_user_id) for update;
   select * into v_generation from public.ai_practice_generations
     where id = p_generation_id and user_id = p_user_id for update;
   if not found then return jsonb_build_object('state', 'not-found'); end if;
+  perform 1 from public.ai_usage_events where id=v_generation.usage_event_id for update;
   if v_generation.status <> 'running' then
     return jsonb_build_object('state', 'already-finished', 'status', v_generation.status);
   end if;
@@ -1437,7 +1468,7 @@ begin
     'open', (select jsonb_build_object('course_id', a.course_id, 'content_key', c.content_key,
         'deadline_at', a.deadline_at, 'mode', a.mode)
       from public.quiz_attempts a join public.courses c on c.id = a.course_id
-      where private.attempt_material_allowed(a) and a.user_id = v_user and a.status = 'in_progress' and a.deadline_at is not null
+      where private.attempt_resume_allowed(a) and a.user_id = v_user and a.status = 'in_progress' and a.deadline_at is not null
       order by a.deadline_at, a.id limit 1),
     'latest', (select jsonb_build_object('course_id', a.course_id, 'content_key', c.content_key)
       from public.quiz_attempts a join public.courses c on c.id = a.course_id
@@ -1464,3 +1495,104 @@ begin
           order by g.finished_at desc, g.id desc limit 1) graded on true), '[]'::jsonb));
 end;
 $$;
+
+create or replace function public.get_my_entitlement() returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_policy private.entitlement_policy;
+  v_access public.entitlement_grants;
+  v_trial public.entitlement_grants;
+  v_early_grant public.entitlement_grants;
+  v_early jsonb;
+  v_trial_status text;
+begin
+  if v_user_id is null or not private.has_live_account_session() then
+    raise exception 'Not authenticated' using errcode = '42501';
+  end if;
+  v_early := private.early_access_status(v_user_id);
+  if v_early->>'status' = 'eligible' then
+    perform private.reconcile_early_access(v_user_id, 'system:plan-read');
+    v_early := private.early_access_status(v_user_id);
+  end if;
+  select * into strict v_policy from private.entitlement_policy;
+  -- The same grants private.has_full_access() counts: a seven-day trial is full access, a Discovery Pass is not.
+  select * into v_access from public.entitlement_grants
+    where user_id = v_user_id and (source <> 'trial' or trial_policy = 'seven-day') and revoked_at is null
+      and starts_at <= clock_timestamp() and ends_at > clock_timestamp()
+    order by ends_at desc limit 1;
+  select * into v_trial from public.entitlement_grants where user_id = v_user_id and source = 'trial';
+  select * into v_early_grant from public.entitlement_grants
+    where user_id = v_user_id and source = 'early_access' and revoked_at is null;
+
+  v_trial_status := case
+    when v_trial.id is not null then
+      case when v_trial.revoked_at is null and v_trial.starts_at <= clock_timestamp() and v_trial.ends_at > clock_timestamp()
+        then 'active' else 'ended' end
+    when private.discovery_early_access_bars(v_user_id) then 'not-offered'
+    else 'available' end;
+
+  return jsonb_build_object(
+    'now', clock_timestamp(),
+    'planned_launch_at', v_policy.planned_launch_at,
+    'actual_launch_at', v_policy.actual_launch_at,
+    'trial_hours', v_policy.discovery_hours,
+    'trial_days', ceil(v_policy.discovery_hours / 24.0)::integer,
+    'expiry_notice_hours', v_policy.expiry_notice_hours,
+    'tier', case when v_access.id is null then 'free' else 'full' end,
+    'access', case when v_access.id is null then null
+      else jsonb_build_object('source', v_access.source, 'ends_at', v_access.ends_at) end,
+    'trial', jsonb_build_object('status', v_trial_status, 'policy', v_trial.trial_policy,
+      'starts_at', v_trial.starts_at, 'ends_at', v_trial.ends_at,
+      'available_from', case when v_trial_status = 'after-early-access' then v_early_grant.ends_at end),
+    'discovery', jsonb_build_object(
+      'cbt_questions', v_policy.discovery_cbt_questions,
+      'ai_sets', coalesce(case when v_trial.trial_policy = 'discovery' then v_trial.ai_units end,
+        v_policy.discovery_ai_generations),
+      'previews', coalesce((select jsonb_agg(jsonb_build_object('kind', p.kind, 'content_key', c.content_key,
+          'submitted', p.submitted_at is not null) order by p.kind)
+        from private.discovery_previews p join public.courses c on c.id = p.course_id
+        where p.grant_id = v_trial.id), '[]'::jsonb)),
+    'early_access', jsonb_build_object(
+      'status', case when v_early->>'status' = 'eligible' then 'pending' else v_early->>'status' end,
+      'starts_at', v_early->'starts_at', 'ends_at', v_early->'ends_at',
+      'enrollment_closes_at', case when v_policy.actual_launch_at is null then null
+        else v_policy.actual_launch_at + make_interval(days => v_policy.early_access_enrollment_days) end),
+    -- Rollout compatibility only: builds from before this migration require the key. There is no code any more.
+    'otp', null);
+end;
+$$;
+
+-- A signed URL is an upload capability, never a cached course decision. Storage uses its service role
+-- at the eventual INSERT, so RLS alone is insufficient. This authorization read uses A1's shared read
+-- opening; the path feature lock and slot row precede the final clock/checks. Extraction/correction
+-- cannot change the slot or scope until the object transaction commits. No allowance is spent here.
+create or replace function private.guard_ai_practice_object() returns trigger
+language plpgsql security definer set search_path='' as $$
+declare d public.ai_practice_documents; u uuid; sid uuid; at_time timestamptz;
+begin
+  if new.bucket_id<>'ai-practice-uploads' then return new; end if;
+  select user_id,upload_session_id into u,sid from public.ai_practice_documents where storage_path=new.name;
+  if u is null or sid is null then raise exception 'AI upload slot unavailable' using errcode='42501'; end if;
+  perform private.open_course_access_read(u,sid);
+  perform pg_advisory_xact_lock(hashtextextended('ai-practice-storage:'||new.name,0));
+  select * into d from public.ai_practice_documents where storage_path=new.name and user_id=u for share;
+  perform 1 from storage.buckets where id=new.bucket_id for key share;
+  at_time:=clock_timestamp();
+  if d.id is null or private.course_session_user(sid) is distinct from u
+    or not private.ai_course_allowed(u,d.institutional_course_id,at_time)
+    or d.status<>'awaiting_upload' or d.upload_removed_at is not null or d.extraction_claim is not null
+    or d.expires_at<=at_time or d.created_at<=at_time-make_interval(mins=>(select upload_window_minutes from private.ai_practice_policy))
+    or exists(select 1 from storage.objects o where o.bucket_id=new.bucket_id and o.name=new.name) then
+    raise exception 'AI upload slot unavailable' using errcode='42501';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.guard_ai_practice_object() from public,anon,authenticated,service_role;
+drop trigger if exists guard_ai_practice_object on storage.objects;
+create trigger guard_ai_practice_object before insert on storage.objects
+  for each row execute function private.guard_ai_practice_object();

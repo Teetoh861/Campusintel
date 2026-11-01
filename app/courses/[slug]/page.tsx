@@ -25,7 +25,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
-import { ApplicabilityList, COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
+import { COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
   StudyNav, TheorySection, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
@@ -142,12 +142,7 @@ function CourseStudyHub({ result, pass, passOffered, topics }: {
   </>}>
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
-      {institutional
-        ? !scopeNotice && <section aria-labelledby="applicability-title" className="student-detail-section">
-          <h2 id="applicability-title" className="student-section-title">Confirmed for</h2>
-          <ApplicabilityList applicability={institutional.applicability} />
-        </section>
-        : content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
+      {!institutional && content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
       {locked && (scopeNotice || pass === null ? <LockedCourseNotice passOffered={passOffered} reason={content.reason} />

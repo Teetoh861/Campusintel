@@ -105,8 +105,16 @@ from (values ('61000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
 insert into auth.sessions (id, user_id, created_at, updated_at, not_after)
 select ('62000000-0000-4000-8000-00000000000' || n)::uuid, ('61000000-0000-4000-8000-00000000000' || n)::uuid,
   now(), now(), null from generate_series(1, 9) n;
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '61000000-%' and selection_confirmed_at is null;
+
 insert into auth.sessions (id, user_id, created_at, updated_at, not_after) values
   ('62000000-0000-4000-8000-000000000011', '61000000-0000-4000-8000-000000000011', now(), now(), null);
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '61000000-%' and selection_confirmed_at is null;
+
 update public.profiles set role = 'operator' where id = '61000000-0000-4000-8000-000000000006';
 
 -- Access fixtures use an actual Business Administration 200L First Semester selection.
@@ -116,7 +124,7 @@ update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
 create temporary table outcome (step text primary key, result jsonb) on commit drop;
 grant all on outcome to authenticated, service_role;
 insert into outcome values ('course-acc101', jsonb_build_object('id',
-  (select id from public.institutional_courses where course_code = 'ACC101')));
+  (select id from public.institutional_courses where course_code = 'BUA201')));
 -- Keyed Early Access phone hashes are computed by the operator tool; any 64-hex value stands in for one here.
 create function pg_temp.h(p_value text) returns text language sql immutable as
   $$ select encode(sha256(convert_to(p_value, 'UTF8')), 'hex') $$;
@@ -164,10 +172,12 @@ select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000009',
   'an unconfirmed email cannot start a pass');
 insert into outcome values ('a-activate', public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test')));
 select is((select result->>'state' from outcome where step = 'a-activate'), 'activated', 'one tap activates the pass');
-select is((select (result->>'ends_at')::timestamptz from outcome where step = 'a-activate'), now() + interval '72 hours',
+reset role;
+select is((select ends_at-starts_at from public.entitlement_grants where user_id='61000000-0000-4000-8000-000000000001' and source='trial'), interval '72 hours',
   'the Discovery Pass lasts exactly 72 hours from database time (20261021100000_discovery_pass.sql)');
+set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000001', pg_temp.claim('ent-a@example.test')),
-  jsonb_build_object('state', 'already-activated', 'ends_at', now() + interval '72 hours'),
+  (select jsonb_build_object('state','already-activated','ends_at',result->'ends_at') from outcome where step='a-activate'),
   'a second tap on the same account is a replay: nothing changes and the same end is reported');
 reset role;
 select is((select count(*)::integer from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'), 1,
@@ -176,7 +186,7 @@ select is((select jsonb_build_object('source', source, 'policy', trial_policy, '
     'created_by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000001'),
   '{"source":"trial","policy":"discovery","ai_terms":"capped","ai_units":1,"created_by":"student"}'::jsonb,
   'the pass carries the one-set Discovery AI allowance from policy');
-select is((select jsonb_build_object('user', user_id, 'version', key_version, 'expires', expires_at = now() + interval '5 years')
+select is((select jsonb_build_object('user', user_id, 'version', key_version, 'expires', expires_at = claimed_at + interval '5 years')
     from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
   '{"user":"61000000-0000-4000-8000-000000000001","version":1,"expires":true}'::jsonb,
   'the keyed claim of the confirmed email is recorded under its key version, for the retention period');
@@ -671,6 +681,10 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
   'authenticated', 'ent-j@example.test', 'x', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('62000000-0000-4000-8000-000000000012', '61000000-0000-4000-8000-000000000012', now(), now());
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '61000000-%' and selection_confirmed_at is null;
+
 -- A seven-day trial issued before 20261021100000_discovery_pass.sql, which keeps its ten-set allowance.
 insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by) values
   ('61000000-0000-4000-8000-000000000012', 'trial', 'seven-day', now() - interval '2 days', now() + interval '5 days', 'capped', 10, 'test');
@@ -852,6 +866,10 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('62000000-0000-4000-8000-000000000010', '61000000-0000-4000-8000-000000000010', now(), now()),
   ('62000000-0000-4000-8000-000000000015', '61000000-0000-4000-8000-000000000015', now(), now());
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '61000000-%' and selection_confirmed_at is null;
+
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test')),
   '{"state":"trial-not-offered"}'::jsonb,

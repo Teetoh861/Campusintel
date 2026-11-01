@@ -1,5 +1,7 @@
 // lib/supabase/server.ts — Request-scoped publishable-key HttpOnly session client.
 import 'server-only'
+import { cache } from 'react'
+import { registerStudentRenderClient } from '@/lib/auth/render-session'
 import { createServerClient } from '@supabase/ssr'
 import { cookies, headers } from 'next/headers'
 import { getSupabaseConfig } from '@/lib/auth/config'
@@ -39,9 +41,18 @@ async function clientForRequest(response?: NextResponse, freshGeneration?: strin
   })
 }
 
-/** Read/write only the session namespace selected by the incoming request. */
+export type StudentClient = Awaited<ReturnType<typeof clientForRequest>>
+
+// cache() is intentionally a no-op outside RSC. Route-handler clients must retain fresh lifecycle reads.
+const renderScope = cache(() => ({}))
+const renderClientForRequest = cache(async () => {
+  const client = await clientForRequest()
+  return renderScope() === renderScope() ? registerStudentRenderClient(client) : client
+})
+
+/** Share the cookie-bound render client; response-bearing mutation clients remain fresh and writable. */
 export async function createClient(response?: NextResponse) {
-  return clientForRequest(response)
+  return response === undefined ? renderClientForRequest() : clientForRequest(response)
 }
 
 /** Transfer a verified session into a fresh namespace on the same response as its selector. */

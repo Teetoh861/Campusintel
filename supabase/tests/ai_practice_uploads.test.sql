@@ -69,9 +69,12 @@ insert into auth.sessions (id, user_id, created_at, updated_at, not_after) value
   ('a0000000-0000-4000-8000-00000000000e', '21111111-1111-4111-8111-111111111111', now(), now(), now() - interval '1 minute'),
   ('b2222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222', now(), now(), null),
   ('c3333333-3333-4333-8333-333333333333', '23333333-3333-4333-8333-333333333333', now(), now(), null);
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id in ('21111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','23333333-3333-4333-8333-333333333333');
 create temporary table fixture (key text primary key, value uuid) on commit drop;
 grant all on fixture to authenticated, service_role;
-insert into fixture values ('course', (select id from public.institutional_courses order by id limit 1));
+insert into fixture values ('course', (select id from public.institutional_courses where course_code='BUA201'));
 create temporary table outcome (step text primary key, result jsonb) on commit drop;
 grant all on outcome to authenticated, service_role;
 
@@ -456,13 +459,26 @@ select throws_ok($$ insert into storage.objects (bucket_id, name) values ('ai-pr
 reset role;
 
 -- Account purge with AI Storage present -----------------------------------------------
--- A signed upload URL issued before scheduling bypasses RLS when used; Storage records the owner. Two such
--- objects: one at C's reserved path, one orphan with no row at all.
+-- A2 rejects even an outstanding signed upload after scheduling. Legacy objects created before this
+-- guard still need cleanup; model those pre-existing rows with the transactional fixture-only function replacement below.
+set local role service_role;
+select throws_ok($q$insert into storage.objects(bucket_id,name) values('ai-practice-uploads',
+  (select '23333333-3333-4333-8333-333333333333/'||value from fixture where key='doc_c2'))$q$,
+  '42501',null,'an outstanding signed upload cannot write after scheduling');
+reset role;
+do $fixture$
+declare original text:=pg_get_functiondef('private.guard_ai_practice_object()'::regprocedure);
+begin
+  execute $stub$create or replace function private.guard_ai_practice_object() returns trigger
+    language plpgsql security definer set search_path='' as $body$begin return new; end;$body$$stub$;
 insert into storage.objects (bucket_id, name, owner, owner_id, created_at) values
   ('ai-practice-uploads', (select '23333333-3333-4333-8333-333333333333/' || value from fixture where key = 'doc_c2'),
     '23333333-3333-4333-8333-333333333333', '23333333-3333-4333-8333-333333333333', now()),
   ('ai-practice-uploads', '23333333-3333-4333-8333-333333333333/' || gen_random_uuid(),
     '23333333-3333-4333-8333-333333333333', '23333333-3333-4333-8333-333333333333', now());
+  execute original;
+end;
+$fixture$;
 set local role service_role;
 select ok((select bool_and(name like '23333333-3333-4333-8333-333333333333/%')
   from public.list_ai_practice_uploads_to_remove(2) name), 'objects blocking an Account purge are swept first');
@@ -559,8 +575,16 @@ select ok((select count(*) from public.ai_usage_events where user_id = '21111111
   'usage accounting outlives purged content');
 
 -- Account deletion removes every owned row; an object left behind stays visible to the sweep.
+do $fixture$
+declare original text:=pg_get_functiondef('private.guard_ai_practice_object()'::regprocedure);
+begin
+  execute $stub$create or replace function private.guard_ai_practice_object() returns trigger
+    language plpgsql security definer set search_path='' as $body$begin return new; end;$body$$stub$;
 insert into storage.objects (bucket_id, name, owner_id)
   values ('ai-practice-uploads', '21111111-1111-4111-8111-111111111111/' || gen_random_uuid(), '21111111-1111-4111-8111-111111111111');
+  execute original;
+end;
+$fixture$;
 delete from auth.users where id = '21111111-1111-4111-8111-111111111111';
 select is((select count(*)::integer from public.ai_usage_events where user_id = '21111111-1111-4111-8111-111111111111')
   + (select count(*)::integer from public.ai_practice_generations where user_id = '21111111-1111-4111-8111-111111111111')

@@ -182,7 +182,7 @@ test('the exam-open notice links to the exam and offers no Try again', async () 
 
 test('the end of a topic: Practise again draws this topic again, Next topic starts the next one, none after the last', async () => {
   const graded = (topic) => ({ kind: 'graded', latest: false, attempt: { status: 'submitted', id: ATTEMPT, courseId: 'course-1',
-    mode: 'instant', topic, intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: DEADLINE, durationSeconds: 10800,
+    mode: 'instant', reviewAvailable: true, topic, intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: DEADLINE, durationSeconds: 10800,
     questionCount: 1, bankSize: 12, result: { score: 1, total: 1, timedOut: false, finishedAt: NOW },
     questions: [{ questionId: 'q-1', prompt: 'Prompt', options: ['A', 'B'], section: topic, itemId: 'i-1', revision: 1,
       selected: 0, correctOption: 0, explanation: null }] } })
@@ -273,4 +273,22 @@ test('practice copy is plain: curly apostrophes, save lines from PRACTICE_COPY, 
   for (const file of fs.readdirSync(__dirname).filter(name => /\.tsx?$/.test(name))) {
     assert.doesNotMatch(fs.readFileSync(path.join(__dirname, file), 'utf8'), BANNED, file)
   }
+})
+
+test('opening a past review refreshes access and shows only the score if the plan ended', async () => {
+  const attempt={...openAttempt(ATTEMPT),status:'submitted',reviewAvailable:true,
+    result:{score:0,total:1,timedOut:false,finishedAt:NOW},
+    questions:[{questionId:'q-1',itemId:'i-1',revision:1,prompt:'Prompt',options:['A','B'],section:'One',selected:0,correctOption:1,explanation:'Because'}]}
+  await flow({kind:'graded',latest:false,attempt},async f=>{
+    f.answers.push({status:'graded',now:NOW,attempt:{...attempt,reviewAvailable:false,questions:[]}})
+    f.render().props.onReview();await f.settle()
+    const screen=f.render()
+    assert.equal(screen.type.name,'ScoreOnly')
+    assert.deepEqual(screen.props.attempt.questions,[])
+    assert.deepEqual(f.requests.map(request=>request.action),['attempt'])
+    const html=renderToStaticMarkup(screen)
+    assert.match(html,/0 of 1 correct/)
+    assert.match(html,/Answers and explanations are included with full access\./)
+    assert.doesNotMatch(html,/Prompt|Because|Review answers/)
+  })
 })

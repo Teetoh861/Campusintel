@@ -2,6 +2,7 @@
 // (get_my_course_selection(), 20261026100000_course_selection_lock.sql), and the profile revision a pass is bound to.
 // The database is the authority: these reads only decide what a page shows; every save is still checked there.
 import 'server-only'
+import { isStudentRenderClient, readRenderStudentSession } from '@/lib/auth/render-session'
 import { z } from 'zod'
 import type { createClient } from '@/lib/supabase/server'
 
@@ -36,7 +37,10 @@ export async function readCourseSelection(client: StudentClient): Promise<Course
 /** The profile revision the student is looking at, which a pass activation is bound to (D7). */
 export async function readProfileRevision(client: StudentClient, userId: string): Promise<number | null> {
   try {
-    const { data, error } = await client.from('profiles').select('revision').eq('id', userId).maybeSingle()
+    const context = isStudentRenderClient(client) ? await readRenderStudentSession(client) : undefined
+    const { data, error } = context === undefined
+      ? await client.from('profiles').select('revision').eq('id', userId).maybeSingle()
+      : { data: context?.user.id === userId ? context.snapshot.profile : null, error: null }
     const parsed = z.object({ revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).safeParse(data)
     return error || !parsed.success ? null : parsed.data.revision
   } catch {

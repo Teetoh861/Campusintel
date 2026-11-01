@@ -80,7 +80,9 @@ export const discoveryPreviewSchema = z.discriminatedUnion('kind', [
     result: sampleResult.nullable() }).strict(),
   z.object({ kind: z.literal('study_guide'), items: z.array(z.object({ item_id: uuid, revision: z.number().int().positive(),
     note: noteContent }).strict()).length(1) }).strict(),
-])
+]).refine(preview => preview.kind !== 'cbt' || (preview.result === null
+  ? preview.questions.length > 0 && preview.saved !== null
+  : preview.questions.length === 0 && preview.saved === null))
 export type DiscoveryPreview = z.infer<typeof discoveryPreviewSchema>
 export type SampleQuestion = z.infer<typeof sampleQuestion>
 export type TopicTitle = z.infer<typeof topicTitle>

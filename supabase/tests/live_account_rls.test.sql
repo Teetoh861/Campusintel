@@ -45,6 +45,7 @@ insert into public.student_bookmarks (user_id, course_id) values
 create temporary table live_rls_question on commit drop as
 select id item_id, course_id, question_id, published_revision content_revision
 from public.managed_content_items where kind = 'cbt_question' and published_revision is not null
+  and course_id='40000000-0000-4000-8000-000000000008'
 order by id limit 1;
 select is((select count(*)::int from live_rls_question), 1, 'published question fixture exists');
 -- Finished attempts: marked answers of an open attempt are never visible (20261025100000_server_run_practice.sql).

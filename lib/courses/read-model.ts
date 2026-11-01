@@ -616,9 +616,3 @@ export async function getStudentCourseBySlugForVerifiedStudent(
     return { status: 'unavailable' }
   }
 }
-
-/** Bookmark metadata respects the same live scope and never probes repository-only material or counts. */
-export async function getBookmarkCourseBySlugForVerifiedStudent(client: StudentClient, slug: string):
-  Promise<StudentCourseLookupResult> {
-  return getStudentCourseBySlugForVerifiedStudent(client, slug, { readRepositoryOnly: false })
-}

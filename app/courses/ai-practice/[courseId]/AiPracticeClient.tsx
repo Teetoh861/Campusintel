@@ -49,11 +49,12 @@ type Props = {
   initialAllowance: AllowanceSummary | null
   recentSets: PersonalSetView[]
   /** The student's own trial grant and whether a pass can still be started; the copy names what they actually hold. */
+  canGenerate?: boolean
   trial?: TrialWording
 }
 
 export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets,
-  trial = NEUTRAL_TRIAL_WORDING }: Props):
+  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true }: Props):
   ReactElement {
   const input = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<JourneyPhase | null>(null)
@@ -95,11 +96,11 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
   if (active) return <PersonalPractice set={active} onClose={() => setActive(null)} />
   const busy = phase !== null
   const line = allowanceLine(allowance, trial)
-  const entitled = allowance?.state !== 'not-entitled'
+  const entitled = canGenerate && allowance?.state !== 'not-entitled'
 
   return <div className="ai-practice-workspace">
     <PersonalDisclaimer />
-    {!entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial)}</Notice>}
+    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial)}</Notice>}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
       <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter
