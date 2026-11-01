@@ -8,7 +8,7 @@ const { test } = require('node:test')
 const { repository } = require('./repo.cjs')
 const { packageReview } = require('./review.cjs')
 const { collectTestFiles, runVerification, scope, testCommand } = require('./verify.cjs')
-const { CONTAINER_VARIABLES, FLAGS, RETIRED_SUITES, TEST_STACK, projectId } = require('./database-suites.cjs')
+const { CONTAINER_VARIABLES, FLAGS, TEST_STACK, projectId } = require('./database-suites.cjs')
 
 const CLI = path.join(__dirname, 'cli.cjs')
 const RUNNER = path.join(__dirname, 'run-tests.cjs')
@@ -581,12 +581,11 @@ test('race suites run one file at a time on the test stack, after the pgTAP test
   const { f, execute, runs, lines } = raceFixture(t, 'ci-access-own-fixture', {
     'lib/one.database.test.cjs': RACE_SUITE,
     'lib/two.database.test.cjs': RACE_SUITE,
-    'lib/courses/access-scope-upgrade.database.test.cjs': "test('retired', () => assert.fail('a retired suite ran'))",
   })
   const report = runVerification(repository(f.root), { execute })
   const row = report.rows.find(item => item.name === 'Database race tests')
   assert.equal(row.status, 'PASS', report.output)
-  assert.match(row.detail, /^2 files one at a time, 4 passed in \d+ s \(1 retired suite not run\)$/)
+  assert.match(row.detail, /^2 files one at a time, 4 passed in \d+ s$/)
   assert.ok(report.rows.findIndex(item => item.name === 'Database tests') < report.rows.indexOf(row))
   const suiteRuns = runs.filter(item => item.files.some(file => file.endsWith('.database.test.cjs')))
   assert.deepEqual(suiteRuns.map(item => item.files), [['lib/one.database.test.cjs'], ['lib/two.database.test.cjs']])
@@ -644,11 +643,10 @@ test('CI names its database as a test stack, and the verifier opts in exactly th
   assert.match(ciProject ?? '', TEST_STACK)
   const root = path.join(__dirname, '../..')
   const { database } = collectTestFiles(root)
-  for (const file of RETIRED_SUITES.keys()) assert.ok(database.includes(file), `${file} still exists; drop it from the list`)
   // The suites and the fixtures they load.
   const fixtures = fs.readdirSync(path.join(root, 'lib'), { recursive: true })
     .filter(file => /fixture.*\.cjs$/.test(file)).map(file => path.join('lib', file))
-  const sources = [...database.filter(file => !RETIRED_SUITES.has(file)), ...fixtures]
+  const sources = [...database, ...fixtures]
   const read = new Set(sources.flatMap(file => [...fs.readFileSync(path.join(root, file), 'utf8')
     .matchAll(/process\.env\.([A-Z_]+_DB_(?:TEST|CONTAINER))\b/g)].map(match => match[1])))
   assert.deepEqual([...read].sort(), [...FLAGS, ...CONTAINER_VARIABLES].sort())

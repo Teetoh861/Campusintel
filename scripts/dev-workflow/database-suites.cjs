@@ -3,11 +3,6 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const DATABASE_SUITE = /\.database\.test\.cjs$/
-// Suites that cannot run on the current migrations, with the reason. Every other database suite runs.
-const RETIRED_SUITES = new Map([
-  ['lib/courses/access-scope-upgrade.database.test.cjs', 'it replays the own-course-access upgrade on a database ' +
-    'from before 20261029100000_own_course_access.sql, and develop now includes that migration'],
-])
 // Each suite's opt-in flag, set to 1, and each variable that names the database container a suite runs against.
 const FLAGS = [
   'ACCESS_SCOPE_DB_TEST', 'ACCOUNT_DELETION_DB_TEST', 'AI_PRACTICE_DB_TEST', 'BUA_CATALOGUE_DB_TEST',
@@ -35,4 +30,4 @@ function suiteEnvironment(container) {
     ...CONTAINER_VARIABLES.map(variable => [variable, container])])
 }
 
-module.exports = { CONTAINER_VARIABLES, DATABASE_SUITE, FLAGS, RETIRED_SUITES, TEST_STACK, projectId, suiteEnvironment }
+module.exports = { CONTAINER_VARIABLES, DATABASE_SUITE, FLAGS, TEST_STACK, projectId, suiteEnvironment }

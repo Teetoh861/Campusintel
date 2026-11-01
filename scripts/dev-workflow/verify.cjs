@@ -2,7 +2,7 @@
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { base, branch, changed, git, lines0, sha } = require('./repo.cjs')
-const { DATABASE_SUITE, RETIRED_SUITES, TEST_STACK, projectId, suiteEnvironment } = require('./database-suites.cjs')
+const { DATABASE_SUITE, TEST_STACK, projectId, suiteEnvironment } = require('./database-suites.cjs')
 
 const TEST_RUNNER = path.join(__dirname, 'run-tests.cjs')
 const APPLICATION_TEST_LOADER = './lib/auth/test-loader.cjs'
@@ -125,7 +125,7 @@ function runVerification(repo, options = {}) {
     }
   }
 
-  const { application: tests, database: databaseSuites, workflow: toolingTests } = collectTestFiles(root)
+  const { application: tests, database: suites, workflow: toolingTests } = collectTestFiles(root)
   if (tests.length === 0) {
     rows.push({ name: 'Application tests', status: 'FAIL', detail: 'no test files found' })
   } else {
@@ -194,7 +194,6 @@ function runVerification(repo, options = {}) {
       return
     }
     const env = { ...environment, ...suiteEnvironment(`supabase_db_${project}`) }
-    const suites = databaseSuites.filter(file => !RETIRED_SUITES.has(file))
     const failed = []
     let passed = 0
     const started = Date.now()
@@ -221,12 +220,10 @@ function runVerification(repo, options = {}) {
         ...stuck.map(line => `  ${line}`), ...testFailures(output)].join('\n'))
     }
     const seconds = Math.round((Date.now() - started) / 1000)
-    const retired = [...RETIRED_SUITES.keys()].filter(file => databaseSuites.includes(file)).length
     rows.push(failed.length
       ? { name, status: 'FAIL', detail: `${failed.length} of ${suites.length} files failed: ${failed.join(', ')}` }
       : { name, status: suites.length ? 'PASS' : 'FAIL', detail: suites.length
-        ? `${suites.length} files one at a time, ${passed} passed in ${seconds} s` +
-          (retired ? ` (${retired} retired suite not run)` : '')
+        ? `${suites.length} files one at a time, ${passed} passed in ${seconds} s`
         : 'no database race suites found' })
   }
 
