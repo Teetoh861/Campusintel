@@ -1,5 +1,7 @@
 // lib/auth/student-state.ts — Authoritative server validation for student session state.
 import 'server-only'
+import { readVerifiedStudentUser } from './verified-user'
+import { isStudentRenderClient, readRenderStudentSession } from './render-session'
 import { createClient } from '@/lib/supabase/server'
 import { authJson } from './response'
 import { EXISTING_STUDENT_SESSION, STUDENT_HOME_PATH } from './constants'
@@ -10,14 +12,6 @@ import type { NextResponse } from 'next/server'
 
 type StudentClient = Awaited<ReturnType<typeof createClient>>
 
-const TERMINAL_SESSION_ERRORS = new Set([
-  'refresh_token_not_found',
-  'refresh_token_already_used',
-  'session_expired',
-  'session_not_found',
-  'user_not_found',
-])
-
 /** Ask Auth for the cookie-bound identity; local JWT validity alone is not a live session.
  * A caller doing protected data work may pass its request-scoped client so a refreshed
  * session is used for both the live check and the subsequent RLS queries.
@@ -26,11 +20,13 @@ export async function getStudentSessionUser(
   response?: NextResponse, sessionClient?: StudentClient, options: { allowRestricted?: boolean } = {},
 ): Promise<User | null> {
   const client = sessionClient ?? await createClient(response)
-  const { data, error } = await client.auth.getUser()
-  const user = data?.user
-  if (user === null && (!error || error.name === 'AuthSessionMissingError' ||
-      (typeof error.code === 'string' && TERMINAL_SESSION_ERRORS.has(error.code)))) return null
-  if (error || !user || typeof user.id !== 'string' || !user.id) throw new Error('Session validation failed')
+  if (response === undefined && isStudentRenderClient(client)) {
+    const context = await readRenderStudentSession(client)
+    if (context === null || (!options.allowRestricted && context.snapshot.lifecycle.status !== 'active')) return null
+    return context.user
+  }
+  const user = await readVerifiedStudentUser(client)
+  if (user === null) return null
   const lifecycle = await readAccountLifecycle(client)
   if (lifecycle.status === 'signed-out' || (!options.allowRestricted && lifecycle.status !== 'active')) return null
   return user
@@ -41,6 +37,11 @@ export async function getStudentSessionContext(
   response?: NextResponse, sessionClient?: StudentClient, options: { allowRestricted?: boolean } = {},
 ): Promise<{ user: User; sessionId: string } | null> {
   const client = sessionClient ?? await createClient(response)
+  if (response === undefined && isStudentRenderClient(client)) {
+    const context = await readRenderStudentSession(client)
+    if (context === null || (!options.allowRestricted && context.snapshot.lifecycle.status !== 'active')) return null
+    return { user: context.user, sessionId: context.sessionId }
+  }
   const user = await getStudentSessionUser(response, client, options)
   if (user === null) return null
   const { data, error } = await client.auth.getClaims()
