@@ -3,6 +3,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
+  // next dev otherwise writes its own agent-rules block into AGENTS.md whenever it detects an AI coding agent
+  // (ensureAgentRulesForDev in next/dist/server/lib/app-info-log.js), leaving a change in every agent's worktree.
+  agentRules: false,
   // AI practice parses uploads in a separate Node process (lib/ai-practice/parser-process.ts) that loads these files
   // at run time, outside the bundle, so the upload route's function must ship them.
   outputFileTracingIncludes: {
