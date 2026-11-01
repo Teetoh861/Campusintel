@@ -68,7 +68,7 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
     <div className="student-practice-row">
       <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={!ready || starting}
         aria-describedby={`${id}-help`} onClick={() => { if (ready && !starting) onStart() }}>Start practice</button>
-      <Link href={courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>{PRACTICE_COPY.backToCourse}</Link>
+      <Link href={courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back</Link>
     </div>
     <p id={`${id}-help`} className="student-practice-help">
       {ready ? 'The timer starts as soon as you press Start practice.' : 'Confirm you’re ready to start.'}

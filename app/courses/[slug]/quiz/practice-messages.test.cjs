@@ -15,7 +15,8 @@ const ATTEMPT = '11111111-1111-4111-8111-111111111111'
 const NOW = '2026-10-27T09:00:00.000Z', DEADLINE = '2026-10-27T09:30:00.000Z'
 const BANNED = /may already be running|couldn.t be confirmed|Nothing was started/i
 const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-const openAttempt = id => ({ status: 'in_progress', id, courseId: 'course-1', intent: 'new', redoOf: null, startedAt: NOW,
+const openAttempt = (id, mode = 'exam') => ({ status: 'in_progress', id, courseId: 'course-1', mode,
+  topic: mode === 'instant' ? 'Capital Budgeting' : null, intent: 'new', redoOf: null, startedAt: NOW,
   deadlineAt: DEADLINE, durationSeconds: 1800, questionCount: 1, bankSize: 214,
   saved: { revision: 0, answers: {} }, questions: [{ questionId: 'q-1', prompt: 'Prompt', options: ['A', 'B'], section: 'One' }] })
 const identity = { courseCode: 'BUA 216', courseTitle: 'Financial Management', repositoryOnly: false }
@@ -68,7 +69,7 @@ async function flow(initial, run) {
       const { QuizClient } = require('./QuizClient.tsx')
       const props = { continuityToken: 'verified-student', courseSlug: COURSE, courseHref: `/courses/${COURSE}`,
         repositoryCourseId: 'course-1', brief: { questionCount: 50, durationSeconds: 1800 }, bankSize: 214,
-        lastResultHref: null, initial, ...identity }
+        topics: ['Capital Budgeting', 'Working Capital'], lastResultHref: null, initial, ...identity }
       const instance = { slots: [], effects: [], index: 0 }
       const render = () => {
         instance.index = 0; instance.effects = []; active = instance
@@ -90,7 +91,9 @@ async function flow(initial, run) {
 
 test('no reply to a start: the automatic re-check runs, then "No connection. Reconnect and tap Try again."; Try again opens the attempt with its real time left', async () => flow({ kind: 'intro' }, async f => {
   f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
-  f.render().props.onStart()
+  const brief = f.render()
+  assert.equal(brief.type.name, 'IntroScreen', 'Exam mode opens straight on its brief: there is no choice of mode')
+  brief.props.onStart()
   await f.settle()
   const intro = f.render()
   assert.equal(intro.type.name, 'IntroScreen')
@@ -121,6 +124,89 @@ test('a start the server refused: "We couldn’t start your practice. Try again.
   assert.notEqual(f.requests[1].attemptId, f.requests[0].attemptId, 'a refused start is not repeated; a new one is asked for')
   assert.equal(f.render().type.name, 'ActiveAttempt')
 }))
+
+test('a topic from the course page starts its instant feedback at once, with no brief; a lost reply keeps the same attempt id', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+  f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
+  f.render()
+  await f.settle()
+  const starting = f.render()
+  assert.equal(starting.type.name, 'InstantStarting')
+  assert.equal(starting.props.topic, 'Capital Budgeting')
+  assert.deepEqual(Object.keys(f.requests[0]).sort(), ['action', 'attemptId', 'courseSlug', 'topic'], 'no brief, size or time')
+  assert.equal(f.requests[0].action, 'start-instant')
+  assert.equal(f.requests[0].topic, 'Capital Budgeting')
+  assert.equal(f.requests.length, 3, 'started once, with the automatic re-checks only')
+  assert.deepEqual(starting.props.error, { title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true })
+  f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
+  starting.props.onRetry()
+  await f.settle()
+  assert.equal(new Set(f.requests.map(request => request.attemptId)).size, 1, 'a replayed start can only find this attempt')
+  const attempt = f.render()
+  assert.equal(attempt.type.name, 'InstantAttempt')
+  assert.equal(attempt.props.courseHref, `/courses/${COURSE}#cbtPractice`, 'Exit returns to the topic list')
+  f.render()
+  await f.settle()
+  assert.equal(f.requests.length, 4, 'the topic never starts a second time')
+}))
+
+test('a topic the course no longer has: "This topic isn’t available.", with no Try again', async () => flow({ kind: 'topic', topic: 'Gone' }, async f => {
+  f.answers.push({ status: 'not-found' })
+  f.render()
+  await f.settle()
+  const starting = f.render()
+  assert.equal(f.requests.length, 1)
+  assert.deepEqual(starting.props.error, { title: 'This topic isn’t available.', body: 'Choose another topic from the course page.' })
+}))
+
+test('a topic while an exam is open: "Finish your exam first.", with Resume exam and no Try again', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+  f.answers.push({ status: 'exam-open', now: NOW, attempt: openAttempt(ATTEMPT) })
+  f.render()
+  await f.settle()
+  const starting = f.render()
+  assert.equal(f.requests.length, 1, 'refused once, not re-checked')
+  assert.deepEqual(starting.props.error, { title: 'Finish your exam first.',
+    body: 'Practice opens again once your exam is submitted or its time runs out.',
+    action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } })
+}))
+
+test('the exam-open notice links to the exam and offers no Try again', async () => withTsx(async () => {
+  const { InstantStarting } = require('./InstantStarting.tsx')
+  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, courseHref: `/courses/${COURSE}#cbtPractice`,
+    topic: 'Capital Budgeting', busy: false, onRetry() {}, error: { title: 'Finish your exam first.',
+      body: 'Practice opens again once your exam is submitted or its time runs out.',
+      action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } } }))
+  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Practice opens again .* Resume exam Back to course$/)
+  assert.match(html, new RegExp(`href="/courses/${COURSE}/quiz\\?attempt=${ATTEMPT}"`))
+  assert.doesNotMatch(html, /Try again/)
+}))
+
+test('the end of a topic: Practise again draws this topic again, Next topic starts the next one, none after the last', async () => {
+  const graded = (topic) => ({ kind: 'graded', latest: false, attempt: { status: 'submitted', id: ATTEMPT, courseId: 'course-1',
+    mode: 'instant', topic, intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: DEADLINE, durationSeconds: 10800,
+    questionCount: 1, bankSize: 12, result: { score: 1, total: 1, timedOut: false, finishedAt: NOW },
+    questions: [{ questionId: 'q-1', prompt: 'Prompt', options: ['A', 'B'], section: topic, itemId: 'i-1', revision: 1,
+      selected: 0, correctOption: 0, explanation: null }] } })
+  await flow(graded('Capital Budgeting'), async f => {
+    const end = f.render()
+    assert.equal(end.type.name, 'InstantResult')
+    assert.equal(end.props.nextTopic, 'Working Capital')
+    assert.equal(end.props.courseHref, `/courses/${COURSE}#cbtPractice`)
+    f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
+    end.props.onPractiseAgain()
+    await f.settle()
+    assert.equal(f.requests[0].action, 'start-instant')
+    assert.equal(f.requests[0].topic, 'Capital Budgeting')
+  })
+  await flow(graded('Capital Budgeting'), async f => {
+    f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
+    f.render().props.onNextTopic()
+    await f.settle()
+    assert.equal(f.requests[0].topic, 'Working Capital')
+  })
+  await flow(graded('Working Capital'), async f => {
+    assert.equal(f.render().props.nextTopic, null, 'the last topic has no Next topic')
+  })
+})
 
 test('resume with no connection: "No connection. Reconnect and tap Try again."; Try again continues the attempt', async () => flow(
   { kind: 'resume', attemptId: ATTEMPT, answered: 3, total: 50, minutesLeft: 12 }, async f => {

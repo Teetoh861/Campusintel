@@ -1,5 +1,6 @@
 // app/courses/[slug]/sections.tsx — Study-hub renderers for central Course Detail payloads; no truth derivation here.
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
@@ -8,6 +9,7 @@ import type { StudyFamilyId } from '@/components/student/study-families'
 import type { StudentCourseApplicability, StudentCoursePractice, StudentCourseDetailLearning, StudyAvailability }
   from '@/lib/courses/read-model'
 import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion } from '@/lib/managed-content/student-projection'
+import type { PracticeTopicRow } from '@/lib/practice/topics'
 import type { Textbook } from '@/lib/types'
 import type { ReactElement, ReactNode } from 'react'
 
@@ -116,18 +118,30 @@ export function NotesSection({ notes, number }: { notes: ReadonlyArray<ManagedNo
   </StudySection>
 }
 
-/** The one Practice entry, from the central usable-quiz summary. */
-export function PracticeSection({ practice, number }: { practice: StudentCoursePractice; number: number }): ReactElement {
-  return <StudySection id="cbtPractice" number={number} lede="Test your knowledge with timed multiple-choice questions.">
-    <div className="student-surface student-detail-practice">
-      <dl>
-        <div><dt>Questions available</dt><dd>{practice.bankSize}</dd></div>
-        <div><dt>Per attempt</dt><dd>{practice.attemptSize}</dd></div>
-        <div><dt>Time</dt><dd>{practice.timerSeconds / 60} min</dd></div>
-      </dl>
-      <Link href={practice.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
-        Start CBT practice
+/** Practice: the course's topics in order (each starts instant feedback on its questions), then Exam mode. A course
+ * without topics offers Exam mode only. */
+export function PracticeSection({ practice, topics, number }: {
+  practice: StudentCoursePractice; topics: ReadonlyArray<PracticeTopicRow>; number: number
+}): ReactElement {
+  const hasTopics = topics.length > 0
+  return <StudySection id="cbtPractice" number={number}
+    lede={hasTopics ? 'Pick a topic. Each answer is marked as you go.' : 'Timed multiple-choice questions, marked at the end.'}>
+    {hasTopics && <ol className="student-topic-list" aria-label="Topics">
+      {topics.map(row => <li key={row.topic}>
+        <Link href={`${practice.href}?topic=${encodeURIComponent(row.topic)}`} prefetch={false}
+          className="student-topic-row student-focus-control">
+          <span className="student-topic-number" aria-hidden="true">{row.number}</span>
+          <span className="student-topic-text"><b>{row.topic}</b><span>{row.line}</span></span>
+          <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
+        </Link>
+      </li>)}
+    </ol>}
+    <div className="student-practice-exam">
+      <Link href={`${practice.href}?mode=exam`} prefetch={false}
+        className={hasTopics ? studentAction(btnGhost, 'bg-student-surface') : studentAction(btnNavy, studentFocusDark)}>
+        Exam mode
       </Link>
+      <span className="student-meta">{practice.attemptSize} questions · {practice.timerSeconds / 60} min</span>
     </div>
   </StudySection>
 }

@@ -17,7 +17,9 @@ const course = realCourses.getCourseBySlug('financial-accounting-1')
 const PROTECTED = [
   ['app/courses/page.tsx', () => ({}), '/courses', 'CourseDirectoryPage'],
   ['app/courses/[slug]/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }) }), `/courses/${course.slug}`, 'CourseDetail'],
-  ['app/courses/[slug]/quiz/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }), searchParams: Promise.resolve({}) }),
+  // Exam mode's entry: a bare practice visit goes back to the course's topic list.
+  ['app/courses/[slug]/quiz/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }),
+    searchParams: Promise.resolve({ mode: 'exam' }) }),
     `/courses/${course.slug}/quiz`, 'Quiz'],
   ['app/courses/[slug]/materials/page.tsx', () => ({ params: Promise.resolve({ slug: course.slug }) }), `/courses/${course.slug}/materials`, 'CourseMaterials'],
   ['app/materials/page.tsx', () => ({}), '/materials', 'MaterialsClient'],
