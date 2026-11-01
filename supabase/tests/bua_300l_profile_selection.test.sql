@@ -1,6 +1,10 @@
 -- A confirmed student saves real reference IDs; the same three filters used
 -- by the student read model must return exactly the approved offering.
 begin;
+-- This suite isolates reference/ownership rules, with no running calendar. Running-semester admission
+-- is covered by own_course_access_review.test.sql, including first picks, changes and rollover re-picks.
+update private.academic_terms set resumes_on=resumes_on-interval '2 years';
+
 select no_plan();
 
 insert into auth.users (

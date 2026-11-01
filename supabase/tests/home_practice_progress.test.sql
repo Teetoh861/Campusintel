@@ -70,6 +70,10 @@ select '00000000-0000-0000-0000-000000000000', pg_temp.u(n), 'authenticated', 'a
 from unnest(array[1, 2]) n;
 insert into auth.sessions (id, user_id, created_at, updated_at)
 select pg_temp.s(n), pg_temp.u(n), now(), now() from unnest(array[1, 2]) n;
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id in (pg_temp.u(1),pg_temp.u(2));
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by)
 select pg_temp.u(n), 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test'
 from unnest(array[1, 2]) n;
@@ -87,7 +91,7 @@ select is(pg_temp.o('unknown-session'), '{"state":"signed-out"}'::jsonb, 'a sess
 select is(pg_temp.o('start-1') ->> 'state', 'ready', 'fixture: the first attempt started');
 select is((pg_temp.o('open') -> 'open') - 'deadline_at',
   jsonb_build_object('course_id', pg_temp.c('08'), 'content_key', (select content_key from public.courses
-    where id = pg_temp.c('08'))), 'an open attempt is offered with its course and route key');
+    where id = pg_temp.c('08')), 'mode', 'exam'), 'an open attempt is offered with its course and route key');
 select is((pg_temp.o('open') -> 'open' ->> 'deadline_at')::timestamptz,
   (select deadline_at from public.quiz_attempts where id = pg_temp.a(1)), 'and its own deadline');
 select is(pg_temp.o('open') -> 'latest', 'null'::jsonb, 'nothing graded yet');
@@ -153,8 +157,8 @@ select is(pg_temp.figures(pg_temp.o('first-again')) -> '08', '{"practised":4,"sc
 
 -- 8. Counts and identities only ---------------------------------------------------------------------------------------
 select is(pg_temp.keys_anywhere(pg_temp.o('first-again')),
-  array['content_key', 'course_id', 'courses', 'deadline_at', 'latest', 'now', 'open', 'practised', 'score', 'state',
-    'total'], 'no question, option, answer or key leaves the database');
+  array['content_key', 'course_id', 'courses', 'deadline_at', 'latest', 'mode', 'now', 'open', 'practised', 'score',
+    'state', 'total'], 'no question, option, answer or key leaves the database');
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"e2000000-0000-4000-8000-000000000001"}';
 select throws_ok($$ select public.practice_progress('e2000000-0000-4000-8000-000000000001') $$, '42501', null,

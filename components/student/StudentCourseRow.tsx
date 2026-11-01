@@ -15,7 +15,8 @@ export function presentStudentCourseRow(course: PresentableStudentCourse): Cours
   const identity: CourseRowIdentity = isInstitutionalStudentCourse(course)
     ? { code: course.code, title: course.title }
     : { repositoryOnly: true, title: course.repository.route.course.title }
-  if (isLockedStudentCourse(course)) return { ...identity, href: course.repository.route.href, locked: true }
+  if (isLockedStudentCourse(course)) return { ...identity, href: course.repository.route.href, locked: true,
+    ...(course.content.reason ? { lockReason: course.content.reason } : {}) }
   if (!isActionableStudentCourse(course)) {
     const reason = getStudentCourseUnavailability(course)
     const unavailable = reason === 'missing' ? 'missing' : 'temporary'

@@ -17,7 +17,8 @@ values ('00000000-0000-0000-0000-000000000000',
 insert into auth.sessions(id, user_id, created_at, updated_at) values
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc',
    '33333333-3333-4333-8333-333333333333', now(), now());
--- Every published course is readable only on an active plan (20261017100000_trial_entitlements.sql).
+-- The parity reader is an operator: it checks all published courses, independently of student scope.
+update public.profiles set role = 'operator' where id = '33333333-3333-4333-8333-333333333333';
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by) values
   ('33333333-3333-4333-8333-333333333333', 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test');
 set local role authenticated;

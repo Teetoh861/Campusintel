@@ -17,6 +17,8 @@ const submenuOwners = new Map([
   ['components/ui/dropdown-menu.tsx', 'DropdownMenuPrimitive.SubTrigger'],
   ['components/ui/menubar.tsx', 'MenubarPrimitive.SubTrigger'],
 ])
+// The course page's topic rows (owner's practice-by-topic task, 29 Oct): a list row's disclosure chevron, by its class.
+const rowIndicators = new Map([['app/courses/[slug]/sections.tsx', 'student-topic-go']])
 
 function files(directory) {
   return fs.readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap(entry => {
@@ -43,13 +45,18 @@ test('every application surface keeps decorative forward icons, action glyphs an
       if (ts.isImportSpecifier(node)) {
         const name = (node.propertyName || node.name).text
         imports.set(node.name.text, name)
-        if (forwardIcon(name) && !(submenuOwners.has(file) && name === 'ChevronRight')) report(`forward icon import ${name}`)
+        if (forwardIcon(name) && !((submenuOwners.has(file) || rowIndicators.has(file)) && name === 'ChevronRight')) {
+          report(`forward icon import ${name}`)
+        }
       }
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
         const tag = node.tagName.getText(source).split('.').at(-1)
         const name = imports.get(tag) || tag
         const submenuIndicator = name === 'ChevronRight' && within(node, source, owner => owner === submenuOwners.get(file))
-        if (forwardIcon(name) && !submenuIndicator) report(`decorative forward icon ${name}`)
+        const rowIndicator = name === 'ChevronRight' && rowIndicators.has(file) && node.attributes.properties.some(attribute =>
+          ts.isJsxAttribute(attribute) && attribute.name.getText(source) === 'className'
+          && attribute.initializer?.getText(source) === `"${rowIndicators.get(file)}"`)
+        if (forwardIcon(name) && !submenuIndicator && !rowIndicator) report(`decorative forward icon ${name}`)
       }
       if ((ts.isJsxText(node) || ts.isStringLiteralLike(node)) && forwardGlyph.test(node.text) &&
           within(node, source, tag => /^(?:a|button|Link|Button)$|(?:Link|Button|Card|Action)$/.test(tag))) report('forward glyph in an action')

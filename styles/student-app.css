@@ -332,11 +332,6 @@
 .student-detail-aside > p + p { margin-top: 4px; white-space: pre-line; overflow-wrap: anywhere; color: var(--student-text-primary); font-size: 14px; line-height: 1.5; }
 .student-formula-rail { margin-top: 10px; overflow-x: auto; padding: 12px 14px; border: 1px solid var(--student-border); border-radius: 10px; background: var(--student-brand-surface); }
 .student-formula-rail > code { display: block; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; font-weight: 600; line-height: 1.5; color: var(--student-primary); }
-.student-detail-practice { display: grid; gap: 16px; }
-.student-detail-practice > dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 0; }
-.student-detail-practice dt { color: var(--student-text-muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-.student-detail-practice dd { margin: 2px 0 0; color: var(--student-primary); font-size: 17px; font-weight: 700; }
-.student-detail-practice > a { justify-self: start; }
 .student-detail-numbered { display: grid; gap: 14px; list-style: none; margin: 0; }
 .student-detail-numbered > li { display: flex; gap: 12px; min-width: 0; }
 .student-detail-numbered > li > span:first-child { flex: none; min-width: 36px; padding-top: 2px; color: var(--student-link); font-size: 13px; font-weight: 700; line-height: 1.4; }

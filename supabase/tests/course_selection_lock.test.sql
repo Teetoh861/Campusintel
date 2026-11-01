@@ -9,6 +9,10 @@ select no_plan();
 
 -- Calendar fixture, independent of whatever dates the team has entered: the previous semester ended about a month ago
 -- and the current one resumed 30 days ago.
+-- These tests replace the calendar with fictional dates. Detach pre-existing course scopes only inside
+-- this rolled-back fixture transaction; keep all saved accounts, grant records and dates after the test.
+delete from private.student_course_additions;
+update public.entitlement_grants set course_term_id=null, course_department_id=null;
 delete from private.academic_term_extensions;
 delete from private.academic_terms;
 create temporary table cal on commit drop as
@@ -38,10 +42,10 @@ create function pg_temp.state(p_user uuid) returns text language sql as
   $$ select private.course_selection_state(p_user)->>'state' $$;
 create function pg_temp.grant(p_user uuid, p_source text, p_policy text, p_starts timestamptz, p_ends timestamptz)
 returns uuid language sql as $$
-  insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
+  insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by, created_at)
     values (p_user, p_source, p_policy, p_starts, p_ends,
       case p_source when 'trial' then 'capped' when 'early_access' then 'uncapped' else 'none' end,
-      case when p_source = 'trial' then 1 end, 'test')
+      case when p_source = 'trial' then 1 end, 'test', p_starts)
     returning id;
 $$;
 create function pg_temp.h(p_value text) returns text language sql immutable as
@@ -260,23 +264,24 @@ set local request.jwt.claims = '{"sub":"c1000000-0000-4000-8000-000000000006","r
 select lives_ok($$update public.profiles set first_name = 'Femi', department_id = '10000000-0000-4000-8000-000000000002',
     academic_level_id = '20000000-0000-4000-8000-000000000002', academic_period_id = '30000000-0000-4000-8000-000000000001'
   where id = 'c1000000-0000-4000-8000-000000000006'$$, 'F confirms the same courses for the new semester');
-select is((public.get_my_course_selection())->>'state', 'locked', 'and, with Early Access active, is locked again at once');
+select is((public.get_my_course_selection())->>'state', 'open', 'an old-semester Early Access grant cannot lock the new selection');
 reset role;
 select is((select event from private.course_selection_events where user_id = 'c1000000-0000-4000-8000-000000000006'
   order by id desc limit 1), 'selection.confirmed-again', 'the re-confirmation is recorded');
 -- With no semester after now, locks stay on.
-delete from private.academic_terms where session_label = '2026/2027';
+-- Keep bound term history: simulate missing future dates without deleting a referenced semester.
+update private.academic_terms set resumes_on = (select today - interval '1 year' from cal)
+  where session_label = '2026/2027';
 select is(private.course_selection_state('c1000000-0000-4000-8000-000000000001', now() + interval '10 years')->>'state',
   'locked', 'with no later semester entered, the lock holds');
 select is(private.course_selection_state('c1000000-0000-4000-8000-000000000001')->'last_day', 'null'::jsonb,
   'and no date is given');
-insert into private.academic_terms (session_label, academic_period_id, resumes_on, created_by, updated_by)
-  select '2026/2027', '30000000-0000-4000-8000-000000000001', today - 30, 'test', 'test' from cal;
+update private.academic_terms set resumes_on = (select today - 30 from cal) where session_label = '2026/2027';
 
 -- Operator change ----------------------------------------------------------------------------------------------------
 create temporary table k_before on commit drop as
   select p.selection_confirmed_at, p.revision,
-    (select jsonb_agg(to_jsonb(g) order by g.id) from public.entitlement_grants g where g.user_id = p.id) as grants
+    (select jsonb_agg((to_jsonb(g) - 'course_department_id') order by g.id) from public.entitlement_grants g where g.user_id = p.id) as grants
   from public.profiles p where p.id = 'c1000000-0000-4000-8000-000000000011';
 insert into public.quiz_attempts (id, user_id, course_id, question_count)
   select 'c3000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000011', id, 10
@@ -320,7 +325,7 @@ select is((select jsonb_build_object('actor', actor, 'reason', detail->>'reason'
   jsonb_build_object('actor', 'operator:Ops', 'reason', 'asked on WhatsApp, wrong department', 'before', 'locked',
     'from', '10000000-0000-4000-8000-000000000002', 'to', '10000000-0000-4000-8000-000000000001'),
   'the change is recorded with name, reason, from and to');
-select is((select jsonb_agg(to_jsonb(g) order by g.id) from public.entitlement_grants g
+select is((select jsonb_agg((to_jsonb(g) - 'course_department_id') order by g.id) from public.entitlement_grants g
   where g.user_id = 'c1000000-0000-4000-8000-000000000011'), (select grants from k_before), 'the pass is untouched');
 select is((select to_jsonb(p) from private.discovery_previews p where p.user_id = 'c1000000-0000-4000-8000-000000000011'),
   (select preview from k_work), 'its pinned preview is untouched');
@@ -388,7 +393,9 @@ reset role;
 -- Only the previous term is needed here: Business Administration is extended, Accounting has ended.
 reset role;
 delete from private.academic_term_extensions;
-delete from private.academic_terms where session_label = '2026/2027';
+-- Keep bound term history: simulate missing future dates without deleting a referenced semester.
+update private.academic_terms set resumes_on = (select today - interval '1 year' from cal)
+  where session_label = '2026/2027';
 insert into private.academic_term_extensions (term_id, department_id, last_day, set_by, reason)
   select id, '10000000-0000-4000-8000-000000000002', (select today + 5 from cal), 'test', 'source still running'
   from private.academic_terms;

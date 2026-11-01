@@ -109,6 +109,10 @@ insert into auth.sessions (id, user_id, created_at, updated_at, not_after) value
   ('62000000-0000-4000-8000-000000000011', '61000000-0000-4000-8000-000000000011', now(), now(), null);
 update public.profiles set role = 'operator' where id = '61000000-0000-4000-8000-000000000006';
 
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '61000000-%';
 create temporary table outcome (step text primary key, result jsonb) on commit drop;
 grant all on outcome to authenticated, service_role;
 insert into outcome values ('course-acc101', jsonb_build_object('id',
@@ -440,7 +444,7 @@ set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","r
 select is((select e->>'tier' || '/' || (e->'early_access'->>'status') from public.get_my_entitlement() e), 'full/active',
   'D has full access with no click and no phone code');
 select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000002')) > 0,
-  'every course is open during the month');
+  'the student''s own course is open during the month');
 reset role;
 set local role service_role;
 select is(public.admin_reconcile_early_access('ops', 'recovery sweep')->>'granted', '0', 'a repeated sweep grants nothing new');
@@ -529,11 +533,14 @@ select ('71000000-0000-4000-8000-0000000000' || n)::uuid, 'm5-' || name || '@exa
   now() - interval '40 days', 'import', 'm5', 'test', now() - interval '2 days', ('61000000-0000-4000-8000-0000000000' || n)::uuid
 from (values ('21', 'one'), ('22', 'two'), ('23', 'three'), ('24', 'four')) m5_members(n, name);
 -- One and Three enrolled a day earlier than Two and Four: theirs are the canonical months of each pair.
+-- Pre-existing unbound grant fixtures must not acquire the new insert-trigger locks and mask M5.
+alter table public.entitlement_grants disable trigger entitlement_grants_bind_course;
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, reference, created_by)
 select ('61000000-0000-4000-8000-0000000000' || n)::uuid, 'early_access', now() - make_interval(days => days),
   now() - make_interval(days => days) + interval '1 month', 'uncapped',
   jsonb_build_object('member_id', '71000000-0000-4000-8000-0000000000' || n), 'test'
 from (values ('21', 2), ('22', 1), ('23', 2), ('24', 1)) m5_grants(n, days);
+alter table public.entitlement_grants enable trigger entitlement_grants_bind_course;
 select is(pg_temp.account_locked('61000000-0000-4000-8000-000000000022'), false, 'before the merge, Two''s account is not locked here');
 set local role service_role;
 -- Older into newer: One is marked a duplicate of Two. Two's grant is the one revoked, so Two's account must be locked.

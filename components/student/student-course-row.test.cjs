@@ -130,3 +130,30 @@ test('a locked row links to its course page, says it is included with full acces
   assert.deepEqual(presentStudentCourseRow(locked), { code: 'BUA211', title: 'BUA211 institutional title',
     href: '/courses/locked-slug', locked: true })
 })
+
+
+test('the student row adapter preserves outside-list and both selection recovery reasons', async () => {
+  for (const [reason, copy] of [
+    ['outside-list', 'Not in your courses this semester.'],
+    ['needs-selection', 'Confirm your courses for this semester.'],
+    ['selection-locked', 'Your courses are set for another semester.'],
+  ]) {
+    const locked = course('BUA202', shelved('locked-slug'), { state: 'locked', reason })
+    const { presentStudentCourseRow } = await subject()
+    assert.deepEqual(presentStudentCourseRow(locked), { code: 'BUA202', title: 'BUA202 institutional title',
+      href: '/courses/locked-slug', locked: true, lockReason: reason })
+    const html = await render(locked)
+    assert.ok(html.includes(copy))
+    assert.equal(anchors(html).length, 1)
+    assert.match(html, /student-course-row-locked/)
+    assert.doesNotMatch(html, /Included with full access|Practise from your own notes|CBT practice/)
+  }
+})
+
+test('repository-only not-available rows stay inert and offer neither a plan nor an addition', async () => {
+  const unavailable = repositoryTitle(repositoryOnly('repo-unavailable', { state: 'not-available' }))
+  const html = await render(unavailable)
+  assert.match(html, /Shelved repository title|Additional study material/)
+  assert.match(html, /Study materials are not available./)
+  assert.doesNotMatch(html, /<a\b|<button\b|Included with full access|Message us|Practise from your own notes/)
+})

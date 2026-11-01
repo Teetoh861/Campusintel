@@ -1228,6 +1228,10 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
   '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000010', '71000000-0000-4000-8000-000000000010', now(), now());
+-- Access fixtures use an actual Business Administration 200L First Semester selection.
+update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id='71000000-0000-4000-8000-000000000010';
 insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
   values ('71000000-0000-4000-8000-000000000010', 'trial', 'seven-day', now() - interval '4 days',
     now() + interval '3 days', 'capped', 10, 'student');
@@ -1235,7 +1239,7 @@ select ok(private.has_full_access('71000000-0000-4000-8000-000000000010'), 'a se
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"71000000-0000-4000-8000-000000000010","role":"authenticated","session_id":"72000000-0000-4000-8000-000000000010"}';
 select ok((select count(*) from public.read_published_managed_content(pg_temp.c('02'))) > 0,
-  'every department course stays readable until its own end, four days in');
+  'the selected department course stays readable until its own end, four days in');
 select is((select jsonb_build_object('tier', e->'tier', 'access', e->'access'->'source', 'policy', e->'trial'->'policy',
     'status', e->'trial'->'status', 'ends', (e->'trial'->>'ends_at')::timestamptz = now() + interval '3 days')
   from public.get_my_entitlement() e),

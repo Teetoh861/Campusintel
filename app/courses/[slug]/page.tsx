@@ -19,6 +19,8 @@ import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
 import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { practicePolicyFor } from '@/lib/practice/server'
+import { readPracticeTopics, readTopicProgress, topicRowsOf } from '@/lib/practice/topics'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
@@ -27,6 +29,7 @@ import { ApplicabilityList, COURSE_LEDE, NotesSection, OverviewSection, Practice
   StudyNav, TheorySection, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
+import type { PracticeTopicRow } from '@/lib/practice/topics'
 import type { StudySectionId } from './sections'
 import type { ReactElement } from 'react'
 
@@ -54,24 +57,42 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
   // Mentioned only when this account can still start a pass: the database offers one (a database from before the
   // pass offers none) and the account has not had its one trial.
   let passOffered = false
+  // The course's practice topics with this student's progress; none when they cannot be read now.
+  let topics: PracticeTopicRow[] = []
   try {
     const client = await createClient()
     const context = await getStudentSessionContext(undefined, client)
     result = context === null ? { status: 'signed-out' } : await getStudentCourseBySlugForVerifiedStudent(client, slug)
-    if (result.status === 'ok' && result.course.content.state === 'locked' && hasActiveCourseOffering(result.course)) {
+    if (result.status === 'ok' && result.course.content.state === 'locked' && result.course.content.reason === undefined && hasActiveCourseOffering(result.course)) {
       const read = await readEntitlementForVerifiedStudent(client)
       const entitlement = read.status === 'ok' ? read.entitlement : null
       passOffered = trialWording(entitlement).passAvailable
       pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
     }
+    if (context !== null && (result.status === 'ok' || result.status === 'repository-only') && result.practice !== null) {
+      topics = await practiceTopicRows(client, context.sessionId, result.course.repository)
+    }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'ok' || result.status === 'repository-only') {
-    return <CourseStudyHub result={result} pass={pass} passOffered={passOffered} />
+    return <CourseStudyHub result={result} pass={pass} passOffered={passOffered} topics={topics} />
   }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
   return <CourseUnavailable status={result.status} slug={slug} />
+}
+
+/** The course's topics with this student's progress. A topic read that fails leaves Exam mode only, never the page
+ * unavailable; progress that fails leaves each topic's count. */
+async function practiceTopicRows(client: Awaited<ReturnType<typeof createClient>>, sessionId: string,
+  repository: ResolvedCourse['course']['repository']): Promise<PracticeTopicRow[]> {
+  try {
+    const policy = practicePolicyFor(repository.route.slug)
+    if (policy === null) return []
+    const [list, progress] = await Promise.all([readPracticeTopics(client, repository.repositoryCourseId, policy.sections),
+      readTopicProgress(sessionId, repository.repositoryCourseId)])
+    return topicRowsOf(list ?? [], progress)
+  } catch { return [] }
 }
 
 /** Fail closed without any unverified course identity. */
@@ -92,8 +113,8 @@ function RequestMaterialLink({ href, prominent = false }: { href: string; promin
 }
 
 /** Compose institutional or repository identity, availability and the study families from central truth. */
-function CourseStudyHub({ result, pass, passOffered }: {
-  result: ResolvedCourse; pass: DiscoveryPass | null; passOffered: boolean
+function CourseStudyHub({ result, pass, passOffered, topics }: {
+  result: ResolvedCourse; pass: DiscoveryPass | null; passOffered: boolean; topics: ReadonlyArray<PracticeTopicRow>
 }): ReactElement {
   const { learning, practice } = result
   const { repository, content } = result.course
@@ -103,7 +124,8 @@ function CourseStudyHub({ result, pass, passOffered }: {
   const title = institutional?.title ?? route.course.title
   const materialsHref = `${route.href}/materials`
   const locked = content.state === 'locked'
-  const sections = locked ? [] : studySections({
+  const scopeNotice = content.state === 'locked' && content.reason !== undefined
+  const sections = locked || content.state === 'not-available' ? [] : studySections({
     study: content.state === 'ready' ? content.study : null,
     learning, practice, textbooks: route.course.textbooks.length,
   })
@@ -121,25 +143,26 @@ function CourseStudyHub({ result, pass, passOffered }: {
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
       {institutional
-        ? <section aria-labelledby="applicability-title" className="student-detail-section">
+        ? !scopeNotice && <section aria-labelledby="applicability-title" className="student-detail-section">
           <h2 id="applicability-title" className="student-section-title">Confirmed for</h2>
           <ApplicabilityList applicability={institutional.applicability} />
         </section>
-        : <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
+        : content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
-      {locked && (pass === null ? <LockedCourseNotice passOffered={passOffered} />
+      {locked && (scopeNotice || pass === null ? <LockedCourseNotice passOffered={passOffered} reason={content.reason} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />
       </>}>We couldn’t load the study materials for this course just now.</Notice>}
+      {content.state === 'not-available' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>}
       {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
         action={<RequestMaterialLink href={materialsHref} prominent />}>
         Notes, CBT practice and theory questions are not available for this course. You can request study material below.
       </Notice>}
       {sections.includes('notes') && learning && <NotesSection notes={learning.notes} number={number('notes')} />}
-      {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} number={number('cbtPractice')} />}
+      {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} topics={topics} number={number('cbtPractice')} />}
       {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
         practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}
       {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview} number={number('overview')} />}

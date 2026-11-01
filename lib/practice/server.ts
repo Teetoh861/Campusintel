@@ -31,9 +31,14 @@ export function practicePolicyFor(slug: string): PracticePolicy | null {
   return { size: config.maxQuizQuestions, seconds, sections: [...config.sections] }
 }
 
+/** Instant feedback: up to 10 questions, closed by the server 3 hours after it started if left (never shown). */
+export const INSTANT_POLICY = { size: 10, seconds: 3 * 60 * 60 } as const
+
 export type PracticeDelta = { tab: string; sequence: number; baseRevision: number; changes: PracticeChanges }
 export type PracticeStart = { attemptId: string; courseId: string; intent: 'new' | 'redo'; redoOf: string | null
   policy: PracticePolicy; expected: { questionCount: number; durationSeconds: number; wholeBank: boolean } }
+  // Instant feedback: a fresh draw from one topic with the server's instant size and closing time, and no brief.
+  | { attemptId: string; courseId: string; mode: 'instant'; topic: string; sections: string[] }
 
 export type PracticeEnv = {
   start(start: PracticeStart): Promise<unknown>
@@ -41,6 +46,7 @@ export type PracticeEnv = {
   attempt(attemptId: string): Promise<unknown>
   save(attemptId: string, delta: PracticeDelta): Promise<unknown>
   submit(attemptId: string, delta: PracticeDelta): Promise<unknown>
+  pick(attemptId: string, questionId: string, option: number): Promise<unknown>
 }
 
 // ---------------------------------------------------------------------------
@@ -51,24 +57,34 @@ const dbQuestion = z.object({ question_id: z.string().uuid(), prompt: z.string()
   section: z.string() }).strict()
 const dbGradedQuestion = dbQuestion.extend({ item_id: z.string().uuid(), revision: z.number().int(),
   selected: z.number().int().nullable(), correct_option: z.number().int(), explanation: z.string().nullable() }).strict()
-const dbMeta = { id: z.string().uuid(), course_id: z.string().uuid(), intent: z.enum(['new', 'redo']),
+// An instant attempt's picked question carries its pick, correct option and explanation, all three or none.
+const dbOpenQuestion = dbQuestion.extend({ selected: z.number().int().optional(), correct_option: z.number().int().optional(),
+  explanation: z.string().nullable().optional() }).strict()
+const dbMeta = { id: z.string().uuid(), course_id: z.string().uuid(), mode: z.enum(['exam', 'instant']),
+  topic: z.string().min(1).nullable(), intent: z.enum(['new', 'redo']),
   redo_of: z.string().uuid().nullable(), started_at: timestamp, deadline_at: timestamp,
   duration_seconds: z.number().int(), question_count: z.number().int(), bank_size: z.number().int() }
-const dbAttempt = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('in_progress'), ...dbMeta, questions: z.array(dbQuestion),
+const dbClosed = { status: z.enum(['submitted', 'timed_out']), ...dbMeta, saved: z.null(),
+  result: z.object({ score: z.number().int(), total: z.number().int(), timed_out: z.boolean(), finished_at: timestamp })
+    .strict() }
+const dbAttempt = z.union([
+  z.object({ status: z.literal('in_progress'), ...dbMeta, questions: z.array(dbOpenQuestion),
     saved: z.object({ revision: z.number().int(), answers: sampleAnswers }).strict(), result: z.null() }).strict(),
-  z.object({ status: z.enum(['submitted', 'timed_out']), ...dbMeta, questions: z.array(dbGradedQuestion), saved: z.null(),
-    result: z.object({ score: z.number().int(), total: z.number().int(), timed_out: z.boolean(), finished_at: timestamp })
-      .strict() }).strict(),
+  z.object({ ...dbClosed, mode: z.literal('exam'), questions: z.array(dbGradedQuestion) }).strict(),
+  // A closed instant attempt carries feedback on its picked questions only, as when it was open.
+  z.object({ ...dbClosed, mode: z.literal('instant'), questions: z.array(dbOpenQuestion) }).strict(),
 ])
 const dbAnswer = z.discriminatedUnion('state', [
-  z.object({ state: z.enum(['ready', 'graded', 'in-progress']), now: timestamp, attempt: dbAttempt }).strict(),
+  z.object({ state: z.enum(['ready', 'graded', 'in-progress', 'exam-open']), now: timestamp, attempt: dbAttempt }).strict(),
+  z.object({ state: z.enum(['picked', 'answer-locked']), now: timestamp, attempt: dbAttempt,
+    pick: z.object({ question_id: z.string().uuid(), selected: z.number().int(), correct_option: z.number().int(),
+      is_correct: z.boolean(), explanation: z.string().nullable() }).strict() }).strict(),
   z.object({ state: z.enum(['saved', 'stale', 'too-many-tabs']), now: timestamp, deadline_at: timestamp,
     revision: z.number().int(), answers: sampleAnswers }).strict(),
   z.object({ state: z.literal('policy-changed'), question_count: z.number().int(), duration_seconds: z.number().int(),
     bank_size: z.number().int() }).strict(),
   z.object({ state: z.enum(['signed-out', 'conflict', 'locked', 'not-found', 'questions-changed', 'unavailable',
-    'invalid-course', 'invalid-request']) }).strict(),
+    'invalid-course', 'unknown-topic', 'invalid-request']) }).strict(),
 ])
 // The practice functions raise this for a malformed request, such as an answer to a question outside the attempt.
 const INVALID_REQUEST_CODE = '22023'
@@ -78,15 +94,37 @@ function rpcAnswer(data: unknown, error: { code?: string } | null): unknown {
   return error.code === INVALID_REQUEST_CODE ? { state: 'invalid-request' } : null
 }
 
+type DbOpenQuestion = z.infer<typeof dbOpenQuestion>
+
+/** A blank explanation is no explanation: "Why" appears only when there is something to say. */
+function explanationOf(value: string | null): string | null {
+  return value === null || value.trim() === '' ? null : value
+}
+
+function openQuestionFrom(question: DbOpenQuestion) {
+  const base = { questionId: question.question_id, prompt: question.prompt, options: question.options,
+    section: question.section }
+  const { selected, correct_option: correctOption, explanation } = question
+  if (selected === undefined && correctOption === undefined && explanation === undefined) return base
+  // Partial feedback is malformed: left as is, the strict contract refuses it.
+  return { ...base, feedback: { selected, correctOption,
+    explanation: explanation === undefined ? undefined : explanationOf(explanation) } }
+}
+
 function attemptFrom(row: z.infer<typeof dbAttempt>): PracticeAttempt | null {
-  const meta = { id: row.id, courseId: row.course_id, intent: row.intent, redoOf: row.redo_of, startedAt: row.started_at,
+  const meta = { id: row.id, courseId: row.course_id, mode: row.mode, topic: row.topic, intent: row.intent, redoOf: row.redo_of, startedAt: row.started_at,
     deadlineAt: row.deadline_at, durationSeconds: row.duration_seconds, questionCount: row.question_count,
     bankSize: row.bank_size }
-  const mapped = row.status === 'in_progress'
-    ? { status: row.status, ...meta, saved: row.saved, questions: row.questions.map(question => ({
-      questionId: question.question_id, prompt: question.prompt, options: question.options, section: question.section })) }
-    : { status: row.status, ...meta, result: { score: row.result.score, total: row.result.total,
-      timedOut: row.result.timed_out, finishedAt: row.result.finished_at },
+  if (row.status === 'in_progress') {
+    const parsed = practiceAttemptSchema.safeParse({ status: row.status, ...meta, saved: row.saved,
+      questions: row.questions.map(openQuestionFrom) })
+    return parsed.success ? parsed.data : null
+  }
+  const result = { score: row.result.score, total: row.result.total, timedOut: row.result.timed_out,
+    finishedAt: row.result.finished_at }
+  const mapped = row.mode === 'instant'
+    ? { status: row.status, ...meta, result, questions: row.questions.map(openQuestionFrom) }
+    : { status: row.status, ...meta, result,
       questions: row.questions.map(question => ({ questionId: question.question_id, prompt: question.prompt,
         options: question.options, section: question.section, itemId: question.item_id, revision: question.revision,
         selected: question.selected, correctOption: question.correct_option, explanation: question.explanation })) }
@@ -99,9 +137,16 @@ export function practiceResultFrom(data: unknown): PracticeResult {
   const parsed = dbAnswer.safeParse(data)
   if (!parsed.success) return { status: 'unavailable' }
   const row = parsed.data
-  if (row.state === 'ready' || row.state === 'graded' || row.state === 'in-progress') {
+  if (row.state === 'ready' || row.state === 'graded' || row.state === 'in-progress' || row.state === 'exam-open') {
     const attempt = attemptFrom(row.attempt)
     return attempt === null ? { status: 'unavailable' } : { status: row.state, now: row.now, attempt }
+  }
+  if (row.state === 'picked' || row.state === 'answer-locked') {
+    const attempt = attemptFrom(row.attempt)
+    if (attempt === null || attempt.mode !== 'instant') return { status: 'unavailable' }
+    const { pick } = row
+    return { status: row.state, now: row.now, attempt, pick: { questionId: pick.question_id, selected: pick.selected,
+      correctOption: pick.correct_option, isCorrect: pick.is_correct, explanation: explanationOf(pick.explanation) } }
   }
   if (row.state === 'saved' || row.state === 'stale' || row.state === 'too-many-tabs') {
     return { status: row.state, now: row.now, deadlineAt: row.deadline_at, revision: row.revision, answers: row.answers }
@@ -110,19 +155,20 @@ export function practiceResultFrom(data: unknown): PracticeResult {
     return { status: 'policy-changed', questionCount: row.question_count, durationSeconds: row.duration_seconds,
       bankSize: row.bank_size }
   }
-  return { status: row.state === 'invalid-course' ? 'not-found' : row.state }
+  // A course or topic the database does not know started nothing.
+  return { status: row.state === 'invalid-course' || row.state === 'unknown-topic' ? 'not-found' : row.state }
 }
 
 /** The practice page's state for a course: the open attempt to resume, or the most recent graded one, or none. */
 export type PracticeState =
-  | { status: 'open' | 'graded'; now: string; attempt: { id: string; deadlineAt: string; questionCount: number
-      answered: number; score: number | null; bankSize: number } }
+  | { status: 'open' | 'graded'; now: string; attempt: { id: string; mode: 'exam' | 'instant'; deadlineAt: string
+      questionCount: number; answered: number; score: number | null; bankSize: number } }
   | { status: 'none' }
   | { status: 'signed-out' | 'unavailable' }
 
 const dbState = z.discriminatedUnion('state', [
   z.object({ state: z.enum(['open', 'graded']), now: timestamp, attempt: z.object({ id: z.string().uuid(),
-    status: z.string(), intent: z.string(), started_at: timestamp, deadline_at: timestamp, duration_seconds: z.number().int(),
+    mode: z.enum(['exam', 'instant']), status: z.string(), intent: z.string(), started_at: timestamp, deadline_at: timestamp, duration_seconds: z.number().int(),
     question_count: z.number().int().positive(), bank_size: z.number().int().positive(), answered: z.number().int(),
     score: z.number().int().nullable(), finished_at: timestamp.nullable() }).strict() }).strict(),
   z.object({ state: z.literal('none'), now: timestamp }).strict(),
@@ -135,7 +181,8 @@ export function practiceStateFrom(data: unknown): PracticeState {
   const row = parsed.data
   if (row.state === 'none') return { status: 'none' }
   if (row.state === 'signed-out') return { status: 'signed-out' }
-  return { status: row.state, now: row.now, attempt: { id: row.attempt.id, deadlineAt: row.attempt.deadline_at,
+  return { status: row.state, now: row.now, attempt: { id: row.attempt.id, mode: row.attempt.mode,
+    deadlineAt: row.attempt.deadline_at,
     questionCount: row.attempt.question_count, answered: row.attempt.answered, score: row.attempt.score,
     bankSize: row.attempt.bank_size } }
 }
@@ -147,6 +194,14 @@ function createSupabasePracticeEnv(sessionId: string): PracticeEnv {
   })
   return {
     async start(start) {
+      if ('mode' in start) {
+        const { data, error } = await service.rpc('practice_start', { p_session_id: sessionId,
+          p_attempt_id: start.attemptId, p_course_id: start.courseId, p_intent: 'new', p_redo_of: null,
+          p_size: INSTANT_POLICY.size, p_seconds: INSTANT_POLICY.seconds, p_sections: start.sections,
+          p_expected_size: null, p_expected_seconds: null, p_expected_whole_bank: null, p_mode: 'instant',
+          p_topic: start.topic })
+        return rpcAnswer(data, error)
+      }
       const { data, error } = await service.rpc('practice_start', { p_session_id: sessionId, p_attempt_id: start.attemptId,
         p_course_id: start.courseId, p_intent: start.intent, p_redo_of: start.redoOf, p_size: start.policy.size,
         p_seconds: start.policy.seconds, p_sections: start.policy.sections,
@@ -170,6 +225,11 @@ function createSupabasePracticeEnv(sessionId: string): PracticeEnv {
     async submit(attemptId, delta) {
       const { data, error } = await service.rpc('practice_submit', { p_session_id: sessionId, p_attempt_id: attemptId,
         p_tab: delta.tab, p_sequence: delta.sequence, p_base_revision: delta.baseRevision, p_changes: delta.changes })
+      return rpcAnswer(data, error)
+    },
+    async pick(attemptId, questionId, option) {
+      const { data, error } = await service.rpc('practice_pick', { p_session_id: sessionId, p_attempt_id: attemptId,
+        p_question_id: questionId, p_option: option })
       return rpcAnswer(data, error)
     },
   }
@@ -219,6 +279,9 @@ export async function runPracticeRequest(input: unknown, response: NextResponse,
     const command = parsed.data
     const env = envFor(context.sessionId)
     if (command.action === 'attempt') return practiceResultFrom(await env.attempt(command.attemptId))
+    if (command.action === 'pick') {
+      return practiceResultFrom(await env.pick(command.attemptId, command.questionId, command.option))
+    }
     if (command.action === 'sync') {
       // A delta with nothing in it: the database answers with its clock, the deadline and the sheet that stands.
       return practiceResultFrom(await env.save(command.attemptId,
@@ -230,6 +293,10 @@ export async function runPracticeRequest(input: unknown, response: NextResponse,
     }
     const course = await courseFor(client, command.courseSlug)
     if (course.status !== 'ok') return { status: course.status }
+    if (command.action === 'start-instant') {
+      return practiceResultFrom(await env.start({ attemptId: command.attemptId, courseId: course.courseId, mode: 'instant',
+        topic: command.topic, sections: course.policy.sections }))
+    }
     return practiceResultFrom(await env.start({ attemptId: command.attemptId, courseId: course.courseId,
       intent: command.intent, redoOf: command.redoOf, policy: course.policy, expected: command.expected }))
   } catch (error) {
