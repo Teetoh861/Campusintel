@@ -6,7 +6,7 @@ The identity budget is **two calls in a row**. The proxy keeps its existing life
 
 The render client and verified snapshot use React `cache()`. A cached scope marker opts clients into this path only when React is actually providing a request cache. Route handlers and response-bound mutation clients retain fresh checks. No request identity is handed down in a header; the proxy’s replaced path header is only a routing hint for the render’s lifecycle recheck.
 
-Apply `20261029163000_student_request_context.sql` before starting the updated application. Use an isolated Supabase project and real cookie jars for a complete full-plan student (`ada`) and a complete free student (`bola`), both BA / 200 Level / First Semester. The users JSON is a private local file containing `{ "ada": { "cookie": "..." }, "bola": { "cookie": "..." } }`; never commit it. The course ID is the local Financial Accounting I repository UUID. The harness measures all 16 student route cases, including open/locked course states and redirects.
+Apply `20261029163000_student_request_context.sql` before starting the updated application. Use an isolated Supabase project and real cookie jars for a complete full-plan student (`ada`) and a complete free student (`bola`), both BA / 200 Level / First Semester. A third complete full-plan student (`chi`) owns an open instant attempt, so measuring it does not change the original quiz case. The users JSON is a private local file containing `{ "ada": { "cookie": "..." }, "bola": { "cookie": "..." }, "chi": { "cookie": "..." } }`; never commit it. The course ID is the local Financial Accounting I repository UUID. The harness measures the original 16 student route cases plus topic entry and the open instant screen, including open/locked course states and redirects.
 
 Preload the tracer when starting a production build (use the same build tool, environment and port for before/after):
 
@@ -20,6 +20,8 @@ Run a live regression, which requests every page rather than trusting a saved re
 PERF_SESSION_TRACE=/absolute/path/after.jsonl \
 PERF_SESSION_USERS=/absolute/path/users.json \
 PERF_SESSION_COURSE=local-repository-uuid \
+PERF_SESSION_TOPIC=published-topic-name \
+PERF_SESSION_INSTANT_ATTEMPT=chi-owned-open-instant-uuid \
 PERF_SESSION_RESULTS=/absolute/path/after.json \
 node --test scripts/perf-session/identity-budget.test.cjs
 ```
@@ -29,7 +31,9 @@ Without those fixture variables the live-server test is explicitly skipped; its 
 For baseline measurements without enforcing the new budget:
 
 ```sh
-node scripts/perf-session/measure.cjs --trace=/absolute/path/before.jsonl --users=/absolute/path/users.json --course=local-repository-uuid --out=/absolute/path/before.json --runs=3
+node scripts/perf-session/measure.cjs --trace=/absolute/path/before.jsonl --users=/absolute/path/users.json --course=local-repository-uuid --out=/absolute/path/before.json --topic=published-topic-name --instant=chi-owned-open-instant-uuid --runs=3
 ```
+
+Pass `PERF_SESSION_NAVIGATION_HEADERS=/absolute/path/navigation-headers.json` to the live test to measure client navigations as well. Capture `rsc`, `next-router-state-tree` and `next-url` from a real hydrated browser navigation with the root layout reused. Use the same tracer, fixture accounts, routes, build tool and server port for develop and S1.
 
 Each page gets one warm-up and at least three samples. Results contain server time, complete-request call depth/total and identity depth/total, plus raw request-linked calls. Local timings depend on other machine activity; call counts are the acceptance measure. Browsers, Docker and Supabase must not run below 20% on battery.

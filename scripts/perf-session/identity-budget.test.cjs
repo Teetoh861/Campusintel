@@ -25,7 +25,8 @@ test('audit counter distinguishes concurrent calls and catches late repeated ide
 test('every signed-in page stays within the identity budget', { skip: process.env.PERF_SESSION_TRACE ? false
   : 'Requires the local traced production server and signed-in fixtures' }, async () => {
   const measured = await measurePages({ trace: process.env.PERF_SESSION_TRACE, users: process.env.PERF_SESSION_USERS,
-    course: process.env.PERF_SESSION_COURSE, out: process.env.PERF_SESSION_RESULTS })
+    course: process.env.PERF_SESSION_COURSE, topic: process.env.PERF_SESSION_TOPIC,
+    instant: process.env.PERF_SESSION_INSTANT_ATTEMPT, out: process.env.PERF_SESSION_RESULTS })
   const app = path.resolve(__dirname, '../../app')
   const pages = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry =>
     entry.isDirectory() ? pages(path.join(directory, entry.name)) : entry.name === 'page.tsx' ? [path.join(directory, entry.name)] : [])
@@ -37,7 +38,7 @@ test('every signed-in page stays within the identity budget', { skip: process.en
   }
   for (const name of ['dashboard', 'my-courses', 'course-open', 'course-locked', 'quiz', 'access', 'account',
     'courses', 'bookmarks', 'materials', 'profile-selection', 'course-materials', 'theory', 'preview', 'ai-practice',
-    'account-deletion']) {
+    'account-deletion', 'practice-topic', 'practice-instant']) {
     assert.ok(measured[name]?.runs?.length >= 3, `${name}: missing measurements`)
     for (const run of measured[name].runs) {
       assert.ok(run.status < 400, `${name}: unexpected HTTP ${run.status}`)
@@ -55,9 +56,14 @@ test('client navigations also stay within the identity budget when the root layo
   skip: process.env.PERF_SESSION_NAVIGATION_HEADERS ? false : 'Requires real browser navigation headers and the traced server',
 }, async () => {
   const measured = await measurePages({ trace: process.env.PERF_SESSION_TRACE, users: process.env.PERF_SESSION_USERS,
-    course: process.env.PERF_SESSION_COURSE, out: process.env.PERF_SESSION_RESULTS.replace(/\.json$/, '-rsc.json'),
+    course: process.env.PERF_SESSION_COURSE, topic: process.env.PERF_SESSION_TOPIC,
+    instant: process.env.PERF_SESSION_INSTANT_ATTEMPT, out: process.env.PERF_SESSION_RESULTS.replace(/\.json$/, '-rsc.json'),
     mode: 'rsc', navigationHeaders: process.env.PERF_SESSION_NAVIGATION_HEADERS })
   for (const [name, result] of Object.entries(measured)) for (const run of result.runs) {
+    assert.ok(result.runs.length >= 3, `${name}: missing navigation measurements`)
+    assert.ok(run.status < 400, `${name}: unexpected navigation HTTP ${run.status}`)
+    assert.equal(run.calls.filter(call => call.endpoint === '/rest/v1/rpc/read_student_context').length, 1, name)
+    assert.equal(run.calls.find(call => call.endpoint === '/auth/v1/user')?.status, 200, name)
     assertBudget(summarize(run.calls), name + ' navigation')
     assert.equal(run.calls.find(call => call.endpoint === '/rest/v1/rpc/read_student_context')?.status, 200, name)
   }

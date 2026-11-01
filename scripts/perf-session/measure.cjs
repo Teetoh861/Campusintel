@@ -11,7 +11,9 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function main(overrides = {}) {
   Object.assign(options, overrides)
   const base = options.base || 'http://localhost:3134'
-  if (!options.trace || !options.users || !options.out || !options.course) throw new Error('Required: --trace --users --out --course')
+  if (!options.trace || !options.users || !options.out || !options.course || !options.topic || !options.instant) {
+    throw new Error('Required: --trace --users --out --course --topic --instant')
+  }
   if (!Number.isInteger(runs) || runs < 3) throw new Error('At least three runs required')
   const users = JSON.parse(fs.readFileSync(options.users, 'utf8'))
   const slug = 'financial-accounting-1'
@@ -23,9 +25,14 @@ async function main(overrides = {}) {
     ['profile-selection', 'ada', '/profile-selection'], ['course-materials', 'ada', `/courses/${slug}/materials`],
     ['theory', 'ada', `/courses/${slug}/theory`], ['preview', 'bola', `/courses/${slug}/preview/study-guide`],
     ['ai-practice', 'ada', `/courses/ai-practice/${options.course}`], ['account-deletion', 'ada', '/account/deletion'],
+    ['practice-topic', 'ada', `/courses/${slug}/quiz?topic=${encodeURIComponent(options.topic)}`],
+    ['practice-instant', 'chi', `/courses/${slug}/quiz?attempt=${encodeURIComponent(options.instant)}`],
   ]
   const measured = options.only && fs.existsSync(options.out) ? JSON.parse(fs.readFileSync(options.out, 'utf8')) : {}
   async function one(user, path) {
+    const target = new URL(path, base)
+    const matches = url => url.pathname === target.pathname &&
+      [...target.searchParams].every(([key, value]) => url.searchParams.get(key) === value)
     const offset = fs.existsSync(options.trace) ? fs.statSync(options.trace).size : 0
     const headers = { cookie: users[user].cookie, 'accept-encoding': 'gzip' }
     if (options.mode === 'rsc') {
@@ -58,7 +65,7 @@ async function main(overrides = {}) {
     const canonical = response.headers.get('location')
     if (options.mode === 'rsc' && canonical) {
       const url = new URL(canonical, base)
-      if (url.pathname === path && url.searchParams.has('_rsc')) {
+      if (matches(url) && url.searchParams.has('_rsc')) {
         await response.arrayBuffer(); headers.cookie = users[user].cookie
         response = await fetch(url, { redirect: 'manual', headers }); updateCookies(response)
       }
@@ -66,7 +73,7 @@ async function main(overrides = {}) {
     await response.arrayBuffer()
     await wait(400) // Same clone-flush wait as the original audit.
     const records = fs.readFileSync(options.trace, 'utf8').slice(offset).trim().split('\n').filter(Boolean).map(JSON.parse)
-    const request = records.filter(line => line.kind === 'req' && new URL(line.url, base).pathname === path).at(-1)
+    const request = records.filter(line => line.kind === 'req' && matches(new URL(line.url, base))).at(-1)
     if (!request) throw new Error('No linked request trace: ' + path)
     const calls = records.filter(line => line.kind === 'fetch' && line.req === request.id)
     return { status: response.status, location: response.headers.get('location'), totalMs: request.end - request.start,

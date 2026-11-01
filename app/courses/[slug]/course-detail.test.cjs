@@ -128,9 +128,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.match(html, /INST101 · Free/)
   assert.doesNotMatch(html, /STATIC 999|Static repository title|Difficulty|credits|Exam-critical|Sit the mock|Start quiz\b/)
-  assert.match(html, /Confirmed for/)
-  for (const label of ['Business Administration', 'Insurance', '200 Level', 'First Semester', 'Second Semester']) assert.ok(html.includes(label), label)
-  assert.equal((html.match(/<li\b[^>]*>(?:<span>[^<]*<\/span>){3}<\/li>/g) || []).length, 2, 'two applicability tuples as stated')
+  assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance|200 Level|First Semester|Second Semester/)
   assert.match(html, /data-course-view-slug="central-route"/)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1)
   assert.match(html, /data-bookmark="central-key"/)
@@ -149,7 +147,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.deepEqual([...html.matchAll(/student-detail-nav-number">(\d\d)<\/span>([^<]+)</g)].map(match => [match[1], match[2]]),
     [['01', 'Notes'], ['02', 'CBT practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
   assert.match(html, /<\/aside><div class="student-detail-reading">/)
-  assert.ok(html.indexOf('student-detail-rail') < html.indexOf('applicability-title'), 'the rail precedes the reading column')
+  assert.ok(html.indexOf('student-detail-rail') < html.indexOf('id="notes"'), 'the rail precedes the reading column')
 }))
 
 test('practice by topic: one row per topic in order, its count before practice and its progress after, then Exam mode', async () => fixture(async f => {
@@ -252,7 +250,7 @@ test('temporary publication failure keeps confirmed identity and offers retry pl
     learning: null, practice: null }
   const html = await f.html()
   assert.match(html, /Institutional title/)
-  assert.match(html, /Confirmed for/)
+  assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
   assert.match(html, /Study materials are temporarily unavailable\./)
   assert.match(html, /role="alert"/)
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route"') && link.includes('Try again')))
@@ -268,7 +266,7 @@ test('a locked course keeps its identity, renders no study content or reading li
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
-  assert.match(html, /Confirmed for/)
+  assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
   assert.match(html, /Included with full access/)
   assert.match(html, /GST courses stay free/)
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
@@ -332,7 +330,7 @@ test('signed-out, not-found, unavailable and invariant failures never fall back 
   assert.doesNotMatch(html, /private provider details/)
 }))
 
-test('long identity and large applicability stay complete and the page never re-derives truth', async () => fixture(async f => {
+test('long course identity stays complete without exposing the eligibility matrix or re-deriving truth', async () => fixture(async f => {
   const course = institutional(ready({ notes: true }))
   course.code = 'LAG-VERY-LONG-INSTITUTIONAL-COURSE-CODE-2026'
   course.title = 'Very long institutional title '.repeat(12).trim()
@@ -341,7 +339,7 @@ test('long identity and large applicability stay complete and the page never re-
   const html = await f.html()
   assert.match(html, /LAG-VERY-LONG-INSTITUTIONAL-COURSE-CODE-2026/)
   assert.ok(html.includes(course.title))
-  assert.equal((html.match(/Department \d+/g) || []).length, 40)
+  assert.doesNotMatch(html, /Department \d+|Confirmed for|100 Level|First Semester/)
   for (const file of ['page.tsx', 'sections.tsx', 'loading.tsx', 'BookmarkButton.tsx']) {
     const source = fs.readFileSync(path.join(__dirname, file), 'utf8')
     assert.doesNotMatch(source, /<svg|getCourseBySlug|getPublishedManagedCourse|projectStudentLearning|getUsableManagedQuiz|getQuizConfigurationByCourseSlug|DashedRing/, file)
