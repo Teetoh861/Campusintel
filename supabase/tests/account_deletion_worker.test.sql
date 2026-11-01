@@ -1,5 +1,7 @@
 begin;
 select no_plan();
+-- The deletion worker and monitor act on every due job, so set aside jobs other runs left (rolled back with the rest).
+delete from private.account_deletion_jobs;
 insert into auth.users(id, email_confirmed_at) values
   ('b1000000-0000-4000-8000-000000000001', now()),
   ('b1000000-0000-4000-8000-000000000002', now()),
@@ -59,7 +61,8 @@ set local role service_role;
 select is((public.run_account_deletion_jobs()->>'failedThisRun')::integer, 0, 'immediate retry honors backoff');
 reset role;
 drop trigger fail_deletion_fixture on public.profiles;
-update private.account_deletion_jobs set retry_at = clock_timestamp() - interval '1 second';
+update private.account_deletion_jobs set retry_at = clock_timestamp() - interval '1 second'
+  where user_id = 'b1000000-0000-4000-8000-000000000001';
 set local role service_role;
 select is((public.run_account_deletion_jobs()->>'completed')::integer, 1, 'retry recovers after the underlying failure is fixed');
 select is((public.run_account_deletion_jobs()->>'completed')::integer, 0, 'repeated worker execution changes nothing');

@@ -82,8 +82,8 @@ select is((select count(*)::integer from unnest(array['private.practice_explanat
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'instant helpers are callable by no API role');
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'practice_start'), 1, 'one practice start, now with a mode');
-select is((select count(*)::integer from public.quiz_attempts where deadline_at is not null and mode is distinct from 'exam'
-    and created_at < now()), 0, 'every server-run attempt from before this migration is an exam');
+select is((select count(*)::integer from public.quiz_attempts where deadline_at is not null and mode is null), 0,
+  'every server-run attempt from before this migration is an exam');
 select is((select count(*)::integer from public.quiz_attempts where deadline_at is null and mode is not null), 0,
   'legacy browser-run attempts have no mode');
 select is(jsonb_build_array(private.practice_explanation('{"explanation":"Because."}'),

@@ -110,6 +110,10 @@ set local role authenticated;
 select throws_ok($$select pg_temp.report('{"revision":2}')$$, '22023', null, 'never-published revision rejected');
 reset role;
 
+-- Attempts other runs left in this database, so the metrics below count this file's four on top of them.
+create temporary table report_attempt_baseline as select (select count(*) from public.quiz_attempts) total,
+  (select count(*) from public.quiz_attempts where course_id = (select course_id from report_fixture)) course;
+grant select on report_attempt_baseline to authenticated;
 -- Immutable snapshots as legacy attempts an old tab opened before 20261025100000_server_run_practice.sql refused
 -- old-style starts; the established write boundary still records answers against them.
 insert into public.quiz_attempts (id, user_id, course_id, question_count)
@@ -150,13 +154,13 @@ select throws_ok($$select pg_temp.report(jsonb_build_object('itemId', theory_id,
   'attemptId', 'b3000000-0000-4000-8000-000000000001')) from report_fixture$$,
   '22023', null, 'theory cannot claim CBT attempt context');
 reset role;
-select is((select count(*)::int from public.question_reports), 1, 'duplicate creates no second row');
-select is((select note from public.question_reports), 'Original evidence', 'duplicate does not overwrite note');
-select is((select reporter_id from public.question_reports), 'b1000000-0000-4000-8000-000000000001'::uuid,
+select is((select count(*)::int from public.question_reports where reporter_id::text like 'b1000000-%'), 1, 'duplicate creates no second row');
+select is((select note from public.question_reports where reporter_id::text like 'b1000000-%'), 'Original evidence', 'duplicate does not overwrite note');
+select is((select reporter_id from public.question_reports where reporter_id::text like 'b1000000-%'), 'b1000000-0000-4000-8000-000000000001'::uuid,
   'reporter identity is derived from session');
-select is((select attempt_id from public.question_reports), 'b3000000-0000-4000-8000-000000000001'::uuid,
+select is((select attempt_id from public.question_reports where reporter_id::text like 'b1000000-%'), 'b3000000-0000-4000-8000-000000000001'::uuid,
   'valid attempt reference retained');
-create temporary table report_original as select * from public.question_reports;
+create temporary table report_original as select * from public.question_reports where reporter_id::text like 'b1000000-%';
 grant select on report_original to authenticated;
 set local role authenticated;
 select is((pg_temp.report()->>'reportId')::uuid, (select id from report_original), 'duplicate returns existing report identity');
@@ -169,7 +173,7 @@ select is((select note from public.question_reports where kind = 'cbt_question'
   and reporter_id = 'b1000000-0000-4000-8000-000000000002'), 'v',
   'trim preserves ordinary v characters while removing whitespace');
 select ok((select note is null and question_id is null and attempt_id is null
-  from public.question_reports where kind = 'theory_question'), 'Unicode whitespace note normalizes to null');
+  from public.question_reports where kind = 'theory_question' and reporter_id::text like 'b1000000-%'), 'Unicode whitespace note normalizes to null');
 
 -- Replacement/withdrawal does not erase historical eligibility.
 insert into public.managed_content_publications(item_id, lock_version, action, revision, acted_by)
@@ -203,16 +207,19 @@ select throws_ok($$select public.disposition_question_report((select id from rep
 select is(public.disposition_question_report(gen_random_uuid(), 'dismissed')->>'status',
   'not-found', 'unknown report fails safely');
 reset role;
-create temporary table report_theory as select id from public.question_reports where kind = 'theory_question';
+create temporary table report_theory as select id from public.question_reports where kind = 'theory_question'
+  and reporter_id::text like 'b1000000-%';
 grant select on report_theory to authenticated;
 set local role authenticated;
 select is(public.disposition_question_report((select id from report_theory), 'dismissed')->>'status',
   'updated', 'operator dismisses open theory report');
 select is(public.question_report_metrics()->>'cbtReportCount', '3', 'metric counts deduplicated CBT reports including resolved');
 select is(public.question_report_metrics()->>'theoryReportCount', '1', 'metric counts theory separately including dismissed');
-select is(public.question_report_metrics()->>'attemptCount', '4', 'denominator uses all durable starts including unfinished');
-select is((public.question_report_metrics()->>'cbtReportsPer1000Attempts')::numeric, 750::numeric, 'per-1000 metric correct');
-select is(public.question_report_metrics((select course_id from report_fixture))->>'attemptCount', '3',
+select is(public.question_report_metrics()->>'attemptCount', (select (total + 4)::text from report_attempt_baseline), 'denominator uses all durable starts including unfinished');
+select is((public.question_report_metrics()->>'cbtReportsPer1000Attempts')::numeric,
+  (select 1000::numeric * 3 / (total + 4) from report_attempt_baseline), 'per-1000 metric correct');
+select is(public.question_report_metrics((select course_id from report_fixture))->>'attemptCount',
+  (select (course + 3)::text from report_attempt_baseline),
   'course-scoped denominator includes only that course');
 select ok(public.question_report_metrics('ffffffff-ffff-4fff-8fff-ffffffffffff')->'cbtReportsPer1000Attempts' = 'null'::jsonb,
   'zero denominator returns null rather than zero');

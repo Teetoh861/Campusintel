@@ -232,7 +232,8 @@ select ok(
    from public.quiz_attempts where id = '80000000-0000-4000-8000-000000000001'),
   'new attempts use the required initial state and server timestamp defaults'
 );
-select ok((select bool_and(answered_at = now()) from public.quiz_attempt_answers),
+select ok((select bool_and(answered_at = now()) from public.quiz_attempt_answers
+           where attempt_id::text like '80000000-%'),
           'answers receive server timestamps by default');
 select is((select option_index from public.quiz_attempt_answers
            where attempt_id = '80000000-0000-4000-8000-000000000001' and ordinal = 1),
@@ -424,9 +425,9 @@ select is((select count(*)::int from public.quiz_attempts
 select is((select count(*)::int from public.quiz_attempt_answers
            where attempt_id = '80000000-0000-4000-8000-000000000003'),
           0, 'deleting a user also removes the attempts'' answer children');
-select is((select count(*)::int from public.quiz_attempts),
+select is((select count(*)::int from public.quiz_attempts where course_id = '70000000-0000-4000-8000-000000000010'),
           2, 'deletion cascades preserve other users'' attempts');
-select is((select count(*)::int from public.quiz_attempt_answers),
+select is((select count(*)::int from public.quiz_attempt_answers where attempt_id::text like '80000000-%'),
           3, 'deletion cascades preserve other attempts'' answers');
 
 select * from finish();

@@ -8,6 +8,9 @@ select no_plan();
 -- so what other sessions of this database have activated with their own keys cannot change these outcomes.
 delete from private.discovery_pass_claims;
 delete from private.discovery_claim_keys;
+-- The public launch enrolls every eligible listed account: members other runs left are set aside the same way.
+update private.early_access_members set excluded_at = now(), excluded_reason = 'left by another test run'
+  where excluded_at is null;
 
 -- Structure and deny-by-default access ------------------------------------------------------------------------
 select has_table('public', 'entitlement_grants', 'grants table exists');
@@ -407,7 +410,7 @@ select is(public.admin_add_early_access_member('late@example.test', 'Late Joiner
 select throws_ok($$ select public.admin_add_early_access_member('x@example.test', 'X', null, now() - interval '1 day',
   'manual', 'b', 'ops') $$, '22023', null, 'an import needs a batch label');
 reset role;
-select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access'),
+select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access' and user_id::text like '61000000-%'),
   'the planned launch passing three days ago starts nothing');
 select is(private.early_access_status('61000000-0000-4000-8000-000000000004')->>'status', 'awaiting-launch', 'listed members wait for the actual launch');
 set local role authenticated;
@@ -433,7 +436,8 @@ select is((select jsonb_build_object('starts', starts_at = now(), 'ends', ends_a
   '{"starts":true,"ends":true,"ai":"uncapped","by":"operator:founder"}'::jsonb,
   'the calendar month starts at the actual launch, not the planned date: a delayed launch costs no days');
 select is(private.early_access_status('61000000-0000-4000-8000-000000000005')->>'status', 'unavailable', 'D''s duplicate identity cannot get a second month');
-select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access' and user_id <> '61000000-0000-4000-8000-000000000004'),
+select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access' and user_id::text like '61000000-%'
+  and user_id <> '61000000-0000-4000-8000-000000000004'),
   'unlisted accounts get nothing');
 select ok(exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000004' and event = 'early-access.granted'
   and actor = 'operator:founder'), 'the enrollment is audited with the founder as actor');
