@@ -76,6 +76,11 @@ export function readPendingExamStart(courseSlug: string): Extract<PendingStart, 
 }
 export function writePendingStart(courseSlug: string, start: PendingStart): void { write(session(), pendingKey(courseSlug), start) }
 export function clearPendingStart(courseSlug: string): void { remove(session(), pendingKey(courseSlug)) }
+// A start kept from a lost response is settled once its attempt is on screen, open or graded: a later start of the
+// same topic is a new one, never a replay of it.
+export function settlePendingStart(courseSlug: string, attemptId: string): void {
+  if (readPendingStart(courseSlug)?.attemptId === attemptId) clearPendingStart(courseSlug)
+}
 
 // This tab's unsent choices for one attempt, re-validated against the attempt's questions on every read.
 const unsentKey = (attemptId: string) => `practice-unsent:${attemptId}`

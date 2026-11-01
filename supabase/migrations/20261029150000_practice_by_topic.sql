@@ -161,6 +161,7 @@ declare
   v_bank integer;
   v_size integer;
   v_switch uuid;
+  v_closing public.quiz_attempts;
 begin
   if p_attempt_id is null or p_course_id is null or p_intent is null or p_intent not in ('new', 'redo')
       or (p_intent = 'redo') <> (p_redo_of is not null)
@@ -215,6 +216,11 @@ begin
   -- Publishing changes the item row: holding every CBT item of the course keeps the pool stable until the snapshot
   -- of revisions below commits.
   perform 1 from public.managed_content_items where course_id = p_course_id and kind = 'cbt_question' for share;
+  -- The run this start would replace is the last lock: the sweep may hold it, so it is taken before the checks below,
+  -- and read again here because it may have closed while this start waited.
+  if v_switch is not null then
+    select * into v_closing from public.quiz_attempts where id = v_switch for update;
+  end if;
   -- Every lock is held. A fresh start is judged now, on the wall clock: the session must still be live and the course
   -- readable at this moment, not merely when the request began (a grant that ended while it waited starts nothing).
   v_now := clock_timestamp();
@@ -254,16 +260,13 @@ begin
   end if;
 
   -- Switching topics, or to the exam: the open run closes now, keeping its picks and their score, and the new one starts.
-  -- It was read before the waits above: one that reached its deadline meanwhile times out at that deadline, as
-  -- close_overdue_practice would close it, and one the sweep has already closed is left as it is.
-  if v_switch is not null then
-    select * into v_attempt from public.quiz_attempts where id = v_switch for update;
-    if v_attempt.status = 'in_progress' then
-      if v_attempt.deadline_at <= v_now then
-        perform private.practice_finish_instant(v_switch, 'timed_out', v_attempt.deadline_at);
-      else
-        perform private.practice_finish_instant(v_switch, 'submitted', v_now);
-      end if;
+  -- One that reached its deadline while this start waited times out at that deadline, as close_overdue_practice would
+  -- close it; one the sweep has already closed is left as it is.
+  if v_closing.status = 'in_progress' then
+    if v_closing.deadline_at <= v_now then
+      perform private.practice_finish_instant(v_switch, 'timed_out', v_closing.deadline_at);
+    else
+      perform private.practice_finish_instant(v_switch, 'submitted', v_now);
     end if;
   end if;
   insert into public.quiz_attempts (id, user_id, course_id, question_count, deadline_at, duration_seconds, intent,

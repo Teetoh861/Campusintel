@@ -18,7 +18,8 @@ import { ResumeScreen } from './ResumeScreen'
 import { ReviewScreen } from './ReviewScreen'
 import { focusFirst } from './focus-return'
 import { PRACTICE_COPY, attemptHref } from './practice-presentation'
-import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, writePendingStart } from './practice-storage'
+import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, settlePendingStart,
+  writePendingStart } from './practice-storage'
 import type { GradedAttempt, GradedExam, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
 import type { PendingStart } from './practice-storage'
@@ -133,6 +134,11 @@ export function QuizClient(props: Props): ReactElement | null {
   useEffect(() => {
     if (view.screen === 'results' && decided.current) markResultSeen(view.attempt.id)
   }, [view])
+  // An attempt on screen settles the start kept for it, however it arrived (a resumed topic run included).
+  const shownId = 'attempt' in view ? view.attempt.id : null
+  useEffect(() => {
+    if (shownId !== null) settlePendingStart(courseSlug, shownId)
+  }, [courseSlug, shownId])
 
   const begin = useCallback(async (pending: PendingStart) => {
     if (starting.current) return

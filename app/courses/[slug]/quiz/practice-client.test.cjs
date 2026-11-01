@@ -71,6 +71,19 @@ test('Exam mode recovers only an exam start; a topic start kept from a lost resp
   })
 })
 
+test('an attempt on screen settles only the start kept for it', () => {
+  const local = memory(), session = memory()
+  withWindow({ localStorage: local, sessionStorage: session }, () => {
+    const s = storageModule()
+    const topicStart = { attemptId: ATTEMPT, mode: 'instant', topic: 'Listening Skills' }
+    s.writePendingStart('x', topicStart)
+    s.settlePendingStart('x', '33333333-3333-4333-8333-333333333333')
+    assert.deepEqual(s.readPendingStart('x'), topicStart, 'another attempt on screen (the exam) leaves it')
+    s.settlePendingStart('x', ATTEMPT)
+    assert.equal(s.readPendingStart('x'), null, 'its own attempt on screen clears it')
+  })
+})
+
 test('storage that is missing or throws is never fatal', () => {
   const throwing = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') },
     removeItem() { throw new Error('blocked') } }
