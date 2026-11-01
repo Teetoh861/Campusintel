@@ -14,6 +14,7 @@ import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
 import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { isAiPracticeEligible } from '@/lib/ai-practice/student-flow'
 import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supabase-env'
+import { getCourseAccessForVerifiedStudent } from '@/lib/courses/access'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLockedStudentCourse }
   from '@/lib/courses/read-model'
@@ -62,6 +63,11 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
     </StudentPage>
   }
   const { course } = result
+  const access = await getCourseAccessForVerifiedStudent(client, [course.institutionalCourseId])
+  const decision = access.status === 'ok' ? access.decisions.get(course.institutionalCourseId) : undefined
+  if (!decision || (!decision.on_list && !(decision.team_added && decision.allowed))) {
+    return redirect(`${STUDENT_DESTINATIONS.myCourses.href}`)
+  }
   // A course with verified content always sends students to it; AI practice never competes with it.
   // A locked course is built too: its page explains how to unlock it.
   if (isActionableStudentCourse(course) || isLockedStudentCourse(course)) redirect(course.repository.route.href)

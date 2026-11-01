@@ -6,7 +6,7 @@ import { presentStudentCourseRow } from '@/components/student/StudentCourseRow'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
+import { getBookmarkCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -37,7 +37,7 @@ async function Bookmarks(): Promise<ReactElement> {
     else {
       // The small shelf bounds this preload. The existing route reader owns both institutional
       // and repository-only truth; saved courses are independent of the current academic selection.
-      const lookups = await Promise.all(courses.map(course => getStudentCourseBySlugForVerifiedStudent(client, course.slug)))
+      const lookups = await Promise.all(courses.map(course => getBookmarkCourseBySlugForVerifiedStudent(client, course.slug)))
       const resolved: (RoutedStudentCourse | RepositoryOnlyCourse)[] = []
       result = { status: 'ok', courses: resolved }
       if (lookups.some(lookup => lookup.status === 'signed-out')) result = { status: 'signed-out' }

@@ -64,7 +64,7 @@ const dbMeta = { id: z.string().uuid(), course_id: z.string().uuid(), mode: z.en
   topic: z.string().min(1).nullable(), intent: z.enum(['new', 'redo']),
   redo_of: z.string().uuid().nullable(), started_at: timestamp, deadline_at: timestamp,
   duration_seconds: z.number().int(), question_count: z.number().int(), bank_size: z.number().int() }
-const dbClosed = { status: z.enum(['submitted', 'timed_out']), ...dbMeta, saved: z.null(),
+const dbClosed = { review_available: z.boolean().default(true), status: z.enum(['submitted', 'timed_out']), ...dbMeta, saved: z.null(),
   result: z.object({ score: z.number().int(), total: z.number().int(), timed_out: z.boolean(), finished_at: timestamp })
     .strict() }
 const dbAttempt = z.union([
@@ -122,9 +122,10 @@ function attemptFrom(row: z.infer<typeof dbAttempt>): PracticeAttempt | null {
   }
   const result = { score: row.result.score, total: row.result.total, timedOut: row.result.timed_out,
     finishedAt: row.result.finished_at }
+  const closedMeta = { ...meta, reviewAvailable: row.review_available }
   const mapped = row.mode === 'instant'
-    ? { status: row.status, ...meta, result, questions: row.questions.map(openQuestionFrom) }
-    : { status: row.status, ...meta, result,
+    ? { status: row.status, ...closedMeta, result, questions: row.questions.map(openQuestionFrom) }
+    : { status: row.status, ...closedMeta, result,
       questions: row.questions.map(question => ({ questionId: question.question_id, prompt: question.prompt,
         options: question.options, section: question.section, itemId: question.item_id, revision: question.revision,
         selected: question.selected, correctOption: question.correct_option, explanation: question.explanation })) }

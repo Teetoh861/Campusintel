@@ -558,7 +558,7 @@ export async function getCurrentStudentCoursesForVerifiedStudent(
 
 /** Resolve one route slug through the static shelf, the repository row and its institutional owner. */
 export async function getStudentCourseBySlugForVerifiedStudent(
-  client: StudentClient, slug: string,
+  client: StudentClient, slug: string, { readRepositoryOnly = true }: { readRepositoryOnly?: boolean } = {},
 ): Promise<StudentCourseLookupResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   const course = getCourseBySlug(slug)
@@ -584,6 +584,8 @@ export async function getStudentCourseBySlugForVerifiedStudent(
         isShared: repositoryParsed.data.is_shared,
         route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course },
       }
+      if (!readRepositoryOnly) return { status: 'repository-only',
+        course: { repository, content: { state: 'not-available' } }, learning: null, practice: null }
       // The material RPC decides the current operator exception and refuses students. A refusal is
       // not available; an unowned repository cannot be added to an institutional list.
       const resolved = await resolveAllowedPublication(client, repository, async id => {
@@ -613,4 +615,10 @@ export async function getStudentCourseBySlugForVerifiedStudent(
   } catch {
     return { status: 'unavailable' }
   }
+}
+
+/** Bookmark metadata respects the same live scope and never probes repository-only material or counts. */
+export async function getBookmarkCourseBySlugForVerifiedStudent(client: StudentClient, slug: string):
+  Promise<StudentCourseLookupResult> {
+  return getStudentCourseBySlugForVerifiedStudent(client, slug, { readRepositoryOnly: false })
 }

@@ -72,16 +72,18 @@ const meta = {
   startedAt: timestamp, deadlineAt: timestamp, durationSeconds: z.number().int().positive(),
   questionCount: z.number().int().positive(), bankSize: z.number().int().positive(),
 }
-const closed = { status: z.enum(['submitted', 'timed_out']), ...meta,
+const closed = { reviewAvailable: z.boolean().default(true), status: z.enum(['submitted', 'timed_out']), ...meta,
   result: z.object({ score: z.number().int().nonnegative(), total: z.number().int().positive(), timedOut: z.boolean(),
     finishedAt: timestamp }).strict() }
 export const practiceAttemptSchema = z.union([
   z.object({ status: z.literal('in_progress'), ...meta, questions: z.array(openQuestion).min(1).max(MAX_QUESTIONS),
     saved: z.object({ revision, answers: sampleAnswers }).strict() }).strict(),
-  z.object({ ...closed, mode: z.literal('exam'), questions: z.array(gradedQuestion).min(1).max(MAX_QUESTIONS) }).strict(),
+  z.object({ ...closed, mode: z.literal('exam'), questions: z.array(gradedQuestion).max(MAX_QUESTIONS) }).strict(),
   // A closed instant attempt keeps the open shape: feedback on picked questions only, never the keys it was not asked.
-  z.object({ ...closed, mode: z.literal('instant'), questions: z.array(openQuestion).min(1).max(MAX_QUESTIONS) }).strict(),
+  z.object({ ...closed, mode: z.literal('instant'), questions: z.array(openQuestion).max(MAX_QUESTIONS) }).strict(),
 ])
+  .refine(attempt => attempt.status === 'in_progress' || attempt.reviewAvailable
+    ? attempt.questions.length > 0 : attempt.questions.length === 0)
   // An open exam never carries feedback.
   .refine(attempt => attempt.status !== 'in_progress' || attempt.mode === 'instant'
     || attempt.questions.every(entry => entry.feedback === undefined))

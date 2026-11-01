@@ -13,6 +13,7 @@ import { InstantResult } from './InstantResult'
 import { IntroScreen } from './IntroScreen'
 import { InstantStarting } from './InstantStarting'
 import { ReportQuestionDialog } from './ReportQuestionDialog'
+import { ScoreOnly } from './ScoreOnly'
 import { ResultsScreen } from './ResultsScreen'
 import { ResumeScreen } from './ResumeScreen'
 import { ReviewScreen } from './ReviewScreen'
@@ -240,6 +241,19 @@ export function QuizClient(props: Props): ReactElement | null {
     setView({ screen: 'results', attempt, unsent })
   }, [])
 
+  useEffect(() => {
+    if (view.screen !== 'review') return
+    const refresh = () => { void (async () => {
+      const fresh = await postPracticeCommand({ action: 'attempt', attemptId: view.attempt.id }, continuityToken)
+      if (fresh.status === 'graded' && fresh.attempt.status !== 'in_progress') {
+        if (!fresh.attempt.reviewAvailable) setView({ screen: 'results', attempt: fresh.attempt, unsent: false })
+      } else setView({ screen: 'intro' })
+    })() }
+    window.addEventListener('pageshow', refresh)
+    window.addEventListener('focus', refresh)
+    return () => { window.removeEventListener('pageshow', refresh); window.removeEventListener('focus', refresh) }
+  }, [view, continuityToken])
+
   const identity = { courseCode: props.courseCode, courseTitle: props.courseTitle, repositoryOnly: props.repositoryOnly }
   // Instant feedback leaves to the course's topic list.
   const topicsHref = `${props.courseHref}#cbtPractice`
@@ -278,6 +292,7 @@ export function QuizClient(props: Props): ReactElement | null {
   }
   if (view.screen === 'results') {
     const { attempt } = view
+    if (!attempt.reviewAvailable) return <ScoreOnly attempt={attempt} />
     if (attempt.mode === 'instant') {
       const { topic } = attempt
       const next = topic === null ? -1 : props.topics.indexOf(topic) + 1
@@ -290,7 +305,14 @@ export function QuizClient(props: Props): ReactElement | null {
     }
     return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={brief !== null}
       unsentAtDeadline={view.unsent} starting={busy} error={problem} onRetry={retry}
-      onReview={() => setView({ screen: 'review', attempt, unsent: view.unsent })}
+      onReview={() => { void (async () => {
+        const fresh = await postPracticeCommand({ action: 'attempt', attemptId: attempt.id }, continuityToken)
+        if (fresh.status === 'graded' && fresh.attempt.status !== 'in_progress') {
+          setView(fresh.attempt.mode === 'exam' && fresh.attempt.reviewAvailable
+            ? { screen: 'review', attempt: fresh.attempt, unsent: view.unsent }
+            : { screen: 'results', attempt: fresh.attempt, unsent: view.unsent })
+        }
+      })() }}
       onRetake={() => { if (brief !== null) start('new', null, brief) }}
       onRedo={() => {
         if (brief !== null) start('redo', attempt.id, { questionCount: attempt.questionCount, durationSeconds: brief.durationSeconds })
