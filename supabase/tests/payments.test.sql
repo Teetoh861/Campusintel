@@ -122,12 +122,12 @@ select ok(exists(select 1 from pg_indexes where indexname=i),'unique key exists:
 -- ---------------------------------------------------------------------------
 select is((select jsonb_agg(jsonb_build_array(plan_key,tier,period,price_kobo,currency,ai_sets_per_term,active)
   order by plan_key) from private.plan_catalogue),
-  '[["standard_semester","standard","semester",400000,"NGN",10,true],["standard_session","standard","session",700000,"NGN",10,true],
-    ["plus_semester","plus","semester",600000,"NGN",10,true],["plus_session","plus","session",1100000,"NGN",10,true]]'::jsonb,
+  '[["plus_semester","plus","semester",600000,"NGN",10,true],["plus_session","plus","session",1100000,"NGN",10,true],
+    ["standard_semester","standard","semester",400000,"NGN",10,true],["standard_session","standard","session",700000,"NGN",10,true]]'::jsonb,
   'catalogue defaults: four plans, tier and period separate');
 select is((select jsonb_agg(jsonb_build_array(tier,session_hours,session_tokens,week_days,week_tokens,written_token_weight)
   order by tier) from private.campus_bot_tiers),
-  '[["standard",5,350000,7,700000,5],["plus",5,700000,7,1400000,5]]'::jsonb,
+  '[["plus",5,700000,7,1400000,5],["standard",5,350000,7,700000,5]]'::jsonb,
   'Campus Bot budgets: 7-day week, 5-hour session half of it, written tokens weighted 5');
 select is((select jsonb_agg(jsonb_build_array(model,price_weight) order by model) from private.campus_bot_models),
   '[["haiku",1],["sonnet",20]]'::jsonb,'model price weights, Haiku = 1');
@@ -366,7 +366,7 @@ select is((select private.grant_effective_end(g) from public.entitlement_grants 
 -- Row 17: at the Second Semester the student confirms again; then the second half opens the new list.
 create temporary table second_at as select (select e.ends_at from private.academic_term_ends('10000000-0000-4000-8000-000000000002') e
   join private.academic_terms t on t.id=e.term_id join public.academic_periods p on p.id=t.academic_period_id
-  where p.key='first-semester')+interval '20 days' at;
+  where p.key='first-semester')+interval '20 days' as at;
 select is((select reason from private.course_access_decision(pg_temp.u(21),pg_temp.c('BUA202'),(select at from second_at))),
   'needs-selection','row 17: Second Semester asks the Session holder to confirm their courses');
 alter table public.profiles disable trigger profiles_guard_course_selection;
@@ -532,16 +532,18 @@ select is((select jsonb_build_array(amount_kobo,ai_sets,campus_bot_session_token
 select is((select jsonb_build_array(ai_units,campus_bot_session_tokens,campus_bot_week_tokens) from public.entitlement_grants
   where order_id=(select pg_temp.oid(a) from t1)),'[10,350000,700000]','existing grant keeps its allowances');
 select pg_temp.student(40);
+create temporary table o40 as select pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400))) id;
 select is((select jsonb_build_array(amount_kobo,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens) from private.payment_orders
-  where id=pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400)))),'[450000,6,50000,130000]','a new order takes the new values');
+  where id=(select id from o40)),'[450000,6,50000,130000]','a new order takes the new values');
 select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400))),'ch_newprice',400000)->>'outcome','amount-mismatch',
   'and must be paid at its own price');
 select public.admin_set_plan('standard_semester',400000,10,null,'Ops','restore');
 select public.admin_set_campus_bot_tier('standard',null,350000,null,700000,null,'Ops','restore');
 -- A plus plan copies the plus price and budget.
 select pg_temp.student(41);
+create temporary table o41 as select pg_temp.oid(pg_temp.buy(41,'plus_session',pg_temp.req(410))) id;
 select is((select jsonb_build_array(plan_key,tier,period,amount_kobo,campus_bot_session_tokens,campus_bot_week_tokens)
-  from private.payment_orders where id=pg_temp.oid(pg_temp.buy(41,'plus_session',pg_temp.req(410)))),
+  from private.payment_orders where id=(select id from o41)),
   '["plus_session","plus","session",1100000,700000,1400000]','a plus Session order: ₦11,000 and the plus budget');
 select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(41,'plus_session',pg_temp.req(410))),'ch_plus',1100000)->>'outcome','fulfilled',
   'plus Session fulfilled');
