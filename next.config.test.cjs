@@ -38,6 +38,13 @@ test('normal pages retain their referrer policy and other security headers', asy
   }
 })
 
+test('forms may post to our own origin and redirect to Bachs\' hosted checkout only', async () => {
+  const { headers } = await configuredResponse('/access/checkout')
+  const formAction = headers.get('content-security-policy').split(';').map(part => part.trim())
+    .find(part => part.startsWith('form-action'))
+  assert.equal(formAction, "form-action 'self' https://checkout.bachs.io")
+})
+
 test('API config overrides the page policy for every handler, nested path and API root', async () => {
   const handlerPaths = readdirSync('app/api', { recursive: true })
     .filter(file => file.endsWith('/route.ts'))
