@@ -1,0 +1,119 @@
+// lib/payments/verify.ts — The one fulfil path. Webhook, return page, reconcile and operator all ask the provider about
+// the order's checkout now and hand a verified success to fulfil_payment, whose unique keys make every replay, retry or
+// race produce one fulfilment and return the first answer. Nothing is granted from a redirect or a webhook body.
+import 'server-only'
+import { z } from 'zod'
+import { decideCheckout } from './provider'
+import type { PaymentProvider } from './provider'
+import { call, readOrder } from './rpc'
+import type { PaymentRpc } from './rpc'
+
+export type FulfilSource = 'webhook' | 'return' | 'reconcile' | 'operator'
+export type VerifyDeps = { rpc: PaymentRpc; providerFor(id: string): PaymentProvider | null }
+
+// Orders whose payment is already decided: asking the provider again could not change them.
+const SETTLED = new Set(['paid', 'amount-mismatch', 'paid-duplicate', 'unfulfilled', 'refund-pending', 'refunded',
+  'refund-failed'])
+const OPEN = new Set(['created', 'pending'])
+
+const fulfilResult = z.object({ state: z.string(), outcome: z.string().optional(), order_status: z.string().optional() })
+  .passthrough()
+const outcomeResult = z.object({ state: z.string(), order_status: z.string().optional() }).passthrough()
+
+export type VerifyResult =
+  | { state: 'not-found' | 'provider-unavailable' | 'no-checkout' }
+  | { state: 'settled'; orderStatus: string }
+  | { state: 'fulfilment'; outcome: string | null; orderStatus: string | null; result: Record<string, unknown> }
+  | { state: 'ended'; outcome: string; orderStatus: string | null }
+  | { state: 'waiting'; providerStatus: string; orderStatus: string }
+  | { state: 'review'; reason: string; orderStatus: string }
+
+/**
+ * Ask the provider about one order and act on the answer. checkoutHint is a checkout id from a verified delivery,
+ * used only when we never stored one (the attach step was lost); the provider's answer must still name this order as
+ * its reference. Provider and database failures propagate, so the caller can answer "try again".
+ */
+export async function verifyOrder(deps: VerifyDeps, orderId: string, source: FulfilSource, actor: string,
+  options: { checkoutHint?: string | null; checkoutId?: string | null; force?: boolean } = {}): Promise<VerifyResult> {
+  const { order } = await readOrder(deps.rpc, orderId)
+  if (order === null) return { state: 'not-found' }
+  if (SETTLED.has(order.status) && !options.force) return { state: 'settled', orderStatus: order.status }
+  const provider = deps.providerFor(order.provider)
+  if (provider === null) return { state: 'provider-unavailable' }
+  // An operator may name the checkout outright (payment-fulfil --provider-ref); its reference must still be this order.
+  const checkoutId = options.checkoutId ?? order.checkout_id ?? options.checkoutHint ?? null
+  if (checkoutId === null) return { state: 'no-checkout' }
+  const decision = decideCheckout(await provider.getCheckout(checkoutId), order.id)
+  if (decision.action === 'fulfil') {
+    const result = await call(deps.rpc, 'fulfil_payment', { p_order_id: order.id, p_provider: provider.id,
+      p_provider_payment_id: decision.paymentId, p_provider_status: decision.status, p_amount_kobo: decision.amountKobo,
+      p_currency: decision.currency, p_method: decision.method, p_provider_paid_at: decision.paidAt, p_source: source,
+      p_actor: actor }, fulfilResult)
+    return { state: 'fulfilment', outcome: result.outcome ?? null, orderStatus: result.order_status ?? null, result }
+  }
+  if (decision.action === 'outcome' && OPEN.has(order.status)) {
+    const result = await call(deps.rpc, 'record_payment_outcome', { p_order_id: order.id, p_outcome: decision.outcome,
+      p_provider_status: decision.providerStatus, p_source: source }, outcomeResult)
+    return { state: 'ended', outcome: decision.outcome, orderStatus: result.order_status ?? null }
+  }
+  if (decision.action === 'review') {
+    console.error('payments: order needs review', decision.reason)
+    return { state: 'review', reason: decision.reason, orderStatus: order.status }
+  }
+  return { state: 'waiting', providerStatus: decision.action === 'wait' ? decision.providerStatus : decision.outcome,
+    orderStatus: order.status }
+}
+
+const checkRow = z.object({ order_id: z.string().uuid(), action: z.enum(['check', 'expire', 'late-check']) })
+// Ask for more than one batch so open orders are never starved by the late checks that sort before them.
+const CANDIDATES = 500
+export const RECONCILE_BATCH = 50
+export type ReconcileSummary = { checked: number; fulfilled: number; ended: number; expired: number; waiting: number;
+  failed: number; skipped: number }
+
+/**
+ * One bounded catch-up run, oldest first: open orders the provider has not reported on, orders past the
+ * reconciliation window (asked once more, then expired), and, when includeLate, the late check of orders that ended
+ * without payment in the last late_check_days (a transfer can settle late; a late success is still fulfilled).
+ */
+export async function reconcileOrders(deps: VerifyDeps, options: { includeLate: boolean; limit?: number;
+  deadline?: number; now?: () => number }): Promise<ReconcileSummary> {
+  const now = options.now ?? Date.now
+  const limit = Math.min(Math.max(options.limit ?? RECONCILE_BATCH, 1), RECONCILE_BATCH)
+  const rows = await call(deps.rpc, 'payment_orders_to_check', { p_limit: CANDIDATES }, z.array(checkRow))
+  const ordered = [...rows.filter(row => row.action !== 'late-check'),
+    ...(options.includeLate ? rows.filter(row => row.action === 'late-check') : [])].slice(0, limit)
+  const summary: ReconcileSummary = { checked: 0, fulfilled: 0, ended: 0, expired: 0, waiting: 0, failed: 0, skipped: 0 }
+  for (const row of ordered) {
+    if (options.deadline !== undefined && now() >= options.deadline) { summary.skipped += 1; continue }
+    summary.checked += 1
+    try {
+      const result = await verifyOrder(deps, row.order_id, 'reconcile', 'system:reconcile')
+      if (result.state === 'fulfilment') summary.fulfilled += 1
+      else if (result.state === 'ended') summary.ended += 1
+      else if (row.action === 'expire' && result.state !== 'settled' && result.state !== 'provider-unavailable') {
+        const expired = await call(deps.rpc, 'record_payment_outcome', { p_order_id: row.order_id, p_outcome: 'expired',
+          p_provider_status: null, p_source: 'reconcile' }, outcomeResult)
+        if (expired.state === 'recorded') summary.expired += 1
+      } else summary.waiting += 1
+    } catch (error) {
+      summary.failed += 1
+      console.error('payments: reconcile check failed', error instanceof Error ? error.name : 'unknown')
+    }
+  }
+  return summary
+}
+
+const RETURN_VERIFY_INTERVAL_MS = 10_000
+const lastReturnVerify = new Map<string, number>()
+
+/** At most one provider verify per order per 10 seconds from return-page polling (per server instance). */
+export function takeReturnVerifySlot(orderId: string, now: number = Date.now()): boolean {
+  const last = lastReturnVerify.get(orderId)
+  if (last !== undefined && now - last < RETURN_VERIFY_INTERVAL_MS) return false
+  lastReturnVerify.set(orderId, now)
+  if (lastReturnVerify.size > 10_000) {
+    for (const [id, at] of lastReturnVerify) if (now - at >= RETURN_VERIFY_INTERVAL_MS) lastReturnVerify.delete(id)
+  }
+  return true
+}
