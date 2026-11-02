@@ -51,13 +51,13 @@ create function pg_temp.paid_ago(o uuid, ago interval) returns void language sql
   update private.payment_orders set paid_at=paid_at-ago where id=o;
   update private.payment_fulfilments set created_at=created_at-ago where order_id=o;
 $$;
-create function pg_temp.paid(n int, plan text default 'plus_semester', req uuid default gen_random_uuid(),
+create function pg_temp.paid(n int, plan text default 'standard_semester', req uuid default gen_random_uuid(),
   amount bigint default null) returns uuid language plpgsql as $$
 declare o uuid;
 begin
   o := pg_temp.oid(pg_temp.buy(n,plan,req));
   perform pg_temp.attach(o);
-  perform pg_temp.pay(o,'ch_'||replace(o::text,'-',''),coalesce(amount,case plan when 'plus_session' then 700000 else 400000 end));
+  perform pg_temp.pay(o,'ch_'||replace(o::text,'-',''),coalesce(amount,case plan when 'standard_session' then 700000 else 400000 end));
   return o;
 end$$;
 create function pg_temp.refund(o uuid, cls text, req uuid, ids text[], at timestamptz default clock_timestamp())
@@ -122,12 +122,12 @@ select ok(exists(select 1 from pg_indexes where indexname=i),'unique key exists:
 -- ---------------------------------------------------------------------------
 select is((select jsonb_agg(jsonb_build_array(plan_key,tier,period,price_kobo,currency,ai_sets_per_term,active)
   order by plan_key) from private.plan_catalogue),
-  '[["plus_semester","plus","semester",400000,"NGN",10,true],["plus_session","plus","session",700000,"NGN",10,true],
-    ["pro_semester","pro","semester",600000,"NGN",10,true],["pro_session","pro","session",1100000,"NGN",10,true]]'::jsonb,
+  '[["standard_semester","standard","semester",400000,"NGN",10,true],["standard_session","standard","session",700000,"NGN",10,true],
+    ["plus_semester","plus","semester",600000,"NGN",10,true],["plus_session","plus","session",1100000,"NGN",10,true]]'::jsonb,
   'catalogue defaults: four plans, tier and period separate');
 select is((select jsonb_agg(jsonb_build_array(tier,session_hours,session_tokens,week_days,week_tokens,written_token_weight)
   order by tier) from private.campus_bot_tiers),
-  '[["plus",5,350000,7,700000,5],["pro",5,700000,7,1400000,5]]'::jsonb,
+  '[["standard",5,350000,7,700000,5],["plus",5,700000,7,1400000,5]]'::jsonb,
   'Campus Bot budgets: 7-day week, 5-hour session half of it, written tokens weighted 5');
 select is((select jsonb_agg(jsonb_build_array(model,price_weight) order by model) from private.campus_bot_models),
   '[["haiku",1],["sonnet",20]]'::jsonb,'model price weights, Haiku = 1');
@@ -137,7 +137,7 @@ select is((select jsonb_build_array(sales_open,checkout_minutes,sales_close_days
   refund_campus_bot_replies_allowed,refund_exams_allowed,refund_practice_answers_allowed,refund_notes_topics_allowed)
   from private.payment_policy),'[false,60,3,48,1,0,0,10,3]'::jsonb,'policy defaults: sales closed, 60-minute checkout, 48 h');
 select pg_temp.student(1);
-select is(pg_temp.buy(1,'plus_semester',pg_temp.req(1))->>'state','sales-closed','nothing is sold while sales are closed');
+select is(pg_temp.buy(1,'standard_semester',pg_temp.req(1))->>'state','sales-closed','nothing is sold while sales are closed');
 select is(public.admin_set_sales_open(true,'Ops','launch test')->>'state','changed','an operator opens sales');
 select is((select count(*)::int from private.entitlement_events where event='payment.sales-opened'),1,'opening is audited');
 
@@ -146,18 +146,18 @@ select is(private.payment_return_path_ok(p),true,'return path accepted: '||coale
   from unnest(array['/access','/courses/bua-201?tab=notes',null]) p;
 select is(private.payment_return_path_ok(p),false,'return path refused: '||p) from unnest(array['https://evil.test',
   '//evil.test','/\evil.test','javascript:alert(1)','/a//b','relative','','/a b','/x:y',repeat('/a',101)]) p;
-select throws_ok($$select pg_temp.buy(1,'plus_semester',pg_temp.req(2),'//evil.test')$$,'22023',null,
+select throws_ok($$select pg_temp.buy(1,'standard_semester',pg_temp.req(2),'//evil.test')$$,'22023',null,
   'create_payment_order refuses an unsafe return path');
 
 -- ---------------------------------------------------------------------------
 -- §7 row 11: a double tap reuses the order; row 1: a verified success grants the semester.
 -- ---------------------------------------------------------------------------
-create temporary table t1 as select pg_temp.buy(1,'plus_semester',pg_temp.req(1)) a, pg_temp.buy(1,'plus_semester',pg_temp.req(1)) b;
+create temporary table t1 as select pg_temp.buy(1,'standard_semester',pg_temp.req(1)) a, pg_temp.buy(1,'standard_semester',pg_temp.req(1)) b;
 select is((select a->>'state' from t1),'created','first tap creates the order');
 select is((select b->>'state' from t1),'existing','the same request id returns it');
 select is((select pg_temp.oid(a)=pg_temp.oid(b) from t1),true,'one order for a double tap');
-select is(pg_temp.buy(1,'plus_session',pg_temp.req(1))->>'state','request-conflict','a request id cannot change plan');
-select is(pg_temp.oid(pg_temp.buy(1,'plus_semester',pg_temp.req(3))),(select pg_temp.oid(a) from t1),
+select is(pg_temp.buy(1,'standard_session',pg_temp.req(1))->>'state','request-conflict','a request id cannot change plan');
+select is(pg_temp.oid(pg_temp.buy(1,'standard_semester',pg_temp.req(3))),(select pg_temp.oid(a) from t1),
   'another request reuses the open order for the same plan, semester and selection');
 select is((select count(*)::int from private.payment_orders where user_id=pg_temp.u(1)),1,'still one order');
 select is((select jsonb_build_array(amount_kobo,currency,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens,status,return_path,
@@ -176,8 +176,8 @@ select is((select jsonb_build_array(g.source,g.paid_plan,g.plan_part,g.ai_terms,
   g.campus_bot_session_tokens,g.campus_bot_week_tokens,
   g.course_term_id=(select id from private.academic_terms where session_label='2026/2027'),g.starts_at<=clock_timestamp())
   from public.entitlement_grants g where g.user_id=pg_temp.u(1)),
-  '["paid","plus_semester",1,"capped",10,"plus",350000,700000,true,true]'::jsonb,
-  'one Semester grant bound to the bought semester, with 10 AI sets and the plus Campus Bot budget');
+  '["paid","standard_semester",1,"capped",10,"standard",350000,700000,true,true]'::jsonb,
+  'one Semester grant bound to the bought semester, with 10 AI sets and the standard Campus Bot budget');
 select is(pg_temp.allowed(1,'BUA201'),true,'own course opens');
 select is(pg_temp.allowed(1,'BUA202'),false,'outside course stays closed');
 select is(private.course_selection_state(pg_temp.u(1))->>'state','locked','paying locks the courses');
@@ -192,50 +192,50 @@ select is(pg_temp.grants((select pg_temp.oid(a) from t1)),1,'still one grant');
 select is((select count(*)::int from private.payment_fulfilments where order_id=(select pg_temp.oid(a) from t1)),1,
   'one fulfilment');
 select pg_temp.student(2);
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))),'ch_one')->>'state','payment-conflict',
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))),'ch_one')->>'state','payment-conflict',
   'one provider payment never fulfils two orders');
 -- Row 12: no checkout for a paid semester.
-select is(pg_temp.buy(1,'plus_semester',gen_random_uuid())->>'state','already-paid','already paid');
-select is(pg_temp.buy(1,'plus_session',gen_random_uuid())->>'state','already-paid','a Session plan over a paid semester is refused');
+select is(pg_temp.buy(1,'standard_semester',gen_random_uuid())->>'state','already-paid','already paid');
+select is(pg_temp.buy(1,'standard_session',gen_random_uuid())->>'state','already-paid','a Session plan over a paid semester is refused');
 
 -- Must-hold 2: only a verified success of the order's amount and currency grants.
-select throws_ok($$select pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))),'ch_x',400000,'webhook','failed')$$,
+select throws_ok($$select pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))),'ch_x',400000,'webhook','failed')$$,
   '22023',null,'a failed status is not fulfilled');
-select throws_ok($$select pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))),'ch_x',400000,'webhook','open')$$,
+select throws_ok($$select pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))),'ch_x',400000,'webhook','open')$$,
   '22023',null,'an open status is not fulfilled');
-select throws_ok($$select pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))),'ch_x',400000,'webhook',
+select throws_ok($$select pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))),'ch_x',400000,'webhook',
   'succeeded','NGN','mobile_money')$$,'22023',null,'card or bank transfer only');
 -- Row 9: less than the order, or another currency: amount-mismatch, no grant.
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))),'ch_short',4000)->>'outcome','amount-mismatch',
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))),'ch_short',4000)->>'outcome','amount-mismatch',
   'row 9: ₦40 for a ₦4,000 order');
-select is(pg_temp.grants(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20)))),0,'no grant on a mismatch');
-select is((pg_temp.order_row(pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))))).status,'amount-mismatch','order flagged');
+select is(pg_temp.grants(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20)))),0,'no grant on a mismatch');
+select is((pg_temp.order_row(pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))))).status,'amount-mismatch','order flagged');
 select pg_temp.student(3);
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(3,'plus_semester',pg_temp.req(30))),'ch_usd',400000,'webhook','succeeded','USD')
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(3,'standard_semester',pg_temp.req(30))),'ch_usd',400000,'webhook','succeeded','USD')
   ->>'outcome','amount-mismatch','another currency is a mismatch');
 select pg_temp.student(4);
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(4,'plus_semester',pg_temp.req(40))),'ch_over',500000,'webhook','overpaid')
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(4,'standard_semester',pg_temp.req(40))),'ch_over',500000,'webhook','overpaid')
   ->>'outcome','fulfilled','overpaid: granted');
-select ok('overpaid'=any((pg_temp.order_row(pg_temp.oid(pg_temp.buy(4,'plus_semester',pg_temp.req(40))))).flags),
+select ok('overpaid'=any((pg_temp.order_row(pg_temp.oid(pg_temp.buy(4,'standard_semester',pg_temp.req(40))))).flags),
   'and flagged for support');
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(4,'plus_semester',pg_temp.req(40))),'ch_over2',400000,'webhook','accepted')
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(4,'standard_semester',pg_temp.req(40))),'ch_over2',400000,'webhook','accepted')
   ->>'outcome','extra-payment','a second payment on a paid order is recorded, not granted');
-select is(pg_temp.grants(pg_temp.oid(pg_temp.buy(4,'plus_semester',pg_temp.req(40)))),1,'still one grant set');
-select is((pg_temp.order_row(pg_temp.oid(pg_temp.buy(4,'plus_semester',pg_temp.req(40))))).status,'paid','order stays paid');
+select is(pg_temp.grants(pg_temp.oid(pg_temp.buy(4,'standard_semester',pg_temp.req(40)))),1,'still one grant set');
+select is((pg_temp.order_row(pg_temp.oid(pg_temp.buy(4,'standard_semester',pg_temp.req(40))))).status,'paid','order stays paid');
 
 -- ---------------------------------------------------------------------------
 -- Rows 3-6: decline, abandon, a late transfer, and success after expiry.
 -- ---------------------------------------------------------------------------
 select pg_temp.student(5);
-create temporary table o5 as select pg_temp.oid(pg_temp.buy(5,'plus_semester',pg_temp.req(50))) id;
+create temporary table o5 as select pg_temp.oid(pg_temp.buy(5,'standard_semester',pg_temp.req(50))) id;
 select pg_temp.attach(id) from o5;
 select is(public.record_payment_outcome((select id from o5),'failed','declined','webhook')->>'order_status','failed','row 3: decline');
 select is(pg_temp.grants((select id from o5)),0,'no grant');
-select isnt(pg_temp.oid(pg_temp.buy(5,'plus_semester',pg_temp.req(51))),(select id from o5),'a retry makes a new order');
+select isnt(pg_temp.oid(pg_temp.buy(5,'standard_semester',pg_temp.req(51))),(select id from o5),'a retry makes a new order');
 select is(public.record_payment_outcome((select pg_temp.oid(a) from t1),'failed',null,'webhook')->>'state','already-final',
   'a late failure never overrides a payment');
 select pg_temp.student(6);
-create temporary table o6 as select pg_temp.oid(pg_temp.buy(6,'plus_semester',pg_temp.req(60))) id;
+create temporary table o6 as select pg_temp.oid(pg_temp.buy(6,'standard_semester',pg_temp.req(60))) id;
 select pg_temp.attach(id) from o6;
 select is(public.record_payment_outcome((select id from o6),'cancelled','abandoned','return')->>'order_status','cancelled',
   'row 4: abandoned');
@@ -243,7 +243,7 @@ select is(private.course_selection_state(pg_temp.u(6))->>'state','open','selecti
 select is(public.record_payment_outcome((select id from o6),'expired',null,'reconcile')->>'state','already-final',
   'an ended order is not ended again');
 select pg_temp.student(7);
-create temporary table o7 as select pg_temp.oid(pg_temp.buy(7,'plus_semester',pg_temp.req(70))) id;
+create temporary table o7 as select pg_temp.oid(pg_temp.buy(7,'standard_semester',pg_temp.req(70))) id;
 select pg_temp.attach(id) from o7;
 select is(public.record_payment_outcome((select id from o7),'expired',null,'reconcile')->>'state','not-expired',
   'an order is not expired before its checkout');
@@ -253,7 +253,7 @@ select is((select action from public.payment_orders_to_check(500) where order_id
 select is(pg_temp.pay((select id from o7),'ch_late_transfer',400000,'reconcile','succeeded','NGN','bank_transfer')->>'outcome',
   'fulfilled','the catch-up check fulfils it');
 select pg_temp.student(8);
-create temporary table o8 as select pg_temp.oid(pg_temp.buy(8,'plus_semester',pg_temp.req(80))) id;
+create temporary table o8 as select pg_temp.oid(pg_temp.buy(8,'standard_semester',pg_temp.req(80))) id;
 select pg_temp.attach(id) from o8;
 update private.payment_orders set created_at=created_at-interval '3 days',expires_at=expires_at-interval '3 days',
   checkout_expires_at=checkout_expires_at-interval '3 days' where id=(select id from o8);
@@ -267,8 +267,8 @@ select is(pg_temp.allowed(8,'BUA201'),true,'and opens the courses');
 
 -- Row 10: two orders for one semester, both paid. The second grants nothing and may be refunded as a duplicate.
 select pg_temp.student(9);
-create temporary table o9 as select pg_temp.oid(pg_temp.buy(9,'plus_semester',pg_temp.req(90))) a,
-  pg_temp.oid(pg_temp.buy(9,'plus_semester',pg_temp.req(91),'/courses')) b;
+create temporary table o9 as select pg_temp.oid(pg_temp.buy(9,'standard_semester',pg_temp.req(90))) a,
+  pg_temp.oid(pg_temp.buy(9,'standard_semester',pg_temp.req(91),'/courses')) b;
 select isnt((select a from o9),(select b from o9),'a second tab with another return path made a second order');
 select is(pg_temp.pay((select a from o9),'ch_tab1')->>'outcome','fulfilled','first payment fulfils');
 select is(pg_temp.pay((select b from o9),'ch_tab2')->>'outcome','paid-duplicate','second is a duplicate');
@@ -281,11 +281,11 @@ select is(pg_temp.refund((select b from o9),'standard',gen_random_uuid(),pg_temp
 -- Row 13 and must-hold 7: selection.
 select pg_temp.student(10);
 update public.profiles set department_id=null,academic_level_id=null,academic_period_id=null where id=pg_temp.u(10);
-select is(pg_temp.buy(10,'plus_semester',gen_random_uuid())->>'state','needs-selection','courses must be confirmed first');
+select is(pg_temp.buy(10,'standard_semester',gen_random_uuid())->>'state','needs-selection','courses must be confirmed first');
 select pg_temp.student(11);
-select is(public.create_payment_order(pg_temp.s(11),'plus_semester',pg_temp.rev(11)-1,gen_random_uuid(),null,'fake')->>'state',
+select is(public.create_payment_order(pg_temp.s(11),'standard_semester',pg_temp.rev(11)-1,gen_random_uuid(),null,'fake')->>'state',
   'selection-changed','the confirm screen''s revision must match');
-create temporary table o11 as select pg_temp.oid(pg_temp.buy(11,'plus_semester',pg_temp.req(110))) id;
+create temporary table o11 as select pg_temp.oid(pg_temp.buy(11,'standard_semester',pg_temp.req(110))) id;
 update public.profiles set academic_level_id='20000000-0000-4000-8000-000000000001' where id=pg_temp.u(11);
 select is(pg_temp.pay((select id from o11),'ch_changed')->>'outcome','fulfilled','a changed selection never refuses a payment');
 select ok('selection-changed'=any((pg_temp.order_row((select id from o11))).flags),'it is flagged for support');
@@ -293,21 +293,21 @@ select ok('selection-changed'=any((pg_temp.order_row((select id from o11))).flag
 -- Row 29: the current semester is not sold within sales_close_days of its end.
 update private.payment_policy set sales_close_days=30;
 select pg_temp.student(12);
-select is(pg_temp.buy(12,'plus_semester',gen_random_uuid())->>'state','sales-closed','not sold near the semester end');
+select is(pg_temp.buy(12,'standard_semester',gen_random_uuid())->>'state','sales-closed','not sold near the semester end');
 update private.payment_policy set sales_close_days=3;
 
 -- Row 32: deletion scheduled. No checkout; an open order still fulfils, flagged.
 select pg_temp.student(13);
-create temporary table o13 as select pg_temp.oid(pg_temp.buy(13,'plus_semester',pg_temp.req(130))) id;
+create temporary table o13 as select pg_temp.oid(pg_temp.buy(13,'standard_semester',pg_temp.req(130))) id;
 insert into private.account_deletion_jobs(user_id,requested_at,deadline,retry_at)
   values(pg_temp.u(13),now(),now()+interval '720 hours',now()+interval '720 hours');
-select is(pg_temp.buy(13,'plus_semester',gen_random_uuid())->>'state','signed-out','no checkout once deletion is scheduled');
+select is(pg_temp.buy(13,'standard_semester',gen_random_uuid())->>'state','signed-out','no checkout once deletion is scheduled');
 select is(pg_temp.pay((select id from o13),'ch_deleting')->>'outcome','fulfilled','money taken is still granted');
 select ok('account-deletion'=any((pg_temp.order_row((select id from o13))).flags),'and flagged for refund');
 
 -- Row 30: an operator-sourced verification, then the real webhook: one grant set.
 select pg_temp.student(14);
-create temporary table o14 as select pg_temp.oid(pg_temp.buy(14,'plus_semester',pg_temp.req(140))) id;
+create temporary table o14 as select pg_temp.oid(pg_temp.buy(14,'standard_semester',pg_temp.req(140))) id;
 select is(pg_temp.pay((select id from o14),'ch_op',400000,'operator')->>'outcome','fulfilled','operator verification fulfils');
 select is(pg_temp.pay((select id from o14),'ch_op',400000,'webhook')->>'outcome','fulfilled','webhook replays it');
 select is(pg_temp.grants((select id from o14)),1,'one grant set');
@@ -317,7 +317,7 @@ select is(pg_temp.grants((select id from o14)),1,'one grant set');
 -- ---------------------------------------------------------------------------
 -- Row 15: no Second Semester yet. The second half is pending by term key and binds only to that semester.
 select pg_temp.student(20);
-create temporary table o20 as select pg_temp.oid(pg_temp.buy(20,'plus_session',pg_temp.req(200))) id;
+create temporary table o20 as select pg_temp.oid(pg_temp.buy(20,'standard_session',pg_temp.req(200))) id;
 select is(pg_temp.pay((select id from o20),'ch_session1',700000)->>'outcome','fulfilled','Session plan fulfilled');
 select is(pg_temp.grants((select id from o20)),2,'two grants');
 select is((select jsonb_build_array(g.course_term_id is null,g.term_session_label,
@@ -341,7 +341,7 @@ select is((select course_term_id from public.entitlement_grants where order_id=(
 
 -- Row 14: Second Semester already entered: bound at insert, inactive until it starts, no lock of its own.
 select pg_temp.student(21);
-create temporary table o21 as select pg_temp.oid(pg_temp.buy(21,'plus_session',pg_temp.req(210))) id;
+create temporary table o21 as select pg_temp.oid(pg_temp.buy(21,'standard_session',pg_temp.req(210))) id;
 select pg_temp.pay(id,'ch_session2',700000) from o21;
 select is((select course_term_id from public.entitlement_grants where order_id=(select id from o21) and plan_part=2),
   (select t.id from private.academic_terms t join public.academic_periods p on p.id=t.academic_period_id
@@ -508,7 +508,7 @@ select is((pg_temp.elig((select id from o33b),pg_temp.ids(33))->>'refunds_used')
   'an our-fault refund does not count');
 -- Session plans are refunded whole.
 select pg_temp.student(39);
-create temporary table o39 as select pg_temp.paid(39,'plus_session') id;
+create temporary table o39 as select pg_temp.paid(39,'standard_session') id;
 select pg_temp.paid_ago(id,interval '1 hour') from o39;
 select is(jsonb_array_length(pg_temp.refund((select id from o39),'standard',gen_random_uuid(),pg_temp.ids(39))->'revoked_grant_ids'),2,
   'both halves of a Session plan are revoked');
@@ -518,8 +518,8 @@ select is((select count(*)::int from private.entitlement_events e join public.en
 -- ---------------------------------------------------------------------------
 -- Must-hold 4: settings changes never touch existing rows.
 -- ---------------------------------------------------------------------------
-select is(public.admin_set_plan('plus_semester',450000,6,null,'Ops','price test')->>'state','changed','price changed');
-select is(public.admin_set_campus_bot_tier('plus',null,50000,null,130000,null,'Ops','budget test')->>'state','changed',
+select is(public.admin_set_plan('standard_semester',450000,6,null,'Ops','price test')->>'state','changed','price changed');
+select is(public.admin_set_campus_bot_tier('standard',null,50000,null,130000,null,'Ops','budget test')->>'state','changed',
   'Campus Bot budget changed');
 select is(jsonb_build_array(public.admin_set_campus_bot_model('sonnet',15,'Ops','weight test')->'model'->'price_weight',
     public.admin_set_campus_bot_request_cap('check',2500,1200,'Ops','cap test')->'cap'->'read_tokens_max',
@@ -533,22 +533,22 @@ select is((select jsonb_build_array(ai_units,campus_bot_session_tokens,campus_bo
   where order_id=(select pg_temp.oid(a) from t1)),'[10,350000,700000]','existing grant keeps its allowances');
 select pg_temp.student(40);
 select is((select jsonb_build_array(amount_kobo,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens) from private.payment_orders
-  where id=pg_temp.oid(pg_temp.buy(40,'plus_semester',pg_temp.req(400)))),'[450000,6,50000,130000]','a new order takes the new values');
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(40,'plus_semester',pg_temp.req(400))),'ch_newprice',400000)->>'outcome','amount-mismatch',
+  where id=pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400)))),'[450000,6,50000,130000]','a new order takes the new values');
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400))),'ch_newprice',400000)->>'outcome','amount-mismatch',
   'and must be paid at its own price');
-select public.admin_set_plan('plus_semester',400000,10,null,'Ops','restore');
-select public.admin_set_campus_bot_tier('plus',null,350000,null,700000,null,'Ops','restore');
--- A pro plan copies the pro price and budget.
+select public.admin_set_plan('standard_semester',400000,10,null,'Ops','restore');
+select public.admin_set_campus_bot_tier('standard',null,350000,null,700000,null,'Ops','restore');
+-- A plus plan copies the plus price and budget.
 select pg_temp.student(41);
 select is((select jsonb_build_array(plan_key,tier,period,amount_kobo,campus_bot_session_tokens,campus_bot_week_tokens)
-  from private.payment_orders where id=pg_temp.oid(pg_temp.buy(41,'pro_session',pg_temp.req(410)))),
-  '["pro_session","pro","session",1100000,700000,1400000]','a pro Session order: ₦11,000 and the pro budget');
-select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(41,'pro_session',pg_temp.req(410))),'ch_pro',1100000)->>'outcome','fulfilled',
-  'pro Session fulfilled');
+  from private.payment_orders where id=pg_temp.oid(pg_temp.buy(41,'plus_session',pg_temp.req(410)))),
+  '["plus_session","plus","session",1100000,700000,1400000]','a plus Session order: ₦11,000 and the plus budget');
+select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(41,'plus_session',pg_temp.req(410))),'ch_plus',1100000)->>'outcome','fulfilled',
+  'plus Session fulfilled');
 select is((select jsonb_agg(jsonb_build_array(paid_plan,plan_part,campus_bot_tier,campus_bot_week_tokens) order by plan_part)
-  from public.entitlement_grants where order_id=pg_temp.oid(pg_temp.buy(41,'pro_session',pg_temp.req(410)))),
-  '[["pro_session",1,"pro",1400000],["pro_session",2,"pro",1400000]]','both halves carry the pro budget');
-select is(pg_temp.buy(41,'plus_semester',gen_random_uuid())->>'state','already-paid','one paid plan per semester, whatever the tier');
+  from public.entitlement_grants where order_id=pg_temp.oid(pg_temp.buy(41,'plus_session',pg_temp.req(410)))),
+  '[["plus_session",1,"plus",1400000],["plus_session",2,"plus",1400000]]','both halves carry the plus budget');
+select is(pg_temp.buy(41,'standard_semester',gen_random_uuid())->>'state','already-paid','one paid plan per semester, whatever the tier');
 
 -- ---------------------------------------------------------------------------
 -- Must-hold 8: events hold amounts, references and states only, and are append-only.
@@ -575,7 +575,7 @@ select is((select count(*)::int from private.payment_events where not private.pa
 -- ---------------------------------------------------------------------------
 -- Must-hold 3: a student reads only their own order, through the live session.
 -- ---------------------------------------------------------------------------
-create temporary table o2 as select pg_temp.oid(pg_temp.buy(2,'plus_semester',pg_temp.req(20))) id;
+create temporary table o2 as select pg_temp.oid(pg_temp.buy(2,'standard_semester',pg_temp.req(20))) id;
 select set_config('pay.own',(select pg_temp.oid(a) from t1)::text,true), set_config('pay.other',(select id from o5)::text,true),
   set_config('pay.mismatch',(select id from o2)::text,true);
 select pg_temp.claims(1);
@@ -586,7 +586,7 @@ select is(public.get_my_payment_order(current_setting('pay.other')::uuid)->>'sta
 select is(public.get_my_payment_order(current_setting('pay.mismatch')::uuid)->>'state','not-found','not visible across students');
 select is(public.get_my_payment_order(gen_random_uuid())->>'state','not-found','an unknown order');
 select throws_ok($$select count(*) from private.payment_orders$$,'42501',null,'no direct table read');
-select throws_ok($$select public.create_payment_order(gen_random_uuid(),'plus_semester',1,gen_random_uuid(),null,'fake')$$,'42501',null,
+select throws_ok($$select public.create_payment_order(gen_random_uuid(),'standard_semester',1,gen_random_uuid(),null,'fake')$$,'42501',null,
   'a student cannot create orders directly');
 reset role;
 select pg_temp.claims(2);
@@ -612,7 +612,7 @@ insert into public.entitlement_grants(user_id,source,starts_at,ends_at,ai_terms,
 select is((select course_term_id is not null and term_session_label is null from public.entitlement_grants where user_id=pg_temp.u(50)),
   true,'a paid row without an order keeps A1''s anchor binding');
 select throws_ok($$insert into public.entitlement_grants(user_id,source,starts_at,ends_at,ai_terms,created_by,paid_plan)
-  values(pg_temp.u(50),'manual',now(),now()+interval '1 day','none','x','plus_semester')$$,'23514',null,
+  values(pg_temp.u(50),'manual',now(),now()+interval '1 day','none','x','standard_semester')$$,'23514',null,
   'plan columns belong to paid orders only');
 select is((select count(*)::int from public.ai_usage_events where funding_source not in ('trial','early_access','test','paid')),0,
   'funding sources accept paid');

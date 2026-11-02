@@ -1,5 +1,5 @@
 -- supabase/migrations/20261102100000_payments.sql — Payments, part 1: the database (docs/payments-design.md 9c484d2,
--- with the owner's part 1 changes). Plus and pro plans, each by Semester or Session, are paid grants on the A1 course
+-- with the owner's part 1 changes). Standard and Plus plans, each by Semester or Session, are paid grants on the A1 course
 -- path; nothing else opens a course. Campus Bot budgets are tokens per tier. Provider ids: 'bachs' and 'fake'. Money is kobo integers; the adapter converts Bachs' decimal strings.
 -- The database never calls a provider: every grant follows a provider-verified success reported by the service role.
 -- Lock order: A1's write prefix (lock_course_access_scope), then the order row, then payment/refund rows and keys.
@@ -18,7 +18,7 @@
 -- limit below zero; nothing is cut off mid-set). Enforcement and team resets (everyone, one student) come in part 2.
 -- PROVISIONAL: the numbers await owner approval.
 create table private.campus_bot_tiers (
-  tier text primary key check (tier in ('plus', 'pro')),
+  tier text primary key check (tier in ('standard', 'plus')),
   session_hours integer not null check (session_hours between 1 and 48),
   session_tokens integer not null check (session_tokens between 0 and 100000000),
   week_days integer not null check (week_days between 1 and 31),
@@ -28,8 +28,8 @@ create table private.campus_bot_tiers (
   updated_by text not null check (char_length(updated_by) between 1 and 120)
 );
 insert into private.campus_bot_tiers values
-  ('plus', 5, 350000, 7, 700000, 5, now(), 'migration:20261102100000'),
-  ('pro', 5, 700000, 7, 1400000, 5, now(), 'migration:20261102100000');
+  ('standard', 5, 350000, 7, 700000, 5, now(), 'migration:20261102100000'),
+  ('plus', 5, 700000, 7, 1400000, 5, now(), 'migration:20261102100000');
 
 -- Model weights by price, Haiku = 1. PROVISIONAL.
 create table private.campus_bot_models (
@@ -57,7 +57,7 @@ insert into private.campus_bot_request_caps values
 
 -- Tier and billing period are separate: four plans. PROVISIONAL prices await owner approval.
 create table private.plan_catalogue (
-  plan_key text primary key check (plan_key in ('plus_semester', 'plus_session', 'pro_semester', 'pro_session')),
+  plan_key text primary key check (plan_key in ('standard_semester', 'standard_session', 'plus_semester', 'plus_session')),
   tier text not null references private.campus_bot_tiers (tier) on delete restrict,
   period text not null check (period in ('semester', 'session')),
   price_kobo integer not null check (price_kobo between 100 and 100000000),
@@ -70,10 +70,10 @@ create table private.plan_catalogue (
   constraint plan_catalogue_key_check check (plan_key = tier || '_' || period)
 );
 insert into private.plan_catalogue (plan_key, tier, period, price_kobo, ai_sets_per_term, updated_by) values
-  ('plus_semester', 'plus', 'semester', 400000, 10, 'migration:20261102100000'),
-  ('plus_session', 'plus', 'session', 700000, 10, 'migration:20261102100000'),
-  ('pro_semester', 'pro', 'semester', 600000, 10, 'migration:20261102100000'),
-  ('pro_session', 'pro', 'session', 1100000, 10, 'migration:20261102100000');
+  ('standard_semester', 'standard', 'semester', 400000, 10, 'migration:20261102100000'),
+  ('standard_session', 'standard', 'session', 700000, 10, 'migration:20261102100000'),
+  ('plus_semester', 'plus', 'semester', 600000, 10, 'migration:20261102100000'),
+  ('plus_session', 'plus', 'session', 1100000, 10, 'migration:20261102100000');
 
 create table private.payment_policy (
   singleton boolean primary key default true check (singleton),
@@ -117,7 +117,7 @@ create table private.payment_orders (
   user_id uuid references auth.users (id) on delete set null,
   request_id uuid not null unique,
   plan_key text not null references private.plan_catalogue (plan_key) on delete restrict,
-  tier text not null check (tier in ('plus', 'pro')),
+  tier text not null check (tier in ('standard', 'plus')),
   period text not null check (period in ('semester', 'session')),
   amount_kobo integer not null check (amount_kobo > 0),
   currency text not null check (currency = 'NGN'),
@@ -325,10 +325,10 @@ alter table public.entitlement_grants
       and term_period_id is null and campus_bot_tier is null and campus_bot_session_tokens is null
       and campus_bot_week_tokens is null)
     or (source = 'paid' and order_id is not null and term_session_label is not null and term_period_id is not null
-      and ai_terms = 'capped' and campus_bot_tier in ('plus', 'pro') and paid_plan like campus_bot_tier || '\_%'
+      and ai_terms = 'capped' and campus_bot_tier in ('standard', 'plus') and paid_plan like campus_bot_tier || '\_%'
       and campus_bot_session_tokens between 0 and 100000000 and campus_bot_week_tokens between 0 and 100000000
-      and ((paid_plan in ('plus_semester', 'pro_semester') and plan_part = 1)
-        or (paid_plan in ('plus_session', 'pro_session') and plan_part in (1, 2)))));
+      and ((paid_plan in ('standard_semester', 'plus_semester') and plan_part = 1)
+        or (paid_plan in ('standard_session', 'plus_session') and plan_part in (1, 2)))));
 create unique index entitlement_grants_order_part_idx on public.entitlement_grants (order_id, plan_part)
   where order_id is not null;
 comment on column public.entitlement_grants.term_session_label is
@@ -441,7 +441,7 @@ declare
   v_second uuid;
   o private.payment_orders;
 begin
-  if p_plan is null or p_plan not in ('plus_semester', 'plus_session', 'pro_semester', 'pro_session')
+  if p_plan is null or p_plan not in ('standard_semester', 'standard_session', 'plus_semester', 'plus_session')
       or p_expected_profile_revision is null
       or p_request_id is null or p_provider is null or p_provider not in ('bachs', 'fake') then
     raise exception 'Invalid payment order' using errcode = '22023';
