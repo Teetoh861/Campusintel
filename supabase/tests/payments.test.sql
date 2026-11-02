@@ -619,5 +619,37 @@ select throws_ok($$insert into public.entitlement_grants(user_id,source,starts_a
 select is((select count(*)::int from public.ai_usage_events where funding_source not in ('trial','early_access','test','paid')),0,
   'funding sources accept paid');
 
+
+-- ---------------------------------------------------------------------------
+-- The sales switch through its operator function, and account deletion with payment records. (safeupdate, which the
+-- API applies, cannot be loaded by this runner's role; the server database test covers the switch through the API.)
+-- ---------------------------------------------------------------------------
+select is(public.admin_set_sales_open(false,'Ops','switch test')->>'sales_open','false','sales close');
+select is(public.admin_set_sales_open(true,'Ops','switch test')->>'sales_open','true','and open again');
+select pg_temp.student(60);
+create temporary table o60 as select pg_temp.paid(60) id;
+select private.mark_plan_use(pg_temp.u(60),'campus-bot-reply',null,'reply-1');
+select is(pg_temp.refund((select id from o60),'our-fault',pg_temp.req(600),pg_temp.ids(60))->>'state','refund-pending',
+  'the student has an order, a payment, grants, plan use and a refund');
+select lives_ok($$delete from auth.users where id=pg_temp.u(60)$$,'a student with payment records can be deleted');
+select is((select jsonb_build_array(o.user_id,(select count(*) from private.payment_fulfilments f where f.order_id=o.id),
+    (select count(*) from private.payment_refunds r where r.order_id=o.id and r.user_id is null),
+    (select count(*) from private.plan_use_events u where u.order_id=o.id and u.user_id is null))
+  from private.payment_orders o where o.id=(select id from o60)),'[null,1,1,1]'::jsonb,
+  'the order, payment, refund and plan use remain, with the student link cleared');
+select throws_ok($$update private.plan_use_events set ref='changed' where order_id=(select id from o60)$$,'42501',null,
+  'a deleted student''s plan use still cannot be changed');
+select pg_temp.student(61);
+create temporary table o61 as select pg_temp.paid(61) id;
+select private.mark_plan_use(pg_temp.u(61),'campus-bot-reply',null,'reply-1');
+select throws_ok($$update private.plan_use_events set user_id=null where user_id=pg_temp.u(61)$$,'42501',null,
+  'a live student''s plan use cannot be unlinked');
+select throws_ok($$delete from private.plan_use_events where user_id=pg_temp.u(61)$$,'42501',null,'or deleted');
+select throws_ok($$update private.plan_use_events set occurred_at=occurred_at-interval '1 day' where user_id=pg_temp.u(61)$$,
+  '42501',null,'or changed in any other column');
+select throws_ok($$update private.plan_use_events set user_id=null, ref='x' where user_id=pg_temp.u(61)$$,'42501',null,
+  'nor unlinked together with another change');
+select is((select count(*)::int from private.plan_use_events where user_id=pg_temp.u(61)),1,'the live student''s use is intact');
+
 select * from finish();
 rollback;

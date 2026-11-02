@@ -99,8 +99,8 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 `--requested-at` is when the student asked (default now). It must lie between the payment and now; the 48-hour window
 is judged at that time.
 
-Not available: fulfilling from manual evidence when Bachs cannot confirm a payment. Part 1 grants only on a
-Bachs-verified payment; adding an unverified override needs an owner decision and a database change.
+There is no manual-evidence fulfilment, by decision: a plan is granted only on a payment Bachs confirms.
+`payment-fulfil --manual-evidence` is refused.
 
 ## Support playbook
 
@@ -109,6 +109,9 @@ Bachs-verified payment; adding an unverified override needs an owner decision an
 - Order `pending` or `created`: run `payment-verify --order <id>`. If Bachs confirms, the plan appears at once.
 - Bachs still says open: the payment has not reached Bachs (bank transfers can take a while). The daily reconcile
   and the late check pick it up for 14 days; tell the student it is being confirmed.
+- Bachs cannot confirm the payment at all: wait for Bachs, or ask Bachs support to trace it, then fulfil by checkout
+  id (`payment-verify`, or `payment-fulfil --provider-ref <checkout id>`). Never grant a plan from a screenshot, a
+  receipt image or a bank transfer alert.
 - Order shows no checkout id but the student has a Bachs receipt: find the checkout in the Bachs dashboard and run
   `payment-fulfil --order <id> --provider-ref <checkout id>`.
 - `amount-mismatch`: the student paid less than the price, or in another currency. No plan was granted. Refund the

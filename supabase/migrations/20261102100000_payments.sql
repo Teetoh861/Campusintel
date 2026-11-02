@@ -288,8 +288,23 @@ create table private.plan_use_events (
 );
 create unique index plan_use_events_once on private.plan_use_events
   (order_id, kind, coalesce(course_id, '00000000-0000-0000-0000-000000000000'::uuid), ref);
+-- Plan use is append-only, so nobody can reset a live student's use count. The one change allowed is the foreign key's
+-- own set-null when an account is deleted: user_id from a value to null, every other column unchanged, and only once
+-- that account no longer exists in auth.users. Deletes are always refused.
+create function private.plan_use_events_guard() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'UPDATE' and old.user_id is not null and new.user_id is null
+      and (new.id, new.order_id, new.kind, new.course_id, new.ref, new.occurred_at)
+        is not distinct from (old.id, old.order_id, old.kind, old.course_id, old.ref, old.occurred_at)
+      and not exists (select 1 from auth.users where id = old.user_id) then
+    return new;
+  end if;
+  raise exception 'Plan use is append-only' using errcode = '42501';
+end;
+$$;
 create trigger plan_use_events_append_only before update or delete on private.plan_use_events
-  for each row execute function private.payment_events_append_only();
+  for each row execute function private.plan_use_events_guard();
 
 alter table private.campus_bot_tiers enable row level security;
 alter table private.campus_bot_models enable row level security;
@@ -1034,7 +1049,9 @@ begin
   if p_open is null then raise exception 'Open or closed required' using errcode = '22023'; end if;
   select sales_open into v_before from private.payment_policy for update;
   if v_before = p_open then return jsonb_build_object('state', 'unchanged', 'sales_open', p_open); end if;
-  update private.payment_policy set sales_open = p_open, updated_at = now(), updated_by = left('operator:' || p_actor, 120);
+  -- The policy's single row, named: the API applies pg_safeupdate, which refuses an UPDATE without a WHERE clause.
+  update private.payment_policy set sales_open = p_open, updated_at = now(), updated_by = left('operator:' || p_actor, 120)
+    where singleton;
   perform private.log_entitlement_event(null, null, case when p_open then 'payment.sales-opened' else 'payment.sales-closed' end,
     left('operator:' || p_actor, 120), jsonb_build_object('reason', p_reason));
   return jsonb_build_object('state', 'changed', 'sales_open', p_open);
@@ -1159,7 +1176,7 @@ $$;
 -- Privileges. Students: get_my_payment_order only. Everything else is service role or private.
 -- ---------------------------------------------------------------------------
 revoke all on function private.payment_return_path_ok(text), private.payment_detail_ok(jsonb),
-  private.payment_events_append_only(), private.log_payment_event(uuid, text, text, jsonb),
+  private.payment_events_append_only(), private.plan_use_events_guard(), private.log_payment_event(uuid, text, text, jsonb),
   private.grant_effective_end(public.entitlement_grants), private.payment_order_summary(private.payment_orders),
   private.payment_course_is_free(uuid), private.mark_plan_use(uuid, text, uuid, text, timestamptz),
   private.refund_assessment(private.payment_orders, private.payment_fulfilments, text[], timestamptz),
