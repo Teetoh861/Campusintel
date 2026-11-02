@@ -21,8 +21,8 @@ and `app/api/payments/` (part 2a). Screens come in part 3; Campus Bot enforcemen
    `succeeded`, `accepted` or `overpaid` on a completed checkout for this order, with the amount and currency
    checked against the order. Part 1's unique keys make every replay, retry or race produce one fulfilment.
 
-Less than the order is `amount-mismatch` (no grant). More is granted and flagged `overpaid`. Card and bank transfer
-are the only payment methods offered.
+Less than the order is `amount-mismatch` (no grant). More is granted and flagged `overpaid`, and the amount above the
+price is refunded (see Overpayments). Card and bank transfer are the only payment methods offered.
 
 ## Setup
 
@@ -57,9 +57,13 @@ Opening sales: `open-sales` below. Sales stay closed until then.
 
 ## Reconcile schedule
 
-`GET /api/payments/reconcile` (cron bearer) checks a bounded batch of 50 orders, oldest first: open orders older than
-2 minutes, orders past the 48-hour window (asked once more, then expired), and the late check of orders that ended
-without payment in the last 14 days (a bank transfer can settle late, and a late success is still fulfilled).
+`GET /api/payments/reconcile` (cron bearer) checks the orders that are due, in batches of 50, until none are due or
+its 50-second budget runs out: open orders older than 2 minutes (newest first), orders past the 48-hour window (asked
+once more, then expired), and the late check of orders that ended without payment in the last 14 days (a bank transfer
+can settle late, and a late success is still fulfilled). Every check is recorded on the order, unsuccessful ones too
+(`last_check_result`), with the next time it is due: open orders after 2, 5, 10 and 30 minutes, then hourly; ended
+orders back off from 1 hour, doubling to 48 hours, until day 14. An order overdue by a day goes to the front of the
+queue, so however many orders there are, none waits more than a day past its due time plus one run.
 
 - **Now (Vercel free plan): once a day**, `0 3 * * *` in `vercel.json`. The free plan fails deployments with any
   cron more frequent than daily. Until the upgrade, the webhook and the return page settle almost every payment;
@@ -68,7 +72,7 @@ without payment in the last 14 days (a bank transfer can settle late, and a late
   `/api/payments/reconcile?late=0`, and keep `0 3 * * *` on `/api/payments/reconcile` for the daily late check.
   Confirm in Vercel's cron docs that the path may carry a query string; if not, add a second route instead.
 
-`reconcile-now` runs the same batch on demand.
+`reconcile-now` runs the same checks on demand (up to 20 batches).
 
 ## Operator commands
 
@@ -84,20 +88,20 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | Command | Does |
 | --- | --- |
 | `payment-status --order <uuid>` or `--user <uuid>` | Orders, events, payments, refunds and grants. |
-| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag), pending refunds, paid grants still unbound after 7 days. |
+| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), overpaid orders whose excess is not yet refunded (`overpaid_excess_due`), pending refunds, paid grants still unbound after 7 days. |
 | `payment-verify --order <uuid> --actor --reason` | Asks Bachs now and fulfils if it confirms the payment. The normal fix. Asks Bachs. |
 | `payment-fulfil --order <uuid> --provider-ref <checkout id> --actor --reason` | The same, for an order whose checkout id we never stored. Bachs must still confirm a payment whose checkout reference is this order. Asks Bachs. |
-| `refund --order <uuid> --class standard\|our-fault\|duplicate --actor --reason [--requested-at <ISO>] [--payment <uuid>]` | Dry run: what the database would decide, with every count. Nothing changes. |
-| `refund ... --request <uuid> --confirm` | Revokes every grant of the order and records the refund (one transaction), then refunds through Bachs with the request id as the idempotency key. Asks Bachs. |
-| `refund ... --request <uuid> --confirm --manual-reference <bank ref>` | The same, settled as a manual refund made outside Bachs. Re-running the same `--request` with a reference settles a refund recorded earlier. |
-| `refund-retry --order <uuid> --actor --reason [--manual-reference <ref>]` | A pending refund: sends it again with the same key. A failed refund: records a new one for the same class and request time, then refunds. Repeating it never refunds twice. Asks Bachs. |
+| `refund --order <uuid> --class standard\|our-fault\|duplicate\|excess --actor --reason [--requested-at <ISO>] [--payment <uuid>]` | Dry run: what the database would decide, with every count. Nothing changes. |
+| `refund ... --request <uuid> --confirm` | Records the refund (a plan refund first revokes every grant of the order, in the same transaction), then refunds a card payment through Bachs with the request id as the idempotency key. Asks Bachs. A bank transfer is left for a manual settlement. |
+| `refund ... --request <uuid> --confirm --manual-reference <transfer ref> --account-last4 <4 digits> --destination-confirmed` | Bank transfers only: the same, settled as a transfer you made from our bank to the account that paid. Refused for card payments, before anything is recorded. Re-running the same `--request` with these settles a refund recorded earlier. |
+| `refund-retry --order <uuid> --actor --reason [--manual-reference <ref> --account-last4 <4 digits> --destination-confirmed]` | A pending refund: sends it again with the same key. A failed refund: records a new one for the same payment, class and request time, then refunds. Repeating it never refunds twice. Asks Bachs. |
 | `open-sales --actor --reason` / `close-sales --actor --reason` | The sales switch. |
 | `reconcile-now` | One reconcile batch now. Asks Bachs. |
 | `campus-bot-model --model <name> --weight <n> --actor --reason` | A model's price weight (Haiku = 1). Pending owner approval. |
 | `campus-bot-cap --step writing\|check [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. |
 
-`--requested-at` is when the student asked (default now). It must lie between the payment and now; the 48-hour window
-is judged at that time.
+`--requested-at` is when the student asked (default now). It must lie between the payment and now. The 48-hour window
+is judged at that time; use is counted from the payment until the refund is processed, so use after asking counts.
 
 There is no manual-evidence fulfilment, by decision: a plan is granted only on a payment Bachs confirms.
 `payment-fulfil --manual-evidence` is refused.
@@ -120,17 +124,31 @@ There is no manual-evidence fulfilment, by decision: a plan is granted only on a
 
 **Refunds.**
 
+When a student asks for a refund, reply with: "We've received your refund request and are looking at it now. Please
+don't use your plan while we process it: using it before the refund is processed can mean it no longer qualifies."
+Then record when they asked; that time is the `--requested-at` below.
+
 1. Dry run first: `refund --order <id> --class standard --actor <you> --reason "<ticket>" --requested-at <when the
    student asked>`. It shows the window, each use count (Campus Bot replies, exams, practice answers and theory
    reveals, notes topics) against its allowance, and the standard refunds already used by this person.
 2. If allowed, run it again with `--request <new uuid> --confirm`. Access ends immediately, before the money moves.
-3. Card payments are refunded through Bachs; the refund settles when Bachs reports it (`refund.paid`). Bank transfers
-   cannot be refunded through Bachs: send the money from the bank, then re-run the same command with
-   `--manual-reference <bank reference>`.
+3. Card payments are refunded through Bachs only; the refund settles when Bachs reports it (`refund.paid`). Bank
+   transfers cannot be refunded through Bachs. Open the payment in the Bachs dashboard and note the sender's account.
+   Send the money from our bank to that same account, and nowhere else. Then re-run the same command with
+   `--manual-reference <our transfer reference> --account-last4 <last four digits of that account>
+   --destination-confirmed`. We keep only the reference and the last four digits.
 4. A refund Bachs refuses shows as `refund-failed` in `payments-health`; fix the cause and run `refund-retry`.
 
 Our-fault (outage, wrong content, a billing error) and duplicate refunds are allowed at any time and never count
 against the student's one standard refund.
+
+**Overpayments.** A payment above the price is granted as usual and listed in `payments-health` under
+`overpaid_excess_due` until the excess is refunded. Refund it with `refund --order <id> --class excess --request <uuid>
+--confirm`, at any time: it returns only the amount above the price, never counts toward the student's one standard
+refund, and changes no access. It goes back to the account that paid: through Bachs for a card (as a partial refund),
+or by bank transfer as in step 3 above. Bachs takes one refund per payment, so after an excess refund on a card, a
+later plan refund of that card payment is refused (`provider-refund-used`); a later plan refund of a bank transfer
+returns the rest.
 
 **Duplicates.** Two payments for the same semester: the second order becomes `paid-duplicate` (no second grant) and
 shows in `payments-health`. Refund it the same day with `refund --order <id> --class duplicate --request <uuid>

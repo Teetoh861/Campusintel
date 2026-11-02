@@ -39,7 +39,9 @@ export type WebhookEvent = {
 }
 export type WebhookCheck = { ok: true; event: WebhookEvent } | { ok: false; reason: 'malformed' | 'timestamp' | 'signature' }
 
-export type RefundRequest = { paymentId: string; reference: string; idempotencyKey: string; reason: string }
+/** amountKobo: a partial refund (an overpayment's excess); omitted, the whole payment. A payment takes one refund. */
+export type RefundRequest = { paymentId: string; reference: string; idempotencyKey: string; reason: string;
+  amountKobo?: number }
 export type RefundSnapshot = { refundId: string; reference: string | null; status: 'pending' | 'refunded' | 'failed' }
 
 export interface PaymentProvider {

@@ -5,7 +5,7 @@
 //   node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 // and read BACHS_API_KEY from the environment (a live key only with NODE_ENV=production). See docs/payments-operations.md.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const REFUND_CLASSES = /^(standard|our-fault|duplicate)$/
+const REFUND_CLASSES = /^(standard|our-fault|duplicate|excess)$/
 const AUTH_TIMEOUT_MS = 30_000
 
 function paymentsLib() {
@@ -22,19 +22,38 @@ function isoTime(value, name) {
   return new Date(value).toISOString()
 }
 
-/** The order's student id, read with the service role (admin_payment_status), or null once the account is gone. */
-async function orderOwner(rpc, orderId) {
+/** The order as the service role sees it (admin_payment_status): its student id (null once the account is gone) and
+ *  its payments. */
+async function readOrderRecord(rpc, orderId) {
   const status = await rpc('admin_payment_status', { p_user_id: null, p_order_id: orderId })
   const order = status && Array.isArray(status.orders) ? status.orders[0] : undefined
   if (!order) throw new Error('order not found')
-  return typeof order.user_id === 'string' ? order.user_id : null
+  return order
+}
+
+/** The payment a refund would be for: the named one, or the order's plan payment. */
+function refundPayment(order, paymentId) {
+  const payments = Array.isArray(order.payments) ? order.payments : []
+  return payments.find(item => paymentId ? item.id === paymentId : item.outcome !== 'extra-payment') ?? null
+}
+
+/** --manual-reference with the paying account's last four digits and the operator's confirmation, or null. Checked
+ *  against the payment before anything is recorded: a card payment is never settled manually. */
+function manualSettlement(opts, order, paymentId) {
+  if (opts['manual-reference'] === undefined) return null
+  const manual = { reference: String(opts['manual-reference']), accountLast4: String(opts['account-last4'] ?? ''),
+    destinationConfirmed: opts['destination-confirmed'] === true }
+  const payment = refundPayment(order, paymentId)
+  paymentsLib().refunds.checkManualSettlement(payment ? payment.method : 'unknown', manual)
+  return manual
 }
 
 /** Refund identity: keyed hashes of the student's confirmed email (never printed), or the order alone when the account
  *  is gone, which cannot take a standard refund. */
-async function refundIdentity(ctx, orderId, refundClass) {
+async function refundIdentity(ctx, order, refundClass) {
   const { refunds } = paymentsLib()
-  const userId = await orderOwner(ctx.rpc, orderId)
+  const orderId = order.id
+  const userId = typeof order.user_id === 'string' ? order.user_id : null
   if (userId === null) {
     if (refundClass === 'standard') throw new Error('the account is deleted: a standard refund cannot be checked; use our-fault or duplicate')
     return refunds.orphanOrderIdentity(orderId)
@@ -57,8 +76,11 @@ async function refund(opts, ctx) {
   const refundClass = required(opts, 'class', REFUND_CLASSES)
   const requestedAt = opts['requested-at'] ? isoTime(opts['requested-at'], '--requested-at') : undefined
   // A second payment on one order (extra-payment) is refunded by naming that payment's id from payment-status.
-  const payment = opts.payment !== undefined ? { p_payment_id: required(opts, 'payment', UUID) } : {}
-  const identity = await refundIdentity(ctx, orderId, refundClass)
+  const paymentId = opts.payment !== undefined ? required(opts, 'payment', UUID) : null
+  const payment = paymentId !== null ? { p_payment_id: paymentId } : {}
+  const order = await readOrderRecord(ctx.rpc, orderId)
+  const manual = manualSettlement(opts, order, paymentId)
+  const identity = await refundIdentity(ctx, order, refundClass)
   if (opts.confirm !== true) {
     // Dry run: what the database would decide, with every count. Nothing is written and no money moves.
     return { dryRun: true, eligibility: await ctx.rpc('refund_eligibility', { p_order_id: orderId,
@@ -71,7 +93,7 @@ async function refund(opts, ctx) {
   const pending = refunds.pendingRefund.safeParse(recorded)
   if (!pending.success) return { refund: recorded }
   return { refund: recorded, settlement: await refunds.settleRefund({ rpc: ctx.rpc, providerFor: providers(ctx) },
-    pending.data, { manualReference: opts['manual-reference'] ?? null, actor: note().p_actor, reason: note().p_reason }) }
+    pending.data, { manual, actor: note().p_actor, reason: note().p_reason }) }
 }
 
 async function refundRetry(opts, ctx) {
@@ -80,14 +102,18 @@ async function refundRetry(opts, ctx) {
   const { refunds } = paymentsLib()
   const plan = await refunds.planRefundRetry(ctx.rpc, orderId)
   const deps = { rpc: ctx.rpc, providerFor: providers(ctx) }
-  const settle = pending => refunds.settleRefund(deps, pending, { manualReference: opts['manual-reference'] ?? null,
-    actor: note().p_actor, reason: note().p_reason })
+  const order = await readOrderRecord(ctx.rpc, orderId)
+  const paymentId = plan.state === 'resend' ? plan.refund.payment_id ?? null
+    : plan.state === 'renew' ? plan.failed.paymentId : null
+  const manual = manualSettlement(opts, order, paymentId)
+  const settle = pending => refunds.settleRefund(deps, pending, { manual, actor: note().p_actor, reason: note().p_reason })
   if (plan.state === 'resend') return { retried: 'resend', settlement: await settle(plan.refund) }
   if (plan.state !== 'renew') return plan
-  const identity = await refundIdentity(ctx, orderId, plan.failed.refundClass)
-  // Same class and the time the student first asked; a stable request id, so repeating this replays it.
+  const identity = await refundIdentity(ctx, order, plan.failed.refundClass)
+  // Same class, payment and time the student first asked; a stable request id, so repeating this replays it.
   const recorded = await ctx.rpc('refund_order', { p_order_id: orderId, p_class: plan.failed.refundClass,
-    p_request_id: plan.failed.requestId, p_identity_hashes: identity, ...note(), p_requested_at: plan.failed.requestedAt })
+    p_request_id: plan.failed.requestId, p_identity_hashes: identity, ...note(), p_requested_at: plan.failed.requestedAt,
+    p_payment_id: plan.failed.paymentId })
   const pending = refunds.pendingRefund.safeParse(recorded)
   return pending.success ? { retried: 'renew', refund: recorded, settlement: await settle(pending.data) } : { refund: recorded }
 }

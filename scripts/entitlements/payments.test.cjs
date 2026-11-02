@@ -1,6 +1,7 @@
 // scripts/entitlements/payments.test.cjs — Payment operator commands as dry runs against a stubbed transport: the RPCs
 // and arguments they send, refunds as dry runs by default, identity hashes instead of email, manual-evidence refused,
-// and provider calls only on the local fake.
+// manual settlement for bank transfers only, refund-retry keeping the payment it retries, and provider calls only on
+// the local fake.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { run } = require('./ops.cjs')
@@ -19,6 +20,10 @@ const orderStatus = (extra = {}) => ({ policy: { checkout_minutes: 60 }, orders:
   provider: 'fake', status: 'pending', amount_kobo: 400000, currency: 'NGN', checkout_id: fakeCheckoutId(ORDER),
   checkout_expires_at: null, expires_at: '2026-11-02T13:00:00Z', created_at: '2026-11-02T12:00:00Z', payments: [],
   refunds: [], ...extra }] })
+const PAYMENT = 'd4e5f6a7-b8c9-4d0e-8f1a-3b4c5d6e7f80'
+const EXTRA = 'e5f6a7b8-c9d0-4e1f-8a2b-4c5d6e7f8091'
+const payment = (method = 'card', extra = {}) => ({ id: PAYMENT, provider: 'fake', provider_payment_id: 'ch_1', method,
+  outcome: 'fulfilled', amount_kobo: 400000, currency: 'NGN', ...extra })
 const pending = (method = 'card') => ({ state: 'refund-pending', refund_id: 'c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e7f',
   order_id: ORDER, refund_class: 'standard', amount_kobo: 400000, currency: 'NGN', method, provider: 'fake',
   provider_payment_id: 'ch_1', idempotency_key: REQUEST })
@@ -85,14 +90,14 @@ test('refund is a dry run by default: eligibility with keyed identity hashes, no
   assert.equal('p_requested_at' in again.requests[2].body, false)
 })
 
-test('refund --confirm records first, then settles: manual reference, bank transfer, or the provider by our key', async () => {
-  const manual = harness({ admin_payment_status: orderStatus(), refund_order: pending('bank_transfer'),
-    record_refund_result: { state: 'recorded', refund_status: 'refunded' } })
+test('refund --confirm records first, then settles: manual bank transfer, bank transfer, or the provider by our key', async () => {
+  const manual = harness({ admin_payment_status: orderStatus({ payments: [payment('bank_transfer')] }),
+    refund_order: pending('bank_transfer'), record_refund_result: { state: 'recorded', refund_status: 'refunded' } })
   await manual.run(['refund', '--order', ORDER, '--class', 'standard', '--request', REQUEST, '--confirm',
-    '--manual-reference', 'GTB-REF-0091', ...NOTE])
+    '--manual-reference', 'GTB-REF-0091', '--account-last4', '0091', '--destination-confirmed', ...NOTE])
   assert.deepEqual(manual.requests.map(request => request.fn).slice(-2), ['refund_order', 'record_refund_result'])
   assert.deepEqual(manual.requests.at(-1).body, { p_refund_id: pending().refund_id, p_outcome: 'refunded',
-    p_provider_refund_id: null, p_manual_reference: 'GTB-REF-0091', p_actor: 'ops' })
+    p_provider_refund_id: null, p_manual_reference: 'GTB-REF-0091', p_actor: 'ops', p_account_last4: '0091' })
   const transfer = harness({ admin_payment_status: orderStatus(), refund_order: pending('bank_transfer') })
   await transfer.run(['refund', '--order', ORDER, '--class', 'standard', '--request', REQUEST, '--confirm', ...NOTE])
   assert.deepEqual(transfer.printed().settlement, { state: 'manual-required', reason: 'bank-transfer' })
@@ -105,7 +110,6 @@ test('refund --confirm records first, then settles: manual reference, bank trans
   await assert.rejects(card.run(['refund', '--order', ORDER, '--class', 'standard', '--confirm', ...NOTE]), /--request is required/)
   await assert.rejects(card.run(['refund', '--order', ORDER, '--class', 'partial', ...NOTE]), /--class is required/)
   const extra = harness({ admin_payment_status: orderStatus() })
-  const PAYMENT = 'd4e5f6a7-b8c9-4d0e-8f1a-3b4c5d6e7f80'
   await extra.run(['refund', '--order', ORDER, '--class', 'duplicate', '--payment', PAYMENT, ...NOTE])
   assert.equal(extra.requests.at(-1).body.p_payment_id, PAYMENT)
 })
@@ -138,6 +142,35 @@ test('payment-verify asks the provider and fulfils as the operator; manual evide
 test('reconcile-now runs one bounded batch through the same fulfil path', async () => {
   const h = harness({ payment_orders_to_check: [] })
   await h.run(['reconcile-now'])
-  assert.deepEqual(h.requests, [{ fn: 'payment_orders_to_check', body: { p_limit: 500 } }])
+  assert.deepEqual(h.requests, [{ fn: 'payment_orders_to_check', body: { p_limit: 50, p_include_late: true } }])
   assert.equal(h.printed().checked, 0)
 })
+
+test('manual settlement: refused for card payments and without the paying account, before anything is recorded', async () => {
+  const card = harness({ admin_payment_status: orderStatus({ payments: [payment('card')] }), refund_order: pending('card') })
+  await assert.rejects(card.run(['refund', '--order', ORDER, '--class', 'our-fault', '--request', REQUEST, '--confirm',
+    '--manual-reference', 'GTB-1', '--account-last4', '1234', '--destination-confirmed', ...NOTE]), /card refunds go only through Bachs/)
+  assert.equal(card.requests.some(request => request.fn === 'refund_order'), false, 'nothing recorded, no access revoked')
+  const transfer = harness({ admin_payment_status: orderStatus({ payments: [payment('bank_transfer')] }) })
+  await assert.rejects(transfer.run(['refund', '--order', ORDER, '--class', 'our-fault', '--request', REQUEST, '--confirm',
+    '--manual-reference', 'GTB-1', '--destination-confirmed', ...NOTE]), /--account-last4/)
+  await assert.rejects(transfer.run(['refund', '--order', ORDER, '--class', 'our-fault', '--request', REQUEST, '--confirm',
+    '--manual-reference', 'GTB-1', '--account-last4', '1234', ...NOTE]), /--destination-confirmed/)
+  assert.equal(transfer.requests.some(request => request.fn === 'refund_order'), false)
+})
+
+for (const refundClass of ['duplicate', 'our-fault']) {
+  test(`refund-retry of a failed ${refundClass} refund of an extra payment re-requests that payment`, async () => {
+    const failed = { id: 'f6a7b8c9-d0e1-4f2a-8b3c-5d6e7f809102', payment_id: EXTRA, refund_class: refundClass,
+      request_id: REQUEST, amount_kobo: 400000, requested_at: '2026-11-02T12:20:00Z', status: 'failed',
+      reason: 'second payment', created_at: '2026-11-02T12:21:00Z' }
+    const h = harness({ admin_payment_status: orderStatus({ status: 'paid', payments: [payment('card'),
+      payment('card', { id: EXTRA, provider_payment_id: 'ch_2', outcome: 'extra-payment' })], refunds: [failed] }),
+      refund_order: body => ({ ...pending('card'), payment_id: body.p_payment_id, refund_class: refundClass }) })
+    await h.run(['refund-retry', '--order', ORDER, ...NOTE])
+    const renewed = h.requests.find(request => request.fn === 'refund_order').body
+    assert.equal(renewed.p_payment_id, EXTRA)
+    assert.equal(renewed.p_class, refundClass)
+    assert.equal(renewed.p_requested_at, failed.requested_at)
+  })
+}

@@ -143,6 +143,13 @@ create table private.payment_orders (
   checkout_url text check (char_length(checkout_url) <= 2048 and checkout_url ~ '^https://'),
   checkout_expires_at timestamptz,
   paid_at timestamptz,
+  -- Catch-up checks (record_payment_check): when the order is next due (null: two minutes after creation), how many
+  -- checks it has had, and what the last one found, unsuccessful checks included.
+  next_check_at timestamptz,
+  check_count integer not null default 0 check (check_count >= 0),
+  last_checked_at timestamptz,
+  last_check_result text check (last_check_result in ('waiting', 'fulfilled', 'ended', 'expired', 'settled', 'review',
+    'no-checkout', 'not-found', 'provider-unavailable', 'error')),
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
   constraint payment_orders_session_check check ((period = 'session') = (second_period_id is not null)
@@ -155,6 +162,8 @@ create table private.payment_orders (
 );
 create index payment_orders_user_idx on private.payment_orders (user_id, created_at desc);
 create index payment_orders_open_idx on private.payment_orders (status, created_at)
+  where status in ('created', 'pending', 'failed', 'cancelled', 'expired');
+create index payment_orders_check_idx on private.payment_orders (next_check_at)
   where status in ('created', 'pending', 'failed', 'cancelled', 'expired');
 create unique index payment_orders_checkout_idx on private.payment_orders (provider, checkout_id)
   where checkout_id is not null;
@@ -239,8 +248,10 @@ create unique index payment_fulfilments_one_per_order on private.payment_fulfilm
   where outcome <> 'extra-payment';
 
 -- ---------------------------------------------------------------------------
--- Refunds: one per payment, never split (a failed refund does not count). Recorded, with every grant revoked, before
--- any money moves. Bachs cannot refund bank transfers, so any refund may be settled as manual with our bank reference.
+-- Refunds: per payment, one refund of the plan (standard, our-fault, duplicate) and one of an overpayment's excess
+-- (excess); a failed refund does not count. A plan refund is recorded, with every grant revoked, before any money moves;
+-- an excess refund changes no access. Card refunds go only through Bachs. Bachs cannot refund bank transfers: those are
+-- settled manually to the account that paid, keeping only our transfer reference and that account's last four digits.
 -- ---------------------------------------------------------------------------
 create table private.payment_refunds (
   id uuid primary key default gen_random_uuid(),
@@ -250,7 +261,7 @@ create table private.payment_refunds (
   -- Keyed hashes of the student identity (one per active key); they outlive the account.
   identity_hashes text[] not null check (cardinality(identity_hashes) between 1 and 4
     and array_position(identity_hashes, null) is null),
-  refund_class text not null check (refund_class in ('standard', 'our-fault', 'duplicate')),
+  refund_class text not null check (refund_class in ('standard', 'our-fault', 'duplicate', 'excess')),
   amount_kobo bigint not null check (amount_kobo > 0),
   currency text not null check (currency ~ '^[A-Z]{3}$'),
   request_id uuid not null unique,
@@ -260,6 +271,7 @@ create table private.payment_refunds (
   status text not null default 'pending' check (status in ('pending', 'refunded', 'failed')),
   provider_refund_id text check (provider_refund_id ~ '^[A-Za-z0-9_.:-]{1,128}$'),
   manual_reference text check (char_length(btrim(manual_reference)) between 1 and 128),
+  manual_account_last4 text check (manual_account_last4 ~ '^[0-9]{4}$'),
   settled_by text check (char_length(settled_by) between 1 and 120),
   settled_at timestamptz,
   result jsonb not null,
@@ -267,9 +279,11 @@ create table private.payment_refunds (
   constraint payment_refunds_settled_check check ((status = 'pending') = (settled_at is null)
     and (status = 'pending') = (settled_by is null)),
   constraint payment_refunds_refunded_check check (status <> 'refunded'
-    or provider_refund_id is not null or manual_reference is not null)
+    or provider_refund_id is not null or manual_reference is not null),
+  constraint payment_refunds_manual_check check ((manual_reference is null) = (manual_account_last4 is null))
 );
-create unique index payment_refunds_one_per_payment on private.payment_refunds (payment_id) where status <> 'failed';
+create unique index payment_refunds_one_per_payment on private.payment_refunds (payment_id, (refund_class = 'excess'))
+  where status <> 'failed';
 create index payment_refunds_user_idx on private.payment_refunds (user_id) where refund_class = 'standard';
 create index payment_refunds_identity_idx on private.payment_refunds using gin (identity_hashes);
 
@@ -769,20 +783,63 @@ begin
 end;
 $$;
 
--- Orders the catch-up job asks the provider about (service role): open ones, those due to expire, and late checks.
-create function public.payment_orders_to_check(p_limit integer) returns table (order_id uuid, provider text,
-  checkout_id text, status text, created_at timestamptz, action text)
+-- Orders the catch-up job asks the provider about (service role): those due now, in batches. Open orders, those past
+-- the reconciliation window (asked once more, then expired) and, with p_include_late, the late check of orders that
+-- ended unpaid within late_check_days. Order: anything overdue for a day first (most overdue first), so no candidate
+-- waits longer than that however many there are; then open orders newest first; then expiries; then late checks.
+-- Every check is recorded (record_payment_check), which moves the order's next check later.
+create function public.payment_orders_to_check(p_limit integer, p_include_late boolean default true)
+returns table (order_id uuid, provider text, checkout_id text, status text, created_at timestamptz, action text)
 language sql stable security definer set search_path = '' as $$
-  select o.id, o.provider, o.checkout_id, o.status, o.created_at,
-    case when o.status in ('created', 'pending') and o.created_at > clock_timestamp() - make_interval(hours => p.reconcile_hours)
-      then 'check' when o.status in ('created', 'pending') then 'expire' else 'late-check' end
-  from private.payment_orders o cross join private.payment_policy p
-  where p_limit between 1 and 500
-    and ((o.status in ('created', 'pending') and o.created_at <= clock_timestamp() - interval '2 minutes')
-      or (o.status in ('failed', 'cancelled', 'expired')
+  with due as (
+    select o.id, o.provider, o.checkout_id, o.status, o.created_at,
+      coalesce(o.next_check_at, o.created_at + interval '2 minutes') as due_at,
+      case when o.status in ('created', 'pending')
+          and o.created_at > clock_timestamp() - make_interval(hours => p.reconcile_hours) then 'check'
+        when o.status in ('created', 'pending') then 'expire' else 'late-check' end as action
+    from private.payment_orders o cross join private.payment_policy p
+    where p_limit between 1 and 500 and p_include_late is not null
+      and (o.status in ('created', 'pending') or (p_include_late and o.status in ('failed', 'cancelled', 'expired')
         and o.created_at > clock_timestamp() - make_interval(days => p.late_check_days)))
-  order by o.created_at, o.id
+      and coalesce(o.next_check_at, o.created_at + interval '2 minutes') <= clock_timestamp()
+  )
+  select d.id, d.provider, d.checkout_id, d.status, d.created_at, d.action from due d
+  order by case when d.due_at <= clock_timestamp() - interval '1 day' then 0
+      when d.action = 'check' then 1 when d.action = 'expire' then 2 else 3 end,
+    case when d.due_at <= clock_timestamp() - interval '1 day' then d.due_at end,
+    case when d.action = 'check' then d.created_at end desc,
+    d.due_at, d.id
   limit p_limit;
+$$;
+
+-- One catch-up check's result (service role), successful or not, and the next time the order is due. Open orders:
+-- 2, 5, 10 and 30 minutes, then hourly, while the reconciliation window lasts (past it, every 30 minutes until expired).
+-- Ended orders: backing off from 1 hour, doubling up to 48 hours, until late_check_days after creation. Settled orders
+-- are not checked again. Takes the order row only, after any writer that holds the account prefix.
+create function public.record_payment_check(p_order_id uuid, p_result text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare o private.payment_orders; v_policy private.payment_policy; v_now timestamptz; v_next timestamptz;
+begin
+  if p_order_id is null or p_result is null or p_result not in ('waiting', 'fulfilled', 'ended', 'expired', 'settled',
+      'review', 'no-checkout', 'not-found', 'provider-unavailable', 'error') then
+    raise exception 'Invalid payment check' using errcode = '22023';
+  end if;
+  select * into o from private.payment_orders where id = p_order_id for update;
+  if o.id is null then return jsonb_build_object('state', 'not-found'); end if;
+  select * into strict v_policy from private.payment_policy;
+  v_now := clock_timestamp();
+  v_next := case
+    when o.status in ('created', 'pending') and o.created_at > v_now - make_interval(hours => v_policy.reconcile_hours)
+      then v_now + make_interval(mins => (array[2, 5, 10, 30, 60])[least(o.check_count + 1, 5)])
+    when o.status in ('created', 'pending') then v_now + interval '30 minutes'
+    when o.status in ('failed', 'cancelled', 'expired')
+      then v_now + make_interval(hours => least(power(2, least(o.check_count, 6))::integer, 48))
+    end;
+  update private.payment_orders set next_check_at = v_next, check_count = check_count + 1, last_checked_at = v_now,
+      last_check_result = p_result
+    where id = o.id;
+  return jsonb_build_object('state', 'recorded', 'next_check_at', v_next);
+end;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -816,8 +873,9 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Refunds. Standard: within the window, judged at the time the student asked, with no use above the allowances after
--- payment, and within the per-identity limit. Our-fault and duplicate: any time, any use, never counted.
+-- Refunds. Standard: within the window judged at the time the student asked, with no use above the allowances from
+-- payment until the refund is processed (now), and within the per-identity limit. Our-fault and duplicate: any time,
+-- any use, never counted. Excess: an overpayment's amount above the price, any time, never counted, access unchanged.
 -- ---------------------------------------------------------------------------
 create function private.refund_assessment(p_order private.payment_orders, p_payment private.payment_fulfilments,
   p_identity_hashes text[], p_requested_at timestamptz) returns jsonb
@@ -825,6 +883,9 @@ language plpgsql stable security definer set search_path = '' as $$
 declare
   v_policy private.payment_policy;
   v_paid timestamptz := p_order.paid_at;
+  v_now timestamptz := clock_timestamp();
+  v_excess bigint := case when p_payment.outcome = 'fulfilled' and p_payment.currency = p_order.currency
+    and p_payment.amount_kobo > p_order.amount_kobo then p_payment.amount_kobo - p_order.amount_kobo else 0 end;
   v_bot integer := 0; v_exams integer := 0; v_answers integer := 0; v_reveals integer := 0; v_topics integer := 0;
   v_used integer;
   v_reasons text[] := '{}';
@@ -832,19 +893,19 @@ declare
 begin
   select * into strict v_policy from private.payment_policy;
   if p_payment.outcome = 'fulfilled' then
-    v_classes := array['standard', 'our-fault'];
+    v_classes := array['standard', 'our-fault'] || case when v_excess > 0 then array['excess'] else '{}'::text[] end;
     select count(*) filter (where kind = 'campus-bot-reply'), count(*) filter (where kind = 'theory-reveal'),
         count(distinct coalesce(course_id::text, '') || ':' || ref) filter (where kind = 'notes-topic')
       into v_bot, v_reveals, v_topics
       from private.plan_use_events u
-      where u.order_id = p_order.id and u.occurred_at >= v_paid and u.occurred_at <= p_requested_at
+      where u.order_id = p_order.id and u.occurred_at >= v_paid and u.occurred_at <= v_now
         and not private.payment_course_is_free(u.course_id);
     select count(*) into v_exams from public.quiz_attempts q
       where q.user_id = p_order.user_id and q.mode = 'exam' and q.created_at >= v_paid
-        and q.created_at <= p_requested_at and not private.payment_course_is_free(q.course_id);
+        and q.created_at <= v_now and not private.payment_course_is_free(q.course_id);
     select count(*) into v_answers from public.quiz_attempt_answers a join public.quiz_attempts q on q.id = a.attempt_id
       where q.user_id = p_order.user_id and q.mode is distinct from 'exam' and a.answered_at >= v_paid
-        and a.answered_at <= p_requested_at and not private.payment_course_is_free(q.course_id);
+        and a.answered_at <= v_now and not private.payment_course_is_free(q.course_id);
     v_answers := v_answers + v_reveals;
     if p_requested_at > v_paid + make_interval(hours => v_policy.refund_window_hours) then
       v_reasons := v_reasons || 'window'::text;
@@ -866,6 +927,7 @@ begin
   return jsonb_build_object('classes_allowed', to_jsonb(v_classes),
     'standard_allowed', cardinality(v_reasons) = 0, 'standard_refused', to_jsonb(v_reasons),
     'requested_at', p_requested_at, 'window_ends_at', v_paid + make_interval(hours => v_policy.refund_window_hours),
+    'use_counted_until', v_now, 'excess_kobo', v_excess,
     'counts', jsonb_build_object('campus_bot_replies', v_bot, 'exams_started', v_exams, 'practice_answers', v_answers,
       'notes_topics', v_topics),
     'allowed', jsonb_build_object('campus_bot_replies', v_policy.refund_campus_bot_replies_allowed,
@@ -900,16 +962,21 @@ begin
   if p_requested_at < f.created_at or p_requested_at > clock_timestamp() then
     raise exception 'The request time must be between payment and now' using errcode = '22023';
   end if;
-  select * into r from private.payment_refunds where payment_id = f.id and status <> 'failed';
+  select * into r from private.payment_refunds where payment_id = f.id and status <> 'failed' and refund_class <> 'excess';
   return private.refund_assessment(o, f, coalesce(p_identity_hashes, '{}'), p_requested_at)
     || jsonb_build_object('state', case when r.id is null then 'refundable' else 'already-refunding' end,
-      'order_status', o.status, 'payment_id', f.id, 'refund_id', r.id);
+      'order_status', o.status, 'payment_id', f.id, 'refund_id', r.id,
+      'excess_refund_id', (select x.id from private.payment_refunds x where x.payment_id = f.id and x.status <> 'failed'
+        and x.refund_class = 'excess'));
 end;
 $$;
 
 -- The team's refund command (service role). In one transaction, before any money moves: every grant of the order is
 -- revoked and the refund recorded. The same request id returns the same record. The adapter then refunds with the
--- request id as its idempotency key, or the team records a manual refund (record_refund_result).
+-- request id as its idempotency key, or the team records a manual bank-transfer refund (record_refund_result).
+-- 'excess' refunds only the amount above the price of a plan payment: no grant is revoked and the order is unchanged.
+-- A plan refund after an excess refund returns the rest. Bachs takes one refund per payment, so a card payment that
+-- carries one refund cannot take the other.
 create function public.refund_order(p_order_id uuid, p_class text, p_request_id uuid, p_identity_hashes text[],
   p_actor text, p_reason text, p_requested_at timestamptz default now(), p_payment_id uuid default null) returns jsonb
 language plpgsql security definer set search_path = '' as $$
@@ -923,9 +990,11 @@ declare
   v_assessment jsonb;
   v_revoked uuid[];
   v_result jsonb;
+  v_amount bigint;
+  v_excess private.payment_refunds;
 begin
   perform private.require_operator_note(p_actor, p_reason);
-  if p_order_id is null or p_class is null or p_class not in ('standard', 'our-fault', 'duplicate')
+  if p_order_id is null or p_class is null or p_class not in ('standard', 'our-fault', 'duplicate', 'excess')
       or p_request_id is null or p_requested_at is null or not private.refund_identity_ok(p_identity_hashes) then
     raise exception 'Invalid refund' using errcode = '22023';
   end if;
@@ -954,8 +1023,16 @@ begin
   if p_requested_at < f.created_at or p_requested_at > v_now then
     raise exception 'The request time must be between payment and now' using errcode = '22023';
   end if;
-  select * into r from private.payment_refunds where payment_id = f.id and status <> 'failed';
+  select * into r from private.payment_refunds where payment_id = f.id and status <> 'failed'
+    and (refund_class = 'excess') = (p_class = 'excess');
   if r.id is not null then return jsonb_build_object('state', 'already-refunding', 'refund_id', r.id); end if;
+  -- The other kind of refund on this payment: an excess refund after a plan refund has nothing left to return.
+  select * into v_excess from private.payment_refunds where payment_id = f.id and status <> 'failed'
+    and (refund_class = 'excess') <> (p_class = 'excess');
+  if v_excess.id is not null and (p_class = 'excess' or f.method = 'card') then
+    return jsonb_build_object('state', case when p_class = 'excess' then 'already-refunding' else 'provider-refund-used' end,
+      'refund_id', v_excess.id);
+  end if;
   v_assessment := private.refund_assessment(o, f, p_identity_hashes, p_requested_at);
   if not (v_assessment->'classes_allowed') ? p_class then
     return jsonb_build_object('state', 'class-not-allowed', 'assessment', v_assessment);
@@ -963,8 +1040,10 @@ begin
   if p_class = 'standard' and not (v_assessment->>'standard_allowed')::boolean then
     return jsonb_build_object('state', 'refused', 'assessment', v_assessment);
   end if;
+  v_amount := case when p_class = 'excess' then (v_assessment->>'excess_kobo')::bigint
+    else f.amount_kobo - coalesce(v_excess.amount_kobo, 0) end;
 
-  if f.outcome = 'fulfilled' then
+  if f.outcome = 'fulfilled' and p_class <> 'excess' then
     with revoked as (
       update public.entitlement_grants set revoked_at = v_now, revoked_by = left('refund:' || btrim(p_actor), 120),
           revoke_reason = btrim(p_reason)
@@ -975,31 +1054,33 @@ begin
   end if;
   insert into private.payment_refunds (payment_id, order_id, user_id, identity_hashes, refund_class, amount_kobo,
       currency, request_id, requested_at, actor, reason, result, created_at)
-    values (f.id, o.id, o.user_id, p_identity_hashes, p_class, f.amount_kobo, f.currency, p_request_id,
+    values (f.id, o.id, o.user_id, p_identity_hashes, p_class, v_amount, f.currency, p_request_id,
       p_requested_at, btrim(p_actor), btrim(p_reason), '{}'::jsonb, v_now)
     returning * into r;
   v_result := jsonb_build_object('state', 'refund-pending', 'refund_id', r.id, 'order_id', o.id, 'payment_id', f.id,
-    'refund_class', p_class, 'amount_kobo', f.amount_kobo, 'currency', f.currency, 'method', f.method,
+    'refund_class', p_class, 'amount_kobo', v_amount, 'currency', f.currency, 'method', f.method,
     'provider', f.provider, 'provider_payment_id', f.provider_payment_id, 'idempotency_key', p_request_id,
-    'revoked_grant_ids', to_jsonb(v_revoked));
+    'payment_amount_kobo', f.amount_kobo, 'revoked_grant_ids', to_jsonb(v_revoked));
   update private.payment_refunds set result = v_result where id = r.id;
   perform private.log_entitlement_event(o.user_id, revoked_id, 'payment.refund-revoked',
       left('refund:' || btrim(p_actor), 120), jsonb_build_object('order_id', o.id, 'refund_id', r.id))
     from unnest(v_revoked) revoked_id;
-  if f.outcome <> 'extra-payment' then
+  if f.outcome <> 'extra-payment' and p_class <> 'excess' then
     update private.payment_orders set status = 'refund-pending', updated_at = v_now where id = o.id;
   end if;
   perform private.log_payment_event(o.id, 'refund.requested', left('operator:' || btrim(p_actor), 120),
-    jsonb_build_object('from', o.status, 'to', case when f.outcome = 'extra-payment' then o.status else 'refund-pending' end,
-      'refund_id', r.id, 'refund_class', p_class, 'amount_kobo', f.amount_kobo, 'currency', f.currency,
+    jsonb_build_object('from', o.status, 'to', case when f.outcome = 'extra-payment' or p_class = 'excess' then o.status
+        else 'refund-pending' end,
+      'refund_id', r.id, 'refund_class', p_class, 'amount_kobo', v_amount, 'currency', f.currency,
       'payment_id', f.provider_payment_id, 'request_id', p_request_id));
   return v_result;
 end;
 $$;
 
--- The refund's outcome (service role): the provider's answer, or a manual refund with our bank reference. Final.
+-- The refund's outcome (service role): the provider's answer, or, for a bank transfer only, a manual refund to the
+-- account that paid, with our transfer reference and that account's last four digits. Final.
 create function public.record_refund_result(p_refund_id uuid, p_outcome text, p_provider_refund_id text,
-  p_manual_reference text, p_actor text) returns jsonb
+  p_manual_reference text, p_actor text, p_account_last4 text default null) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare v_user uuid; v_order uuid; v_now timestamptz; o private.payment_orders; r private.payment_refunds;
   f private.payment_fulfilments;
@@ -1008,6 +1089,8 @@ begin
       or (p_provider_refund_id is not null and p_provider_refund_id !~ '^[A-Za-z0-9_.:-]{1,128}$')
       or (p_manual_reference is not null and char_length(btrim(p_manual_reference)) not between 1 and 128)
       or (p_outcome = 'refunded' and p_provider_refund_id is null and p_manual_reference is null)
+      or (p_manual_reference is null) <> (p_account_last4 is null) or p_account_last4 !~ '^[0-9]{4}$'
+      or (p_manual_reference is not null and (p_outcome <> 'refunded' or p_provider_refund_id is not null))
       or p_actor is null or char_length(btrim(p_actor)) not between 1 and 120 then
     raise exception 'Invalid refund result' using errcode = '22023';
   end if;
@@ -1017,17 +1100,22 @@ begin
   select * into r from private.payment_refunds where id = p_refund_id for update;
   v_now := clock_timestamp();
   if r.id is null then return jsonb_build_object('state', 'not-found'); end if;
+  select * into f from private.payment_fulfilments where id = r.payment_id;
+  if p_manual_reference is not null and f.method <> 'bank_transfer' then
+    raise exception 'Card refunds are settled only through the provider' using errcode = '22023';
+  end if;
   if r.status <> 'pending' then
     return jsonb_build_object('state', case when r.status = p_outcome
         and r.provider_refund_id is not distinct from p_provider_refund_id
-        and r.manual_reference is not distinct from btrim(p_manual_reference) then 'unchanged' else 'already-final' end,
+        and r.manual_reference is not distinct from btrim(p_manual_reference)
+        and r.manual_account_last4 is not distinct from p_account_last4 then 'unchanged' else 'already-final' end,
       'refund_status', r.status);
   end if;
   update private.payment_refunds set status = p_outcome, provider_refund_id = p_provider_refund_id,
-      manual_reference = btrim(p_manual_reference), settled_at = v_now, settled_by = btrim(p_actor)
+      manual_reference = btrim(p_manual_reference), manual_account_last4 = p_account_last4, settled_at = v_now,
+      settled_by = btrim(p_actor)
     where id = r.id;
-  select * into f from private.payment_fulfilments where id = r.payment_id;
-  if f.outcome <> 'extra-payment' then
+  if f.outcome <> 'extra-payment' and r.refund_class <> 'excess' then
     update private.payment_orders set status = case p_outcome when 'refunded' then 'refunded' else 'refund-failed' end,
         updated_at = v_now where id = o.id;
   end if;
@@ -1165,7 +1253,14 @@ language sql stable security definer set search_path = '' as $$
       and created_at < clock_timestamp() - interval '30 minutes'),
     'needs_support', coalesce((select jsonb_agg(jsonb_build_object('order_id', id, 'status', status, 'flags', flags)
       order by created_at) from private.payment_orders where status in ('amount-mismatch', 'paid-duplicate',
-        'unfulfilled', 'refund-failed') or cardinality(flags) > 0), '[]'::jsonb),
+        'unfulfilled', 'refund-failed') or cardinality(array_remove(flags, 'overpaid')) > 0), '[]'::jsonb),
+    -- Paid more than the price: listed until the excess (or the whole payment) has been refunded.
+    'overpaid_excess_due', coalesce((select jsonb_agg(jsonb_build_object('order_id', o.id, 'payment_id', f.id,
+        'excess_kobo', f.amount_kobo - o.amount_kobo, 'currency', f.currency, 'method', f.method) order by o.created_at)
+      from private.payment_orders o join private.payment_fulfilments f on f.order_id = o.id
+      where f.outcome = 'fulfilled' and f.currency = o.currency and f.amount_kobo > o.amount_kobo
+        and not exists (select 1 from private.payment_refunds r where r.payment_id = f.id and r.status = 'refunded'
+          and (r.refund_class = 'excess' or r.amount_kobo = f.amount_kobo))), '[]'::jsonb),
     'refunds_pending', (select count(*) from private.payment_refunds where status = 'pending'),
     'paid_grants_unbound', coalesce((select jsonb_agg(jsonb_build_object('order_id', order_id, 'grant_id', id,
       'part', plan_part, 'starts_at', starts_at)) from public.entitlement_grants where order_id is not null
@@ -1185,10 +1280,11 @@ revoke all on function private.payment_return_path_ok(text), private.payment_det
   public.attach_payment_checkout(uuid, text, text, text, timestamptz),
   public.record_payment_event(text, text, text, uuid, text),
   public.fulfil_payment(uuid, text, text, text, bigint, text, text, timestamptz, text, text),
-  public.record_payment_outcome(uuid, text, text, text), public.payment_orders_to_check(integer),
+  public.record_payment_outcome(uuid, text, text, text), public.payment_orders_to_check(integer, boolean),
+  public.record_payment_check(uuid, text),
   public.refund_eligibility(uuid, text[], timestamptz, uuid),
   public.refund_order(uuid, text, uuid, text[], text, text, timestamptz, uuid),
-  public.record_refund_result(uuid, text, text, text, text),
+  public.record_refund_result(uuid, text, text, text, text, text),
   public.admin_set_sales_open(boolean, text, text), public.admin_set_plan(text, integer, integer, boolean, text, text),
   public.admin_set_campus_bot_tier(text, integer, integer, integer, integer, integer, text, text),
   public.admin_set_campus_bot_model(text, integer, text, text),
@@ -1200,10 +1296,11 @@ grant execute on function public.create_payment_order(uuid, text, bigint, uuid, 
   public.attach_payment_checkout(uuid, text, text, text, timestamptz),
   public.record_payment_event(text, text, text, uuid, text),
   public.fulfil_payment(uuid, text, text, text, bigint, text, text, timestamptz, text, text),
-  public.record_payment_outcome(uuid, text, text, text), public.payment_orders_to_check(integer),
+  public.record_payment_outcome(uuid, text, text, text), public.payment_orders_to_check(integer, boolean),
+  public.record_payment_check(uuid, text),
   public.refund_eligibility(uuid, text[], timestamptz, uuid),
   public.refund_order(uuid, text, uuid, text[], text, text, timestamptz, uuid),
-  public.record_refund_result(uuid, text, text, text, text),
+  public.record_refund_result(uuid, text, text, text, text, text),
   public.admin_set_sales_open(boolean, text, text), public.admin_set_plan(text, integer, integer, boolean, text, text),
   public.admin_set_campus_bot_tier(text, integer, integer, integer, integer, integer, text, text),
   public.admin_set_campus_bot_model(text, integer, text, text),

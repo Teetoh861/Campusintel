@@ -21,6 +21,8 @@ export type FakeProvider = PaymentProvider & {
   /** A signed delivery for the webhook route, as Bachs would send it. */
   signedDelivery(event: Record<string, unknown>, timestamp?: number): { body: string; headers: Headers }
   readonly calls: { create: number; read: number; refund: number }
+  /** The amount asked for by each refund, by idempotency key (undefined: the whole payment). */
+  readonly refundAmounts: Map<string, number | undefined>
 }
 
 export function fakeCheckoutId(orderId: string): string {
@@ -32,12 +34,14 @@ export function createFakeProvider(options: { now?: () => number } = {}): FakePr
   const sessions = new Map<string, CheckoutSnapshot>()
   const refunds = new Map<string, RefundSnapshot>()
   const calls = { create: 0, read: 0, refund: 0 }
+  const refundAmounts = new Map<string, number | undefined>()
   let refundOutcome: RefundSnapshot['status'] | 'unavailable' = 'pending'
   let failingReads = 0
 
   return {
     id: 'fake',
     calls,
+    refundAmounts,
     async createCheckout(input: CheckoutRequest): Promise<CreatedCheckout> {
       calls.create += 1
       const checkoutId = fakeCheckoutId(input.orderId)
@@ -65,6 +69,7 @@ export function createFakeProvider(options: { now?: () => number } = {}): FakePr
       if (existing) return { ...existing }
       const refund = { refundId: `fref_${input.idempotencyKey}`, reference: input.reference, status: refundOutcome }
       refunds.set(input.idempotencyKey, refund)
+      refundAmounts.set(input.idempotencyKey, input.amountKobo)
       return { ...refund }
     },
     async getRefund(refundId: string): Promise<RefundSnapshot> {

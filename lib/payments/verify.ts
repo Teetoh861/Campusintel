@@ -65,43 +65,70 @@ export async function verifyOrder(deps: VerifyDeps, orderId: string, source: Ful
 }
 
 const checkRow = z.object({ order_id: z.string().uuid(), action: z.enum(['check', 'expire', 'late-check']) })
-// Ask for more than one batch so open orders are never starved by the late checks that sort before them.
-const CANDIDATES = 500
+const checkRecorded = z.object({ state: z.string() }).passthrough()
 export const RECONCILE_BATCH = 50
+// Without a deadline (the operator's reconcile-now), at most this many batches in one run.
+const MAX_BATCHES_WITHOUT_DEADLINE = 20
 export type ReconcileSummary = { checked: number; fulfilled: number; ended: number; expired: number; waiting: number;
-  failed: number; skipped: number }
+  failed: number; skipped: number; batches: number }
+type CheckResult = 'waiting' | 'fulfilled' | 'ended' | 'expired' | 'settled' | 'review' | 'no-checkout' | 'not-found'
+  | 'provider-unavailable' | 'error'
 
 /**
- * One bounded catch-up run, oldest first: open orders the provider has not reported on, orders past the
- * reconciliation window (asked once more, then expired), and, when includeLate, the late check of orders that ended
- * without payment in the last late_check_days (a transfer can settle late; a late success is still fulfilled).
+ * One catch-up run: batches of the orders due now, in the database's order (anything overdue for a day, then open orders
+ * newest first, expiries, and, when includeLate, late checks), until none are due or the deadline passes. Every check,
+ * successful or not, is recorded, which sets the order's next check (open orders soon and often, ended orders backing
+ * off until late_check_days), so a run never asks about the same order twice and no order waits longer than a day past
+ * its due time however many there are.
  */
 export async function reconcileOrders(deps: VerifyDeps, options: { includeLate: boolean; limit?: number;
   deadline?: number; now?: () => number }): Promise<ReconcileSummary> {
   const now = options.now ?? Date.now
-  const limit = Math.min(Math.max(options.limit ?? RECONCILE_BATCH, 1), RECONCILE_BATCH)
-  const rows = await call(deps.rpc, 'payment_orders_to_check', { p_limit: CANDIDATES }, z.array(checkRow))
-  const ordered = [...rows.filter(row => row.action !== 'late-check'),
-    ...(options.includeLate ? rows.filter(row => row.action === 'late-check') : [])].slice(0, limit)
-  const summary: ReconcileSummary = { checked: 0, fulfilled: 0, ended: 0, expired: 0, waiting: 0, failed: 0, skipped: 0 }
-  for (const row of ordered) {
-    if (options.deadline !== undefined && now() >= options.deadline) { summary.skipped += 1; continue }
-    summary.checked += 1
-    try {
-      const result = await verifyOrder(deps, row.order_id, 'reconcile', 'system:reconcile')
-      if (result.state === 'fulfilment') summary.fulfilled += 1
-      else if (result.state === 'ended') summary.ended += 1
-      else if (row.action === 'expire' && result.state !== 'settled' && result.state !== 'provider-unavailable') {
-        const expired = await call(deps.rpc, 'record_payment_outcome', { p_order_id: row.order_id, p_outcome: 'expired',
-          p_provider_status: null, p_source: 'reconcile' }, outcomeResult)
-        if (expired.state === 'recorded') summary.expired += 1
-      } else summary.waiting += 1
-    } catch (error) {
-      summary.failed += 1
-      console.error('payments: reconcile check failed', error instanceof Error ? error.name : 'unknown')
+  const batchSize = Math.min(Math.max(options.limit ?? RECONCILE_BATCH, 1), RECONCILE_BATCH)
+  const summary: ReconcileSummary = { checked: 0, fulfilled: 0, ended: 0, expired: 0, waiting: 0, failed: 0, skipped: 0,
+    batches: 0 }
+  const asked = new Set<string>()
+  const outOfTime = () => options.deadline !== undefined && now() >= options.deadline
+  while (!outOfTime() && (options.deadline !== undefined || summary.batches < MAX_BATCHES_WITHOUT_DEADLINE)) {
+    const rows = await call(deps.rpc, 'payment_orders_to_check', { p_limit: batchSize, p_include_late: options.includeLate },
+      z.array(checkRow))
+    // A check whose recording failed stays due; it is not asked again in this run.
+    const fresh = rows.filter(row => !asked.has(row.order_id))
+    if (fresh.length === 0) break
+    summary.batches += 1
+    for (const row of fresh) {
+      if (outOfTime()) { summary.skipped += 1; continue }
+      asked.add(row.order_id)
+      summary.checked += 1
+      const result = await checkOne(deps, row, summary)
+      try {
+        await call(deps.rpc, 'record_payment_check', { p_order_id: row.order_id, p_result: result }, checkRecorded)
+      } catch (error) {
+        console.error('payments: reconcile check not recorded', error instanceof Error ? error.name : 'unknown')
+      }
     }
   }
   return summary
+}
+
+async function checkOne(deps: VerifyDeps, row: z.infer<typeof checkRow>, summary: ReconcileSummary): Promise<CheckResult> {
+  try {
+    const result = await verifyOrder(deps, row.order_id, 'reconcile', 'system:reconcile')
+    if (result.state === 'fulfilment') { summary.fulfilled += 1; return 'fulfilled' }
+    if (result.state === 'ended') { summary.ended += 1; return 'ended' }
+    if (row.action === 'expire' && result.state !== 'settled' && result.state !== 'provider-unavailable') {
+      const expired = await call(deps.rpc, 'record_payment_outcome', { p_order_id: row.order_id, p_outcome: 'expired',
+        p_provider_status: null, p_source: 'reconcile' }, outcomeResult)
+      if (expired.state === 'recorded') { summary.expired += 1; return 'expired' }
+    }
+    if (result.state === 'provider-unavailable') { summary.failed += 1; return 'provider-unavailable' }
+    summary.waiting += 1
+    return result.state
+  } catch (error) {
+    summary.failed += 1
+    console.error('payments: reconcile check failed', error instanceof Error ? error.name : 'unknown')
+    return 'error'
+  }
 }
 
 const RETURN_VERIFY_INTERVAL_MS = 10_000

@@ -1,7 +1,8 @@
-// lib/payments/refunds.ts — Refunds after part 1's refund_order has revoked every grant and recorded the refund (in its
-// own transaction, before any money moves). Here: the provider refund, keyed by our refund request id so a retry can
-// never refund twice, or a manual refund recorded with our bank reference. Bachs takes one refund per payment and
-// cannot refund bank transfers, which are always settled manually.
+// lib/payments/refunds.ts — Refunds after part 1's refund_order has recorded the refund (and, for a plan refund, revoked
+// every grant) in its own transaction, before any money moves. Here: the provider refund, keyed by our refund request id
+// so a retry can never refund twice. Card refunds go only through Bachs, which takes one refund per payment (an excess
+// refund is a partial one). Bachs cannot refund bank transfers: those are sent from the bank to the account that paid,
+// and recorded with our transfer reference and that account's last four digits.
 import 'server-only'
 import { createHash, createHmac } from 'node:crypto'
 import { z } from 'zod'
@@ -34,23 +35,44 @@ export function orphanOrderIdentity(orderId: string): string[] {
 export const pendingRefund = z.object({ state: z.literal('refund-pending'), refund_id: z.string().uuid(),
   order_id: z.string().uuid(), refund_class: z.string(), amount_kobo: z.number(), currency: z.string(),
   method: z.enum(['card', 'bank_transfer']), provider: z.string(), provider_payment_id: z.string(),
-  idempotency_key: z.string().uuid(), refund_status: z.string().optional() }).passthrough()
+  idempotency_key: z.string().uuid(), refund_status: z.string().optional(), payment_id: z.string().uuid().optional() })
+  .passthrough()
 export type PendingRefund = z.infer<typeof pendingRefund>
 const settled = z.object({ state: z.string(), refund_status: z.string().optional() }).passthrough()
 
 export type RefundDeps = { rpc: PaymentRpc; providerFor(id: string): PaymentProvider | null }
+
+/** A manual settlement: our bank transfer reference, and the last four digits of the account it was sent to, which the
+ *  operator has confirmed match the sender Bachs shows for this payment. */
+export type ManualSettlement = { reference: string; accountLast4: string; destinationConfirmed: boolean }
+
+/** Refuses a manual settlement the database would refuse, before anything is recorded: card payments, or a bank
+ *  transfer without the paying account's last four digits and the operator's confirmation. */
+export function checkManualSettlement(method: string, manual: ManualSettlement | null): void {
+  if (manual === null) return
+  if (method !== 'bank_transfer') {
+    throw new Error('card refunds go only through Bachs: --manual-reference is for bank transfers')
+  }
+  if (!/^[0-9]{4}$/.test(manual.accountLast4)) throw new Error('--account-last4 must be the paying account\'s last four digits')
+  if (!manual.destinationConfirmed) {
+    throw new Error('--destination-confirmed is required: the transfer must go to the account Bachs shows as the sender')
+  }
+}
 export type RefundOutcome =
   | { state: 'refunded' | 'failed' | 'pending'; providerRefundId?: string }
   | { state: 'manual-required'; reason: 'bank-transfer' | 'no-refund-api' }
   | { state: 'provider-unavailable' | 'already-final' }
 
 /** Move money for a recorded refund, or record a manual one. Safe to repeat: same key, same refund. */
-export async function settleRefund(deps: RefundDeps, refund: PendingRefund, options: { manualReference?: string | null;
+export async function settleRefund(deps: RefundDeps, refund: PendingRefund, options: { manual?: ManualSettlement | null;
   actor: string; reason: string }): Promise<RefundOutcome> {
   if (refund.refund_status !== undefined && refund.refund_status !== 'pending') return { state: 'already-final' }
-  if (options.manualReference) {
+  const manual = options.manual ?? null
+  checkManualSettlement(refund.method, manual)
+  if (manual !== null) {
     const result = await call(deps.rpc, 'record_refund_result', { p_refund_id: refund.refund_id, p_outcome: 'refunded',
-      p_provider_refund_id: null, p_manual_reference: options.manualReference, p_actor: options.actor }, settled)
+      p_provider_refund_id: null, p_manual_reference: manual.reference, p_actor: options.actor,
+      p_account_last4: manual.accountLast4 }, settled)
     return result.state === 'recorded' || result.state === 'unchanged' ? { state: 'refunded' } : { state: 'already-final' }
   }
   if (refund.method === 'bank_transfer') return { state: 'manual-required', reason: 'bank-transfer' }
@@ -60,7 +82,8 @@ export async function settleRefund(deps: RefundDeps, refund: PendingRefund, opti
   let answer
   try {
     answer = await provider.refund({ paymentId: refund.provider_payment_id, reference: refund.refund_id,
-      idempotencyKey: refund.idempotency_key, reason: options.reason })
+      idempotencyKey: refund.idempotency_key, reason: options.reason,
+      ...(refund.refund_class === 'excess' ? { amountKobo: refund.amount_kobo } : {}) })
   } catch (error) {
     // Uncertain or refused: the refund stays pending (access is already gone) until refund-retry or a webhook.
     if (error instanceof ProviderUnavailableError) return { state: 'provider-unavailable' }
@@ -87,22 +110,34 @@ export function retryRequestId(failedRefundId: string): string {
 export type RetryPlan =
   | { state: 'nothing-to-retry' | 'not-found' }
   | { state: 'resend'; refund: PendingRefund }
-  | { state: 'renew'; failed: { id: string; refundClass: string; requestedAt: string; reason: string; requestId: string } }
+  | { state: 'renew'; failed: { id: string; refundClass: string; requestedAt: string; reason: string; requestId: string;
+      paymentId: string; method: string } }
 
-/** What refund-retry should do for an order: resend a pending refund (same key), or re-request a failed one. */
+/** What refund-retry should do for an order: resend a pending refund (same key), or re-request a failed one for the same
+ *  payment. Each payment carries a plan refund and an excess refund separately; the most recent unfinished one is retried
+ *  (a later refund of the same payment and kind replaces an earlier failed one). */
 export async function planRefundRetry(rpc: PaymentRpc, orderId: string): Promise<RetryPlan> {
   const { order } = await readOrder(rpc, orderId)
   if (order === null) return { state: 'not-found' }
-  const latest = [...order.refunds].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
-  if (latest === undefined || latest.status === 'refunded') return { state: 'nothing-to-retry' }
-  if (latest.status === 'failed') {
-    return { state: 'renew', failed: { id: latest.id, refundClass: latest.refund_class, requestedAt: latest.requested_at,
-      reason: latest.reason, requestId: retryRequestId(latest.id) } }
-  }
+  const newestFirst = [...order.refunds].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+  const seen = new Set<string>()
+  const current = newestFirst.filter(refund => {
+    const kind = `${refund.payment_id}:${refund.refund_class === 'excess'}`
+    if (seen.has(kind)) return false
+    seen.add(kind)
+    return true
+  })
+  const latest = current.find(refund => refund.status !== 'refunded')
+  if (latest === undefined) return { state: 'nothing-to-retry' }
   const payment = order.payments.find(item => item.id === latest.payment_id)
   if (payment === undefined) return { state: 'nothing-to-retry' }
+  if (latest.status === 'failed') {
+    return { state: 'renew', failed: { id: latest.id, refundClass: latest.refund_class, requestedAt: latest.requested_at,
+      reason: latest.reason, requestId: retryRequestId(latest.id), paymentId: latest.payment_id, method: payment.method } }
+  }
   return { state: 'resend', refund: pendingRefund.parse({ state: 'refund-pending', refund_id: latest.id,
-    order_id: order.id, refund_class: latest.refund_class, amount_kobo: payment.amount_kobo, currency: payment.currency,
+    order_id: order.id, payment_id: latest.payment_id, refund_class: latest.refund_class, amount_kobo: latest.amount_kobo,
+    currency: payment.currency,
     method: payment.method, provider: payment.provider, provider_payment_id: payment.provider_payment_id,
     idempotency_key: latest.request_id, refund_status: 'pending' }) }
 }

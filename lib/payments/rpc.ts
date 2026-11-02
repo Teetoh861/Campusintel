@@ -19,7 +19,7 @@ const orderRow = z.object({
   payments: z.array(z.object({ id: uuid, provider: z.string(), provider_payment_id: z.string(), method: z.string(),
     outcome: z.string(), amount_kobo: z.number(), currency: z.string() })),
   refunds: z.array(z.object({ id: uuid, payment_id: uuid, refund_class: z.string(), request_id: uuid,
-    requested_at: z.string(), status: z.string(), reason: z.string(), created_at: z.string() })),
+    amount_kobo: z.number(), requested_at: z.string(), status: z.string(), reason: z.string(), created_at: z.string() })),
 })
 const statusRow = z.object({ policy: z.object({ checkout_minutes: z.number().int() }), orders: z.array(orderRow) })
 export type OrderRecord = z.infer<typeof orderRow>

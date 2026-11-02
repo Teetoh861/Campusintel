@@ -50,7 +50,7 @@ function options(args) {
     const arg = args[index]
     if (!arg.startsWith('--')) { parsed._.push(arg); continue }
     const name = arg.slice(2)
-    if (['dry-run', 'confirm-public-launch', 'allow-empty', 'confirm'].includes(name)) { parsed[name] = true; continue }
+    if (['dry-run', 'confirm-public-launch', 'allow-empty', 'confirm', 'destination-confirmed'].includes(name)) { parsed[name] = true; continue }
     const value = args[index + 1]
     if (value === undefined || value.startsWith('--')) throw new Error(`--${name} needs a value`)
     parsed[name] = value

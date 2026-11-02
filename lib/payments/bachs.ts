@@ -144,7 +144,8 @@ export function createBachsProvider(options: BachsOptions): PaymentProvider {
     async refund(input: RefundRequest): Promise<RefundSnapshot> {
       try {
         const { json } = await request('POST', '/v1/refunds', TIMEOUTS.refund, { charge_id: input.paymentId,
-          reference: input.reference, reason: input.reason.slice(0, 500), idempotency_key: input.idempotencyKey },
+          reference: input.reference, reason: input.reason.slice(0, 500), idempotency_key: input.idempotencyKey,
+          ...(input.amountKobo !== undefined ? { amount: koboToDecimal(input.amountKobo) } : {}) },
         input.idempotencyKey)
         return refundSnapshot(json)
       } catch (error) {

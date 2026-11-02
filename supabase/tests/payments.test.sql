@@ -89,10 +89,11 @@ select ok(has_function_privilege('service_role',f,'EXECUTE') and not has_functio
   'public.attach_payment_checkout(uuid,text,text,text,timestamptz)',
   'public.record_payment_event(text,text,text,uuid,text)',
   'public.fulfil_payment(uuid,text,text,text,bigint,text,text,timestamptz,text,text)',
-  'public.record_payment_outcome(uuid,text,text,text)','public.payment_orders_to_check(integer)',
+  'public.record_payment_outcome(uuid,text,text,text)','public.payment_orders_to_check(integer,boolean)',
+  'public.record_payment_check(uuid,text)',
   'public.refund_eligibility(uuid,text[],timestamptz,uuid)',
   'public.refund_order(uuid,text,uuid,text[],text,text,timestamptz,uuid)',
-  'public.record_refund_result(uuid,text,text,text,text)','public.admin_set_sales_open(boolean,text,text)',
+  'public.record_refund_result(uuid,text,text,text,text,text)','public.admin_set_sales_open(boolean,text,text)',
   'public.admin_set_plan(text,integer,integer,boolean,text,text)',
   'public.admin_set_campus_bot_tier(text,integer,integer,integer,integer,integer,text,text)',
   'public.admin_set_campus_bot_model(text,integer,text,text)',
@@ -139,7 +140,8 @@ select is((select jsonb_build_array(sales_open,checkout_minutes,sales_close_days
 select pg_temp.student(1);
 select is(pg_temp.buy(1,'standard_semester',pg_temp.req(1))->>'state','sales-closed','nothing is sold while sales are closed');
 select is(public.admin_set_sales_open(true,'Ops','launch test')->>'state','changed','an operator opens sales');
-select is((select count(*)::int from private.entitlement_events where event='payment.sales-opened'),1,'opening is audited');
+select is((select count(*)::int from private.entitlement_events where event='payment.sales-opened' and occurred_at>=now()),1,
+  'opening is audited');
 
 -- Return paths (change 3).
 select is(private.payment_return_path_ok(p),true,'return path accepted: '||coalesce(p,'null'))
@@ -413,9 +415,11 @@ select is(public.record_refund_result((select (res->>'refund_id')::uuid from rf3
 select is((pg_temp.order_row((select id from o30))).status,'refund-failed','order refund-failed');
 create temporary table rf30b as select pg_temp.refund((select id from o30),'standard',pg_temp.req(301),pg_temp.ids(30)) res;
 select is((select res->>'state' from rf30b),'refund-pending','a failed refund does not count: retry with a new request');
-select is(public.record_refund_result((select (res->>'refund_id')::uuid from rf30b),'refunded',null,'GTB-REF-0001','Ops')
-  ->>'refund_status','refunded','settled manually with our bank reference');
-select is(public.record_refund_result((select (res->>'refund_id')::uuid from rf30b),'refunded',null,'GTB-REF-0001','Ops')
+select throws_ok($$select public.record_refund_result((select (res->>'refund_id')::uuid from rf30b),'refunded',null,
+  'GTB-REF-0001','Ops','1234')$$,'22023',null,'a card refund is never settled manually');
+select is(public.record_refund_result((select (res->>'refund_id')::uuid from rf30b),'refunded','fref_30b',null,'Ops')
+  ->>'refund_status','refunded','settled by the provider');
+select is(public.record_refund_result((select (res->>'refund_id')::uuid from rf30b),'refunded','fref_30b',null,'Ops')
   ->>'state','unchanged','settling again is unchanged');
 select is((pg_temp.order_row((select id from o30))).status,'refunded','order refunded');
 
@@ -479,13 +483,22 @@ select pg_temp.paid_ago(id,interval '50 hours') from o37;
 select is((pg_temp.elig((select id from o37),pg_temp.ids(37))->>'standard_allowed')::boolean,false,
   'row 23: at 50 h a standard refund is refused');
 select is(pg_temp.elig((select id from o37),pg_temp.ids(37))->'standard_refused','["window"]','because of the window');
-select pg_temp.answers(37,20);
-select is((select jsonb_build_array(e->'standard_allowed',e->'counts'->'practice_answers') from (select public.refund_eligibility(
+select is((select jsonb_build_array(e->'standard_allowed',e->'standard_refused') from (select public.refund_eligibility(
   (select id from o37),pg_temp.ids(37),(select paid_at+interval '47 hours' from private.payment_orders where id=(select id from o37))) e) x),
-  '[true,0]','asked at 47 h: in the window, and later use does not count');
+  '[true,[]]','asked at 47 h with no use: in the window, judged at the request time');
+select pg_temp.answers(37,20);
+select is((select jsonb_build_array(e->'standard_allowed',e->'standard_refused',e->'counts'->'practice_answers')
+  from (select public.refund_eligibility((select id from o37),pg_temp.ids(37),
+    (select paid_at+interval '47 hours' from private.payment_orders where id=(select id from o37))) e) x),
+  '[false,["practice"],20]','use after asking counts until the refund is processed');
 select is(pg_temp.refund((select id from o37),'standard',gen_random_uuid(),pg_temp.ids(37),
-  (select paid_at+interval '47 hours' from private.payment_orders where id=(select id from o37)))->>'state','refund-pending',
-  'refunded as asked at 47 h');
+  (select paid_at+interval '47 hours' from private.payment_orders where id=(select id from o37)))->>'state','refused',
+  'so a student who keeps using the plan while it is processed is refused');
+select is(pg_temp.refund((select id from o37),'our-fault',gen_random_uuid(),pg_temp.ids(37))->>'state','refund-pending',
+  'our-fault is still any use, any time');
+create temporary table o37a as select pg_temp.paid(37) id;
+select is(pg_temp.refund((select id from o37a),'standard',gen_random_uuid(),pg_temp.ids(37))->>'state','refund-pending',
+  'a new payment with no use since it is refundable (earlier use came before it)');
 select throws_ok($$select public.refund_eligibility((select id from o3x where n=31),null,
   (select paid_at-interval '1 minute' from private.payment_orders where id=(select id from o3x where n=31)))$$,'22023',null,
   'the request time cannot be before payment');
@@ -619,6 +632,138 @@ select throws_ok($$insert into public.entitlement_grants(user_id,source,starts_a
 select is((select count(*)::int from public.ai_usage_events where funding_source not in ('trial','early_access','test','paid')),0,
   'funding sources accept paid');
 
+
+-- ---------------------------------------------------------------------------
+-- Overpayment: the plan is granted; the amount above the price is refunded on its own, any time, never counted, with
+-- access unchanged, to the account that paid. Health lists the order until the excess is refunded.
+-- ---------------------------------------------------------------------------
+select pg_temp.student(62);
+create temporary table o62 as select pg_temp.oid(pg_temp.buy(62,'standard_semester',pg_temp.req(620))) id;
+select pg_temp.attach(id) from o62;
+select is(pg_temp.pay((select id from o62),'ch_over62',450000,'webhook','overpaid','NGN','bank_transfer')->>'outcome',
+  'fulfilled','an overpaid bank transfer is granted');
+select pg_temp.paid_ago(id,interval '30 days') from o62;
+create function pg_temp.excess_due(o uuid) returns boolean language sql stable as
+  $$select exists(select 1 from jsonb_array_elements(public.admin_payments_health()->'overpaid_excess_due') e
+    where e->>'order_id'=o::text)$$;
+select is((select jsonb_build_array(e->'classes_allowed',e->'excess_kobo') from
+  (select pg_temp.elig((select id from o62),pg_temp.ids(62)) e) x),'[["standard","our-fault","excess"],50000]',
+  'the excess can be refunded, 30 days on');
+select ok(pg_temp.excess_due((select id from o62)),'payments-health lists the overpaid order');
+select ok(not exists(select 1 from jsonb_array_elements(public.admin_payments_health()->'needs_support') e
+  where e->>'order_id'=(select id from o62)::text),'the overpaid flag alone is not a support case');
+create temporary table rf62 as select pg_temp.refund((select id from o62),'excess',pg_temp.req(621),pg_temp.ids(62)) res;
+select is((select jsonb_build_array(res->>'state',res->'amount_kobo',res->'revoked_grant_ids') from rf62),
+  '["refund-pending",50000,[]]','an excess refund is the amount above the price, and revokes nothing');
+select is((pg_temp.order_row((select id from o62))).status,'paid','the order stays paid');
+select is(pg_temp.allowed(62,'BUA201'),true,'access is unchanged');
+select is(pg_temp.refund((select id from o62),'excess',gen_random_uuid(),pg_temp.ids(62))->>'state','already-refunding',
+  'one excess refund per payment');
+select ok(pg_temp.excess_due((select id from o62)),'still listed while the refund is pending');
+select throws_ok($$select public.record_refund_result((select (res->>'refund_id')::uuid from rf62),'refunded',null,
+  'GTB-EX-62','Ops')$$,'22023',null,'a manual settlement names the paying account''s last four digits');
+select is(public.record_refund_result((select (res->>'refund_id')::uuid from rf62),'refunded',null,'GTB-EX-62','Ops','4321')
+  ->>'refund_status','refunded','settled by bank transfer to the account that paid');
+select is((select manual_account_last4 from private.payment_refunds where id=(select (res->>'refund_id')::uuid from rf62)),
+  '4321','only the transfer reference and the last four digits are kept');
+select is((pg_temp.order_row((select id from o62))).status,'paid','still paid');
+select ok(not pg_temp.excess_due((select id from o62)),'no longer listed once the excess is refunded');
+select is((pg_temp.elig((select id from o62),pg_temp.ids(62))->>'refunds_used')::int,0,'an excess refund never counts');
+create temporary table rf62b as select pg_temp.refund((select id from o62),'our-fault',pg_temp.req(622),pg_temp.ids(62)) res;
+select is((select jsonb_build_array(res->>'state',res->'amount_kobo') from rf62b),'["refund-pending",400000]',
+  'a plan refund after the excess returns the rest');
+select is(pg_temp.allowed(62,'BUA201'),false,'and ends access');
+select is(pg_temp.refund((select id from o3x where n=35),'excess',gen_random_uuid(),pg_temp.ids(35))->>'state',
+  'class-not-allowed','no excess refund when the payment matched the price');
+-- Bachs takes one refund per payment: an overpaid card payment with an excess refund cannot take a plan refund too.
+select pg_temp.student(63);
+create temporary table o63 as select pg_temp.oid(pg_temp.buy(63,'standard_semester',pg_temp.req(630))) id;
+select pg_temp.attach(id) from o63;
+select pg_temp.pay((select id from o63),'ch_over63',450000,'webhook','overpaid');
+select is(pg_temp.refund((select id from o63),'excess',gen_random_uuid(),pg_temp.ids(63))->>'state','refund-pending',
+  'a card excess refund is recorded');
+select is(pg_temp.refund((select id from o63),'our-fault',gen_random_uuid(),pg_temp.ids(63))->>'state',
+  'provider-refund-used','a card payment that carries one refund cannot take another');
+
+-- ---------------------------------------------------------------------------
+-- A failed refund of an extra payment is re-requested for that same payment, in either class.
+-- ---------------------------------------------------------------------------
+select pg_temp.student(64);
+create temporary table o64 as select pg_temp.paid(64) id;
+select is(pg_temp.pay((select id from o64),'ch_extra64')->>'outcome','extra-payment','a second payment on the order');
+create temporary table x64 as select id from private.payment_fulfilments where provider_payment_id='ch_extra64';
+create function pg_temp.refund_extra(cls text, req uuid) returns jsonb language sql as
+  $$select public.refund_order((select id from o64),cls,req,pg_temp.ids(64),'Ops','second payment',clock_timestamp(),
+    (select id from x64))$$;
+-- One result per line, as pg_prove reads them.
+create function pg_temp.extra_retry(cls text, req uuid, retry uuid) returns setof text language plpgsql as $$
+begin
+  return next is(pg_temp.refund_extra(cls,req)->>'state','refund-pending','extra payment, '||cls||': recorded');
+  return next is(public.record_refund_result((pg_temp.refund_extra(cls,req)->>'refund_id')::uuid,'failed',null,null,'Ops')
+    ->>'refund_status','failed',cls||': the provider refused');
+  return next is(pg_temp.refund_extra(cls,retry)->>'payment_id',(select id::text from x64),
+    cls||': the retry refunds the same extra payment');
+  return next is(public.record_refund_result((pg_temp.refund_extra(cls,retry)->>'refund_id')::uuid,'failed',null,null,'Ops')
+    ->>'refund_status','failed',cls||': a second failure is recorded the same way');
+end$$;
+select pg_temp.extra_retry('duplicate',pg_temp.req(640),pg_temp.req(641));
+select pg_temp.extra_retry('our-fault',pg_temp.req(642),pg_temp.req(643));
+select is((select count(*)::int from public.entitlement_grants where order_id=(select id from o64) and revoked_at is null),1,
+  'refunding the extra payment never touches the plan');
+
+-- ---------------------------------------------------------------------------
+-- Catch-up: more due orders than one query (500) and one batch (50). Open orders newest first; every check is recorded
+-- and moves the order's next check later, so batches walk the whole queue; ended orders back off; anything overdue for
+-- a day goes first.
+-- ---------------------------------------------------------------------------
+create temporary table bulk as select gen_random_uuid() id, g from generate_series(1,620) g;
+insert into private.payment_orders (id,user_id,request_id,plan_key,tier,period,amount_kobo,currency,ai_sets,
+    campus_bot_session_tokens,campus_bot_week_tokens,term_id,term_session_label,term_period_id,second_period_id,
+    department_id,profile_revision,provider,status,expires_at,created_at)
+  select b.id,null,gen_random_uuid(),t.plan_key,t.tier,t.period,t.amount_kobo,t.currency,t.ai_sets,
+    t.campus_bot_session_tokens,t.campus_bot_week_tokens,t.term_id,t.term_session_label,t.term_period_id,
+    t.second_period_id,t.department_id,t.profile_revision,'fake','created',clock_timestamp()+interval '1 hour',
+    clock_timestamp()-make_interval(mins=>10+b.g)
+  from bulk b, private.payment_orders t where t.id=(select id from o30);
+select is((select count(*)::int from public.payment_orders_to_check(500) c join bulk b on b.id=c.order_id),500,
+  'more candidates than one query');
+select is((select array_agg(b.g order by b.g) from public.payment_orders_to_check(50) c join bulk b on b.id=c.order_id),
+  (select array_agg(g order by g) from generate_series(1,50) g),'the first batch is the 50 newest open orders');
+do $$
+declare n int := 0;
+begin
+  loop
+    perform public.record_payment_check(c.order_id,'waiting') from public.payment_orders_to_check(50) c;
+    n := n + 1;
+    exit when not exists (select 1 from public.payment_orders_to_check(1)) or n > 40;
+  end loop;
+  perform set_config('test.batches', n::text, true);
+end $$;
+select ok(current_setting('test.batches')::int between 13 and 20,'batches of 50 walk the whole queue: '
+  ||current_setting('test.batches'));
+select is((select count(*)::int from private.payment_orders o join bulk b on b.id=o.id
+  where o.check_count=1 and o.last_check_result='waiting' and o.next_check_at between clock_timestamp()+interval '1 minute'
+    and clock_timestamp()+interval '3 minutes'),620,'every candidate was checked once and is next due in 2 minutes');
+select is(public.record_payment_check(gen_random_uuid(),'waiting')->>'state','not-found','an unknown order');
+select throws_ok($$select public.record_payment_check((select id from bulk where g=1),'fine')$$,'22023',null,
+  'only known results are recorded');
+-- Ended orders back off from an hour, doubling to 48 hours, until late_check_days.
+update private.payment_orders set status='expired', check_count=k
+  from (values (1,0),(2,3),(3,10)) v(g,k), bulk b where b.g=v.g and payment_orders.id=b.id;
+select is((select array_agg(round(extract(epoch from (public.record_payment_check(b.id,'provider-unavailable')->>'next_check_at')::timestamptz
+    - clock_timestamp())/3600) order by b.g) from bulk b where b.g<=3),array[1,8,48]::numeric[],
+  'late checks back off: 1 h, then doubling, at most 48 h');
+select is((select last_check_result from private.payment_orders where id=(select id from bulk where g=2)),'provider-unavailable',
+  'an unsuccessful check is recorded');
+update private.payment_orders set next_check_at=clock_timestamp()-interval '2 days' where id=(select id from bulk where g=3);
+select is((select order_id from public.payment_orders_to_check(1)),(select id from bulk where g=3),
+  'an order overdue for a day goes first, even a late check');
+select ok(not exists(select 1 from public.payment_orders_to_check(500,false) where order_id=(select id from bulk where g=3)),
+  'without the late check, ended orders are not asked');
+update private.payment_orders set created_at=clock_timestamp()-interval '15 days' where id=(select id from bulk where g=3);
+select ok(not exists(select 1 from public.payment_orders_to_check(500) where order_id=(select id from bulk where g=3)),
+  'late checks stop after late_check_days');
+update private.payment_orders set status='cancelled' where id in (select id from bulk);
 
 -- ---------------------------------------------------------------------------
 -- The sales switch through its operator function, and account deletion with payment records. (safeupdate, which the
