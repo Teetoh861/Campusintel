@@ -49,3 +49,14 @@ test('the workspace leads with the verbatim disclaimer, entitled or not', () => 
       'above the list of sets')
   }
 })
+
+for (const [reason, line] of [
+  ['outside-list', 'Uploads are available for courses in your current list. Your saved sets are still here.'],
+  ['paused', 'Uploads are paused for now. Your saved sets are still here.'],
+]) test(`saved sets explain hidden uploads: ${reason}`, () => {
+  const markup = html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance: null,
+    recentSets: [set], canGenerate: false, uploadsUnavailableReason: reason }))
+  assert.equal(markup.split(line).length - 1, 1)
+  assert.match(markup, /notes.pdf/)
+  assert.doesNotMatch(markup, /type="file"|Choose a file/)
+})

@@ -144,5 +144,46 @@ select is((select allowed from public.get_my_course_access(array[pg_temp.c('BUA2
 select throws_ok($q$select * from public.read_published_managed_content(pg_temp.r('BUA202'))$q$,'CI403',null,'bookmark never opens outside-list material');
 select throws_ok($q$select * from public.published_cbt_summary(array[pg_temp.r('BUA202')])$q$,'CI403',null,'bookmark never opens outside-list bank counts');
 reset role;
+-- Review-fix projections: explanations name the actual access case, and RLS never persists pending bindings.
+select is(private.practice_view(a)->>'review_unavailable_reason','needs-plan','expired plan gives the existing score-only line')
+  from public.quiz_attempts a where id='a4220000-0000-4000-8000-000000000001';
+update public.entitlement_grants set ends_at=clock_timestamp()+interval '1 day' where user_id in(pg_temp.u(2),pg_temp.u(7));
+select is(private.practice_view(jsonb_populate_record(null::public.quiz_attempts,
+    to_jsonb(a)||jsonb_build_object('course_id',pg_temp.r('BUA202'))))->>'review_unavailable_reason','outside-list',
+  'active plan on an outside-list course names the current-list rule')
+  from public.quiz_attempts a where id='a4220000-0000-4000-8000-000000000001';
+insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+  values('00000000-0000-0000-0000-000000000000',pg_temp.u(10),'authenticated','authenticated','a2-needs-confirming@example.test',
+    'fixture-only',now(),'{}','{}',now(),now());
+insert into public.entitlement_grants(user_id,source,starts_at,ends_at,ai_terms,created_by)
+  values(pg_temp.u(10),'manual',now()-interval '1 day',now()+interval '1 day','none','a2-review-test');
+select is(private.practice_view(jsonb_populate_record(null::public.quiz_attempts,
+    to_jsonb(a)||jsonb_build_object('user_id',pg_temp.u(10))))->>'review_unavailable_reason','needs-selection',
+  'active plan with an unconfirmed profile requests semester confirmation')
+  from public.quiz_attempts a where id='a4220000-0000-4000-8000-000000000001';
+update public.entitlement_grants set course_term_id=null,course_department_id=null where user_id in(pg_temp.u(2),pg_temp.u(7));
+select ok(private.course_access_select_allowed(pg_temp.u(2),pg_temp.c('BUA201'),clock_timestamp()),
+  'the SELECT projection counts a grant awaiting binding');
+select ok(not private.course_access_select_allowed(pg_temp.u(2),pg_temp.c('BUA202'),clock_timestamp()),
+  'a pending binding never opens an outside-list course');
+insert into private.student_course_additions(user_id,institutional_course_id,term_id,department_id,starts_at,ends_at,actor,reason,idempotency_key)
+  values(pg_temp.u(2),pg_temp.c('BUA202'),(private.current_course_scope(pg_temp.u(2),clock_timestamp())->>'term_id')::uuid,
+    '10000000-0000-4000-8000-000000000002',clock_timestamp()-interval '1 day',clock_timestamp()+interval '1 day',
+    'Ops','pending binding team addition',gen_random_uuid());
+select ok(private.course_access_select_allowed(pg_temp.u(2),pg_temp.c('BUA202'),clock_timestamp()),
+  'a pending binding still permits an active team addition');
+insert into public.ai_practice_documents(id,user_id,institutional_course_id,storage_path,file_name,media_type,declared_bytes,expires_at)
+  values('a4230000-0000-4000-8000-000000000002',pg_temp.u(2),pg_temp.c('BUA202'),
+    pg_temp.u(2)::text||'/a4230000-0000-4000-8000-000000000002','added-notes.txt','text/plain',10,now()+interval '1 day');
+set local role authenticated;
+select set_config('request.jwt.claims',jsonb_build_object('sub',pg_temp.u(2),'session_id',pg_temp.s(2),'role','authenticated')::text,true);
+select is((select count(*)::int from public.quiz_attempt_answers),1,'pending binding permits the finished owner answer');
+select is((select count(*)::int from public.ai_practice_documents),1,'pending binding permits AI reads for an active team addition');
+select set_config('request.jwt.claims',jsonb_build_object('sub',pg_temp.u(7),'session_id',pg_temp.s(7),'role','authenticated')::text,true);
+select is((select count(*)::int from public.ai_practice_documents),2,'pending binding permits own-list AI document reads');
+select is((select count(*)::int from public.ai_practice_generations),1,'pending binding preserves saved set reads');
+reset role;
+select is((select count(*)::int from public.entitlement_grants where user_id in(pg_temp.u(2),pg_temp.u(7))
+  and course_term_id is null and course_department_id is null),2,'RLS leaves both pending bindings unchanged');
 select * from finish();
 rollback;

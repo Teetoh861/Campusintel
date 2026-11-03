@@ -28,6 +28,7 @@ type Props = {
   // This tab still held answers the server never received when time ran out.
   unsentAtDeadline: boolean
   starting: boolean
+  openingReview?: boolean
   error: PracticeProblem | null
   onRetry: () => void
   onReview: () => void
@@ -86,7 +87,8 @@ export function ResultsScreen(props: Props): ReactElement {
       <section className="student-practice-next" aria-labelledby="student-practice-next-heading">
         <h2 id="student-practice-next-heading">{plural(toReview, 'question')} to review</h2>
         <p>See the correct answer for every question in this attempt.</p>
-        <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={props.onReview}>Review answers</button>
+        <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={props.onReview}
+          disabled={props.openingReview} aria-busy={props.openingReview}>Review answers</button>
         {canStartNew && wholeBank ? <button type="button" className={studentAction(btnGhost)} disabled={starting}
           onClick={props.onRetake}>Practise again</button> : null}
         {canStartNew && !wholeBank ? <>

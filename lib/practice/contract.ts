@@ -72,7 +72,10 @@ const meta = {
   startedAt: timestamp, deadlineAt: timestamp, durationSeconds: z.number().int().positive(),
   questionCount: z.number().int().positive(), bankSize: z.number().int().positive(),
 }
-const closed = { reviewAvailable: z.boolean().default(true), status: z.enum(['submitted', 'timed_out']), ...meta,
+export const reviewUnavailableReason = z.enum(['needs-plan', 'outside-list', 'needs-selection'])
+const closed = { reviewAvailable: z.boolean().default(true), canStartNew: z.boolean().optional(),
+  reviewUnavailableReason: reviewUnavailableReason.optional(),
+  status: z.enum(['submitted', 'timed_out']), ...meta,
   result: z.object({ score: z.number().int().nonnegative(), total: z.number().int().positive(), timedOut: z.boolean(),
     finishedAt: timestamp }).strict() }
 export const practiceAttemptSchema = z.union([

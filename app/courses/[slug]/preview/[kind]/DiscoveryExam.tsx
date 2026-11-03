@@ -386,6 +386,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
 function ExamReview({ result }: { questions: ReadonlyArray<SampleQuestion>; result: SampleResult }): ReactElement {
   return <section className="student-surface" aria-label="Exam result">
     <p className="text-2xl font-bold tabular-nums">{result.score} of {result.total} correct</p>
+    {result.timed_out ? <p>Time ran out.</p> : null}
     <p className="student-meta">{ANSWERS_ACCESS_LINE}</p>
   </section>
 }
