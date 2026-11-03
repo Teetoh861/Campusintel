@@ -20,7 +20,9 @@ export type CourseRowIdentity = { title: string } & (
 export type CourseRowPresentation = CourseRowIdentity & (
   | { href: string; learningTypes: ReadonlyArray<string>; unavailable?: never; locked?: never }
   /** A built course the student's plan does not include: it opens the course page, which explains how to unlock. */
-  | { href: string; locked: true; lockReason?: CourseLockReason; learningTypes?: never; unavailable?: never }
+  | { href: string; locked: true; lockReason?: CourseLockReason; learningTypes?: never; unavailable?: never
+      /** The copy switch's wording for a course the plan does not include (default: today's). */
+      lockedLabel?: string }
   | { href?: never; learningTypes?: never; locked?: never; unavailable: 'missing' | 'temporary'
       /** Personal AI practice for a course with no built content; always presented as secondary. */
       aiPracticeHref?: string }
@@ -45,7 +47,7 @@ export function CourseRow(props: CourseRowProps): ReactElement {
       {props.locked ? <p className="student-course-row-locked">
         <Lock aria-hidden="true" size={14} strokeWidth={1.75} /><span>{props.lockReason === 'outside-list' ? STUDY_COPY.outsideList
           : props.lockReason === 'needs-selection' ? STUDY_COPY.confirmCourses
-          : props.lockReason === 'selection-locked' ? STUDY_COPY.selectionLocked : STUDY_COPY.locked}</span>
+          : props.lockReason === 'selection-locked' ? STUDY_COPY.selectionLocked : props.lockedLabel ?? STUDY_COPY.locked}</span>
       </p>
         : props.href !== undefined ? <p>{props.learningTypes.join(' · ')}</p>
         : props.unavailable === 'missing'

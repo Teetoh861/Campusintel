@@ -8,6 +8,7 @@ import { notFound, redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
+import { readPlansOnSale } from '@/lib/entitlements/server'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
@@ -97,7 +98,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     courseHref={route.href} repositoryOnly={result.status === 'repository-only'}
     repositoryCourseId={course.repository.repositoryCourseId} brief={brief} bankSize={practice?.bankSize ?? 0}
     topics={initial.kind === 'topic' || ('attempt' in initial && initial.attempt.mode === 'instant') ? await topicsFor() : []}
-    lastResultHref={lastResultHref} initial={initial} />
+    lastResultHref={lastResultHref} initial={initial} plansOnSale={client !== null && await readPlansOnSale(client).catch(() => false)} />
 
   // A reloadable attempt URL: the student's own attempt on this course, open or graded.
   if (attemptId !== null) {
@@ -174,7 +175,8 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
   }
 
   if (course.content.state === 'locked') {
-    return <StudentPage band={band}><LockedCourseNotice reason={course.content.reason} backHref={route.href} backLabel={PRACTICE_COPY.backToCourse} /></StudentPage>
+    return <StudentPage band={band}><LockedCourseNotice reason={course.content.reason} backHref={route.href}
+      backLabel={PRACTICE_COPY.backToCourse} plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} /></StudentPage>
   }
   if (course.content.state === 'not-available') return <StudentPage band={band}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={backToCourse}>{null}</Notice>

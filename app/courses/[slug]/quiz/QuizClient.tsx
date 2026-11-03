@@ -74,6 +74,8 @@ type Props = {
   topics: ReadonlyArray<string>
   lastResultHref: string | null
   initial: QuizInitial
+  /** The copy switch (plans_on_sale) for the score-only result. */
+  plansOnSale?: boolean
 }
 
 export type View =
@@ -284,6 +286,7 @@ export function QuizClient(props: Props): ReactElement | null {
     const { attempt } = view
     const canStartNew = brief !== null && (attempt.canStartNew ?? attempt.reviewAvailable)
     if (!attempt.reviewAvailable) return <ScoreOnly {...identity} attempt={attempt} courseHref={props.courseHref}
+      plansOnSale={props.plansOnSale}
       canStartNew={canStartNew} starting={busy}
       onRetake={() => { if (brief !== null) start('new', null, brief) }} />
     if (attempt.mode === 'instant') {

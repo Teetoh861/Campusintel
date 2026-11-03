@@ -18,7 +18,7 @@ import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } fro
 import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
 import { trialWording } from '@/lib/entitlements/presentation'
-import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { practicePolicyFor } from '@/lib/practice/server'
 import { readPracticeTopics, readTopicProgress, topicRowsOf } from '@/lib/practice/topics'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -59,7 +59,9 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
   let pass: DiscoveryPass | null = null
   // Mentioned only when this account can still start a pass: the database offers one (a database from before the
   // pass offers none) and the account has not had its one trial.
-  let passOffered = false
+  let passHours: number | null = null
+  // The copy switch for the lock notice (plans_on_sale), read only for a locked course.
+  let plansOnSale = false
   // The course's practice topics with this student's progress; none when they cannot be read now.
   let topics: PracticeTopicRow[] = []
   try {
@@ -69,17 +71,20 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
     if (result.status === 'ok' && result.course.content.state === 'locked' && result.course.content.reason === undefined && hasActiveCourseOffering(result.course)) {
       const read = await readEntitlementForVerifiedStudent(client)
       const entitlement = read.status === 'ok' ? read.entitlement : null
-      passOffered = trialWording(entitlement).passAvailable
+      passHours = entitlement !== null && trialWording(entitlement).passAvailable ? entitlement.trial_hours : null
       pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
+    }
+    if ((result.status === 'ok' || result.status === 'repository-only') && result.course.content.state === 'locked') {
+      plansOnSale = await readPlansOnSale(client)
     }
     if (context !== null && (result.status === 'ok' || result.status === 'repository-only') && result.practice !== null) {
       topics = await practiceTopicRows(client, context.sessionId, result.course.repository)
     }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'ok' || result.status === 'repository-only') {
-    return <CourseStudyHub result={result} pass={pass} passOffered={passOffered} topics={topics}
-      continuityToken={continuityToken} />
+    return <CourseStudyHub result={result} pass={pass} passHours={passHours} topics={topics}
+      continuityToken={continuityToken} plansOnSale={plansOnSale} />
   }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
@@ -117,9 +122,9 @@ function RequestMaterialLink({ href, prominent = false }: { href: string; promin
 }
 
 /** Compose institutional or repository identity, availability and the study families from central truth. */
-function CourseStudyHub({ result, pass, passOffered, topics, continuityToken }: {
-  result: ResolvedCourse; pass: DiscoveryPass | null; passOffered: boolean; topics: ReadonlyArray<PracticeTopicRow>
-  continuityToken: string
+function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plansOnSale }: {
+  result: ResolvedCourse; pass: DiscoveryPass | null; passHours: number | null; topics: ReadonlyArray<PracticeTopicRow>
+  continuityToken: string; plansOnSale: boolean
 }): ReactElement {
   const { learning, practice } = result
   const { repository, content } = result.course
@@ -150,7 +155,8 @@ function CourseStudyHub({ result, pass, passOffered, topics, continuityToken }: 
       {!institutional && content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
           Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
         </Notice>}
-      {locked && (scopeNotice || pass === null ? <LockedCourseNotice passOffered={passOffered} reason={content.reason} />
+      {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
+        plansOnSale={plansOnSale} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>

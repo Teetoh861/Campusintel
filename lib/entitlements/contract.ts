@@ -12,6 +12,25 @@ const HOURS_PER_DAY = 24
 export const TRIAL_POLICIES = ['seven-day', 'discovery'] as const
 export type TrialPolicy = (typeof TRIAL_POLICIES)[number]
 
+export const PLAN_TIERS = ['standard', 'plus'] as const
+export const PLAN_PERIODS = ['semester', 'session'] as const
+export type PlanTier = (typeof PLAN_TIERS)[number]
+export type PlanPeriod = (typeof PLAN_PERIODS)[number]
+const planKey = z.enum(['standard_semester', 'standard_session', 'plus_semester', 'plus_session'])
+export type PlanKey = z.infer<typeof planKey>
+const kobo = z.number().int().positive()
+
+// Part 3 (20261104100000): what the plan screens read. Prices come from the catalogue, never the client.
+const planOnSale = z.object({ plan: planKey, tier: z.enum(PLAN_TIERS), period: z.enum(PLAN_PERIODS), price_kobo: kobo })
+const termSummary = z.object({ session_label: z.string().min(1), period_key: z.string().min(1),
+  period_name: z.string().min(1), ends_at: timestamp })
+// The plan our own order says is paid, with its effective dates (capped at each semester's end).
+const paidPlan = z.object({ plan: planKey, tier: z.enum(PLAN_TIERS), period: z.enum(PLAN_PERIODS), order_id: z.string().uuid(),
+  amount_kobo: kobo, paid_at: timestamp, first_ends_at: timestamp.nullable(), second_starts_at: timestamp.nullable(),
+  second_ends_at: timestamp.nullable(), term_session_label: z.string().min(1) })
+const receipt = z.object({ order_id: z.string().uuid(), plan: planKey, amount_kobo: kobo, paid_at: timestamp,
+  status: z.enum(['paid', 'paid-duplicate', 'refund-pending', 'refunded']) })
+
 const discoverySummary = z.object({
   cbt_questions: z.number().int().positive(),
   ai_sets: z.number().int().nonnegative(),
@@ -48,6 +67,12 @@ const summaryWire = z.object({
   }),
   // `otp` is still sent (always null) for builds from before the Discovery Pass; it is dropped here with every other
   // unknown key. No code, phone number or hint ever reaches a page.
+  // The copy switch: false (today's wording, no plans shown) unless the database says plans are on sale.
+  plans_on_sale: z.boolean().optional().default(false),
+  term: termSummary.nullable().optional().default(null),
+  plans: z.array(planOnSale).optional().default([]),
+  paid: paidPlan.nullable().optional().default(null),
+  receipts: z.array(receipt).optional().default([]),
 })
 
 /**
@@ -71,6 +96,10 @@ export const entitlementSummarySchema = summaryWire.transform((wire, context) =>
 })
 
 export type EntitlementSummary = z.output<typeof entitlementSummarySchema>
+export type PlanOnSale = z.infer<typeof planOnSale>
+export type PaidPlan = z.infer<typeof paidPlan>
+export type Receipt = z.infer<typeof receipt>
+export type TermSummary = z.infer<typeof termSummary>
 export type DiscoverySummary = z.infer<typeof discoverySummary>
 
 /**

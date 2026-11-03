@@ -9,7 +9,7 @@ const attempt = { id: 'attempt', mode: 'exam', status: 'submitted', reviewAvaila
 
 for (const [reason, line] of [
   ['needs-plan', 'Answers and explanations are included with full access.'],
-  ['outside-list', 'Answers are available for courses in your current list.'],
+  ['outside-list', 'Answers are available for your courses this semester.'],
   ['needs-selection', 'Confirm your courses for this semester to see answers.'],
 ]) test(`score-only result retains course identity, navigation and the correct ${reason} line`, async () => withTsx(() => {
   const { ScoreOnly } = require('./ScoreOnly.tsx')
@@ -20,7 +20,9 @@ for (const [reason, line] of [
   assert.ok(markup.includes(line))
   assert.match(markup, /href="\/courses\/bua-216"/)
   assert.doesNotMatch(markup, /Review answers|Retake with new questions/)
-  assert.equal(markup.includes('href="/profile-selection"'), reason === 'needs-selection')
+  // Confirm courses comes back to this result after the save.
+  assert.equal(markup.includes(`href="/profile-selection?return=${encodeURIComponent('/courses/bua-216/quiz?attempt=attempt')}"`),
+    reason === 'needs-selection')
   assert.equal(markup.includes('Confirm courses'), reason === 'needs-selection')
 }))
 
@@ -39,7 +41,21 @@ test('free-pass timeout shows the timeout line alongside its score, without an a
   const render = timedOut => renderToStaticMarkup(React.createElement(DiscoveryExam, { continuityToken: 't', courseSlug: 'bua-216',
     questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z', savedSheet: null,
     initialResult: { score: 3, total: 50, timed_out: timedOut } }))
-  assert.match(render(true), /3 of 50 correct.*Time ran out\..*Answers and explanations are included with full access\./s)
+  assert.match(render(true), /Your score.*3\/50.*Time ran out\..*Answers and explanations are included with full access\./s)
   assert.doesNotMatch(render(false), /Time ran out\./)
-  assert.doesNotMatch(render(true), /correctOption|"explanation"\s*:|Review answers|input/)
+  assert.doesNotMatch(render(true), /correctOption|"explanation"\s*:|Review answers|input|Subscribe/)
+}))
+
+test('the copy switch: once plans are on sale, a score names subscribing; closed keeps today\'s wording', async () => withTsx(() => {
+  const { ScoreOnly } = require('./ScoreOnly.tsx')
+  const { DiscoveryExam } = require('../preview/[kind]/DiscoveryExam.tsx')
+  const score = plansOnSale => renderToStaticMarkup(React.createElement(ScoreOnly, { ...identity, plansOnSale,
+    attempt: { ...attempt, reviewUnavailableReason: 'needs-plan' }, canStartNew: false, starting: false, onRetake() {} }))
+  assert.match(score(true), /Answers and explanations are included when you subscribe\./)
+  assert.match(score(false), /Answers and explanations are included with full access\./)
+  const exam = plansOnSale => renderToStaticMarkup(React.createElement(DiscoveryExam, { continuityToken: 't',
+    courseSlug: 'bua-216', questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z',
+    savedSheet: null, plansOnSale, initialResult: { score: 3, total: 50, timed_out: false } }))
+  assert.match(exam(true), /included when you subscribe\..*href="\/access"[^>]*>Subscribe<\/a>/s)
+  assert.doesNotMatch(exam(false), /Subscribe/)
 }))

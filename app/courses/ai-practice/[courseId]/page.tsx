@@ -84,6 +84,7 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
   return <StudentPage band={<PageBand title="Practise from your notes" lede={LEDE}
     context={<p className="ai-practice-context"><b>{course.code}</b> · {course.title}</p>} />}>
     <AiPracticeClient courseId={course.institutionalCourseId} continuityToken={continuityToken}
+      plansOnSale={plan !== null && plan.status === 'ok' && plan.entitlement.plans_on_sale}
       initialAllowance={allowance} recentSets={sets} trial={trial}
       uploadsUnavailableReason={!scoped ? 'outside-list' : !enabled ? 'paused' : undefined}
       canGenerate={enabled && scoped && isAiPracticeEligible(course)} />

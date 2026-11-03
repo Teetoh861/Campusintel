@@ -13,11 +13,11 @@ type OpenCommand = Extract<DiscoveryCommand, { action: 'open' | 'open-topic' }>
 
 const REFUSAL: Partial<Record<DiscoveryResult['status'], string>> = {
   'nothing-to-preview': 'This isn’t available on this course yet. Nothing was used, so you can choose another course.',
-  'expired': 'Your Discovery Pass has ended.',
-  'no-pass': 'You need a Discovery Pass to open this.',
+  'expired': 'Your free pass has ended.',
+  'no-pass': 'You need a free pass to open this.',
   'used-elsewhere': 'You’ve already used this on another course.',
   'not-enough-time': 'There isn’t enough time left on your pass for the whole exam. Nothing was used.',
-  'not-found': 'This course isn’t part of the Discovery Pass. Nothing was used.',
+  'not-found': 'This course isn’t part of the free pass. Nothing was used.',
   'session-changed': 'You signed in on another tab. Refresh this page to continue.',
   'signed-out': 'You’ve been signed out. Sign in again to continue.',
 }

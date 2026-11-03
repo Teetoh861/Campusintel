@@ -520,3 +520,17 @@ body[data-screen='active'] > footer { display: none; }
 .student-practice-eyebrow { margin: 0 0 6px; color: var(--student-text-muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .student-practice-option-check-text { display: none; }
 @media (min-width: 768px) { .student-practice-option-check-text { display: inline; } }
+
+/* Plans and payment (part 3). */
+.student-plan-switch { display: inline-flex; gap: 4px; padding: 4px; margin: 0; border: 1px solid var(--student-border); border-radius: 999px; background: var(--student-surface); justify-self: start; }
+.student-plan-switch-option { position: relative; display: inline-flex; }
+.student-plan-switch-option input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.student-plan-switch-option span { display: inline-flex; min-height: 44px; min-width: 112px; align-items: center; justify-content: center; padding: 0 18px; border-radius: 999px; font-weight: 650; color: var(--student-text-secondary); }
+.student-plan-switch-option input:checked + span { background: var(--student-primary); color: #fff; }
+.student-plan-switch-option input:checked + span::before { content: ''; width: 6px; height: 6px; margin-right: 8px; border-radius: 999px; background: currentColor; }
+.student-plan-switch-option input:focus-visible + span { outline: 3px solid var(--ci-brand-blue); outline-offset: 2px; }
+.student-plan-dialog { max-width: 28rem; gap: 12px; }
+.student-usage-bar { position: relative; height: 10px; overflow: hidden; border-radius: 999px; background: var(--student-border); }
+.student-usage-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--student-primary); }
+.student-pay-bar { position: sticky; bottom: 0; z-index: 10; margin: 0 calc(var(--ci-gutter, 16px) * -1); padding: 12px var(--ci-gutter, 16px) 16px; border-top: 1px solid var(--student-border); background: var(--student-surface); }
+@media (min-width: 768px) { .student-pay-bar { position: static; margin: 0; padding: 0; border-top: 0; background: transparent; } }

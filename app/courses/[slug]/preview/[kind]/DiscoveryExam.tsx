@@ -17,7 +17,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { ANSWERS_ACCESS_LINE } from '@/lib/practice/result-copy'
+import Link from 'next/link'
+import { Lock } from 'lucide-react'
+import { accessCopy } from '@/lib/entitlements/presentation'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { postDiscoveryCommand } from '@/lib/entitlements/client'
 import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
@@ -37,7 +40,7 @@ const MAX_AUTO_RETRIES = 10
 const LOW_TIME_MS = 5 * 60_000
 
 const REFUSAL: Record<string, string> = {
-  'expired': 'Your Discovery Pass has ended, so this exam’s result can no longer be shown.',
+  'expired': 'Your free pass has ended, so this exam’s result can no longer be shown.',
   // This tab identity cannot save on this exam (the exam already takes changes from as many tabs as it allows).
   // Saving stops in this tab only; every other tab, and everything already saved, is untouched.
   'too-many-tabs': 'You have too many exam tabs open. Continue in one of your existing tabs — nothing you’ve answered there is lost.',
@@ -101,8 +104,11 @@ function saveLine(save: AutosaveSnapshot | null, timeUp: boolean): { text: strin
   }
 }
 
-export function DiscoveryExam({ continuityToken, courseSlug, questions, deadlineAt, serverNow, savedSheet, initialResult }: {
+export function DiscoveryExam({ continuityToken, courseSlug, questions, deadlineAt, serverNow, savedSheet, initialResult,
+  plansOnSale = false }: {
   continuityToken: string
+  /** The copy switch (plans_on_sale): Subscribe beside the score once plans are on sale. */
+  plansOnSale?: boolean
   courseSlug: string
   questions: ReadonlyArray<SampleQuestion>
   deadlineAt: string
@@ -308,7 +314,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     setAnswers(next)
   }
 
-  if (result !== null) return <ExamReview questions={questions} result={result} />
+  if (result !== null) return <ExamReview result={result} plansOnSale={plansOnSale} />
   const question = questions[index]!
   const unanswered = questions.length - answered
   const saving = saveLine(save, timeUp)
@@ -383,10 +389,20 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   </div>
 }
 
-function ExamReview({ result }: { questions: ReadonlyArray<SampleQuestion>; result: SampleResult }): ReactElement {
-  return <section className="student-surface" aria-label="Exam result">
-    <p className="text-2xl font-bold tabular-nums">{result.score} of {result.total} correct</p>
-    {result.timed_out ? <p>Time ran out.</p> : null}
-    <p className="student-meta">{ANSWERS_ACCESS_LINE}</p>
-  </section>
+function ExamReview({ result, plansOnSale }: { result: SampleResult; plansOnSale: boolean }): ReactElement {
+  return <div className="grid gap-4">
+    <section className="student-surface" aria-label="Exam result">
+      <p className="text-xs font-bold uppercase tracking-[0.08em] text-student-text-secondary">Your score</p>
+      <p className="mt-2 text-5xl font-extrabold tabular-nums text-student-text-primary">{result.score}/{result.total}</p>
+      {result.timed_out ? <p className="mt-2 text-student-text-secondary">Time ran out.</p> : null}
+    </section>
+    <section className="student-surface grid gap-4 bg-student-brand-surface" aria-label="Answers">
+      <p className="flex items-start gap-2.5 font-semibold text-student-text-primary">
+        <Lock aria-hidden="true" size={20} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+        <span>{accessCopy(plansOnSale).answersLine}</span>
+      </p>
+      {plansOnSale && <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
+        className={studentAction(btnNavy, studentFocusDark, 'justify-self-start')}>Subscribe</Link>}
+    </section>
+  </div>
 }

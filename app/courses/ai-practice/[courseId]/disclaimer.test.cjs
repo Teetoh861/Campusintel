@@ -51,7 +51,7 @@ test('the workspace leads with the verbatim disclaimer, entitled or not', () => 
 })
 
 for (const [reason, line] of [
-  ['outside-list', 'Uploads are available for courses in your current list. Your saved sets are still here.'],
+  ['outside-list', 'Uploads are available for your courses this semester. Your saved sets are still here.'],
   ['paused', 'Uploads are paused for now. Your saved sets are still here.'],
 ]) test(`saved sets explain hidden uploads: ${reason}`, () => {
   const markup = html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance: null,

@@ -13,7 +13,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readCourseSelection } from '@/lib/profile/course-selection'
 import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
-import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import { PROFILE_SELECTION_PATH, selectionReturnPath } from '@/lib/profile/paths'
 import { createClient } from '@/lib/supabase/server'
 import { ProfileSelectionForm } from './ProfileSelectionForm'
 import type { CourseSelectionMode } from './ProfileSelectionForm'
@@ -43,7 +43,10 @@ async function courseSelectionMode(): Promise<CourseSelectionMode | null> {
 }
 
 /** Load the live student's profile on the server; only presentation data enters the form. */
-export default async function ProfileSelectionPage(): Promise<ReactElement> {
+export default async function ProfileSelectionPage({ searchParams }: { searchParams?: Promise<{ return?: string }> } = {}):
+  Promise<ReactElement> {
+  // Where a save returns to: only Confirm courses or a practice result (allow-listed); otherwise the home page.
+  const returnPath = selectionReturnPath((await searchParams)?.return)
   if (!isStudentAuthEnabled()) return <ProfilePageFrame title="Profile selection" narrow>
     <div className="student-surface"><AuthUnavailable /></div>
   </ProfilePageFrame>
@@ -69,7 +72,8 @@ export default async function ProfileSelectionPage(): Promise<ReactElement> {
     <AuthFlowSync signedIn continuityToken={continuityToken} />
     {mode === null ? <div className="student-surface">
       <Feedback tone="error" message="We couldn't load your courses. Refresh the page to try again." />
-    </div> : profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} mode={mode} /> : <div className="student-surface space-y-3">
+    </div> : profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} mode={mode}
+      returnPath={returnPath} /> : <div className="student-surface space-y-3">
       <Feedback tone="error" message={profile.status === 'missing-profile'
         ? 'Your profile could not be found. Please contact support.'
         : profile.status === 'invariant-failure'

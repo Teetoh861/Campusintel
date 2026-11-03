@@ -52,10 +52,12 @@ type Props = {
   canGenerate?: boolean
   uploadsUnavailableReason?: 'outside-list' | 'paused'
   trial?: TrialWording
+  /** The copy switch (plans_on_sale). */
+  plansOnSale?: boolean
 }
 
 export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets,
-  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true, uploadsUnavailableReason }: Props):
+  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true, uploadsUnavailableReason, plansOnSale = false }: Props):
   ReactElement {
   const input = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<JourneyPhase | null>(null)
@@ -80,7 +82,8 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     setOutcome(result)
   }
 
-  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, onPhase: setPhase, requests })
+  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, plansOnSale, onPhase: setPhase,
+    requests })
 
   async function upload(file: File): Promise<void> {
     setOutcome(null)
@@ -103,10 +106,10 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     <PersonalDisclaimer />
     {!canGenerate && sets.length > 0 && uploadsUnavailableReason ? <p className="ai-practice-upload-help">
       {uploadsUnavailableReason === 'outside-list'
-        ? 'Uploads are available for courses in your current list. Your saved sets are still here.'
+        ? 'Uploads are available for your courses this semester. Your saved sets are still here.'
         : 'Uploads are paused for now. Your saved sets are still here.'}
     </p> : null}
-    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial)}</Notice>}
+    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial, plansOnSale)}</Notice>}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
       <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter

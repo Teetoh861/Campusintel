@@ -90,7 +90,7 @@ async function fixture(run) {
       }
       if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => {
         calls.push('entitlement'); return { status: 'unavailable' }
-      } }
+      }, readPlansOnSale: async () => state.plansOnSale === true }
       if (name === './BookmarkButton') return { BookmarkButton: props =>
         React.createElement('button', { type: 'button', 'data-bookmark': props.contentKey }, 'Bookmark control') }
       if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
@@ -360,6 +360,16 @@ test('loading boundary is inert: one announcement, no identity, no actions', asy
   assert.equal((html.match(/Loading course\./g) || []).length, 1)
   assert.doesNotMatch(html, /<a\b|<button\b|Bookmark|Practice|INST|animate-pulse/)
   assert.match(html, /aria-hidden="true"/)
+}))
+
+test('once plans are on sale, a locked course points to a plan in the new wording; closed keeps today\'s', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  f.state.plansOnSale = true
+  const open = text(await f.html())
+  assert.match(open, /Included when you subscribe/)
+  assert.doesNotMatch(open, /Included with full access|Early Access/)
+  f.state.plansOnSale = false
+  assert.match(text(await f.html()), /Included with full access/)
 }))
 
 test('outside-list detail shows the support lock without asking for a pass or rendering learning', async () => fixture(async f => {

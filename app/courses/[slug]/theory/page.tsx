@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost } from '@/components/chrome/ui'
 import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
+import { readPlansOnSale } from '@/lib/entitlements/server'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
@@ -40,7 +41,8 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}/theory`)
   if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
-    <LockedCourseNotice outsideList={result.outsideList} reason={result.reason} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course" />
+    <LockedCourseNotice outsideList={result.outsideList} reason={result.reason} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course"
+      plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} />
   </StudentPage>
   if (result.status === 'unavailable' && result.notAvailable) return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>

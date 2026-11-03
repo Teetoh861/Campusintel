@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AUTH_PATHS } from '@/lib/auth/constants'
 import { postPracticeCommand } from '@/lib/practice/client'
 import type { PracticeResult } from '@/lib/practice/contract'
 import type { Dispatch, SetStateAction } from 'react'
@@ -8,6 +9,12 @@ import type { View } from './QuizClient'
 import type { PracticeProblem } from './practice-presentation'
 
 const REVIEW_FAILED: PracticeProblem = { title: "Couldn't open the review. Try again.", body: '', retry: true }
+
+/** Signed out while reviewing: sign in, then come back to this result (an allow-listed return path). */
+export function signInAndReturn(attemptId: string, location: Pick<Location, 'pathname' | 'assign'> = window.location): void {
+  const result = `${location.pathname.replace(/\/+$/, '')}?attempt=${attemptId}`
+  location.assign(`${AUTH_PATHS.login}?next=${encodeURIComponent(result)}`)
+}
 
 /** Revalidate answer access without letting a transient or stale response navigate the student away. */
 export function useReviewAccess(view: View, continuityToken: string, setView: Dispatch<SetStateAction<View>>,
@@ -40,7 +47,9 @@ export function useReviewAccess(view: View, continuityToken: string, setView: Di
         : attempt.mode === 'exam' && attempt.reviewAvailable
           ? { screen: 'review', attempt, unsent: expected.unsent }
           : { screen: 'results', attempt, unsent: expected.unsent })
-    } else if (fresh.status === 'not-found' || fresh.status === 'signed-out') {
+    } else if (fresh.status === 'signed-out') {
+      signInAndReturn(expected.attempt.id)
+    } else if (fresh.status === 'not-found') {
       onClosed()
       setView(previous => previous === expected ? { screen: 'intro' } : previous)
     } else setProblem(REVIEW_FAILED)
@@ -59,7 +68,9 @@ export function useReviewAccess(view: View, continuityToken: string, setView: Di
         onClosed()
         const attempt = fresh.attempt
         setView(previous => previous === view ? { screen: 'results', attempt, unsent: view.unsent } : previous)
-      } else if (fresh.status === 'not-found' || fresh.status === 'signed-out') {
+      } else if (fresh.status === 'signed-out') {
+        signInAndReturn(view.attempt.id)
+      } else if (fresh.status === 'not-found') {
         onClosed()
         setView(previous => previous === view ? { screen: 'intro' } : previous)
       }
