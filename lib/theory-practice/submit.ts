@@ -3,8 +3,8 @@ import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
-import { defaultPlanUseRecorder } from '@/lib/payments/plan-use'
-import type { PlanUseRecorder } from '@/lib/payments/plan-use'
+import { revealTheoryFeedback } from './reveal'
+import type { TheoryRevealer } from './reveal'
 import { createClient } from '@/lib/supabase/server'
 import { theorySubmission } from './contract'
 import { recordTheorySubmission } from './events'
@@ -16,7 +16,7 @@ import type { TheorySubmitResult } from './contract'
  * The request carries no answer text; the strict schema refuses one.
  */
 export async function submitTheoryAnswer(
-  input: unknown, response: NextResponse, pageToken: string | null, recordUse: PlanUseRecorder = defaultPlanUseRecorder(),
+  input: unknown, response: NextResponse, pageToken: string | null, reveal: TheoryRevealer = revealTheoryFeedback,
 ): Promise<TheorySubmitResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
@@ -35,16 +35,16 @@ export async function submitTheoryAnswer(
     const published = await getTheoryPracticeForVerifiedStudent(client, command.courseSlug)
     if (published.status !== 'ready') return { status: published.status === 'invariant-failure' ? 'unavailable' : published.status }
     const material = published.materials.find(item => item.question.itemId === command.itemId)
-    if (!material?.feedback || material.question.publishedRevision !== command.publishedRevision) {
+    if (!material?.feedbackAvailable || material.question.publishedRevision !== command.publishedRevision) {
       return { status: 'content-changed' }
     }
     const live = await getStudentSessionContext(response, client)
     if (live === null) return { status: 'signed-out' }
     if (live.user.id !== context.user.id || live.sessionId !== context.sessionId) return { status: 'session-changed' }
-    // Plan use is recorded before the answer leaves the server; if it cannot be, the answer is not shown.
-    if (!await recordUse({ sessionId: context.sessionId, kind: 'theory-reveal',
-      courseId: published.course.repositoryCourseId, ref: command.itemId })) return { status: 'unavailable' }
-    await recordTheorySubmission(published.course.slug, material.feedback.rubric !== null)
-    return { status: 'ready', feedback: material.feedback }
+    const revealed = await reveal({ sessionId: context.sessionId, courseId: published.course.repositoryCourseId,
+      itemId: command.itemId, publishedRevision: command.publishedRevision })
+    if (revealed.status !== 'ready') return revealed
+    await recordTheorySubmission(published.course.slug, revealed.feedback.rubric !== null)
+    return revealed
   } catch { return { status: 'unavailable' } }
 }

@@ -35,5 +35,6 @@ export async function getTheoryPracticeForVerifiedStudent(
   return { status: 'ready', course: { slug: repository.route.slug, href: repository.route.href,
     repositoryCourseId: repository.repositoryCourseId,
     code: course.status === 'ok' ? course.course.code : repository.route.course.code,
-    title: course.status === 'ok' ? course.course.title : repository.route.course.title }, materials }
+    title: course.status === 'ok' ? course.course.title : repository.route.course.title },
+    materials: materials.map(({ question, feedbackAvailable }) => ({ question, feedbackAvailable, feedback: null })) }
 }

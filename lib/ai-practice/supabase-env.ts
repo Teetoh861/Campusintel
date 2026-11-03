@@ -6,6 +6,7 @@ import 'server-only'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+import { AI_ADMISSION_TIMEOUT_MS, AI_SETTLEMENT_TIMEOUT_MS, withAiDeadline } from './lifetime'
 import type { NextResponse } from 'next/server'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getAuthSecretKey, getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
@@ -53,6 +54,7 @@ const allowanceRow = z.object({ state: z.enum(['not-entitled', 'active', 'expire
   ends_at: z.string().optional(), source_char_limit: z.number().int().positive().nullish() })
 // A token-funded start names the model and written-token cap the set was reserved for (20261103100000).
 const beginRow = z.object({ state: z.string(), generation_id: uuid.optional(),
+  reservation_seconds: z.number().int().positive().optional(),
   model: z.string().regex(/^claude-[a-z0-9-]{1,60}$/).optional(),
   max_output_tokens: z.number().int().min(1).max(1_000_000).optional() })
 const generationRow = z.object({ id: uuid, status: z.enum(['running', 'generated', 'insufficient_source',
@@ -164,12 +166,18 @@ export function createSupabaseAiPracticeEnv(client: StudentClient, userId: strin
     },
     allowance: () => readAllowance(client, accepted),
     async beginGeneration(requestId, documentId): Promise<BeginResult | null> {
-      const { data, error } = await service().rpc('begin_ai_practice_generation', {
+      const { data, error } = await withAiDeadline(signal => service().rpc('begin_ai_practice_generation', {
         p_session_id: sessionId, p_request_id: requestId, p_document_id: documentId, p_accepted_sources: accepted })
+        .abortSignal(signal), AI_ADMISSION_TIMEOUT_MS)
       const parsed = beginRow.safeParse(data)
       if (error || !parsed.success) return null
       const { state, generation_id: generationId, model, max_output_tokens: maxOutputTokens } = parsed.data
       if (state === 'started' && generationId) {
+        const providerTimeout = config.status === 'enabled' ? config.timeoutMs : 0
+        const lifetime = parsed.data.reservation_seconds
+        if (lifetime === undefined || lifetime * 1000 <= 2 * providerTimeout + AI_ADMISSION_TIMEOUT_MS + AI_SETTLEMENT_TIMEOUT_MS) {
+          return null
+        }
         return model !== undefined && maxOutputTokens !== undefined
           ? { state, generationId, limits: { model, maxOutputTokens } } : { state, generationId }
       }
@@ -178,9 +186,9 @@ export function createSupabaseAiPracticeEnv(client: StudentClient, userId: strin
       return null
     },
     async finishGeneration(generationId, status, reason, questionSet, usage) {
-      const { data, error } = await service().rpc('finish_ai_practice_generation', {
+      const { data, error } = await withAiDeadline(signal => service().rpc('finish_ai_practice_generation', {
         p_user_id: userId, p_generation_id: generationId, p_status: status, p_outcome_reason: reason,
-        p_question_set: questionSet, p_usage: usage })
+        p_question_set: questionSet, p_usage: usage }).abortSignal(signal), AI_SETTLEMENT_TIMEOUT_MS)
       return !error && z.object({ state: z.literal('finished') }).safeParse(data).success
     },
     async getGeneration(generationId): Promise<GenerationRecord | null> {

@@ -115,7 +115,9 @@ There is no manual-evidence fulfilment, by decision: a plan is granted only on a
 Paid plans and Early Access fund Campus Bot sets by tokens, not by a number of sets. A paid plan funds only during the
 semester it is bound to (never in the slack after it, and a Session plan's second half only in the Second Semester).
 Early Access members get Plus limits during their free month. When a student has both, the higher limits apply; they
-are never added. A Discovery Pass keeps its one set, and an older seven-day trial its sets.
+are never added. A Discovery Pass keeps its one set, and an older seven-day trial its sets. An account with an active
+paid grant can use the paid platform reserve even when Early Access supplies the higher limits; Early Access alone
+is unpaid for that reserve.
 
 - **Limits**: a session (5 hours from the student's first request) and a week (7 days from the first request of that
   week), per tier in `campus_bot_tiers`. Changing a tier applies to everyone at once; a reset time a student has
@@ -123,11 +125,27 @@ are never added. A Discovery Pass keeps its one set, and an older seven-day tria
 - **Cost**: tokens from the provider's own report, every prompt token as read plus 5 x every written token, times the
   model's weight (Haiku = 1). Only a delivered set is charged; failures, timeouts, flagged or unusable results cost
   nothing. A set starts only if both limits cover its worst case (60,000 for Haiku), and a started set always finishes,
-  even if that takes a limit below zero.
+  even if that takes a limit below zero. The hard source cap is 60,000 characters; `read_tokens_max` is the
+  reservation estimate, not an input-token rejection limit. A rare overrun is delivered and charged from the actual
+  usage report, and can leave a window below zero.
 - **Platform**: 500 sets a day across all students, of which the last 150 are kept for paying students; each student
   may have 10 undelivered tries a day (`ai-limits` changes all three).
 - **Support**: a student out of tokens can be refilled with `campus-bot-refill --user <uuid>`; it starts fresh windows
-  at their next request and deletes nothing. A set that finishes after the student's access ended is kept and charged.
+  at their next request and deletes nothing. Each admission reads the latest applicable refill once and uses that
+  same snapshot for both windows; a refill committed afterwards applies to the next admission. A set that finishes
+  after the student's access ended is kept and charged.
+
+Admission and `ai-limits` updates take the same platform lock; an admission re-reads the policy after acquiring it,
+so a queued start observes a committed daily stop. Every admission timestamp (usage reservation, generation and any
+new windows) uses the final wall clock after lock waits, including waits across UTC midnight.
+
+**Abandonment.** The database enforces `reservation_minutes >= 5`. The server bounds admission to 15 seconds,
+the provider call (including its retry) to at most 120 seconds, and settlement to 30 seconds. The reservation exceeds
+even admission plus two maximum provider calls plus settlement: 15 + 2 x 120 + 30 = 285 seconds < 300 seconds.
+Transport cancellation and a server deadline both apply, and the server refuses an admission response with an unsafe
+reservation lifetime before calling the provider. Keep this inequality when changing any timeout or adding a check step.
+An abandoned result is still discarded and charged 0, including a reply arriving after abandonment; its reservation
+and token-request row are released at 0. A live server finishes or times out before abandonment can run.
 
 ## Plan use for refunds
 
@@ -135,7 +153,11 @@ The standard refund rules count use from the payment until the refund is process
 come from the attempt tables. The rest is recorded as it happens, once per order, course and item: a notes topic the
 student opens, a theory answer revealed (recorded before
 the answer is shown; if it cannot be recorded, the answer is not shown), and a Campus Bot set delivered. GST courses
-are never counted. `refund` dry runs show every count.
+are never counted. `refund` dry runs show every count. Ordinary student published-content reads return theory
+prompts and feedback availability, with no model answers or rubrics. The theory route gets feedback through the
+service-only `reveal_theory_feedback` RPC, which rechecks the published revision and course access and records
+`record_plan_use` in the same transaction before returning any answer. A set requested before a payment does not
+count toward that payment's refund, even if delivered after the payment.
 
 A notes topic counts as opened only once it has been on screen for 30 seconds in one visit to the course page. On
 screen means 60% of the note in view, or the note filling at least 60% of the screen (so long topics on a phone count
