@@ -206,26 +206,33 @@ select is(public.admin_campus_bot_refill(gen_random_uuid(),'Ops','support ticket
 select throws_ok($$select public.admin_campus_bot_refill(null,'Ops','')$$,'22023',null,'a refill needs a reason');
 
 -- ---------------------------------------------------------------------------
--- Early Access gets Plus limits; the higher tier funds; limits are never added.
+-- Early Access gets Standard limits; the higher tier funds; limits are never added.
 -- ---------------------------------------------------------------------------
 select pg_temp.student(21);
 select pg_temp.early(21);
 select is((select jsonb_build_array(source,tier,session_tokens,week_tokens)
   from private.campus_bot_plan(pg_temp.u(21),clock_timestamp(),array['paid','early_access'])),
-  '["early_access","plus",700000,1400000]','Early Access members get Plus limits during the free month');
+  '["early_access","standard",350000,700000]','Early Access members get Standard limits during the free month');
+update private.campus_bot_tiers set session_tokens=320000,week_tokens=640000 where tier='standard';
+select is((select jsonb_build_array(session_tokens,week_tokens) from private.campus_bot_plan(pg_temp.u(21),clock_timestamp(),
+  array['paid','early_access'])),'[320000,640000]','Early Access follows the live Standard tier settings');
+update private.campus_bot_tiers set session_tokens=350000,week_tokens=700000 where tier='standard';
 create temporary table o21 as select pg_temp.paid(21) id;
 select is((select jsonb_build_array(source,tier,session_tokens)
   from private.campus_bot_plan(pg_temp.u(21),clock_timestamp(),array['paid','early_access'])),
-  '["early_access","plus",700000]','Early Access Plus outranks paid Standard; the limits are not added');
-select is((select (v->'session'->>'limit')::int from (select pg_temp.usage_of(21) v) x),700000,'the usage read shows one limit');
+  '["early_access","standard",350000]','paid Standard plus Early Access keeps one Standard limit, with Early Access funding the equal-tier tie');
+select is((select (v->'session'->>'limit')::int from (select pg_temp.usage_of(21) v) x),350000,'the usage read shows one Standard limit');
 select pg_temp.student(22);
 select pg_temp.early(22);
 create temporary table o22 as select pg_temp.paid(22,'plus_semester') id;
-select is((select source from private.campus_bot_plan(pg_temp.u(22),clock_timestamp(),array['paid','early_access'])),
-  'early_access','between equal tiers Early Access funds');
+select is((select jsonb_build_array(source,tier,session_tokens,week_tokens)
+  from private.campus_bot_plan(pg_temp.u(22),clock_timestamp(),array['paid','early_access'])),
+  '["paid","plus",700000,1400000]','paid Plus outranks Early Access Standard without adding the limits');
+select is((select jsonb_build_array(v->>'tier',v->'session'->'limit',v->'week'->'limit')
+  from (select pg_temp.usage_of(22) v) x),'["plus",700000,1400000]','the usage read shows paid Plus while Early Access is active');
 update public.entitlement_grants set ends_at=clock_timestamp()-interval '1 second' where user_id=pg_temp.u(22) and source='early_access';
 select is((select jsonb_build_array(source,tier) from private.campus_bot_plan(pg_temp.u(22),clock_timestamp(),array['paid','early_access'])),
-  '["paid","plus"]','after the free month the paid plan funds');
+  '["paid","plus"]','paid Plus still funds after the free month ends');
 
 -- ---------------------------------------------------------------------------
 -- Paid funding follows the bound term: no slack, no rollover.
@@ -264,9 +271,9 @@ update private.ai_practice_policy set global_daily_generations=(select count(*):
   where reserved_at>=date_trunc('day',clock_timestamp() at time zone 'utc') at time zone 'utc'), paid_daily_reserve=1;
 select is((pg_temp.begin(29,(select id from d29)))->>'state','capacity','the last slot of the day is kept for paying students');
 create temporary table mixed_reserve as select pg_temp.begin(21,(select id from d21)) j;
-select is((select j->>'state' from mixed_reserve),'started','an account with paid Standard can use the paid reserve under Early Access Plus limits');
+select is((select j->>'state' from mixed_reserve),'started','an account with paid Standard can use the paid reserve while Early Access Standard funds');
 select is((select funding_source from pg_temp.event((select pg_temp.gen(j) from mixed_reserve))),'early_access',
-  'the higher Early Access limits still fund the set');
+  'Early Access funds the equal Standard tier while the account keeps its paid reserve eligibility');
 update private.ai_practice_policy set global_daily_generations=global_daily_generations+1;
 update private.campus_bot_settings set writing_model='haiku';
 create temporary table d22 as select pg_temp.doc(22) id;
@@ -365,6 +372,18 @@ select pg_temp.student(28);
 select is(public.record_plan_use(pg_temp.s(28),'notes-topic',pg_temp.r('ACC-CM201'),pg_temp.item('ACC-CM201','note'))->>'state',
   'not-allowed','a student without access to the course records nothing');
 select is((select count(*)::int from private.plan_use_events where course_id=pg_temp.r('GST111')),0,'GST never counts');
+
+-- Early Access admission and the pure usage read both enforce Standard, including an allowed overrun.
+select pg_temp.student(36); select pg_temp.early(36);
+create temporary table d36 as select pg_temp.doc(36) id;
+create temporary table g36 as select pg_temp.begin(36,(select id from d36)) j;
+select is((select j->>'state' from g36),'started','an Early Access student starts within Standard limits');
+select is(pg_temp.finish(36,(select pg_temp.gen(j) from g36),'generated',pg_temp.usage(320000,8000))->>'status','generated',
+  'an Early Access set that overruns the estimate is still delivered');
+select is((select jsonb_build_array(v->>'tier',v->'session'->'limit',v->'session'->'left',v->'week'->'limit',v->'can_start')
+  from (select pg_temp.usage_of(36) v) x),'["standard",350000,-11500,700000,false]',
+  'Early Access is metered against Standard, not Plus, and keeps the overrun below zero');
+select is(pg_temp.begin(36,(select id from d36))->>'state','session-limit','no second set after the Standard session is spent');
 
 -- Buying after an Early Access admission does not turn that earlier request into use of the new payment.
 select pg_temp.student(35); select pg_temp.early(35);

@@ -114,10 +114,10 @@ There is no manual-evidence fulfilment, by decision: a plan is granted only on a
 
 Paid plans and Early Access fund Campus Bot sets by tokens, not by a number of sets. A paid plan funds only during the
 semester it is bound to (never in the slack after it, and a Session plan's second half only in the Second Semester).
-Early Access members get Plus limits during their free month. When a student has both, the higher limits apply; they
-are never added. A Discovery Pass keeps its one set, and an older seven-day trial its sets. An account with an active
-paid grant can use the paid platform reserve even when Early Access supplies the higher limits; Early Access alone
-is unpaid for that reserve.
+Early Access members get Standard limits during their free month. With a paid plan, the higher limits apply and are
+never added together: paid Plus wins over Early Access Standard; equal Standard tiers keep Early Access funding.
+An account with an active paid grant can use the paid platform reserve even when Early Access funds the request.
+Early Access alone is unpaid for that reserve. A Discovery Pass keeps its one set, and an older seven-day trial its sets.
 
 - **Limits**: a session (5 hours from the student's first request) and a week (7 days from the first request of that
   week), per tier in `campus_bot_tiers`. Changing a tier applies to everyone at once; a reset time a student has

@@ -1,5 +1,8 @@
 # Campus Bot limits review fixes
 
+Historical report for `25b52dc`, before the owner changed Early Access to Standard. The current full report is
+[campus-bot-limits-report.md](campus-bot-limits-report.md). Historical results below do not validate the later tier change.
+
 Baseline: `feat/campus-bot-limits`, clean at `4986919`, 2026-11-03. The fixes are implemented. Targeted SQL and light
 checks pass; the full SQL rerun, races and browser validation remain owed after the battery fell below 20%. No database
 result below is claimed from unit tests.
