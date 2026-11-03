@@ -1,4 +1,4 @@
--- supabase/migrations/20261102100000_payments.sql — Payments, part 1: the database (docs/payments-design.md 9c484d2,
+-- supabase/migrations/20261102190000_payments.sql — Payments, part 1: the database (docs/payments-design.md 9c484d2,
 -- with the owner's part 1 changes). Standard and Plus plans, each by Semester or Session, are paid grants on the A1 course
 -- path; nothing else opens a course. Campus Bot budgets are tokens per tier. Provider ids: 'bachs' and 'fake'. Money is kobo integers; the adapter converts Bachs' decimal strings.
 -- The database never calls a provider: every grant follows a provider-verified success reported by the service role.
@@ -28,8 +28,8 @@ create table private.campus_bot_tiers (
   updated_by text not null check (char_length(updated_by) between 1 and 120)
 );
 insert into private.campus_bot_tiers values
-  ('standard', 5, 350000, 7, 700000, 5, now(), 'migration:20261102100000'),
-  ('plus', 5, 700000, 7, 1400000, 5, now(), 'migration:20261102100000');
+  ('standard', 5, 350000, 7, 700000, 5, now(), 'migration:20261102190000'),
+  ('plus', 5, 700000, 7, 1400000, 5, now(), 'migration:20261102190000');
 
 -- Model weights by price, Haiku = 1. PROVISIONAL.
 create table private.campus_bot_models (
@@ -39,8 +39,8 @@ create table private.campus_bot_models (
   updated_by text not null check (char_length(updated_by) between 1 and 120)
 );
 insert into private.campus_bot_models values
-  ('haiku', 1, now(), 'migration:20261102100000'),
-  ('sonnet', 20, now(), 'migration:20261102100000');
+  ('haiku', 1, now(), 'migration:20261102190000'),
+  ('sonnet', 20, now(), 'migration:20261102190000');
 
 -- Provider token caps per request, by step: writing (the answer) and check. The check step and the
 -- calculation-course flag come in part 2. PROVISIONAL.
@@ -52,8 +52,8 @@ create table private.campus_bot_request_caps (
   updated_by text not null check (char_length(updated_by) between 1 and 120)
 );
 insert into private.campus_bot_request_caps values
-  ('writing', 20000, 8000, now(), 'migration:20261102100000'),
-  ('check', 3000, 1500, now(), 'migration:20261102100000');
+  ('writing', 20000, 8000, now(), 'migration:20261102190000'),
+  ('check', 3000, 1500, now(), 'migration:20261102190000');
 
 -- Tier and billing period are separate: four plans. PROVISIONAL prices await owner approval.
 create table private.plan_catalogue (
@@ -70,10 +70,10 @@ create table private.plan_catalogue (
   constraint plan_catalogue_key_check check (plan_key = tier || '_' || period)
 );
 insert into private.plan_catalogue (plan_key, tier, period, price_kobo, ai_sets_per_term, updated_by) values
-  ('standard_semester', 'standard', 'semester', 400000, 10, 'migration:20261102100000'),
-  ('standard_session', 'standard', 'session', 700000, 10, 'migration:20261102100000'),
-  ('plus_semester', 'plus', 'semester', 600000, 10, 'migration:20261102100000'),
-  ('plus_session', 'plus', 'session', 1100000, 10, 'migration:20261102100000');
+  ('standard_semester', 'standard', 'semester', 400000, 10, 'migration:20261102190000'),
+  ('standard_session', 'standard', 'session', 700000, 10, 'migration:20261102190000'),
+  ('plus_semester', 'plus', 'semester', 600000, 10, 'migration:20261102190000'),
+  ('plus_session', 'plus', 'session', 1100000, 10, 'migration:20261102190000');
 
 create table private.payment_policy (
   singleton boolean primary key default true check (singleton),
@@ -96,7 +96,7 @@ create table private.payment_policy (
   refund_practice_answers_allowed integer not null default 10 check (refund_practice_answers_allowed between 0 and 10000),
   refund_notes_topics_allowed integer not null default 3 check (refund_notes_topics_allowed between 0 and 1000),
   updated_at timestamptz not null default now(),
-  updated_by text not null default 'migration:20261102100000' check (char_length(updated_by) between 1 and 120)
+  updated_by text not null default 'migration:20261102190000' check (char_length(updated_by) between 1 and 120)
 );
 insert into private.payment_policy default values;
 

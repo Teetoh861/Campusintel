@@ -1,7 +1,7 @@
 // lib/payments/refunds.ts — Refunds after part 1's refund_order has recorded the refund (and, for a plan refund, revoked
 // every grant) in its own transaction, before any money moves. Here: the provider refund, keyed by our refund request id
-// so a retry can never refund twice. Card refunds go only through Bachs, which takes one refund per payment (an excess
-// refund is a partial one). Bachs cannot refund bank transfers: those are sent from the bank to the account that paid,
+// so a retry can never refund twice. Cards keep their one Bachs refund for a plan refund; card excess goes through
+// Bachs support. Bank refunds are sent from the bank to the account that paid,
 // and recorded with our transfer reference and that account's last four digits.
 import 'server-only'
 import { createHash, createHmac } from 'node:crypto'
@@ -58,6 +58,10 @@ export function checkManualSettlement(method: string, manual: ManualSettlement |
     throw new Error('--destination-confirmed is required: the transfer must go to the account Bachs shows as the sender')
   }
 }
+/** Card excess is handled by Bachs support, preserving the card's single provider refund for a plan refund. */
+export function checkRefundMethod(refundClass: string, method: string): void {
+  if (refundClass === 'excess' && method === 'card') throw new Error('Card excess refunds go through Bachs support')
+}
 export type RefundOutcome =
   | { state: 'refunded' | 'failed' | 'pending'; providerRefundId?: string }
   | { state: 'manual-required'; reason: 'bank-transfer' | 'no-refund-api' }
@@ -67,6 +71,7 @@ export type RefundOutcome =
 export async function settleRefund(deps: RefundDeps, refund: PendingRefund, options: { manual?: ManualSettlement | null;
   actor: string; reason: string }): Promise<RefundOutcome> {
   if (refund.refund_status !== undefined && refund.refund_status !== 'pending') return { state: 'already-final' }
+  checkRefundMethod(refund.refund_class, refund.method)
   const manual = options.manual ?? null
   checkManualSettlement(refund.method, manual)
   if (manual !== null) {

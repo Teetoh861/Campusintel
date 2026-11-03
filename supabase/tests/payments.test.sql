@@ -90,7 +90,7 @@ select ok(has_function_privilege('service_role',f,'EXECUTE') and not has_functio
   'public.record_payment_event(text,text,text,uuid,text)',
   'public.fulfil_payment(uuid,text,text,text,bigint,text,text,timestamptz,text,text)',
   'public.record_payment_outcome(uuid,text,text,text)','public.payment_orders_to_check(integer,boolean)',
-  'public.record_payment_check(uuid,text)',
+  'public.record_payment_check(uuid,text,uuid)','public.claim_payment_checks(integer,boolean,uuid)',
   'public.refund_eligibility(uuid,text[],timestamptz,uuid)',
   'public.refund_order(uuid,text,uuid,text[],text,text,timestamptz,uuid)',
   'public.record_refund_result(uuid,text,text,text,text,text)','public.admin_set_sales_open(boolean,text,text)',
@@ -674,16 +674,40 @@ select is((select jsonb_build_array(res->>'state',res->'amount_kobo') from rf62b
   'a plan refund after the excess returns the rest');
 select is(pg_temp.allowed(62,'BUA201'),false,'and ends access');
 select is(pg_temp.refund((select id from o3x where n=35),'excess',gen_random_uuid(),pg_temp.ids(35))->>'state',
-  'class-not-allowed','no excess refund when the payment matched the price');
--- Bachs takes one refund per payment: an overpaid card payment with an excess refund cannot take a plan refund too.
+  'card-excess-support','card excess always goes through Bachs support');
+-- Cards keep their one Bachs refund for the plan; an excess goes through Bachs support without a record.
 select pg_temp.student(63);
 create temporary table o63 as select pg_temp.oid(pg_temp.buy(63,'standard_semester',pg_temp.req(630))) id;
 select pg_temp.attach(id) from o63;
 select pg_temp.pay((select id from o63),'ch_over63',450000,'webhook','overpaid');
-select is(pg_temp.refund((select id from o63),'excess',gen_random_uuid(),pg_temp.ids(63))->>'state','refund-pending',
-  'a card excess refund is recorded');
-select is(pg_temp.refund((select id from o63),'our-fault',gen_random_uuid(),pg_temp.ids(63))->>'state',
-  'provider-refund-used','a card payment that carries one refund cannot take another');
+select is(pg_temp.refund((select id from o63),'excess',gen_random_uuid(),pg_temp.ids(63))->>'state','card-excess-support',
+  'a card excess refund is refused');
+select is((select count(*)::int from private.payment_refunds where order_id=(select id from o63)),0,
+  'nothing is recorded for card excess');
+select is((pg_temp.order_row((select id from o63))).status,'paid','the card order stays paid');
+select is(pg_temp.allowed(63,'BUA201'),true,'the card grant stays live');
+select is(pg_temp.refund((select id from o63),'standard',gen_random_uuid(),pg_temp.ids(63))->>'state','refund-pending',
+  'a qualifying plan refund can still use the card refund');
+
+-- A plan refund waits for either a pending or a failed excess. Retry the excess first, then return the rest.
+select pg_temp.student(65);
+create temporary table o65 as select pg_temp.oid(pg_temp.buy(65,'standard_semester',pg_temp.req(650))) id;
+select pg_temp.attach(id) from o65;
+select pg_temp.pay((select id from o65),'ch_over65',450000,'webhook','overpaid','NGN','bank_transfer');
+create temporary table rf65 as select pg_temp.refund((select id from o65),'excess',pg_temp.req(651),pg_temp.ids(65)) res;
+select is(pg_temp.refund((select id from o65),'our-fault',pg_temp.req(652),pg_temp.ids(65))->>'state','excess-unsettled',
+  'a plan refund is refused while the excess is pending');
+select is((select count(*)::int from private.payment_refunds where order_id=(select id from o65)),1,
+  'the refused plan refund records nothing');
+select is(pg_temp.allowed(65,'BUA201'),true,'the refusal changes no access');
+select public.record_refund_result((select (res->>'refund_id')::uuid from rf65),'failed',null,null,'Ops');
+select is(pg_temp.refund((select id from o65),'our-fault',pg_temp.req(652),pg_temp.ids(65))->>'state','excess-unsettled',
+  'a failed excess still has to be settled first');
+create temporary table rf65retry as select pg_temp.refund((select id from o65),'excess',pg_temp.req(653),pg_temp.ids(65)) res;
+select is((select res->>'state' from rf65retry),'refund-pending','the failed excess can be retried');
+select public.record_refund_result((select (res->>'refund_id')::uuid from rf65retry),'refunded',null,'BANK-65','Ops','4321');
+select is(pg_temp.refund((select id from o65),'our-fault',pg_temp.req(652),pg_temp.ids(65))->'amount_kobo','400000',
+  'after the retried excess settles the plan refund returns exactly the rest');
 
 -- ---------------------------------------------------------------------------
 -- A failed refund of an extra payment is re-requested for that same payment, in either class.
@@ -712,9 +736,7 @@ select is((select count(*)::int from public.entitlement_grants where order_id=(s
   'refunding the extra payment never touches the plan');
 
 -- ---------------------------------------------------------------------------
--- Catch-up: more due orders than one query (500) and one batch (50). Open orders newest first; every check is recorded
--- and moves the order's next check later, so batches walk the whole queue; ended orders back off; anything overdue for
--- a day goes first.
+-- Catch-up: oldest due first, leased batches, fenced completion, and a final check after day 14.
 -- ---------------------------------------------------------------------------
 create temporary table bulk as select gen_random_uuid() id, g from generate_series(1,620) g;
 insert into private.payment_orders (id,user_id,request_id,plan_key,tier,period,amount_kobo,currency,ai_sets,
@@ -728,12 +750,13 @@ insert into private.payment_orders (id,user_id,request_id,plan_key,tier,period,a
 select is((select count(*)::int from public.payment_orders_to_check(500) c join bulk b on b.id=c.order_id),500,
   'more candidates than one query');
 select is((select array_agg(b.g order by b.g) from public.payment_orders_to_check(50) c join bulk b on b.id=c.order_id),
-  (select array_agg(g order by g) from generate_series(1,50) g),'the first batch is the 50 newest open orders');
+  (select array_agg(g order by g) from generate_series(571,620) g),'the first batch is the 50 oldest due orders');
 do $$
-declare n int := 0;
+declare n int := 0; lease uuid;
 begin
   loop
-    perform public.record_payment_check(c.order_id,'waiting') from public.payment_orders_to_check(50) c;
+    lease := gen_random_uuid();
+    perform public.record_payment_check(c.order_id,'waiting',lease) from public.claim_payment_checks(50,true,lease) c;
     n := n + 1;
     exit when not exists (select 1 from public.payment_orders_to_check(1)) or n > 40;
   end loop;
@@ -744,25 +767,56 @@ select ok(current_setting('test.batches')::int between 13 and 20,'batches of 50 
 select is((select count(*)::int from private.payment_orders o join bulk b on b.id=o.id
   where o.check_count=1 and o.last_check_result='waiting' and o.next_check_at between clock_timestamp()+interval '1 minute'
     and clock_timestamp()+interval '3 minutes'),620,'every candidate was checked once and is next due in 2 minutes');
-select is(public.record_payment_check(gen_random_uuid(),'waiting')->>'state','not-found','an unknown order');
-select throws_ok($$select public.record_payment_check((select id from bulk where g=1),'fine')$$,'22023',null,
+select is(public.record_payment_check(gen_random_uuid(),'waiting',gen_random_uuid())->>'state','not-found','an unknown order');
+select throws_ok($$select public.record_payment_check((select id from bulk where g=1),'fine',gen_random_uuid())$$,'22023',null,
   'only known results are recorded');
--- Ended orders back off from an hour, doubling to 48 hours, until late_check_days.
+-- Give a fixture a lease to test completion and back-off independently of other fixtures' due times.
+create function pg_temp.checked(o uuid, result text) returns jsonb language plpgsql as $$
+declare lease uuid := gen_random_uuid();
+begin
+  update private.payment_orders set check_lease_token=lease, check_lease_until=clock_timestamp()+interval '1 minute' where id=o;
+  return public.record_payment_check(o,result,lease);
+end$$;
+-- Ended orders back off until the final due check is completed.
 update private.payment_orders set status='expired', check_count=k
   from (values (1,0),(2,3),(3,10)) v(g,k), bulk b where b.g=v.g and payment_orders.id=b.id;
-select is((select array_agg(round(extract(epoch from (public.record_payment_check(b.id,'provider-unavailable')->>'next_check_at')::timestamptz
+select is((select array_agg(round(extract(epoch from (pg_temp.checked(b.id,'waiting')->>'next_check_at')::timestamptz
     - clock_timestamp())/3600) order by b.g) from bulk b where b.g<=3),array[1,8,48]::numeric[],
   'late checks back off: 1 h, then doubling, at most 48 h');
-select is((select last_check_result from private.payment_orders where id=(select id from bulk where g=2)),'provider-unavailable',
-  'an unsuccessful check is recorded');
+select is((select last_check_result from private.payment_orders where id=(select id from bulk where g=2)),'waiting',
+  'a completed check is recorded');
 update private.payment_orders set next_check_at=clock_timestamp()-interval '2 days' where id=(select id from bulk where g=3);
 select is((select order_id from public.payment_orders_to_check(1)),(select id from bulk where g=3),
   'an order overdue for a day goes first, even a late check');
 select ok(not exists(select 1 from public.payment_orders_to_check(500,false) where order_id=(select id from bulk where g=3)),
   'without the late check, ended orders are not asked');
 update private.payment_orders set created_at=clock_timestamp()-interval '15 days' where id=(select id from bulk where g=3);
+select ok(exists(select 1 from public.payment_orders_to_check(500) where order_id=(select id from bulk where g=3)),
+  'an overdue late check survives day 14');
+select ok((public.admin_payments_health()->>'checks_overdue_6h')::int >= 1,'health counts checks over six hours late');
+create temporary table final_lease as select gen_random_uuid() token;
+select * from public.claim_payment_checks(1,true,(select token from final_lease));
+select is((select count(*)::int from public.claim_payment_checks(1,true,gen_random_uuid())),0,
+  'a live lease cannot be claimed by another run');
+select is(public.record_payment_check((select id from bulk where g=3),'waiting',gen_random_uuid())->>'state','lease-lost',
+  'another run cannot complete the claim');
+update private.payment_orders set check_lease_until=clock_timestamp()-interval '1 second' where id=(select id from bulk where g=3);
+select is(public.record_payment_check((select id from bulk where g=3),'waiting',(select token from final_lease))->>'state',
+  'lease-lost','an expired owner cannot complete the check');
+create temporary table retry_lease as select gen_random_uuid() token;
+select is((select order_id from public.claim_payment_checks(1,true,(select token from retry_lease))),
+  (select id from bulk where g=3),'an unfinished check is due again when its lease expires');
+select is(public.record_payment_check((select id from bulk where g=3),'waiting',(select token from final_lease))->>'state',
+  'lease-lost','a replaced lease is fenced out');
+select is(public.record_payment_check((select id from bulk where g=3),'provider-unavailable',
+  (select token from retry_lease))->>'state','unfinished','a provider outage does not consume the final check');
+select ok(exists(select 1 from public.payment_orders_to_check(500) where order_id=(select id from bulk where g=3)),
+  'the failed final verification remains due');
+select is(public.record_payment_check((select id from bulk where g=3),'waiting',(select token from retry_lease))->>'state',
+  'recorded','the final due check is completed by the current lease');
 select ok(not exists(select 1 from public.payment_orders_to_check(500) where order_id=(select id from bulk where g=3)),
-  'late checks stop after late_check_days');
+  'only after its final check does the old order leave late checks');
+select is((public.admin_payments_health()->>'checks_overdue_6h')::int,0,'the overdue health count clears on completion');
 update private.payment_orders set status='cancelled' where id in (select id from bulk);
 
 -- ---------------------------------------------------------------------------

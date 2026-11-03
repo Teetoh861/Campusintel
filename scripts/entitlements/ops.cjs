@@ -144,9 +144,10 @@ function connection(env, transport) {
   if (!key || key !== key.trim() || (!local && !/^sb_secret_[A-Za-z0-9_-]+$/.test(key))) {
     throw new Error('Entitlement tool configuration unavailable')
   }
-  return async (fn, body) => {
+  return async (fn, body, options) => {
     const response = await transport(new URL(`/rest/v1/rpc/${fn}`, url), {
-      method: 'POST', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      method: 'POST', cache: 'no-store', redirect: 'error', signal: options?.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: { apikey: key, 'Content-Type': 'application/json',
         ...(!key.startsWith('sb_secret_') ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify(body),

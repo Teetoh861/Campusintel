@@ -79,6 +79,7 @@ async function refund(opts, ctx) {
   const paymentId = opts.payment !== undefined ? required(opts, 'payment', UUID) : null
   const payment = paymentId !== null ? { p_payment_id: paymentId } : {}
   const order = await readOrderRecord(ctx.rpc, orderId)
+  paymentsLib().refunds.checkRefundMethod(refundClass, refundPayment(order, paymentId)?.method ?? 'unknown')
   const manual = manualSettlement(opts, order, paymentId)
   const identity = await refundIdentity(ctx, order, refundClass)
   if (opts.confirm !== true) {
@@ -105,6 +106,8 @@ async function refundRetry(opts, ctx) {
   const order = await readOrderRecord(ctx.rpc, orderId)
   const paymentId = plan.state === 'resend' ? plan.refund.payment_id ?? null
     : plan.state === 'renew' ? plan.failed.paymentId : null
+  if (plan.state === 'resend') refunds.checkRefundMethod(plan.refund.refund_class, plan.refund.method)
+  if (plan.state === 'renew') refunds.checkRefundMethod(plan.failed.refundClass, plan.failed.method)
   const manual = manualSettlement(opts, order, paymentId)
   const settle = pending => refunds.settleRefund(deps, pending, { manual, actor: note().p_actor, reason: note().p_reason })
   if (plan.state === 'resend') return { retried: 'resend', settlement: await settle(plan.refund) }

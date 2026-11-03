@@ -9,6 +9,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { readPaymentsConfig } from './config'
 import { PaymentStoreError } from './rpc'
+import { PAYMENT_DATABASE_TIMEOUT_MS, withPaymentTimeout } from './timeouts'
 import type { PaymentRpc } from './rpc'
 import type { RouteDeps, StudentSession } from './routes'
 
@@ -17,8 +18,9 @@ export function createServiceRpc(): PaymentRpc {
   const client = createServiceClient(getSupabaseConfig().url, getAuthSecretKey(), {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
-  return async (fn, args) => {
-    const { data, error } = await client.rpc(fn, args)
+  return async (fn, args, options) => {
+    const { data, error } = await withPaymentTimeout(signal => client.rpc(fn, args).abortSignal(signal),
+      PAYMENT_DATABASE_TIMEOUT_MS, options?.signal)
     if (error) throw new PaymentStoreError(`${fn} refused (${error.code ?? 'unknown'})`)
     return data
   }
@@ -35,7 +37,8 @@ async function resolveStudent(response: NextResponse, continuity: string | null)
   }
   return { userId: context.user.id, sessionId: context.sessionId,
     readOwnOrder: async orderId => {
-      const { data, error } = await client.rpc('get_my_payment_order', { p_order_id: orderId })
+      const { data, error } = await withPaymentTimeout(signal =>
+        client.rpc('get_my_payment_order', { p_order_id: orderId }).abortSignal(signal), PAYMENT_DATABASE_TIMEOUT_MS)
       if (error) throw new PaymentStoreError(`get_my_payment_order refused (${error.code ?? 'unknown'})`)
       return data
     } }

@@ -1,7 +1,7 @@
 # Payments operations
 
 How plan payments run, how to set them up, and what support does when something goes wrong. The database rules are
-in `supabase/migrations/20261102100000_payments.sql` (part 1); the server and Bachs connection are in `lib/payments/`
+in `supabase/migrations/20261102190000_payments.sql` (part 1); the server and Bachs connection are in `lib/payments/`
 and `app/api/payments/` (part 2a). Screens come in part 3; Campus Bot enforcement in part 2b.
 
 ## How a payment flows
@@ -21,8 +21,8 @@ and `app/api/payments/` (part 2a). Screens come in part 3; Campus Bot enforcemen
    `succeeded`, `accepted` or `overpaid` on a completed checkout for this order, with the amount and currency
    checked against the order. Part 1's unique keys make every replay, retry or race produce one fulfilment.
 
-Less than the order is `amount-mismatch` (no grant). More is granted and flagged `overpaid`, and the amount above the
-price is refunded (see Overpayments). Card and bank transfer are the only payment methods offered.
+Less than the order is `amount-mismatch` (no grant). More is granted and flagged `overpaid`. A bank-transfer excess
+is refunded separately; a reported card excess goes through Bachs support (see Overpayments). Card and bank transfer are the only payment methods offered.
 
 ## Setup
 
@@ -57,22 +57,24 @@ Opening sales: `open-sales` below. Sales stay closed until then.
 
 ## Reconcile schedule
 
-`GET /api/payments/reconcile` (cron bearer) checks the orders that are due, in batches of 50, until none are due or
-its 50-second budget runs out: open orders older than 2 minutes (newest first), orders past the 48-hour window (asked
-once more, then expired), and the late check of orders that ended without payment in the last 14 days (a bank transfer
-can settle late, and a late success is still fulfilled). Every check is recorded on the order, unsuccessful ones too
-(`last_check_result`), with the next time it is due: open orders after 2, 5, 10 and 30 minutes, then hourly; ended
-orders back off from 1 hour, doubling to 48 hours, until day 14. An order overdue by a day goes to the front of the
-queue, so however many orders there are, none waits more than a day past its due time plus one run.
+`GET /api/payments/reconcile` (cron bearer) runs **every five minutes** (`*/5 * * * *` in `vercel.json`).
+Configure the hosting project for that schedule before opening sales. There are no continuation runs.
 
-- **Now (Vercel free plan): once a day**, `0 3 * * *` in `vercel.json`. The free plan fails deployments with any
-  cron more frequent than daily. Until the upgrade, the webhook and the return page settle almost every payment;
-  the daily run catches the rest.
-- **After the Pro upgrade: every 5 minutes.** Change `vercel.json` to two entries: `*/5 * * * *` on
-  `/api/payments/reconcile?late=0`, and keep `0 3 * * *` on `/api/payments/reconcile` for the daily late check.
-  Confirm in Vercel's cron docs that the path may carry a query string; if not, add a second route instead.
+Due orders are claimed oldest due first, in batches of 50, with atomic `FOR UPDATE SKIP LOCKED` claims and a 60-second
+lease. Cron and `reconcile-now` use the same claims: overlapping runs cannot check the same order. A completion must
+carry the current, unexpired lease token. A lost, timed-out or unstarted check keeps its due time and becomes
+claimable when its lease ends.
 
-`reconcile-now` runs the same checks on demand (up to 20 batches).
+No new check starts after 40 seconds. Each database call has a three-second timeout; each Bachs verification read has
+a four-second timeout, including reading the body. The run has a separate 55-second cancellation deadline, leaving
+time before the route's 60-second limit. The operator's `reconcile-now` follows these same bounds.
+
+Open orders are first due two minutes after creation and back off through 2, 5, 10 and 30 minutes, then hourly.
+Orders beyond the 48-hour reconciliation window are checked once more, then expire. Ended orders back off up to
+48 hours. A late check that becomes due is retained across day 14: it gets that final check, then stops. Completed check
+results are recorded on the order. Provider/database failures do not consume a due check or advance its back-off.
+`payments-health` reports `checks_overdue_6h`, the number of due checks more than six hours late; investigate a nonzero
+count rather than assuming the schedule drained the queue.
 
 ## Operator commands
 
@@ -88,7 +90,7 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | Command | Does |
 | --- | --- |
 | `payment-status --order <uuid>` or `--user <uuid>` | Orders, events, payments, refunds and grants. |
-| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), overpaid orders whose excess is not yet refunded (`overpaid_excess_due`), pending refunds, paid grants still unbound after 7 days. |
+| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), overpaid orders whose excess is not yet refunded (`overpaid_excess_due`), pending refunds, due checks more than 6 hours late (`checks_overdue_6h`), paid grants still unbound after 7 days. |
 | `payment-verify --order <uuid> --actor --reason` | Asks Bachs now and fulfils if it confirms the payment. The normal fix. Asks Bachs. |
 | `payment-fulfil --order <uuid> --provider-ref <checkout id> --actor --reason` | The same, for an order whose checkout id we never stored. Bachs must still confirm a payment whose checkout reference is this order. Asks Bachs. |
 | `refund --order <uuid> --class standard\|our-fault\|duplicate\|excess --actor --reason [--requested-at <ISO>] [--payment <uuid>]` | Dry run: what the database would decide, with every count. Nothing changes. |
@@ -96,7 +98,7 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | `refund ... --request <uuid> --confirm --manual-reference <transfer ref> --account-last4 <4 digits> --destination-confirmed` | Bank transfers only: the same, settled as a transfer you made from our bank to the account that paid. Refused for card payments, before anything is recorded. Re-running the same `--request` with these settles a refund recorded earlier. |
 | `refund-retry --order <uuid> --actor --reason [--manual-reference <ref> --account-last4 <4 digits> --destination-confirmed]` | A pending refund: sends it again with the same key. A failed refund: records a new one for the same payment, class and request time, then refunds. Repeating it never refunds twice. Asks Bachs. |
 | `open-sales --actor --reason` / `close-sales --actor --reason` | The sales switch. |
-| `reconcile-now` | One reconcile batch now. Asks Bachs. |
+| `reconcile-now` | A bounded reconcile run now. Asks Bachs. |
 | `campus-bot-model --model <name> --weight <n> --actor --reason` | A model's price weight (Haiku = 1). Pending owner approval. |
 | `campus-bot-cap --step writing\|check [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. |
 
@@ -142,13 +144,20 @@ Then record when they asked; that time is the `--requested-at` below.
 Our-fault (outage, wrong content, a billing error) and duplicate refunds are allowed at any time and never count
 against the student's one standard refund.
 
-**Overpayments.** A payment above the price is granted as usual and listed in `payments-health` under
+**Overpayments.** A bank-transfer payment above the price is granted as usual and listed in `payments-health` under
 `overpaid_excess_due` until the excess is refunded. Refund it with `refund --order <id> --class excess --request <uuid>
 --confirm`, at any time: it returns only the amount above the price, never counts toward the student's one standard
-refund, and changes no access. It goes back to the account that paid: through Bachs for a card (as a partial refund),
-or by bank transfer as in step 3 above. Bachs takes one refund per payment, so after an excess refund on a card, a
-later plan refund of that card payment is refused (`provider-refund-used`); a later plan refund of a bank transfer
-returns the rest.
+refund, and changes no access. Send it by bank transfer to the account that paid, as in step 3 above.
+
+**Card excess goes through Bachs support.** Cards are charged the exact server catalogue amount. If Bachs reports
+a card excess, contact Bachs support; do not issue an `excess` refund. Both the command and database refuse it before
+recording anything. This preserves the card's one Bachs refund for a standard or our-fault plan refund.
+
+**Settle the excess first.** A bank-transfer plan refund is refused while an excess refund is pending or failed
+(`excess-unsettled`), without recording a plan refund or revoking access. Settle a pending excess, or run
+`refund-retry` on a failed excess and settle it, before requesting the plan refund. The plan refund then returns only
+the payment less the settled excess. A plan refund attempted while the excess is pending can be re-run with the same
+request id once the excess has settled; keep the student's original `--requested-at` for a standard refund.
 
 **Duplicates.** Two payments for the same semester: the second order becomes `paid-duplicate` (no second grant) and
 shows in `payments-health`. Refund it the same day with `refund --order <id> --class duplicate --request <uuid>
