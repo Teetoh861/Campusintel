@@ -93,7 +93,7 @@ select lives_ok($sql$
   where id = auth.uid()
 $sql$, 'Accounting 300L remains selectable');
 select is((select count(*)::int from selected_courses), 0, 'Accounting 300L has no invented course offering');
-select is(public.get_my_entitlement(), current_setting('test.bua_entitlement')::jsonb,
+select is(public.get_my_entitlement()-'now', current_setting('test.bua_entitlement')::jsonb-'now',
   'changing academic selection preserves the student entitlement');
 
 reset role;

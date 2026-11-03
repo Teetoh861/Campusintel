@@ -1,6 +1,6 @@
 // lib/entitlements/discovery-contract.ts — Discovery Pass previews as they may cross the client boundary.
 // The database pins each preview and decides every limit, deadline and expiry (20261021100000_discovery_pass.sql); the
-// CBT exam carries no answer key until the server has graded it. There is no theory preview.
+// CBT exam never carries an answer key, including after grading. There is no theory preview.
 import { z } from 'zod'
 import { noteContent } from '@/lib/operator/editor-contract'
 
@@ -68,8 +68,6 @@ const sampleResult = z.object({
   total: z.number().int().positive(),
   // The exam closed at its deadline before it was submitted, and was marked from the answers saved in time.
   timed_out: z.boolean(),
-  answers: z.array(z.object({ item_id: uuid, selected: z.number().int().nonnegative().nullable(),
-    correct_option: z.number().int().nonnegative(), explanation: z.string().nullable() }).strict()),
 }).strict()
 
 // The sheet the database holds for an open exam and its revision, so a reload or another device continues from it.
@@ -78,11 +76,13 @@ const savedSheet = z.object({ revision: savedRevision, answers: sampleAnswers })
 export const discoveryPreviewSchema = z.discriminatedUnion('kind', [
   // `saved` is null once the exam has been graded.
   z.object({ kind: z.literal('cbt'), deadline_at: timestamp,
-    questions: z.array(sampleQuestion).min(1).max(MAX_SAMPLE_QUESTIONS), saved: savedSheet.nullable(),
+    questions: z.array(sampleQuestion).max(MAX_SAMPLE_QUESTIONS), saved: savedSheet.nullable(),
     result: sampleResult.nullable() }).strict(),
   z.object({ kind: z.literal('study_guide'), items: z.array(z.object({ item_id: uuid, revision: z.number().int().positive(),
     note: noteContent }).strict()).length(1) }).strict(),
-])
+]).refine(preview => preview.kind !== 'cbt' || (preview.result === null
+  ? preview.questions.length > 0 && preview.saved !== null
+  : preview.questions.length === 0 && preview.saved === null))
 export type DiscoveryPreview = z.infer<typeof discoveryPreviewSchema>
 export type SampleQuestion = z.infer<typeof sampleQuestion>
 export type TopicTitle = z.infer<typeof topicTitle>

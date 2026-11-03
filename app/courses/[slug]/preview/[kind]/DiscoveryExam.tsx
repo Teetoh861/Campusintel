@@ -1,7 +1,7 @@
 'use client'
 // app/courses/[slug]/preview/[kind]/DiscoveryExam.tsx — The Discovery Pass CBT exam. The browser holds only the
 // questions; the database fixed the deadline when the exam opened, keeps the sheet saved before it, and grades the
-// answers once, and only then returns the correct options and explanations. Nothing sent after the deadline is marked.
+// answers once and returns only the score. Nothing sent after the deadline is marked.
 // Whether a tap may still change an answer is decided by lib/entitlements/exam-clock.ts: a fresh exchange with the
 // server on mount (and again whenever the page comes back into view), with the whole round trip charged as elapsed
 // and the time since measured on the monotonic clock, so the cutoff here is never later than the real deadline and
@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { ANSWERS_ACCESS_LINE } from '@/lib/practice/result-copy'
 import { postDiscoveryCommand } from '@/lib/entitlements/client'
 import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
@@ -382,33 +383,10 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   </div>
 }
 
-function ExamReview({ questions, result }: { questions: ReadonlyArray<SampleQuestion>; result: SampleResult }):
-  ReactElement {
-  const marks = new Map(result.answers.map(answer => [answer.item_id, answer]))
-  return <div className="grid gap-4">
-    <div className="student-surface student-surface-raised" role="status">
-      <h2 className="student-section-title">You scored {result.score} of {result.total}</h2>
-      {result.timed_out && <p className="student-detail-prose mt-1">Time ran out, so we marked the answers saved before
-        the deadline. The correct answers are below.</p>}
-      <p className="student-meta mt-1">Regular CBT practice for this course comes with full access.</p>
-    </div>
-    {questions.map((question, number) => {
-      const mark = marks.get(question.item_id)
-      const correct = mark !== undefined && mark.selected === mark.correct_option
-      return <article key={question.item_id} className="student-surface" data-result={correct ? 'correct' : 'incorrect'}>
-        <p className={`student-detail-kicker ${correct ? 'text-student-success' : 'text-student-error'}`}>
-          Question {number + 1} · {correct ? 'Correct' : mark?.selected === null ? 'Not answered' : 'Incorrect'}</p>
-        <p className="student-practice-prompt mt-2">{question.prompt}</p>
-        {mark !== undefined && <>
-          {mark.selected !== null && !correct && <p className="student-detail-prose mt-2">
-            Your answer: {optionLetter(mark.selected)}. {question.options[mark.selected]}
-          </p>}
-          <p className="student-detail-prose mt-2 text-student-text-primary">
-            Correct answer: {optionLetter(mark.correct_option)}. {question.options[mark.correct_option]}
-          </p>
-          {mark.explanation !== null && <p className="student-detail-prose mt-2">{mark.explanation}</p>}
-        </>}
-      </article>
-    })}
-  </div>
+function ExamReview({ result }: { questions: ReadonlyArray<SampleQuestion>; result: SampleResult }): ReactElement {
+  return <section className="student-surface" aria-label="Exam result">
+    <p className="text-2xl font-bold tabular-nums">{result.score} of {result.total} correct</p>
+    {result.timed_out ? <p>Time ran out.</p> : null}
+    <p className="student-meta">{ANSWERS_ACCESS_LINE}</p>
+  </section>
 }

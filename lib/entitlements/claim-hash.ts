@@ -45,9 +45,12 @@ export function readClaimHashKeys(env: Env = process.env): ClaimKeys | null {
   return keys.length === 0 ? null : { current: keys[0]!, all: keys }
 }
 
-/** The address as the ledger sees it: case and surrounding whitespace never make one address two claims. */
+/** Canonical claim identity: no tags, no Gmail dots, and one domain for Gmail aliases. */
 export function normalizeClaimEmail(email: string): string {
-  return email.trim().toLowerCase()
+  const [local = '', rawDomain = ''] = email.trim().toLowerCase().split('@')
+  const domain = rawDomain === 'googlemail.com' ? 'gmail.com' : rawDomain
+  const untagged = local.split('+')[0]!
+  return `${domain === 'gmail.com' ? untagged.replaceAll('.', '') : untagged}@${domain}`
 }
 
 /** The commitment to one key's secret that the database keeps per version. */
@@ -55,10 +58,11 @@ export function claimKeyCheck(key: string): string {
   return createHmac('sha256', key).update(KEY_CHECK_PURPOSE, 'utf8').digest('hex')
 }
 
-/** One hash per configured key, current first, each with its key's check value. The database inserts the first and
- *  matches any, after verifying every version against the checks it has registered. */
+/** Canonical hashes first, then the previous form for compatibility, across every retained signing key. */
 export function claimHashes(keys: ClaimKeys, email: string): ClaimHash[] {
   const normalized = normalizeClaimEmail(email)
-  return keys.all.map(({ version, key }) => ({ version,
-    hash: createHmac('sha256', key).update(`${PURPOSE}:${normalized}`, 'utf8').digest('hex'), check: claimKeyCheck(key) }))
+  // The canonical form is inserted. The old trim/lowercase form still finds claims made before A2.
+  const forms = [...new Set([normalized, email.trim().toLowerCase()])]
+  return forms.flatMap(form => keys.all.map(({ version, key }) => ({ version,
+    hash: createHmac('sha256', key).update(`${PURPOSE}:${form}`, 'utf8').digest('hex'), check: claimKeyCheck(key) })))
 }

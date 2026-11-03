@@ -14,6 +14,7 @@ import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
 import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { isAiPracticeEligible } from '@/lib/ai-practice/student-flow'
 import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supabase-env'
+import { getCourseAccessForVerifiedStudent } from '@/lib/courses/access'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLockedStudentCourse }
   from '@/lib/courses/read-model'
@@ -47,9 +48,6 @@ function Unavailable({ title, message }: { title: string; message: string }): Re
 
 async function AiPracticeCourse({ courseId, continuityToken }: { courseId: string; continuityToken: string }):
   Promise<ReactElement> {
-  if (!isAiPracticeAvailable()) {
-    return <Unavailable title="AI practice is currently unavailable" message="You can still browse your courses for available study materials." />
-  }
   const client = await createClient()
   const context = await getStudentSessionContext(undefined, client)
   if (context === null) return redirectForStudentState('signed-out', aiPracticePath(courseId))
@@ -62,21 +60,32 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
     </StudentPage>
   }
   const { course } = result
+  const access = await getCourseAccessForVerifiedStudent(client, [course.institutionalCourseId])
+  const decision = access.status === 'ok' ? access.decisions.get(course.institutionalCourseId) : undefined
+  const scoped = decision !== undefined && (decision.on_list || (decision.team_added && decision.allowed))
+  // Already generated personal sets remain the owner's when course or AI access ends.
+  const sets = await listPersonalSetsForCourse(client, context.user.id, course.institutionalCourseId)
+  if (!scoped && sets.length === 0) redirect(STUDENT_DESTINATIONS.myCourses.href)
+  const enabled = isAiPracticeAvailable()
+  if (!enabled && sets.length === 0) {
+    return <Unavailable title="AI practice is currently unavailable" message="You can still browse your courses for available study materials." />
+  }
   // A course with verified content always sends students to it; AI practice never competes with it.
   // A locked course is built too: its page explains how to unlock it.
-  if (isActionableStudentCourse(course) || isLockedStudentCourse(course)) redirect(course.repository.route.href)
-  if (!isAiPracticeEligible(course)) {
+  if (sets.length === 0 && (isActionableStudentCourse(course) || isLockedStudentCourse(course))) redirect(course.repository.route.href)
+  if (sets.length === 0 && !isAiPracticeEligible(course)) {
     return <Unavailable title="This course is temporarily unavailable" message="Try again in a few minutes." />
   }
   // AI copy names the student's own grant (a Discovery Pass, or a seven-day trial issued before it) and offers a pass
   // only when this account can still start one; a read failure stays neutral.
-  const [allowance, sets, plan] = await Promise.all([readAllowance(client),
-    listPersonalSetsForCourse(client, context.user.id, course.institutionalCourseId),
+  const [allowance, plan] = await Promise.all([readAllowance(client),
     readEntitlementForVerifiedStudent(client).catch(() => null)])
   const trial = trialWording(plan !== null && plan.status === 'ok' ? plan.entitlement : null)
   return <StudentPage band={<PageBand title="Practise from your notes" lede={LEDE}
     context={<p className="ai-practice-context"><b>{course.code}</b> · {course.title}</p>} />}>
     <AiPracticeClient courseId={course.institutionalCourseId} continuityToken={continuityToken}
-      initialAllowance={allowance} recentSets={sets} trial={trial} />
+      initialAllowance={allowance} recentSets={sets} trial={trial}
+      uploadsUnavailableReason={!scoped ? 'outside-list' : !enabled ? 'paused' : undefined}
+      canGenerate={enabled && scoped && isAiPracticeEligible(course)} />
   </StudentPage>
 }

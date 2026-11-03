@@ -68,6 +68,14 @@ from (values ('71000000-0000-4000-8000-000000000001', 'disc-p@example.test'),
 insert into auth.sessions (id, user_id, created_at, updated_at, not_after)
 select ('72000000-0000-4000-8000-00000000000' || n)::uuid, ('71000000-0000-4000-8000-00000000000' || n)::uuid,
   now(), now(), null from unnest(array[1, 2, 3, 4, 5, 8]) n;
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%';
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by) values
   ('71000000-0000-4000-8000-000000000003', 'manual', now() - interval '1 day', now() + interval '1 day', 'none', 'test');
 insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
@@ -127,7 +135,7 @@ set local role service_role;
 insert into outcome values ('p-activate', public.activate_discovery_pass('72000000-0000-4000-8000-000000000001', pg_temp.claim('disc-p@example.test')));
 reset role;
 select is((select result->>'state' from outcome where step = 'p-activate'), 'activated', 'one tap starts the pass');
-select is((select jsonb_build_object('starts', starts_at = now(), 'ends', ends_at = now() + interval '72 hours',
+select is((select jsonb_build_object('starts', pg_temp.near(starts_at,interval '0 seconds'), 'ends', ends_at = starts_at + interval '72 hours',
     'units', ai_units, 'policy', trial_policy) from public.entitlement_grants
     where user_id = '71000000-0000-4000-8000-000000000001'),
   '{"starts":true,"ends":true,"units":1,"policy":"discovery"}'::jsonb,
@@ -197,6 +205,11 @@ update private.discovery_previews set deadline_at = now() + interval '5 minutes'
   where user_id = '71000000-0000-4000-8000-000000000001' and kind = 'cbt';
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000021', '71000000-0000-4000-8000-000000000001', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 set local role service_role;
 select is((pg_temp.open_exam('72000000-0000-4000-8000-000000000021', pg_temp.c('02'))->'preview'->>'deadline_at')::timestamptz,
   now() + interval '5 minutes', 'reopening, refreshing or signing in again keeps the original deadline');
@@ -247,9 +260,8 @@ select is((select result->'preview'->'result'->>'score' || '/' || (result->'prev
   from outcome where step = 'p-submit'), '37/50', 'the server grades from the pinned key');
 select is((select (result->'preview'->'result'->>'timed_out')::boolean from outcome where step = 'p-submit'), false,
   'submitted in time');
-select ok((select bool_and(a ? 'correct_option' and a ? 'selected') from outcome,
-  jsonb_array_elements(result->'preview'->'result'->'answers') a where step = 'p-submit'),
-  'the answer key is revealed only with the result');
+select ok((select not (result->'preview'->'result' ? 'answers') and result->'preview'->'questions'='[]'::jsonb
+  from outcome where step='p-submit'), 'a completed free exam never returns question review or answers');
 select is(public.submit_discovery_cbt('72000000-0000-4000-8000-000000000001', pg_temp.c('02'), pg_temp.t(1), 2, 0,
   (select result from outcome where step = 'answers-50'))->'preview'->'result'->>'score', '37',
   'resubmitting better answers cannot change the score: the first grading stands');
@@ -503,9 +515,8 @@ select is((select jsonb_build_object('score', (result->'preview'->'result'->>'sc
     'timed_out', (result->'preview'->'result'->>'timed_out')::boolean) from outcome where step = 'a-stale-submit'),
   '{"score":11,"timed_out":false}'::jsonb,
   'tab A, still holding revision 1 with nothing pending, submits: the sheet graded includes tab B''s Q11 (11, not 10)');
-select is((select a->'selected' from outcome, jsonb_array_elements(result->'preview'->'result'->'answers') a
-    where step = 'a-stale-submit' and a->>'item_id' = (select item from pg_temp.q('71000000-0000-4000-8000-000000000008', 11))),
-  (select to_jsonb(correct) from pg_temp.q('71000000-0000-4000-8000-000000000008', 11)), 'and names tab B''s answer as the one marked');
+select ok((select not (result->'preview'->'result' ? 'answers') from outcome where step='a-stale-submit'),
+  'tab B affects the score but no selected answers are returned');
 reset role;
 select is((select jsonb_build_object('graded_is_saved', answers = saved_answers, 'revision', saved_revision)
     from private.discovery_previews where user_id = '71000000-0000-4000-8000-000000000008'), '{"graded_is_saved":true,"revision":2}'::jsonb,
@@ -639,6 +650,11 @@ values ('00000000-0000-0000-0000-000000000000', '71000000-0000-4000-8000-0000000
   'authenticated', 'authenticated', 'linked-course-pass@example.test', 'x', now(), '{}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000099', '71000000-0000-4000-8000-000000000099', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 set local role service_role;
 select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000099',
   pg_temp.claim('linked-course-pass@example.test'))->>'state', 'activated', 'a fresh pass can choose linked courses');
@@ -698,7 +714,7 @@ select is((select count(*) from public.course_applicability a join discovery_off
 -- 5. Study guide: the student picks one complete topic; titles only before that -----------------------------------------
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('11'), 'study_guide', false)
-  - 'ends_at' - 'now', '{"state":"available","topics":[]}'::jsonb, 'a course with no topics offers none');
+  - 'ends_at' - 'now', '{"state":"not-offered"}'::jsonb, 'an outside-list course offers no titles even if it has no topics');
 insert into outcome values ('p-topics', public.discovery_preview('72000000-0000-4000-8000-000000000001', pg_temp.c('02'),
   'study_guide', false));
 select is((select jsonb_array_length(result->'topics') from outcome where step = 'p-topics'), 10,
@@ -775,6 +791,11 @@ reset role;
 -- A new session (sign out and back in, another device) is the same account and the same pass.
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000011', '71000000-0000-4000-8000-000000000001', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 set local role service_role;
 select is(public.discovery_preview('72000000-0000-4000-8000-000000000011', pg_temp.c('02'), 'cbt', false),
   '{"state":"expired"}'::jsonb, 'a fresh session does not revive it');
@@ -815,6 +836,11 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
   '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000006', '71000000-0000-4000-8000-000000000006', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 set local role service_role;
 select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test'))->>'state', 'already-claimed',
   're-registering with the same email cannot buy a second pass');
@@ -832,6 +858,11 @@ from (values ('71000000-0000-4000-8000-000000000012', 'disc-t@example.test'),
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000012', '71000000-0000-4000-8000-000000000012', now(), now()),
   ('72000000-0000-4000-8000-000000000013', '71000000-0000-4000-8000-000000000013', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 set local role service_role;
 select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000012', pg_temp.claim('disc-t@example.test', array[2, 1]))->>'state',
   'activated', 'a rotation puts version 2 in front of version 1: new claims are written under 2, which is now registered');
@@ -906,6 +937,11 @@ from (values ('71000000-0000-4000-8000-000000000041', 'disc-v@example.test'),
 insert into auth.sessions (id, user_id, created_at, updated_at)
 select ('72000000-0000-4000-8000-0000000000' || n)::uuid, ('71000000-0000-4000-8000-0000000000' || n)::uuid, now(), now()
 from unnest(array[41, 42, 43, 44, 45, 46, 47, 48, 49, 50]) n;
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, created_by, revoked_at, revoked_by,
   revoke_reason) values
   ('71000000-0000-4000-8000-000000000042', 'early_access', now() - interval '3 days', now() + interval '27 days', 'uncapped',
@@ -1026,7 +1062,7 @@ select is(public.discovery_pass_eligibility('72000000-0000-4000-8000-00000000000
 select is(public.activate_discovery_pass('72000000-0000-4000-8000-000000000006', pg_temp.claim('disc-r@example.test', array[2, 1]))->>'state',
   'activated', 'so the re-registered account may start a pass, even before the purge');
 reset role;
-select is((select jsonb_build_object('user', user_id, 'version', key_version, 'fresh', expires_at = now() + interval '5 years')
+select is((select jsonb_build_object('user', user_id, 'version', key_version, 'fresh', expires_at = claimed_at + interval '5 years')
     from private.discovery_pass_claims where claim_hash = pg_temp.claim('disc-r@example.test', array[2, 1]) -> 0 ->> 'hash'),
   '{"user":"71000000-0000-4000-8000-000000000006","version":2,"fresh":true}'::jsonb,
   'its new claim runs five years from this activation');
@@ -1057,11 +1093,16 @@ from (values ('71000000-0000-4000-8000-000000000007', 'disc-ai@example.test'),
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000007', now(), now()),
   ('72000000-0000-4000-8000-000000000009', '71000000-0000-4000-8000-000000000009', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 insert into public.entitlement_grants (user_id, source, trial_policy, starts_at, ends_at, ai_terms, ai_units, created_by)
   select user_id::uuid, 'trial', 'discovery', now(), now() + make_interval(hours => discovery_hours), 'capped',
     discovery_ai_generations, 'test' from private.entitlement_policy,
     unnest(array['71000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000009']) user_id;
-insert into outcome values ('acc101', to_jsonb((select id from public.institutional_courses where course_code = 'ACC101')));
+insert into outcome values ('acc101', to_jsonb((select id from public.institutional_courses where course_code = 'BUA201')));
 -- Reserve one upload slot for the student with the given session, as the upload page does before sending a file.
 create function pg_temp.reserve(p_session uuid) returns uuid language sql security definer as $$
   select (public.create_ai_practice_document(p_session,
@@ -1228,6 +1269,11 @@ insert into auth.users (instance_id, id, aud, role, email, encrypted_password, e
   '{"provider":"email","providers":["email"]}', '{}', now(), now());
 insert into auth.sessions (id, user_id, created_at, updated_at) values
   ('72000000-0000-4000-8000-000000000010', '71000000-0000-4000-8000-000000000010', now(), now());
+-- Verified current-semester selection for these pass/AI fixtures.
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id::text like '71000000-%' and selection_confirmed_at is null;
+
 -- Access fixtures use an actual Business Administration 200L First Semester selection.
 update public.profiles set department_id='10000000-0000-4000-8000-000000000002',
   academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'

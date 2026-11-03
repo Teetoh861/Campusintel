@@ -324,9 +324,9 @@ update public.quiz_attempts set status = 'submitted', finished_at = now()
 set local role authenticated;
 select is((select count(*)::int from public.quiz_attempt_answers
            where attempt_id = '80000000-0000-4000-8000-000000000001'),
-          2, 'owner A can read their answer children once the attempt is finished');
+          0, 'owner A keeps history but cannot read answers without course access');
 select is((select count(*)::int from public.quiz_attempt_answers),
-          3, 'A sees only the children of their two attempts');
+          0, 'A has no answer access on the repository-only fixture');
 reset role;
 rollback to savepoint finished_answers;
 set local role authenticated;
@@ -361,7 +361,7 @@ select is((select count(*)::int from public.quiz_attempt_answers
 select is((select count(*)::int from public.quiz_attempts),
           1, 'B sees only their own attempt');
 select is((select count(*)::int from public.quiz_attempt_answers),
-          1, 'B sees only their own answer');
+          0, 'B keeps history without answer access');
 set local request.jwt.claims = '{"role":"authenticated"}';
 select is((select count(*)::int from public.quiz_attempts),
           0, 'authenticated without a user identity sees no attempts');
