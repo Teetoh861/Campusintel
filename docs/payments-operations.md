@@ -57,11 +57,15 @@ Opening sales: `open-sales` below. Sales stay closed until then.
 
 ## Reconcile schedule
 
-`GET /api/payments/reconcile` (cron bearer) runs **every five minutes** (`*/5 * * * *` in `vercel.json`).
-Configure the hosting project for that schedule before opening sales. There are no continuation runs.
+`GET /api/payments/reconcile` (cron bearer) runs **once a day** (`0 3 * * *` in `vercel.json`). The Vercel free plan
+fails deployments with any cron more frequent than daily. Until the upgrade, the webhook and the return page settle
+almost every payment; the daily run catches the rest. There are no continuation runs.
 
-Due orders are claimed oldest due first, in batches of 50, with atomic `FOR UPDATE SKIP LOCKED` claims and a 60-second
-lease. Cron and `reconcile-now` use the same claims: overlapping runs cannot check the same order. A completion must
+**Vercel Pro upgrade step:** once the project is on Pro, change the schedule in `vercel.json` to `*/5 * * * *` (every
+five minutes) and deploy. Nothing else changes: each run is bounded as below.
+
+Due orders are claimed in batches of 50, open orders newest first (the most likely to have just been paid), then
+everything else by due time, with atomic `FOR UPDATE SKIP LOCKED` claims and a 60-second lease. Cron and `reconcile-now` use the same claims: overlapping runs cannot check the same order. A completion must
 carry the current, unexpired lease token. A lost, timed-out or unstarted check keeps its due time and becomes
 claimable when its lease ends.
 
@@ -72,9 +76,13 @@ time before the route's 60-second limit. The operator's `reconcile-now` follows 
 Open orders are first due two minutes after creation and back off through 2, 5, 10 and 30 minutes, then hourly.
 Orders beyond the 48-hour reconciliation window are checked once more, then expire. Ended orders back off up to
 48 hours. A late check that becomes due is retained across day 14: it gets that final check, then stops. Completed check
-results are recorded on the order. Provider/database failures do not consume a due check or advance its back-off.
-`payments-health` reports `checks_overdue_6h`, the number of due checks more than six hours late; investigate a nonzero
-count rather than assuming the schedule drained the queue.
+results are recorded on the order. A failed check (Bachs unavailable, a timeout, a database error) is recorded too
+(`last_check_result`) and retried after 5, then 15, then every 60 minutes, without advancing the normal schedule; the
+order stays counted as overdue from when it first became due. A permanent refusal (a checkout Bachs doesn't know, or an
+answer that can't be this order's) stops checks and lists the order under `checks_stopped_for_review`; check it in the
+Bachs dashboard and use `payment-fulfil --provider-ref` if a payment exists, so late checks can finish.
+`payments-health` reports `checks_overdue_6h`, the number of orders due (or failing) for more than six hours; investigate
+a nonzero count rather than assuming the schedule drained the queue.
 
 ## Operator commands
 
@@ -90,7 +98,7 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | Command | Does |
 | --- | --- |
 | `payment-status --order <uuid>` or `--user <uuid>` | Orders, events, payments, refunds and grants. |
-| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), overpaid orders whose excess is not yet refunded (`overpaid_excess_due`), pending refunds, due checks more than 6 hours late (`checks_overdue_6h`), paid grants still unbound after 7 days. |
+| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), bank-transfer overpayments whose excess is not yet refunded (`overpaid_excess_due`), card overpayments to raise with Bachs (`card_excess_contact_bachs_support`: contact Bachs support), pending refunds, orders due or failing for more than 6 hours (`checks_overdue_6h`), orders whose checks stopped for review (`checks_stopped_for_review`), paid grants still unbound after 7 days. |
 | `payment-verify --order <uuid> --actor --reason` | Asks Bachs now and fulfils if it confirms the payment. The normal fix. Asks Bachs. |
 | `payment-fulfil --order <uuid> --provider-ref <checkout id> --actor --reason` | The same, for an order whose checkout id we never stored. Bachs must still confirm a payment whose checkout reference is this order. Asks Bachs. |
 | `refund --order <uuid> --class standard\|our-fault\|duplicate\|excess --actor --reason [--requested-at <ISO>] [--payment <uuid>]` | Dry run: what the database would decide, with every count. Nothing changes. |
@@ -140,6 +148,9 @@ Then record when they asked; that time is the `--requested-at` below.
    `--manual-reference <our transfer reference> --account-last4 <last four digits of that account>
    --destination-confirmed`. We keep only the reference and the last four digits.
 4. A refund Bachs refuses shows as `refund-failed` in `payments-health`; fix the cause and run `refund-retry`.
+5. A refund command that times out (operator writes allow 15 seconds) may still have been recorded, with access
+   already ended. Run `payment-status --order <id>` first: if the refund is there and pending, run `refund-retry`; if
+   it isn't, run the same `refund ... --request <same uuid> --confirm` again.
 
 Our-fault (outage, wrong content, a billing error) and duplicate refunds are allowed at any time and never count
 against the student's one standard refund.

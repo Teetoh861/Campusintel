@@ -20,7 +20,7 @@ export function createServiceRpc(): PaymentRpc {
   })
   return async (fn, args, options) => {
     const { data, error } = await withPaymentTimeout(signal => client.rpc(fn, args).abortSignal(signal),
-      PAYMENT_DATABASE_TIMEOUT_MS, options?.signal)
+      options?.timeoutMs ?? PAYMENT_DATABASE_TIMEOUT_MS, options?.signal)
     if (error) throw new PaymentStoreError(`${fn} refused (${error.code ?? 'unknown'})`)
     return data
   }

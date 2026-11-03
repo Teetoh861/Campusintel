@@ -2,6 +2,8 @@
 import 'server-only'
 
 export const PAYMENT_DATABASE_TIMEOUT_MS = 3_000
+// Operator writes (refund_order, operator fulfilment, refund results) may wait behind account locks.
+export const OPERATOR_WRITE_TIMEOUT_MS = 15_000
 export const PAYMENT_CHECK_TIMEOUT_MS = 4_000
 export const RECONCILE_START_BUDGET_MS = 40_000
 export const RECONCILE_RUN_TIMEOUT_MS = 55_000

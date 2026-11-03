@@ -5,7 +5,8 @@ import 'server-only'
 import { z } from 'zod'
 import { PAYMENT_DATABASE_TIMEOUT_MS, PaymentTimeoutError, withPaymentTimeout } from './timeouts'
 
-export type PaymentRpc = (fn: string, args: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
+export type PaymentRpc = (fn: string, args: Record<string, unknown>, options?: { signal?: AbortSignal; timeoutMs?: number })
+  => Promise<unknown>
 
 /** The database answered with an error or with something we cannot read: transient for the caller. */
 export class PaymentStoreError extends Error {
@@ -25,10 +26,12 @@ const orderRow = z.object({
 const statusRow = z.object({ policy: z.object({ checkout_minutes: z.number().int() }), orders: z.array(orderRow) })
 export type OrderRecord = z.infer<typeof orderRow>
 
-export async function call<T>(rpc: PaymentRpc, fn: string, args: Record<string, unknown>, schema: z.ZodType<T>): Promise<T> {
+export async function call<T>(rpc: PaymentRpc, fn: string, args: Record<string, unknown>, schema: z.ZodType<T>,
+  options: { timeoutMs?: number } = {}): Promise<T> {
   let data: unknown
   try {
-    data = await withPaymentTimeout(signal => rpc(fn, args, { signal }), PAYMENT_DATABASE_TIMEOUT_MS)
+    data = await withPaymentTimeout(signal => rpc(fn, args, { signal, timeoutMs: options.timeoutMs }),
+      options.timeoutMs ?? PAYMENT_DATABASE_TIMEOUT_MS)
   } catch (error) {
     if (error instanceof PaymentTimeoutError) throw error
     // The caller's message names the function and the database's reason (never row data); routes log the name only.

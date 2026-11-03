@@ -4,9 +4,9 @@
 import 'server-only'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { PAYMENT_CHECK_TIMEOUT_MS, RECONCILE_RUN_TIMEOUT_MS,
+import { OPERATOR_WRITE_TIMEOUT_MS, PAYMENT_CHECK_TIMEOUT_MS, PaymentTimeoutError, RECONCILE_RUN_TIMEOUT_MS,
   RECONCILE_START_BUDGET_MS, withPaymentTimeout } from './timeouts'
-import { decideCheckout } from './provider'
+import { decideCheckout, ProviderRejectedError, ProviderUnavailableError } from './provider'
 import type { PaymentProvider } from './provider'
 import { call, readOrder } from './rpc'
 import type { PaymentRpc } from './rpc'
@@ -52,12 +52,13 @@ export async function verifyOrder(deps: VerifyDeps, orderId: string, source: Ful
     const result = await call(deps.rpc, 'fulfil_payment', { p_order_id: order.id, p_provider: provider.id,
       p_provider_payment_id: decision.paymentId, p_provider_status: decision.status, p_amount_kobo: decision.amountKobo,
       p_currency: decision.currency, p_method: decision.method, p_provider_paid_at: decision.paidAt, p_source: source,
-      p_actor: actor }, fulfilResult)
+      p_actor: actor }, fulfilResult, source === 'operator' ? { timeoutMs: OPERATOR_WRITE_TIMEOUT_MS } : undefined)
     return { state: 'fulfilment', outcome: result.outcome ?? null, orderStatus: result.order_status ?? null, result }
   }
   if (decision.action === 'outcome' && OPEN.has(order.status)) {
     const result = await call(deps.rpc, 'record_payment_outcome', { p_order_id: order.id, p_outcome: decision.outcome,
-      p_provider_status: decision.providerStatus, p_source: source }, outcomeResult)
+      p_provider_status: decision.providerStatus, p_source: source }, outcomeResult,
+      source === 'operator' ? { timeoutMs: OPERATOR_WRITE_TIMEOUT_MS } : undefined)
     return { state: 'ended', outcome: decision.outcome, orderStatus: result.order_status ?? null }
   }
   if (decision.action === 'review') {
@@ -102,14 +103,14 @@ export async function reconcileOrders(deps: VerifyDeps, options: { includeLate: 
         runSignal.throwIfAborted()
         if (now() >= startDeadline) { summary.skipped += 1; continue }
         summary.checked += 1
+        // Every check is recorded, failures too: a failed check backs off 5, 15, then 60 minutes and stays visible as
+        // overdue; a permanent refusal stops checks for review.
         const result = await checkOne(bounded, row, summary)
-        // A timed-out/uncertain check is unfinished. Keep its due time and let the lease expire; no back-off.
-        if (result === null) continue
         try {
           runSignal.throwIfAborted()
           const completed = await call(bounded.rpc, 'record_payment_check', { p_order_id: row.order_id, p_result: result,
             p_lease_token: leaseToken }, checkRecorded)
-          if (completed.state !== 'recorded') summary.failed += 1
+          if (completed.state === 'lease-lost' || completed.state === 'not-found') summary.failed += 1
         } catch (error) {
           summary.failed += 1
           console.error('payments: reconcile check not recorded', error instanceof Error ? error.name : 'unknown')
@@ -120,7 +121,7 @@ export async function reconcileOrders(deps: VerifyDeps, options: { includeLate: 
   }, RECONCILE_RUN_TIMEOUT_MS)
 }
 
-async function checkOne(deps: VerifyDeps, row: z.infer<typeof checkRow>, summary: ReconcileSummary): Promise<CheckResult | null> {
+async function checkOne(deps: VerifyDeps, row: z.infer<typeof checkRow>, summary: ReconcileSummary): Promise<CheckResult> {
   try {
     const result = await verifyOrder(deps, row.order_id, 'reconcile', 'system:reconcile')
     if (result.state === 'fulfilment') { summary.fulfilled += 1; return 'fulfilled' }
@@ -130,13 +131,19 @@ async function checkOne(deps: VerifyDeps, row: z.infer<typeof checkRow>, summary
         p_provider_status: null, p_source: 'reconcile' }, outcomeResult)
       if (expired.state === 'recorded') { summary.expired += 1; return 'expired' }
     }
-    if (result.state === 'provider-unavailable') { summary.failed += 1; return null }
+    if (result.state === 'provider-unavailable') { summary.failed += 1; return 'provider-unavailable' }
     summary.waiting += 1
     return result.state
   } catch (error) {
     summary.failed += 1
+    // The provider refused this checkout outright (it does not know it, or the answer cannot be ours): asking again
+    // cannot change that, so checks stop and the order goes to review. Anything else may be transient.
+    if (error instanceof ProviderRejectedError) {
+      console.error('payments: reconcile check refused, sent to review', error.code ?? 'unknown')
+      return 'review'
+    }
     console.error('payments: reconcile check failed', error instanceof Error ? error.name : 'unknown')
-    return null
+    return error instanceof ProviderUnavailableError || error instanceof PaymentTimeoutError ? 'provider-unavailable' : 'error'
   }
 }
 

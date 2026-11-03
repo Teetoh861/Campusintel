@@ -1,33 +1,37 @@
--- Payments re-review: fenced catch-up leases, a final due late check, and excess refunds before plan refunds.
+-- Payments re-review (runs after 20261102190000_payments.sql and before part 2b): fenced catch-up leases, a final due
+-- late check, failed checks recorded with a short back-off, permanent refusals stopped for review, excess refunds before
+-- plan refunds, and card excess left to Bachs support.
 -- Existing money and grants are preserved. Claim/completion writers take only the order row; they never acquire
 -- the account prefix after it. Fulfil/refund keep the A1 prefix before the order and grant rows.
 alter table private.payment_orders
   add column check_lease_token uuid,
   add column check_lease_until timestamptz,
   add column late_check_finished_at timestamptz,
+  -- A check that failed (provider unavailable, error): how many in a row, and since when this order has been due without
+  -- a completed check (it stays visible as overdue while it backs off 5, 15, then 60 minutes).
+  add column check_failures integer not null default 0 check (check_failures >= 0),
+  add column check_failing_since timestamptz,
+  -- A permanent refusal (a checkout the provider does not know, an answer that does not match): checks stop, for review.
+  add column checks_stopped_at timestamptz,
   add constraint payment_check_lease_pair check ((check_lease_token is null) = (check_lease_until is null));
 
 -- A due late check survives the 14-day boundary. Only completing that final check ends late checks.
 create function private.payment_check_due(o private.payment_orders, p_at timestamptz) returns boolean
 language sql immutable security definer set search_path = '' as $$
-  select (o.status in ('created', 'pending')
+  select o.checks_stopped_at is null and (o.status in ('created', 'pending')
       or (o.status in ('failed', 'cancelled', 'expired') and o.late_check_finished_at is null))
     and coalesce(o.next_check_at, o.created_at + interval '2 minutes') <= p_at;
 $$;
 
-create or replace function public.payment_orders_to_check(p_limit integer, p_include_late boolean default true)
-returns table (order_id uuid, provider text, checkout_id text, status text, created_at timestamptz, action text)
-language sql stable security definer set search_path = '' as $$
-  select o.id, o.provider, o.checkout_id, o.status, o.created_at,
-    case when o.status in ('created', 'pending')
-        and o.created_at > clock_timestamp() - make_interval(hours => p.reconcile_hours) then 'check'
-      when o.status in ('created', 'pending') then 'expire' else 'late-check' end
-  from private.payment_orders o cross join private.payment_policy p
-  where p_limit between 1 and 500 and p_include_late is not null
-    and private.payment_check_due(o, clock_timestamp())
-    and (p_include_late or o.status in ('created', 'pending'))
-  order by coalesce(o.next_check_at, o.created_at + interval '2 minutes'), o.id limit p_limit;
+-- Due with no completed check since a time this far back: late, or failing and backing off since then.
+create function private.payment_check_overdue(o private.payment_orders, p_at timestamptz) returns boolean
+language sql immutable security definer set search_path = '' as $$
+  select private.payment_check_due(o, p_at) or (o.checks_stopped_at is null and o.check_failing_since <= p_at
+    and (o.status in ('created', 'pending') or (o.status in ('failed', 'cancelled', 'expired') and o.late_check_finished_at is null)));
 $$;
+
+-- The catch-up job claims its orders (claim_payment_checks); the old unleased candidate list is gone.
+drop function public.payment_orders_to_check(integer, boolean);
 
 -- The lease is committed before any provider call. Two selectors skip each other's locked rows, and an unfinished
 -- check is claimable again after 60 seconds. No check starts after 40 seconds; all I/O is independently bounded.
@@ -44,7 +48,11 @@ begin
       where private.payment_check_due(o, clock_timestamp())
         and (p_include_late or o.status in ('created', 'pending'))
         and (o.check_lease_until is null or o.check_lease_until <= clock_timestamp())
-      order by coalesce(o.next_check_at, o.created_at + interval '2 minutes'), o.id
+      -- Open orders newest first (the most likely to have just been paid), then everything else by due time.
+      order by (o.status in ('created', 'pending')
+          and o.created_at > clock_timestamp() - make_interval(hours => (select reconcile_hours from private.payment_policy))) desc,
+        case when o.status in ('created', 'pending') then o.created_at end desc nulls last,
+        coalesce(o.next_check_at, o.created_at + interval '2 minutes'), o.id
       limit p_limit for update of o skip locked
     ), claimed as (
       update private.payment_orders o set check_lease_token = p_lease_token,
@@ -74,8 +82,22 @@ begin
     return jsonb_build_object('state', 'lease-lost');
   end if;
   if p_result in ('provider-unavailable', 'error') then
-    update private.payment_orders set last_check_result = p_result where id = o.id;
-    return jsonb_build_object('state', 'unfinished');
+    -- Not a completed check: the normal schedule does not advance. Back off 5, 15, then 60 minutes, and keep the order
+    -- visible as overdue from when it first became due without a completed check.
+    v_next := v_now + make_interval(mins => (array[5, 15, 60])[least(o.check_failures + 1, 3)]);
+    update private.payment_orders set last_check_result = p_result, last_checked_at = v_now, next_check_at = v_next,
+        check_failures = check_failures + 1,
+        check_failing_since = coalesce(check_failing_since, coalesce(next_check_at, created_at + interval '2 minutes')),
+        check_lease_token = null, check_lease_until = null
+      where id = o.id;
+    return jsonb_build_object('state', 'failed', 'next_check_at', v_next);
+  end if;
+  if p_result = 'review' then
+    -- A permanent refusal: checks stop and the order is listed for review (payments-health).
+    update private.payment_orders set last_check_result = p_result, last_checked_at = v_now, checks_stopped_at = v_now,
+        check_failures = 0, check_failing_since = null, check_lease_token = null, check_lease_until = null
+      where id = o.id;
+    return jsonb_build_object('state', 'stopped');
   end if;
   select * into strict v_policy from private.payment_policy;
   v_next := case
@@ -87,7 +109,8 @@ begin
       then v_now + make_interval(hours => least(power(2, least(o.check_count, 6))::integer, 48))
     end;
   update private.payment_orders set next_check_at = v_next, check_count = check_count + 1, last_checked_at = v_now,
-      last_check_result = p_result, check_lease_token = null, check_lease_until = null,
+      last_check_result = p_result, check_lease_token = null, check_lease_until = null, check_failures = 0,
+      check_failing_since = null,
       late_check_finished_at = case when o.status in ('failed', 'cancelled', 'expired')
           and o.created_at <= v_now - make_interval(days => v_policy.late_check_days) then v_now
         else late_check_finished_at end
@@ -219,18 +242,94 @@ language sql stable security definer set search_path = '' as $$
     'overpaid_excess_due', coalesce((select jsonb_agg(jsonb_build_object('order_id', o.id, 'payment_id', f.id,
         'excess_kobo', f.amount_kobo - o.amount_kobo, 'currency', f.currency, 'method', f.method) order by o.created_at)
       from private.payment_orders o join private.payment_fulfilments f on f.order_id = o.id
-      where f.outcome = 'fulfilled' and f.currency = o.currency and f.amount_kobo > o.amount_kobo
+      where f.outcome = 'fulfilled' and f.currency = o.currency and f.amount_kobo > o.amount_kobo and f.method <> 'card'
         and not exists (select 1 from private.payment_refunds r where r.payment_id = f.id and r.status = 'refunded'
           and (r.refund_class = 'excess' or r.amount_kobo = f.amount_kobo))), '[]'::jsonb),
+    -- Card excess is never refunded here: it goes through Bachs support.
+    'card_excess_contact_bachs_support', coalesce((select jsonb_agg(jsonb_build_object('order_id', o.id, 'payment_id', f.id,
+        'excess_kobo', f.amount_kobo - o.amount_kobo, 'currency', f.currency, 'action', 'contact Bachs support')
+        order by o.created_at)
+      from private.payment_orders o join private.payment_fulfilments f on f.order_id = o.id
+      where f.outcome = 'fulfilled' and f.currency = o.currency and f.amount_kobo > o.amount_kobo and f.method = 'card'),
+      '[]'::jsonb),
     'checks_overdue_6h', (select count(*) from private.payment_orders o
-      where private.payment_check_due(o, clock_timestamp() - interval '6 hours')),
+      where private.payment_check_overdue(o, clock_timestamp() - interval '6 hours')),
+    'checks_stopped_for_review', coalesce((select jsonb_agg(jsonb_build_object('order_id', id, 'status', status,
+        'stopped_at', checks_stopped_at) order by checks_stopped_at)
+      from private.payment_orders where checks_stopped_at is not null and status in ('created', 'pending', 'failed',
+        'cancelled', 'expired')), '[]'::jsonb),
     'refunds_pending', (select count(*) from private.payment_refunds where status = 'pending'),
     'paid_grants_unbound', coalesce((select jsonb_agg(jsonb_build_object('order_id', order_id, 'grant_id', id,
       'part', plan_part, 'starts_at', starts_at)) from public.entitlement_grants where order_id is not null
       and revoked_at is null and course_term_id is null and starts_at < clock_timestamp() - interval '7 days'), '[]'::jsonb));
 $$;
 
+-- Part 1's refund assessment, with one change: excess is not offered for a card payment.
+create or replace function private.refund_assessment(p_order private.payment_orders, p_payment private.payment_fulfilments,
+  p_identity_hashes text[], p_requested_at timestamptz) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_policy private.payment_policy;
+  v_paid timestamptz := p_order.paid_at;
+  v_now timestamptz := clock_timestamp();
+  v_excess bigint := case when p_payment.outcome = 'fulfilled' and p_payment.currency = p_order.currency
+    and p_payment.amount_kobo > p_order.amount_kobo then p_payment.amount_kobo - p_order.amount_kobo else 0 end;
+  v_bot integer := 0; v_exams integer := 0; v_answers integer := 0; v_reveals integer := 0; v_topics integer := 0;
+  v_used integer;
+  v_reasons text[] := '{}';
+  v_classes text[];
+begin
+  select * into strict v_policy from private.payment_policy;
+  if p_payment.outcome = 'fulfilled' then
+    -- Card excess goes through Bachs support, so only a bank-transfer excess is offered here.
+    v_classes := array['standard', 'our-fault']
+      || case when v_excess > 0 and p_payment.method <> 'card' then array['excess'] else '{}'::text[] end;
+    select count(*) filter (where kind = 'campus-bot-reply'), count(*) filter (where kind = 'theory-reveal'),
+        count(distinct coalesce(course_id::text, '') || ':' || ref) filter (where kind = 'notes-topic')
+      into v_bot, v_reveals, v_topics
+      from private.plan_use_events u
+      where u.order_id = p_order.id and u.occurred_at >= v_paid and u.occurred_at <= v_now
+        and not private.payment_course_is_free(u.course_id);
+    select count(*) into v_exams from public.quiz_attempts q
+      where q.user_id = p_order.user_id and q.mode = 'exam' and q.created_at >= v_paid
+        and q.created_at <= v_now and not private.payment_course_is_free(q.course_id);
+    select count(*) into v_answers from public.quiz_attempt_answers a join public.quiz_attempts q on q.id = a.attempt_id
+      where q.user_id = p_order.user_id and q.mode is distinct from 'exam' and a.answered_at >= v_paid
+        and a.answered_at <= v_now and not private.payment_course_is_free(q.course_id);
+    v_answers := v_answers + v_reveals;
+    if p_requested_at > v_paid + make_interval(hours => v_policy.refund_window_hours) then
+      v_reasons := v_reasons || 'window'::text;
+    end if;
+    if v_bot > v_policy.refund_campus_bot_replies_allowed then v_reasons := v_reasons || 'campus-bot'::text; end if;
+    if v_exams > v_policy.refund_exams_allowed then v_reasons := v_reasons || 'exam'::text; end if;
+    if v_answers > v_policy.refund_practice_answers_allowed then v_reasons := v_reasons || 'practice'::text; end if;
+    if v_topics > v_policy.refund_notes_topics_allowed then v_reasons := v_reasons || 'notes'::text; end if;
+  else
+    v_classes := array['our-fault', 'duplicate'];
+    v_reasons := array['no-plan'];
+  end if;
+  select count(*) into v_used from private.payment_refunds r
+    where r.refund_class = 'standard' and r.status <> 'failed'
+      and ((p_order.user_id is not null and r.user_id = p_order.user_id) or r.identity_hashes && p_identity_hashes);
+  if p_payment.outcome = 'fulfilled' and v_used >= v_policy.refunds_per_student then
+    v_reasons := v_reasons || 'limit'::text;
+  end if;
+  return jsonb_build_object('classes_allowed', to_jsonb(v_classes),
+    'standard_allowed', cardinality(v_reasons) = 0, 'standard_refused', to_jsonb(v_reasons),
+    'requested_at', p_requested_at, 'window_ends_at', v_paid + make_interval(hours => v_policy.refund_window_hours),
+    'use_counted_until', v_now, 'excess_kobo', v_excess,
+    'counts', jsonb_build_object('campus_bot_replies', v_bot, 'exams_started', v_exams, 'practice_answers', v_answers,
+      'notes_topics', v_topics),
+    'allowed', jsonb_build_object('campus_bot_replies', v_policy.refund_campus_bot_replies_allowed,
+      'exams_started', v_policy.refund_exams_allowed, 'practice_answers', v_policy.refund_practice_answers_allowed,
+      'notes_topics', v_policy.refund_notes_topics_allowed),
+    'refunds_used', v_used, 'refund_limit', v_policy.refunds_per_student,
+    'amount_kobo', p_payment.amount_kobo, 'currency', p_payment.currency, 'method', p_payment.method);
+end;
+$$;
+
 revoke all on function private.payment_check_due(private.payment_orders, timestamptz),
+  private.payment_check_overdue(private.payment_orders, timestamptz),
   public.claim_payment_checks(integer, boolean, uuid), public.record_payment_check(uuid, text, uuid)
   from public, anon, authenticated, service_role;
 grant execute on function public.claim_payment_checks(integer, boolean, uuid),
