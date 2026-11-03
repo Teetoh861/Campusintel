@@ -99,12 +99,28 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | `reconcile-now` | One reconcile batch now. Asks Bachs. |
 | `campus-bot-model --model <name> --weight <n> --actor --reason` | A model's price weight (Haiku = 1). Pending owner approval. |
 | `campus-bot-cap --step writing\|check [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. |
+| `campus-bot-refill --user <uuid> --actor --reason` | Gives one student fresh Campus Bot limits: new session and week windows start at their next request. Nothing is deleted. |
+| `campus-bot-refill --everyone --confirm --actor --reason` | The same for every student. |
+| `ai-limits [--daily <n>] [--paid-reserve <n>] [--undelivered-per-day <n>] --actor --reason` | The platform's AI sets per UTC day (500 at launch; raise it as paying students grow), how many of them only paying students may use (150), and each student's undelivered tries per day (10). Unnamed settings stay as they are. |
 
 `--requested-at` is when the student asked (default now). It must lie between the payment and now. The 48-hour window
 is judged at that time; use is counted from the payment until the refund is processed, so use after asking counts.
 
 There is no manual-evidence fulfilment, by decision: a plan is granted only on a payment Bachs confirms.
 `payment-fulfil --manual-evidence` is refused.
+
+## Plan use for refunds
+
+The standard refund rules count use from the payment until the refund is processed. Exams started and practice answers
+come from the attempt tables. The rest is recorded as it happens, once per order, course and item: a notes topic the
+student opens, a theory answer revealed (recorded before
+the answer is shown; if it cannot be recorded, the answer is not shown), and a Campus Bot set delivered. GST courses
+are never counted. `refund` dry runs show every count.
+
+A notes topic counts as opened only once it has been on screen for 30 seconds in one visit to the course page. On
+screen means 60% of the note in view, or the note filling at least 60% of the screen (so long topics on a phone count
+too). The time adds up while the student stays on the page, and nothing counts while the tab is hidden. Scrolling past a topic never counts. Each topic is sent at most once per visit (one background request, which
+the page does not wait for) and recorded at most once per order.
 
 ## Support playbook
 
@@ -145,10 +161,9 @@ against the student's one standard refund.
 **Overpayments.** A payment above the price is granted as usual and listed in `payments-health` under
 `overpaid_excess_due` until the excess is refunded. Refund it with `refund --order <id> --class excess --request <uuid>
 --confirm`, at any time: it returns only the amount above the price, never counts toward the student's one standard
-refund, and changes no access. It goes back to the account that paid: through Bachs for a card (as a partial refund),
-or by bank transfer as in step 3 above. Bachs takes one refund per payment, so after an excess refund on a card, a
-later plan refund of that card payment is refused (`provider-refund-used`); a later plan refund of a bank transfer
-returns the rest.
+refund, and changes no access. It goes back to the account that paid, by bank transfer as in step 3 above; a later plan
+refund of a bank transfer returns the rest. Cards are charged the exact amount; if a card payment is ever overpaid,
+refund the excess through Bachs support, not with this command.
 
 **Duplicates.** Two payments for the same semester: the second order becomes `paid-duplicate` (no second grant) and
 shows in `payments-health`. Refund it the same day with `refund --order <id> --class duplicate --request <uuid>

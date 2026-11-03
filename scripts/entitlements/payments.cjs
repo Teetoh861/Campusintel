@@ -136,6 +136,25 @@ function paymentCommand(command, opts, ctx) {
       p_step: required(opts, 'step', /^(writing|check)$/),
       p_read_tokens_max: opts.read !== undefined ? integer(opts, 'read') : null,
       p_written_tokens_max: opts.written !== undefined ? integer(opts, 'written') : null, ...note() })
+    case 'campus-bot-refill': {
+      // A refill starts fresh session and week windows at the student's next request; nothing is deleted.
+      const everyone = opts.everyone === true
+      if (everyone === (opts.user !== undefined)) throw new Error('campus-bot-refill needs --user <uuid> or --everyone')
+      if (everyone && opts.confirm !== true) throw new Error('--everyone refills every student: add --confirm')
+      const user = everyone ? null : required(opts, 'user', UUID)
+      return async () => ctx.rpc('admin_campus_bot_refill', { p_user_id: user, ...note() })
+    }
+    case 'ai-limits': {
+      // The platform's AI sets per UTC day, the part of them kept for paying students, and each student's undelivered
+      // tries per day. Unnamed settings are unchanged.
+      const setting = name => opts[name] !== undefined ? integer(opts, name) : null
+      const args = { p_daily_generations: setting('daily'), p_paid_reserve: setting('paid-reserve'),
+        p_undelivered_per_day: setting('undelivered-per-day') }
+      if (Object.values(args).every(value => value === null)) {
+        throw new Error('ai-limits needs --daily, --paid-reserve or --undelivered-per-day')
+      }
+      return async () => ctx.rpc('admin_set_ai_limits', { ...args, ...note() })
+    }
     case 'payment-verify':
     case 'payment-fulfil': {
       if (opts['manual-evidence'] !== undefined) {

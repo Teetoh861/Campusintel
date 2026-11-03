@@ -7,7 +7,8 @@ import type { createClient } from '@/lib/supabase/server'
 import type { TheoryMaterial } from './projection'
 
 export type TheoryPracticeResult =
-  | { status: 'ready'; course: { slug: string; href: string; code: string; title: string }; materials: TheoryMaterial[] }
+  | { status: 'ready'; course: { slug: string; href: string; code: string; title: string; repositoryCourseId: string };
+      materials: TheoryMaterial[] }
   | { status: 'locked'; outsideList?: boolean; reason?: CourseLockReason }
   | { status: 'unavailable'; notAvailable?: true }
   | { status: 'signed-out' | 'not-found' | 'invariant-failure' }
@@ -32,6 +33,7 @@ export async function getTheoryPracticeForVerifiedStudent(
   const materials = projectTheoryPractice(published.content)
   if (materials === null) return { status: 'unavailable' }
   return { status: 'ready', course: { slug: repository.route.slug, href: repository.route.href,
+    repositoryCourseId: repository.repositoryCourseId,
     code: course.status === 'ok' ? course.course.code : repository.route.course.code,
     title: course.status === 'ok' ? course.course.title : repository.route.course.title }, materials }
 }

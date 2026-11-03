@@ -3,6 +3,8 @@ import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
+import { defaultPlanUseRecorder } from '@/lib/payments/plan-use'
+import type { PlanUseRecorder } from '@/lib/payments/plan-use'
 import { createClient } from '@/lib/supabase/server'
 import { theorySubmission } from './contract'
 import { recordTheorySubmission } from './events'
@@ -14,7 +16,7 @@ import type { TheorySubmitResult } from './contract'
  * The request carries no answer text; the strict schema refuses one.
  */
 export async function submitTheoryAnswer(
-  input: unknown, response: NextResponse, pageToken: string | null,
+  input: unknown, response: NextResponse, pageToken: string | null, recordUse: PlanUseRecorder = defaultPlanUseRecorder(),
 ): Promise<TheorySubmitResult> {
   if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
@@ -39,6 +41,9 @@ export async function submitTheoryAnswer(
     const live = await getStudentSessionContext(response, client)
     if (live === null) return { status: 'signed-out' }
     if (live.user.id !== context.user.id || live.sessionId !== context.sessionId) return { status: 'session-changed' }
+    // Plan use is recorded before the answer leaves the server; if it cannot be, the answer is not shown.
+    if (!await recordUse({ sessionId: context.sessionId, kind: 'theory-reveal',
+      courseId: published.course.repositoryCourseId, ref: command.itemId })) return { status: 'unavailable' }
     await recordTheorySubmission(published.course.slug, material.feedback.rubric !== null)
     return { status: 'ready', feedback: material.feedback }
   } catch { return { status: 'unavailable' } }

@@ -9,8 +9,10 @@ type Env = Readonly<Record<string, string | undefined>>
 // Trial grants come from the student's explicit Discovery Pass activation (20261021100000_discovery_pass.sql) and Early
 // Access grants from automatic enrollment of the trusted list after the actual launch (PRD 4.9), both in
 // public.entitlement_grants (20261017100000_trial_entitlements.sql).
+// Paid grants come from verified plan payments (20261102100000_payments.sql); paid and Early Access use fund Campus Bot
+// sets by tokens (20261103100000_campus_bot_limits.sql).
 // AI admission for these sources requires a current, unrevoked grant; ai_allowance_windows holds test grants only.
-const PRODUCTION_GRANT_SOURCES: readonly AiGrantSource[] = ['trial', 'early_access']
+const PRODUCTION_GRANT_SOURCES: readonly AiGrantSource[] = ['trial', 'early_access', 'paid']
 // Next.js fixes NODE_ENV to "production" in every `next build` / `next start`, wherever it is hosted.
 const LOCAL_NODE_ENVS = ['development', 'test']
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]']

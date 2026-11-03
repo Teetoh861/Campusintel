@@ -43,7 +43,7 @@ export type UploadRejection =
   | 'pass-upload-limit'
 
 /** Where an AI grant came from. Only trusted server code issues grants; AI use never creates one. */
-export type AiGrantSource = 'trial' | 'early_access' | 'test'
+export type AiGrantSource = 'trial' | 'early_access' | 'paid' | 'test'
 
 /** The student's AI grant. 'not-entitled' means no grant this deployment accepts exists yet. */
 export type AllowanceSummary = {

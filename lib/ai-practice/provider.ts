@@ -9,6 +9,8 @@ export type ProviderRequest = {
   user: string
   outputSchema: Record<string, unknown>
   maxOutputTokens: number
+  /** The model for this request, when the database chose one at admission; otherwise the adapter's configured model. */
+  model?: string
   /** The service's overall deadline. Adapters must pass it to their transport. */
   signal: AbortSignal
 }
