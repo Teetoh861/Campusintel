@@ -136,6 +136,8 @@ function paymentCommand(command, opts, ctx) {
       p_step: required(opts, 'step', /^(writing|check)$/),
       p_read_tokens_max: opts.read !== undefined ? integer(opts, 'read') : null,
       p_written_tokens_max: opts.written !== undefined ? integer(opts, 'written') : null, ...note() })
+    case 'campus-bot-writer': return async () => ctx.rpc('admin_set_campus_bot_writing_model', {
+      p_model: required(opts, 'model', /^[a-z][a-z0-9-]{0,39}$/), ...note() })
     case 'campus-bot-refill': {
       // A refill starts fresh session and week windows at the student's next request; nothing is deleted.
       const everyone = opts.everyone === true

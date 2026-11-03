@@ -175,12 +175,13 @@ for (const refundClass of ['duplicate', 'our-fault']) {
   })
 }
 
-test('campus-bot-refill: one student, or everyone only with --confirm; ai-limits names only what changes', async () => {
+test('campus-bot-refill: one student, or everyone only with --confirm; ai-limits names only what changes; the writer', async () => {
   const h = harness()
   await h.run(['campus-bot-refill', '--user', USER, ...NOTE])
   await h.run(['campus-bot-refill', '--everyone', '--confirm', ...NOTE])
   await h.run(['ai-limits', '--daily', '800', '--paid-reserve', '250', ...NOTE])
   await h.run(['ai-limits', '--undelivered-per-day', '12', ...NOTE])
+  await h.run(['campus-bot-writer', '--model', 'haiku', ...NOTE])
   assert.deepEqual(h.requests, [
     { fn: 'admin_campus_bot_refill', body: { p_user_id: USER, p_actor: 'ops', p_reason: 'support ticket 42' } },
     { fn: 'admin_campus_bot_refill', body: { p_user_id: null, p_actor: 'ops', p_reason: 'support ticket 42' } },
@@ -188,6 +189,7 @@ test('campus-bot-refill: one student, or everyone only with --confirm; ai-limits
       p_actor: 'ops', p_reason: 'support ticket 42' } },
     { fn: 'admin_set_ai_limits', body: { p_daily_generations: null, p_paid_reserve: null, p_undelivered_per_day: 12,
       p_actor: 'ops', p_reason: 'support ticket 42' } },
+    { fn: 'admin_set_campus_bot_writing_model', body: { p_model: 'haiku', p_actor: 'ops', p_reason: 'support ticket 42' } },
   ])
   await assert.rejects(h.run(['campus-bot-refill', '--everyone', ...NOTE]), /add --confirm/)
   await assert.rejects(h.run(['campus-bot-refill', ...NOTE]), /--user <uuid> or --everyone/)
@@ -195,5 +197,6 @@ test('campus-bot-refill: one student, or everyone only with --confirm; ai-limits
   await assert.rejects(h.run(['campus-bot-refill', '--user', USER]), /--actor is required/)
   await assert.rejects(h.run(['ai-limits', ...NOTE]), /needs --daily/)
   await assert.rejects(h.run(['ai-limits', '--daily', 'many', ...NOTE]), /must be an integer/)
-  assert.equal(h.requests.length, 4, 'refused commands send nothing')
+  await assert.rejects(h.run(['campus-bot-writer', ...NOTE]), /--model is required/)
+  assert.equal(h.requests.length, 5, 'refused commands send nothing')
 })

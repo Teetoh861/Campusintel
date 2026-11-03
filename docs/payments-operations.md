@@ -99,6 +99,7 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | `reconcile-now` | One reconcile batch now. Asks Bachs. |
 | `campus-bot-model --model <name> --weight <n> --actor --reason` | A model's price weight (Haiku = 1). Pending owner approval. |
 | `campus-bot-cap --step writing\|check [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. |
+| `campus-bot-writer --model <name> --actor --reason` | The model that writes Campus Bot sets (Haiku at launch). Each request records the model and weights it is charged at, so a change applies to new sets only. |
 | `campus-bot-refill --user <uuid> --actor --reason` | Gives one student fresh Campus Bot limits: new session and week windows start at their next request. Nothing is deleted. |
 | `campus-bot-refill --everyone --confirm --actor --reason` | The same for every student. |
 | `ai-limits [--daily <n>] [--paid-reserve <n>] [--undelivered-per-day <n>] --actor --reason` | The platform's AI sets per UTC day (500 at launch; raise it as paying students grow), how many of them only paying students may use (150), and each student's undelivered tries per day (10). Unnamed settings stay as they are. |
@@ -108,6 +109,25 @@ is judged at that time; use is counted from the payment until the refund is proc
 
 There is no manual-evidence fulfilment, by decision: a plan is granted only on a payment Bachs confirms.
 `payment-fulfil --manual-evidence` is refused.
+
+## Campus Bot limits
+
+Paid plans and Early Access fund Campus Bot sets by tokens, not by a number of sets. A paid plan funds only during the
+semester it is bound to (never in the slack after it, and a Session plan's second half only in the Second Semester).
+Early Access members get Plus limits during their free month. When a student has both, the higher limits apply; they
+are never added. A Discovery Pass keeps its one set, and an older seven-day trial its sets.
+
+- **Limits**: a session (5 hours from the student's first request) and a week (7 days from the first request of that
+  week), per tier in `campus_bot_tiers`. Changing a tier applies to everyone at once; a reset time a student has
+  already seen never moves.
+- **Cost**: tokens from the provider's own report, every prompt token as read plus 5 x every written token, times the
+  model's weight (Haiku = 1). Only a delivered set is charged; failures, timeouts, flagged or unusable results cost
+  nothing. A set starts only if both limits cover its worst case (60,000 for Haiku), and a started set always finishes,
+  even if that takes a limit below zero.
+- **Platform**: 500 sets a day across all students, of which the last 150 are kept for paying students; each student
+  may have 10 undelivered tries a day (`ai-limits` changes all three).
+- **Support**: a student out of tokens can be refilled with `campus-bot-refill --user <uuid>`; it starts fresh windows
+  at their next request and deletes nothing. A set that finishes after the student's access ended is kept and charged.
 
 ## Plan use for refunds
 
