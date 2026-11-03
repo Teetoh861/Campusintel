@@ -37,7 +37,7 @@ async function Bookmarks(): Promise<ReactElement> {
     else {
       // The small shelf bounds this preload. The existing route reader owns both institutional
       // and repository-only truth; saved courses are independent of the current academic selection.
-      const lookups = await Promise.all(courses.map(course => getStudentCourseBySlugForVerifiedStudent(client, course.slug)))
+      const lookups = await Promise.all(courses.map(course => getStudentCourseBySlugForVerifiedStudent(client, course.slug, { readRepositoryOnly: false })))
       const resolved: (RoutedStudentCourse | RepositoryOnlyCourse)[] = []
       result = { status: 'ok', courses: resolved }
       if (lookups.some(lookup => lookup.status === 'signed-out')) result = { status: 'signed-out' }

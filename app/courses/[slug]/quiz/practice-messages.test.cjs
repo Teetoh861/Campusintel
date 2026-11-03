@@ -26,30 +26,37 @@ async function flow(initial, run) {
   const load = Module._load, saved = { window: global.window, document: global.document, setTimeout: global.setTimeout }
   const realSetTimeout = global.setTimeout
   const answers = [], requests = [], records = new Map()
+  const events = new Map()
   const store = { getItem: key => records.get(key) ?? null, setItem: (key, value) => records.set(key, value),
     removeItem: key => records.delete(key) }
   let active = null
   const hooks = {
     useState(initialValue) {
+      if (!active) return React.useState(initialValue)
       const owner = active, n = owner.index++
       if (!(n in owner.slots)) owner.slots[n] = typeof initialValue === 'function' ? initialValue() : initialValue
       return [owner.slots[n], value => { owner.slots[n] = typeof value === 'function' ? value(owner.slots[n]) : value }]
     },
-    useRef(value) { const n = active.index++; return active.slots[n] ??= { current: value } },
+    useRef(value) { if (!active) return React.useRef(value); const n = active.index++; return active.slots[n] ??= { current: value } },
     useMemo(factory, deps) {
+      if (!active) return React.useMemo(factory, deps)
       const n = active.index++, prior = active.slots[n]
       if (!prior || deps.some((dep, i) => !Object.is(dep, prior.deps[i]))) active.slots[n] = { deps, value: factory() }
       return active.slots[n].value
     },
     useCallback(fn, deps) { return hooks.useMemo(() => fn, deps) },
     useEffect(effect, deps) {
+      if (!active) return React.useEffect(effect, deps)
       const owner = active, n = owner.index++, prior = owner.slots[n]
       if (!prior || deps.some((dep, i) => !Object.is(dep, prior.deps[i]))) {
         owner.effects.push(() => { prior?.cleanup?.(); owner.slots[n] = { deps, cleanup: effect() } })
       }
     },
   }
-  global.window = { sessionStorage: store, localStorage: store, location: { pathname: `/courses/${COURSE}/quiz` },
+  global.window = { sessionStorage: store, localStorage: store,
+    addEventListener: (event, callback) => { if (!events.has(event)) events.set(event, new Set()); events.get(event).add(callback) },
+    removeEventListener: (event, callback) => events.get(event)?.delete(callback),
+    location: { pathname: `/courses/${COURSE}/quiz` },
     history: { replaceState() {} } }
   global.document = { body: { setAttribute() {}, removeAttribute() {} } }
   // The automatic re-check's waits run at once; the number of requests still shows every re-check.
@@ -79,7 +86,7 @@ async function flow(initial, run) {
         return tree
       }
       const settle = async () => { for (let n = 0; n < 40; n++) await new Promise(resolve => realSetTimeout(resolve, 2)) }
-      await run({ render, settle, answers, requests })
+      await run({ render, settle, answers, requests, emit: event => { for (const callback of events.get(event) ?? []) callback() } })
     })
   } finally {
     Module._load = load
@@ -182,7 +189,7 @@ test('the exam-open notice links to the exam and offers no Try again', async () 
 
 test('the end of a topic: Practise again draws this topic again, Next topic starts the next one, none after the last', async () => {
   const graded = (topic) => ({ kind: 'graded', latest: false, attempt: { status: 'submitted', id: ATTEMPT, courseId: 'course-1',
-    mode: 'instant', topic, intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: DEADLINE, durationSeconds: 10800,
+    mode: 'instant', reviewAvailable: true, topic, intent: 'new', redoOf: null, startedAt: NOW, deadlineAt: DEADLINE, durationSeconds: 10800,
     questionCount: 1, bankSize: 12, result: { score: 1, total: 1, timedOut: false, finishedAt: NOW },
     questions: [{ questionId: 'q-1', prompt: 'Prompt', options: ['A', 'B'], section: topic, itemId: 'i-1', revision: 1,
       selected: 0, correctOption: 0, explanation: null }] } })
@@ -273,4 +280,116 @@ test('practice copy is plain: curly apostrophes, save lines from PRACTICE_COPY, 
   for (const file of fs.readdirSync(__dirname).filter(name => /\.tsx?$/.test(name))) {
     assert.doesNotMatch(fs.readFileSync(path.join(__dirname, file), 'utf8'), BANNED, file)
   }
+})
+
+test('opening a past review refreshes access and shows only the score if the plan ended', async () => {
+  const attempt={...openAttempt(ATTEMPT),status:'submitted',reviewAvailable:true,
+    result:{score:0,total:1,timedOut:false,finishedAt:NOW},
+    questions:[{questionId:'q-1',itemId:'i-1',revision:1,prompt:'Prompt',options:['A','B'],section:'One',selected:0,correctOption:1,explanation:'Because'}]}
+  await flow({kind:'graded',latest:false,attempt},async f=>{
+    f.answers.push({status:'graded',now:NOW,attempt:{...attempt,reviewAvailable:false,questions:[]}})
+    f.render().props.onReview();await f.settle()
+    const screen=f.render()
+    assert.equal(screen.type.name,'ScoreOnly')
+    assert.deepEqual(screen.props.attempt.questions,[])
+    assert.deepEqual(f.requests.map(request=>request.action),['attempt'])
+    const html=renderToStaticMarkup(screen)
+    assert.match(html,/0 of 1 correct/)
+    assert.match(html,/Answers and explanations are included with full access\./)
+    assert.doesNotMatch(html,/Prompt|Because|Review answers/)
+  })
+})
+
+const reviewAttempt = () => ({ ...openAttempt(ATTEMPT), status: 'submitted', reviewAvailable: true,
+  result: { score: 0, total: 1, timedOut: false, finishedAt: NOW },
+  questions: [{ questionId: 'q-1', itemId: 'i-1', revision: 1, prompt: 'Prompt', options: ['A', 'B'], section: 'One',
+    selected: 0, correctOption: 1, explanation: 'Because' }] })
+const reviewScreen = tree => tree.props.children[0]
+
+test('score-only retake uses the current server permission rather than a stale page brief', async () => {
+  for (const canStartNew of [false, true]) {
+    const attempt = { ...reviewAttempt(), reviewAvailable: false, questions: [], canStartNew }
+    await flow({ kind: 'graded', latest: false, attempt }, async f => {
+      const result = f.render()
+      assert.equal(result.type.name, 'ScoreOnly')
+      assert.equal(result.props.canStartNew, canStartNew)
+    })
+  }
+})
+
+test('review opening failure is visible and Try again retries that review', async () => {
+  const attempt = reviewAttempt()
+  await flow({ kind: 'graded', latest: false, attempt }, async f => {
+    f.answers.push({ status: 'unavailable' })
+    f.render().props.onReview(); await f.settle()
+    const result = f.render()
+    assert.equal(result.type.name, 'ResultsScreen')
+    assert.equal(result.props.error.title, "Couldn't open the review. Try again.")
+    f.answers.push({ status: 'graded', now: NOW, attempt })
+    result.props.onRetry(); await f.settle()
+    assert.equal(reviewScreen(f.render()).type.name, 'ReviewScreen')
+    assert.deepEqual(f.requests.map(request => request.attemptId), [ATTEMPT, ATTEMPT])
+  })
+})
+
+test('a restored review ignores network failures, rate limits, unavailable and unrelated replies', async () => {
+  const attempt = reviewAttempt()
+  await flow({ kind: 'graded', latest: false, attempt }, async f => {
+    f.answers.push({ status: 'graded', now: NOW, attempt })
+    f.render().props.onReview(); await f.settle(); f.render()
+    for (const reply of [() => { throw new Error('offline') }, { status: 'unavailable' }, { status: 'rate-limited' },
+      { status: 'graded', now: NOW, attempt: { ...attempt, id: 'another-attempt', reviewAvailable: false, questions: [] } }]) {
+      f.answers.push(reply); f.emit('focus'); await f.settle()
+      assert.equal(reviewScreen(f.render()).type.name, 'ReviewScreen')
+    }
+  })
+})
+
+for (const status of ['not-found', 'signed-out', 'no-review']) test(`a restored review leaves on definite ${status}`, async () => {
+  const attempt = reviewAttempt()
+  await flow({ kind: 'graded', latest: false, attempt }, async f => {
+    f.answers.push({ status: 'graded', now: NOW, attempt })
+    f.render().props.onReview(); await f.settle(); f.render()
+    f.answers.push(status === 'no-review' ? { status: 'graded', now: NOW,
+      attempt: { ...attempt, reviewAvailable: false, questions: [], reviewUnavailableReason: 'outside-list' } } : { status })
+    f.emit('pageshow'); await f.settle()
+    const next = f.render()
+    assert.equal(next.type.name, status === 'no-review' ? 'ScoreOnly' : 'IntroScreen')
+    if (status === 'no-review') assert.equal(next.props.attempt.reviewUnavailableReason, 'outside-list')
+  })
+})
+
+test('a late review check cannot replace the newer attempt now on screen', async () => {
+  const attempt = reviewAttempt()
+  await flow({ kind: 'graded', latest: false, attempt }, async f => {
+    f.answers.push({ status: 'graded', now: NOW, attempt })
+    f.render().props.onReview(); await f.settle(); f.render()
+    let release
+    f.answers.push(() => new Promise(resolve => { release = resolve }))
+    f.emit('focus'); await f.settle()
+    reviewScreen(f.render()).props.onBack()
+    const result = f.render()
+    f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId) }))
+    result.props.onRetake(); await f.settle()
+    const newer = f.render()
+    assert.equal(newer.type.name, 'ActiveAttempt')
+    release({ status: 'graded', now: NOW, attempt: { ...attempt, reviewAvailable: false, questions: [] } })
+    await f.settle()
+    assert.equal(f.render().props.attempt.id, newer.props.attempt.id)
+  })
+})
+
+test('a late opening response cannot replace a new attempt', async () => {
+  const attempt = reviewAttempt()
+  await flow({ kind: 'graded', latest: false, attempt }, async f => {
+    let release
+    f.answers.push(() => new Promise(resolve => { release = resolve }))
+    const result = f.render()
+    result.props.onReview(); await f.settle()
+    f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId) }))
+    result.props.onRetake(); await f.settle(); const newer = f.render()
+    release({ status: 'graded', now: NOW, attempt }); await f.settle()
+    assert.equal(f.render().props.attempt.id, newer.props.attempt.id)
+    assert.equal(f.render().type.name, 'ActiveAttempt')
+  })
 })

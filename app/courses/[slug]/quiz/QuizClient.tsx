@@ -13,9 +13,11 @@ import { InstantResult } from './InstantResult'
 import { IntroScreen } from './IntroScreen'
 import { InstantStarting } from './InstantStarting'
 import { ReportQuestionDialog } from './ReportQuestionDialog'
+import { ScoreOnly } from './ScoreOnly'
 import { ResultsScreen } from './ResultsScreen'
 import { ResumeScreen } from './ResumeScreen'
 import { ReviewScreen } from './ReviewScreen'
+import { useReviewAccess } from './useReviewAccess'
 import { focusFirst } from './focus-return'
 import { PRACTICE_COPY, attemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, settlePendingStart,
@@ -74,7 +76,7 @@ type Props = {
   initial: QuizInitial
 }
 
-type View =
+export type View =
   // 'intro' is the exam's brief; 'starting' a topic's instant feedback on its way.
   | { screen: 'intro' }
   | { screen: 'starting'; topic: string }
@@ -106,6 +108,8 @@ export function QuizClient(props: Props): ReactElement | null {
   const starting = useRef(false)
   // What Try again sends after a start problem: the same start when unanswered, a new one when refused.
   const retryStart = useRef<PendingStart | null>(null)
+  const closeReport = useCallback(() => setReport(null), [])
+  const review = useReviewAccess(view, continuityToken, setView, closeReport)
 
   // Global chrome is hidden only while an attempt is on screen.
   useEffect(() => {
@@ -278,19 +282,24 @@ export function QuizClient(props: Props): ReactElement | null {
   }
   if (view.screen === 'results') {
     const { attempt } = view
+    const canStartNew = brief !== null && (attempt.canStartNew ?? attempt.reviewAvailable)
+    if (!attempt.reviewAvailable) return <ScoreOnly {...identity} attempt={attempt} courseHref={props.courseHref}
+      canStartNew={canStartNew} starting={busy}
+      onRetake={() => { if (brief !== null) start('new', null, brief) }} />
     if (attempt.mode === 'instant') {
       const { topic } = attempt
       const next = topic === null ? -1 : props.topics.indexOf(topic) + 1
       const nextTopic = next > 0 ? props.topics[next] ?? null : null
       return <InstantResult {...identity} courseHref={topicsHref} attempt={attempt}
-        canStartNew={brief !== null && topic !== null} nextTopic={brief !== null ? nextTopic : null}
+        canStartNew={canStartNew && topic !== null} nextTopic={canStartNew ? nextTopic : null}
         starting={busy} error={problem} onRetry={retry}
         onPractiseAgain={() => { if (topic !== null) startInstant(topic) }}
         onNextTopic={() => { if (nextTopic !== null) startInstant(nextTopic) }} />
     }
-    return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={brief !== null}
-      unsentAtDeadline={view.unsent} starting={busy} error={problem} onRetry={retry}
-      onReview={() => setView({ screen: 'review', attempt, unsent: view.unsent })}
+    return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={canStartNew}
+      unsentAtDeadline={view.unsent} starting={busy} openingReview={review.opening} error={review.problem ?? problem}
+      onRetry={review.problem !== null ? () => { void review.openReview() } : retry}
+      onReview={() => { void review.openReview() }}
       onRetake={() => { if (brief !== null) start('new', null, brief) }}
       onRedo={() => {
         if (brief !== null) start('redo', attempt.id, { questionCount: attempt.questionCount, durationSeconds: brief.durationSeconds })

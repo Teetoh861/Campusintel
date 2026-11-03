@@ -16,7 +16,7 @@ import { getBucket } from '@/lib/auth/rate-limit'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
-import { claimHashes, readClaimHashKeys } from './claim-hash'
+import { claimHashes, normalizeClaimEmail, readClaimHashKeys } from './claim-hash'
 import { discoveryOffered, entitlementCommandSchema, entitlementSummarySchema } from './contract'
 import { activationRow, eligibilityRow, executeEntitlementCommand } from './service'
 import type { ClaimKeys } from './claim-hash'
@@ -124,7 +124,7 @@ function createSupabaseEntitlementEnv(sessionId: string, email: string, address:
     async limit() {
       // The same purpose-separated buckets as the auth routes: the raw address and email never enter the database.
       const { data, error } = await service.rpc('consume_discovery_activation_limit', {
-        p_account: getBucket('DISCOVERY_ACTIVATION', 'account', email.toLowerCase()),
+        p_account: getBucket('DISCOVERY_ACTIVATION', 'account', normalizeClaimEmail(email)),
         p_origin: getBucket('DISCOVERY_ACTIVATION', 'origin', address),
         p_account_limit: ACTIVATION_LIMIT.account[0], p_account_window: ACTIVATION_LIMIT.account[1],
         p_origin_notice: ACTIVATION_LIMIT.originNotice[0], p_origin_window: ACTIVATION_LIMIT.originNotice[1],
