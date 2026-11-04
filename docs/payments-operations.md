@@ -53,14 +53,20 @@ The CSP allows forms to redirect to `https://checkout.bachs.io` and nowhere else
 hosted checkouts; if the sandbox hands out a different checkout origin, the checkout is refused rather than
 redirected, and the CSP entry needs the owner's decision.
 
+Before opening sales in production, move the project to Vercel Pro and switch reconciliation to every five minutes
+(see Reconcile schedule below).
+
 Opening sales: `open-sales` below. Sales stay closed until then.
 
 ## Reconcile schedule
 
-`GET /api/payments/reconcile` (cron bearer) runs **every five minutes** (`*/5 * * * *` in `vercel.json`). This needs the
-Vercel Pro plan: the free plan fails deployments with any cron more frequent than daily, so the team moves to Pro before
-this schedule is deployed. The webhook and the return page settle almost every payment; the run catches the rest.
-There are no continuation runs; each run is bounded as below.
+`GET /api/payments/reconcile` (cron bearer) runs **once a day** (`0 3 * * *` in `vercel.json`) until the project moves
+to Vercel Pro. The free plan, which the test site runs on, rejects any cron more frequent than daily. The webhook and
+the return page settle almost every payment; the run catches the rest. There are no continuation runs; each run is
+bounded as below.
+
+**Production setup, before sales open:** once the project is on Vercel Pro, change the schedule in `vercel.json` to
+`*/5 * * * *` (every five minutes) and deploy. Nothing else changes.
 
 Due orders are claimed in batches of 50. Ten slots of every batch go to the due checks that have waited longest (since
 their due time, or since their first failed check while they back off), so new orders can never starve an overdue
