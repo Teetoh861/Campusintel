@@ -134,7 +134,7 @@ test('results show the server grading with the locked bands, truthful counts and
   assert.match(html, /Submitted · 41 of 60 minutes used/)
   assert.match(text(html), /70% 7 of 10 correct/)
   assert.match(html, /Strong attempt/)
-  assert.match(html, /Practice feedback for this attempt only\. Not an official grade\./)
+  assert.doesNotMatch(html, /Practice feedback|official grade/)
   assert.match(text(html), /Correct 7 .*Incorrect 2 .*Unanswered 1/)
   assert.match(html, /Result saved to your account\./)
   assert.doesNotMatch(html, /weakest|Mastered|Revisit|Section [A-Z]\b|history|best score/i)
@@ -556,7 +556,7 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     state.result = institutional(ready({ cbtPractice: false }), null)
     out = await html()
     assert.match(out, /role="status"/)
-    assert.match(out, /CBT practice unavailable\./)
+    assert.match(out, /CBT practice isn’t available for this course\./)
     assert.doesNotMatch(out, /Try again/)
     state.result = institutional(ready({ cbtPractice: true }), practice)
     state.practice = { status: 'unavailable' }

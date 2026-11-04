@@ -16,7 +16,7 @@ function load(file) {
   try { return require(file) } finally { Module._extensions['.tsx'] = previous }
 }
 
-const { AiPracticeClient, JourneyProgress } = load('./AiPracticeClient.tsx')
+const { AiPracticeClient, JourneyProgress, allowanceLine } = load('./AiPracticeClient.tsx')
 const { PersonalPractice } = load('./PersonalPractice.tsx')
 const question = index => ({ id: `ai_${String(index).repeat(24)}`, prompt: `Question ${index}?`,
   options: ['A', 'B', 'C', 'D'], correctOption: 1, explanation: 'Because.', section: 'Pricing', sourceQuote: 'quote' })
@@ -60,4 +60,15 @@ for (const [reason, line] of [
   assert.equal(markup.split(line).length - 1, 1)
   assert.match(markup, /notes.pdf/)
   assert.doesNotMatch(markup, /type="file"|Choose a file/)
+})
+
+test('token-funded access (Early Access or a paid plan) never claims there is no set limit', () => {
+  for (const source of ['early_access', 'paid']) {
+    const initialAllowance = { state: 'active', source, total: null, used: 3, endsAt: '2026-12-01T00:00:00.000Z' }
+    assert.equal(allowanceLine(initialAllowance), null, source)
+    const markup = html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance, recentSets: [] }))
+    assert.doesNotMatch(markup, /no set limit|ai-practice-allowance/, source)
+  }
+  assert.equal(allowanceLine({ state: 'active', source: 'trial', total: 3, used: 1, endsAt: null }),
+    '2 of 3 Campus Bot sets left in your trial access.', 'a counted grant still shows what is left')
 })

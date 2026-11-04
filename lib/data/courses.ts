@@ -1035,7 +1035,7 @@ export const courses: Course[] = [
       },
       {
         id: "bua218-theory",
-        title: "BUA 218 Green Management — 20 Theory Questions with Model Answers (Topics 1–3)",
+        title: "BUA 218 Green Management — 20 Theory Questions with Suggested Answers (Topics 1–3)",
         type: "past-question",
         url: buildMaterialRequestEmailUrl(
           'BUA 218 — Green Management',

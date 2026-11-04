@@ -132,6 +132,8 @@ test('each authored point needs a student decision; completion counts coverage a
   assert.match(completed, /Review complete/)
   assert.match(completed, /1 got it · 1 partly · 0 not yet · 2 of 2 points rated/)
   assert.match(completed, /How did you do\?/)
+  assert.match(completed, />Key points</)
+  assert.doesNotMatch(completed, /Marking guide|Rate how well/)
   assert.match(completed, /<option value="covered"[^>]*>Got it<\/option><option value="partly"[^>]*>Partly<\/option><option value="not-yet"[^>]*>Not yet<\/option>/)
   assert.doesNotMatch(completed, /self-assess|not verified|graded|calculate a mark/i)
   assert.deepEqual(f.events, [['theory_self_assessment_completed', { course_slug: slug, has_rubric: true,
@@ -154,7 +156,8 @@ test('model-answer-only practice has no marking checklist or fabricated score an
   const tree = assessment.render()
   const html = renderToStaticMarkup(tree)
   assert.match(html, /Suggested answer/)
-  assert.match(html, /Compare your answer with the suggested answer and note what you would improve\./)
+  assert.match(html, /Check your answer/)
+  assert.doesNotMatch(html, /Key points|note what you would improve|Rate how well/)
   assert.match(html, /You submitted an empty answer/)
   assert.doesNotMatch(html, /<select|How did you do|points rated/)
   await submit(tree)

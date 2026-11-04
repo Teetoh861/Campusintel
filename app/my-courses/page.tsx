@@ -52,7 +52,7 @@ function MyCoursesError({ state }: { state: ErrorState }): ReactElement {
   return <StudentPage band={<MyCoursesBand />}>
     {state === 'selection-changed'
       // Unique to this surface: the saved selection moved while the page was composing.
-      ? <Notice title="Semester selection changed" action={
+      ? <Notice title="Your semester selection has changed" action={
         <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
       }>Your semester selection changed. Reload to see the latest courses.</Notice>
       : <ResultNotice state={RESULT_STATE[state]} retryHref={MY_COURSES_PATH} />}
@@ -77,7 +77,7 @@ function SemesterContext({ selection, total, ready }: {
 /** Render only the current session owner's persisted institutional semester. */
 export default async function MyCoursesPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <StudentPage band={<MyCoursesBand />}>
-    <Notice title="My Courses unavailable" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
+    <Notice title="My Courses isn’t available right now" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
   </StudentPage>
 
   let verified: {

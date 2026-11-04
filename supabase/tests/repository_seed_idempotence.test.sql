@@ -44,6 +44,14 @@ where course_id = '40000000-0000-4000-8000-000000000001'
 select private.replay_repository_content_seed();
 select private.replay_repository_content_seed();
 
+select is((select count(*)::int from public.managed_content_revisions
+  where authored_by = '00000000-0000-4000-8000-000000000042' and payload->>'examTip' like '%if time%'), 0,
+  'replaying the seed keeps the approved exam-tip corrections (20261104110000)');
+select is((select payload->>'examTip' from public.managed_content_revisions
+  where item_id = 'd4c93605-c101-542c-835e-b9fe4f271618' and revision = 1),
+  'Include the formula AND explain what costs are deducted. Give an example.',
+  'a corrected tip keeps the rest of its text');
+
 select ok(not has_function_privilege('authenticated',
   'private.replay_repository_content_seed()', 'EXECUTE'),
   'browser API roles cannot invoke migration-only seed replay');

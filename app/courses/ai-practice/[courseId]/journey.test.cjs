@@ -123,8 +123,8 @@ test('a busy reply keeps the request id until the running generation is recorded
   const server = ledger()
   const replies = [{ running: true }, { running: true }, {}]
   const { deps, requests } = harness(body => server.generate(body.requestId, replies.shift()))
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Questions still preparing')
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Questions still preparing')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Still preparing your questions')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Still preparing your questions')
   assert.equal((await generateFromDocument(DOC, deps)).kind, 'generated')
   assert.deepEqual(requests.map(request => request.body.requestId), ['r1', 'r1', 'r1'])
   assert.deepEqual(server.state, { providerCalls: 1, charged: 1 })
@@ -166,7 +166,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
   }
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
-  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot not included', 'none', 'info'])
+  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot isn’t included in your account', 'none', 'info'])
   // Regression F4: a trial grant is named by the policy the student's own grant was issued under, from the plan
   // summary, never by whether the database could issue a Discovery Pass. A historical seven-day trial stays a free
   // trial on a database from before the pass and on one that offers it; a pass is offered only to an account that

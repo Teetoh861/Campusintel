@@ -75,7 +75,7 @@ export function ResultsScreen(props: Props): ReactElement {
           <span className="student-practice-score-pct">{percent}%</span>
           <span className="student-practice-score-of">{correct} of {total} correct</span>
         </div>
-        <p className="student-practice-band"><b>{practiceBand(percent)}</b><span>{PRACTICE_COPY.bandNote}</span></p>
+        <p className="student-practice-band"><b>{practiceBand(percent)}</b></p>
         <dl className="student-practice-break">
           <div><dt><Check aria-hidden="true" size={16} strokeWidth={2.25} />Correct</dt><dd>{correct}</dd></div>
           <div><dt><X aria-hidden="true" size={16} strokeWidth={2.25} />Incorrect</dt><dd>{incorrect}</dd></div>

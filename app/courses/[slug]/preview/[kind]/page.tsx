@@ -148,7 +148,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         </ul>
       </section>
     case 'not-enough-time':
-      return <Notice tone="info" title="Not enough pass time" action={plan}>
+      return <Notice tone="info" title="Not enough time left on your pass" action={plan}>
         The {course.code} CBT exam takes {Math.round((examSecondsFor(course.slug) ?? 0) / SECONDS_PER_MINUTE)} minutes,
         and your {DISCOVERY_PASS_NOUN} ends {formatAccessDate(result.endsAt)}. Nothing was used.
       </Notice>

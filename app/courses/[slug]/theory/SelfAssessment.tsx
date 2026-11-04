@@ -44,7 +44,7 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
 
   return <div className="student-stack min-w-0">
     <h2 ref={heading} tabIndex={-1} className="student-section-title">
-      {complete ? 'Review complete' : 'Compare your answer'}
+      {complete ? 'Review complete' : 'Check your answer'}
     </h2>
     <div className="grid min-w-0 gap-6 desktop:grid-cols-2">
       <section aria-labelledby={`${id}-yours`} className="min-w-0">
@@ -57,12 +57,11 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
       </section>
     </div>
     {feedback.rubric && <section aria-labelledby={`${id}-rubric`}>
-      <h3 id={`${id}-rubric`} className="mb-3 font-semibold text-student-primary">Marking guide</h3>
+      <h3 id={`${id}-rubric`} className="mb-3 font-semibold text-student-primary">Key points</h3>
       <p className={theoryProse}>{feedback.rubric.body}</p>
     </section>}
     <form onSubmit={finish} className="student-stack">
       {feedback.rubric ? <>
-        <p className="student-meta">Rate how well your answer covered each point.</p>
         {points.map((point, index) => <fieldset key={index} disabled={complete} className="min-w-0 rounded-ci-btn-sm border border-student-border p-3">
           <legend className="max-w-full px-1 font-medium text-student-text-primary whitespace-pre-wrap [overflow-wrap:anywhere]">{point}</legend>
           <label htmlFor={`${id}-point-${index}`} className="mb-2 block text-sm text-student-text-primary">How did you do?</label>
@@ -80,7 +79,7 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
         <p role="status" className="student-meta">
           {counts.covered} got it · {counts.partly} partly · {counts['not-yet']} not yet · {counts.reviewed} of {counts.total} points rated.
         </p>
-      </> : <p className="student-meta">Compare your answer with the suggested answer and note what you would improve.</p>}
+      </> : null}
       <div>
         <label htmlFor={`${id}-reflection`} className="mb-2 block font-semibold text-student-text-primary">What would you improve? (optional)</label>
         <textarea id={`${id}-reflection`} className={theoryTextarea} rows={4} maxLength={THEORY_REFLECTION_MAX_LENGTH}

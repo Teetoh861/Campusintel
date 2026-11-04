@@ -41,7 +41,7 @@ const PROBLEMS: Record<string, Problem> = {
   'resume-failed': { title: PRACTICE_COPY.resumeFailedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
   'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
-  'locked': { title: 'Can’t start right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
+  'locked': { title: 'You can’t start a new practice right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
   'signed-out': { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody },
   'session-changed': { title: 'You signed in on another tab.', body: 'Refresh this page to continue.' },
   // An instant start whose topic the course no longer has.

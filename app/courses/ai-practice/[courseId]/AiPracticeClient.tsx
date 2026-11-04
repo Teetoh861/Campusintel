@@ -21,11 +21,12 @@ const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
   generating: { title: 'Writing five questions', detail: 'This may take a moment. Keep this page open.' },
 }
 
-/** One honest sentence about the student's AI grant; nothing when there is none or it cannot be read. */
+/** One honest sentence about a counted grant; nothing for token-funded access (paid or Early Access, which have
+ *  session and week limits), when there is none, or when it cannot be read. */
 export function allowanceLine(allowance: AllowanceSummary | null, trial: TrialWording = NEUTRAL_TRIAL_WORDING): string | null {
   if (!allowance || allowance.state === 'not-entitled') return null
   if (allowance.state === 'expired') return `Your ${grantName(allowance, trial)} has ended.`
-  if (allowance.total === null) return 'Your Campus Bot access has no set limit while it lasts.'
+  if (allowance.total === null) return null
   const left = Math.max(0, allowance.total - allowance.used)
   const sets = `${left} of ${allowance.total} Campus Bot ${allowance.total === 1 ? 'set' : 'sets'} left`
   if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance, trial)}.`

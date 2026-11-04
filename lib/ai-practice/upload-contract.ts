@@ -49,7 +49,7 @@ export type AiGrantSource = 'trial' | 'early_access' | 'paid' | 'test'
 export type AllowanceSummary = {
   state: 'not-entitled' | 'active' | 'expired'
   source: AiGrantSource | null
-  /** Null for an uncapped grant (Early Access): no per-student total, while the global and daily guards still apply. */
+  /** Null for a token-funded grant (paid or Early Access): no set count; session and week token limits apply. */
   total: number | null
   used: number
   endsAt: string | null

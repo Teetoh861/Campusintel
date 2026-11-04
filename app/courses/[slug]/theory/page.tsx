@@ -21,7 +21,6 @@ import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Theory practice | CampusIntell', robots: { index: false, follow: false } }
-const LEDE = 'Write your answer, then compare it with the suggested answer.'
 
 /** Gate the complete theory workspace before resolving any published content. */
 export default async function TheoryPage({ params }: { params: Promise<{ slug: string }> }): Promise<ReactElement> {
@@ -40,14 +39,14 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}/theory`)
-  if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
+  if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" />}>
     <LockedCourseNotice outsideList={result.outsideList} reason={result.reason} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course"
       plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} />
   </StudentPage>
-  if (result.status === 'unavailable' && result.notAvailable) return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
+  if (result.status === 'unavailable' && result.notAvailable) return <StudentPage band={<PageBand title="Theory practice" />}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>
   </StudentPage>
-  if (result.status !== 'ready') return <StudentPage band={<PageBand title="Theory practice" lede={LEDE} />}>
+  if (result.status !== 'ready') return <StudentPage band={<PageBand title="Theory practice" />}>
     <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
       retryHref={`/courses/${encodeURIComponent(slug)}/theory`} />
   </StudentPage>
@@ -57,14 +56,13 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   const labels = theoryDisplayNumbers(materials.map(material => material.question))
   const questions = materials.flatMap((material, index) =>
     material.feedback === null ? [] : [{ question: material.question, label: labels[index] }])
-  return <StudentPage band={<PageBand title="Theory practice" lede={LEDE}
+  return <StudentPage band={<PageBand title="Theory practice"
     context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>
     <div className="student-stack min-w-0">
-      {questions.length === 0 ? <Notice tone="info" title="Theory practice unavailable">
+      {questions.length === 0 ? <Notice tone="info" title="Theory practice isn’t available for this course">
         Check the course page for theory questions to revise and other study materials.
       </Notice> : <div className="student-stack">
-        <p className="student-meta">Choose a question to start.</p>
         {questions.map(({ question, label }, index) => <details key={`${question.itemId}:${question.publishedRevision}:${continuityToken}`} name="theory-practice"
           open={index === 0} className="student-surface min-w-0">
           <summary className="min-h-11 cursor-pointer rounded-ci-btn-sm py-3 font-semibold text-student-primary [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-student-focus">
@@ -73,7 +71,7 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
           <TheoryAttempt question={question} courseSlug={course.slug} continuityToken={continuityToken} />
         </details>)}
         {materials.length > questions.length && <p className="student-meta">
-          More theory questions, without suggested answers, are on the course page.
+          More theory questions are on the course page.
         </p>}
       </div>}
     </div>

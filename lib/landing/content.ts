@@ -229,7 +229,7 @@ export const landingContent = {
     items: [
       { icon: 'gst-free', title: 'GST courses, free', text: 'Free for every UNILAG student, in every faculty.' },
       { icon: 'upload', title: 'Quiz yourself from your own PDFs', text: 'Upload your notes and generate practice questions.' },
-      { icon: 'campus-bot', title: 'A tutor that teaches you', text: "Ask Campus Bot to explain anything you don't understand." },
+      { icon: 'campus-bot', title: 'Campus Bot, the tutor that teaches you', text: "Ask Campus Bot to explain anything you don't understand." },
     ] satisfies Array<{ icon: IconName | 'campus-bot'; title: string; text: string }>,
   },
   faq: {

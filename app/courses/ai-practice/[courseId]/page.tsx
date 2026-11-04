@@ -74,7 +74,7 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
   // A locked course is built too: its page explains how to unlock it.
   if (sets.length === 0 && (isActionableStudentCourse(course) || isLockedStudentCourse(course))) redirect(course.repository.route.href)
   if (sets.length === 0 && !isAiPracticeEligible(course)) {
-    return <Unavailable title="Course temporarily unavailable" message="Try again in a few minutes." />
+    return <Unavailable title="This course isn’t available right now" message="Try again in a few minutes." />
   }
   // AI copy names the student's own grant (a Discovery Pass, or a seven-day trial issued before it) and offers a pass
   // only when this account can still start one; a read failure stays neutral.

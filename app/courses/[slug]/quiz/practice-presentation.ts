@@ -5,7 +5,7 @@ export const PRACTICE_COPY = {
   title: 'Practice',
   lede: 'Test your knowledge with timed multiple-choice questions.',
   backToCourse: 'Back to course',
-  notBuiltTitle: 'CBT practice unavailable.',
+  notBuiltTitle: 'CBT practice isn’t available for this course.',
   notBuiltBody: 'Check the course page for other study materials, or request the material you need.',
   temporaryBody: 'We couldn’t load the practice questions just now. Your saved results are unaffected.',
   loading: 'Loading practice.',
@@ -48,7 +48,6 @@ export const PRACTICE_COPY = {
   examOpenTitle: 'Finish your exam first.',
   examOpenBody: 'Practice opens again once your exam is submitted or its time runs out.',
   resumeExam: 'Resume exam',
-  bandNote: 'Practice feedback for this attempt only. Not an official grade.',
 } as const
 
 /** A start or resume problem; `retry` offers Try again, which repeats the same request; `action` links onward. */

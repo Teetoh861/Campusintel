@@ -71,7 +71,7 @@ export function TheoryAttempt({ question, courseSlug, continuityToken }: {
         <textarea id={`${id}-answer`} ref={answerField} className={theoryTextarea} rows={9}
           maxLength={THEORY_ANSWER_MAX_LENGTH} value={answer} disabled={busy}
           aria-describedby={`${id}-help ${id}-count`} onChange={event => setAnswer(event.currentTarget.value)} />
-        <p id={`${id}-help`} className="student-meta mt-2">Write as much as you can, or leave it blank to see the answer.</p>
+        <p id={`${id}-help`} className="student-meta mt-2">Type your answer.</p>
         <p id={`${id}-count`} className="student-meta mt-1">{answer.length} / {THEORY_ANSWER_MAX_LENGTH} characters</p>
       </div>
       {error && <p role="alert" className="student-meta">{error}</p>}
