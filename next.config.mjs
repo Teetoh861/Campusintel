@@ -38,7 +38,8 @@ const nextConfig = {
       `connect-src 'self' https://va.vercel-scripts.com${supabaseOrigin ? ` ${supabaseOrigin}` : ''}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      // The plan checkout form answers 303 to Bachs' hosted page, and browsers apply form-action to that redirect.
+      "form-action 'self' https://checkout.bachs.io",
     ].join('; ')
 
     return [

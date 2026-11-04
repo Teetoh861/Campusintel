@@ -26,9 +26,13 @@
 //       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
 //   node scripts/entitlements/ops.cjs selection-status | selection-change | calendar | term-set | term-extend ...
 //       A student's course selection and the semester calendar: see scripts/entitlements/course-selection.cjs.
+//   node scripts/entitlements/ops.cjs payment-status | payments-health | open-sales | close-sales | campus-bot-model |
+//       campus-bot-cap | payment-verify | payment-fulfil | refund | refund-retry | reconcile-now ...
+//       Plan payments: see scripts/entitlements/payments.cjs and docs/payments-operations.md.
 const fs = require('node:fs')
 const { courseSelectionCall } = require('./course-selection.cjs')
 const { courseAdditionCall } = require('./course-additions.cjs')
+const { authAdminReader, paymentCommand } = require('./payments.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
@@ -46,7 +50,7 @@ function options(args) {
     const arg = args[index]
     if (!arg.startsWith('--')) { parsed._.push(arg); continue }
     const name = arg.slice(2)
-    if (name === 'dry-run' || name === 'confirm-public-launch' || name === 'allow-empty') { parsed[name] = true; continue }
+    if (['dry-run', 'confirm-public-launch', 'allow-empty', 'confirm', 'destination-confirmed'].includes(name)) { parsed[name] = true; continue }
     const value = args[index + 1]
     if (value === undefined || value.startsWith('--')) throw new Error(`--${name} needs a value`)
     parsed[name] = value
@@ -140,9 +144,10 @@ function connection(env, transport) {
   if (!key || key !== key.trim() || (!local && !/^sb_secret_[A-Za-z0-9_-]+$/.test(key))) {
     throw new Error('Entitlement tool configuration unavailable')
   }
-  return async (fn, body) => {
+  return async (fn, body, options) => {
     const response = await transport(new URL(`/rest/v1/rpc/${fn}`, url), {
-      method: 'POST', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      method: 'POST', cache: 'no-store', redirect: 'error', signal: options?.signal
+        ? AbortSignal.any([options.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: { apikey: key, 'Content-Type': 'application/json',
         ...(!key.startsWith('sb_secret_') ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify(body),
@@ -252,6 +257,9 @@ async function run(args, env = process.env, transport = fetch, write = text => p
     case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
     case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
     default: {
+      const payment = paymentCommand(command, opts, { rpc, env, authAdmin: authAdminReader(env, transport),
+        helpers: { required, integer, note } })
+      if (payment !== null) return print(await payment())
       const call = courseAdditionCall(command, opts, { required, integer, note }) ??
         courseSelectionCall(command, opts, { required, integer, note })
       if (call === null) throw new Error('usage: see the header of scripts/entitlements/ops.cjs')
