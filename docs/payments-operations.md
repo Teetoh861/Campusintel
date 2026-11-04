@@ -57,15 +57,15 @@ Opening sales: `open-sales` below. Sales stay closed until then.
 
 ## Reconcile schedule
 
-`GET /api/payments/reconcile` (cron bearer) runs **once a day** (`0 3 * * *` in `vercel.json`). The Vercel free plan
-fails deployments with any cron more frequent than daily. Until the upgrade, the webhook and the return page settle
-almost every payment; the daily run catches the rest. There are no continuation runs.
+`GET /api/payments/reconcile` (cron bearer) runs **every five minutes** (`*/5 * * * *` in `vercel.json`). This needs the
+Vercel Pro plan: the free plan fails deployments with any cron more frequent than daily, so the team moves to Pro before
+this schedule is deployed. The webhook and the return page settle almost every payment; the run catches the rest.
+There are no continuation runs; each run is bounded as below.
 
-**Vercel Pro upgrade step:** once the project is on Pro, change the schedule in `vercel.json` to `*/5 * * * *` (every
-five minutes) and deploy. Nothing else changes: each run is bounded as below.
-
-Due orders are claimed in batches of 50, open orders newest first (the most likely to have just been paid), then
-everything else by due time, with atomic `FOR UPDATE SKIP LOCKED` claims and a 60-second lease. Cron and `reconcile-now` use the same claims: overlapping runs cannot check the same order. A completion must
+Due orders are claimed in batches of 50. Ten slots of every batch go to the due checks that have waited longest (since
+their due time, or since their first failed check while they back off), so new orders can never starve an overdue
+check. The other 40 go to open orders newest first (the most likely to have just been paid), then everything else by
+due time, with atomic `FOR UPDATE SKIP LOCKED` claims and a 60-second lease. Cron and `reconcile-now` use the same claims: overlapping runs cannot check the same order. A completion must
 carry the current, unexpired lease token. A lost, timed-out or unstarted check keeps its due time and becomes
 claimable when its lease ends.
 
@@ -98,7 +98,7 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | Command | Does |
 | --- | --- |
 | `payment-status --order <uuid>` or `--user <uuid>` | Orders, events, payments, refunds and grants. |
-| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), bank-transfer overpayments whose excess is not yet refunded (`overpaid_excess_due`), card overpayments to raise with Bachs (`card_excess_contact_bachs_support`: contact Bachs support), pending refunds, orders due or failing for more than 6 hours (`checks_overdue_6h`), orders whose checks stopped for review (`checks_stopped_for_review`), paid grants still unbound after 7 days. |
+| `payments-health` | Orders pending over 30 minutes, orders needing support (mismatch, duplicate, unfulfilled, refund failed, any flag except `overpaid`), bank-transfer overpayments whose excess is not yet refunded (`overpaid_excess_due`), card overpayments to raise with Bachs (`card_excess_contact_bachs_support`: contact Bachs support; a payment already refunded in full is not listed), pending refunds, orders due or failing for more than 6 hours (`checks_overdue_6h`), orders whose checks stopped for review (`checks_stopped_for_review`), paid grants still unbound after 7 days. |
 | `payment-verify --order <uuid> --actor --reason` | Asks Bachs now and fulfils if it confirms the payment. The normal fix. Asks Bachs. |
 | `payment-fulfil --order <uuid> --provider-ref <checkout id> --actor --reason` | The same, for an order whose checkout id we never stored. Bachs must still confirm a payment whose checkout reference is this order. Asks Bachs. |
 | `refund --order <uuid> --class standard\|our-fault\|duplicate\|excess --actor --reason [--requested-at <ISO>] [--payment <uuid>]` | Dry run: what the database would decide, with every count. Nothing changes. |

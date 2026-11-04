@@ -706,6 +706,22 @@ select ok(exists(select 1 from jsonb_array_elements(public.admin_payments_health
 select is(pg_temp.allowed(63,'BUA201'),true,'the card grant stays live');
 select is(pg_temp.refund((select id from o63),'standard',gen_random_uuid(),pg_temp.ids(63))->>'state','refund-pending',
   'a qualifying plan refund can still use the card refund');
+-- Health: a card payment refunded in full has no excess left to raise with Bachs (20261102210000).
+create function pg_temp.card_excess_listed(o uuid) returns boolean language sql stable as
+  $$select exists(select 1 from jsonb_array_elements(public.admin_payments_health()->'card_excess_contact_bachs_support') e
+    where e->>'order_id'=o::text)$$;
+select ok(pg_temp.card_excess_listed((select id from o63)),'the card excess stays listed while the plan refund is pending');
+select is((select amount_kobo from private.payment_refunds where order_id=(select id from o63)),450000::bigint,
+  'the card plan refund returns the whole payment');
+select is(public.record_refund_result((select id from private.payment_refunds where order_id=(select id from o63)),
+  'refunded','fref_63',null,'Ops')->>'refund_status','refunded','the card refund settles');
+select ok(not pg_temp.card_excess_listed((select id from o63)),
+  'a card payment refunded in full leaves the card excess list, like the bank-transfer queue');
+select pg_temp.student(66);
+create temporary table o66 as select pg_temp.oid(pg_temp.buy(66,'standard_semester',pg_temp.req(660))) id;
+select pg_temp.attach(id) from o66;
+select pg_temp.pay((select id from o66),'ch_over66',450000,'webhook','overpaid');
+select ok(pg_temp.card_excess_listed((select id from o66)),'an unrefunded card excess is still listed');
 
 -- A plan refund waits for either a pending or a failed excess. Retry the excess first, then return the rest.
 select pg_temp.student(65);
@@ -769,7 +785,8 @@ insert into private.payment_orders (id,user_id,request_id,plan_key,tier,period,a
 select is((select count(*)::int from bulk b join private.payment_orders o on o.id=b.id
   where private.payment_check_due(o,clock_timestamp())),620,'more due orders than one claim (50) and the old query (500)');
 select is((select array_agg(b.g order by b.g) from pg_temp.peek(50) c join bulk b on b.id=c.order_id),
-  (select array_agg(g order by g) from generate_series(1,50) g),'the first batch is the 50 newest open orders');
+  (select array_agg(g order by g) from (select generate_series(1,40) g union all select generate_series(611,620)) x),
+  'the first batch is the 40 newest open orders plus the 10 that have waited longest');
 do $$
 declare n int := 0; lease uuid;
 begin
@@ -874,6 +891,66 @@ select is(array[pg_temp.next_claimed(),pg_temp.next_claimed(),pg_temp.next_claim
 update private.payment_orders set check_lease_token=null, check_lease_until=null
   where check_lease_token=(select token from order_lease);
 update private.payment_orders set status='cancelled' where id in (select id from bulk);
+
+-- New orders keep arriving faster than one claim can take them, yet an overdue check still gets its turn: every claim
+-- reserves a fifth of its slots for the checks that have waited longest (20261102210000).
+create temporary table parked as select o.id, o.next_check_at from private.payment_orders o
+  where private.payment_check_due(o, clock_timestamp());
+update private.payment_orders set next_check_at=clock_timestamp()+interval '1 day' where id in (select id from parked);
+create function pg_temp.order_like(p_status text, p_created timestamptz, p_next timestamptz) returns uuid language plpgsql as $$
+declare v uuid := gen_random_uuid();
+begin
+  insert into private.payment_orders (id,user_id,request_id,plan_key,tier,period,amount_kobo,currency,ai_sets,
+      campus_bot_session_tokens,campus_bot_week_tokens,term_id,term_session_label,term_period_id,second_period_id,
+      department_id,profile_revision,provider,status,expires_at,created_at,next_check_at)
+    select v,null,gen_random_uuid(),t.plan_key,t.tier,t.period,t.amount_kobo,t.currency,t.ai_sets,
+      t.campus_bot_session_tokens,t.campus_bot_week_tokens,t.term_id,t.term_session_label,t.term_period_id,
+      t.second_period_id,t.department_id,t.profile_revision,'fake',p_status,clock_timestamp()+interval '1 hour',p_created,p_next
+    from private.payment_orders t where t.id=(select id from o30);
+  return v;
+end$$;
+-- 25 late checks that have waited two days, then the one under test, overdue by a day.
+create temporary table starved as select pg_temp.order_like('expired',clock_timestamp()-interval '5 days',
+  clock_timestamp()-interval '2 days'+make_interval(mins=>g)) id from generate_series(1,25) g;
+create temporary table target as select pg_temp.order_like('expired',clock_timestamp()-interval '5 days',
+  clock_timestamp()-interval '1 day') id;
+create temporary table arrivals (run int, id uuid);
+create temporary table runs (run int, claimed_target boolean, old_order_had_target boolean, new_claimed int, claimed int);
+do $$
+declare r int; lease uuid; v_now timestamptz; v_old boolean;
+begin
+  for r in 1..5 loop
+    -- 60 new open orders arrive before each run, all due now.
+    insert into arrivals select r, pg_temp.order_like('created',clock_timestamp()-make_interval(secs=>i),
+      clock_timestamp()-interval '1 second') from generate_series(1,60) i;
+    -- The order before this fix, on the same due orders: open orders newest first, then by due time, 50 at most.
+    v_now := clock_timestamp();
+    v_old := (select id from target) in (select o.id from private.payment_orders o
+      where private.payment_check_due(o,v_now) and (o.check_lease_until is null or o.check_lease_until<=v_now)
+      order by (o.status in ('created','pending')
+          and o.created_at>v_now-make_interval(hours=>(select reconcile_hours from private.payment_policy))) desc,
+        case when o.status in ('created','pending') then o.created_at end desc nulls last,
+        coalesce(o.next_check_at,o.created_at+interval '2 minutes'), o.id limit 50);
+    lease := gen_random_uuid();
+    create temporary table this_claim as select * from public.claim_payment_checks(50,true,lease);
+    insert into runs select r, exists(select 1 from this_claim where order_id=(select id from target)), v_old,
+      (select count(*) from this_claim c join arrivals a on a.id=c.order_id and a.run=r), (select count(*) from this_claim);
+    perform public.record_payment_check(c.order_id,'waiting',lease) from this_claim c;
+    drop table this_claim;
+  end loop;
+end $$;
+select is((select min(run) from runs where claimed_target),3,
+  'an overdue check behind 25 longer waiters is claimed in the third run, though 60 new orders arrive before every run');
+select is((select count(*)::int from runs where old_order_had_target),0,
+  'with the earlier newest-first order it would not have been claimed in any of the five runs');
+select is((select array_agg(new_claimed order by run) from runs),array[40,40,40,40,40],
+  'new open orders still get the other 40 slots of every run');
+select is((select array_agg(claimed order by run) from runs),array[50,50,50,50,50],'every run claims a full batch');
+select is((select jsonb_build_array(check_count,last_check_result) from private.payment_orders where id=(select id from target)),
+  '[1,"waiting"]'::jsonb,'its check was completed');
+update private.payment_orders set late_check_finished_at=clock_timestamp(), status='cancelled'
+  where id in (select id from starved union all select id from target union all select id from arrivals);
+update private.payment_orders o set next_check_at=p.next_check_at from parked p where o.id=p.id;
 
 -- ---------------------------------------------------------------------------
 -- The sales switch through its operator function, and account deletion with payment records. (safeupdate, which the
