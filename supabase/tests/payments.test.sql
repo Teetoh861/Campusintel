@@ -770,7 +770,7 @@ select is((select count(*)::int from public.entitlement_grants where order_id=(s
   'refunding the extra payment never touches the plan');
 
 -- ---------------------------------------------------------------------------
--- Catch-up: open orders newest first, then by due time; leased batches, fenced completion, failures backing off, refusals
+-- Catch-up: reserved longest waiters first, then newest open orders; leased batches, fenced completion, failures backing off, refusals
 -- stopped for review, and a final check after day 14.
 -- ---------------------------------------------------------------------------
 create temporary table bulk as select gen_random_uuid() id, g from generate_series(1,620) g;
@@ -787,6 +787,14 @@ select is((select count(*)::int from bulk b join private.payment_orders o on o.i
 select is((select array_agg(b.g order by b.g) from pg_temp.peek(50) c join bulk b on b.id=c.order_id),
   (select array_agg(g order by g) from (select generate_series(1,40) g union all select generate_series(611,620)) x),
   'the first batch is the 40 newest open orders plus the 10 that have waited longest');
+create temporary table bulk_order_lease as select gen_random_uuid() token;
+select is((select array_agg(b.g order by c.ordinality)
+    from public.claim_payment_checks(50,true,(select token from bulk_order_lease)) with ordinality c
+    join bulk b on b.id=c.order_id),
+  array(select generate_series(620,611,-1)) || array(select generate_series(1,40)),
+  'reserved longest-waiting checks are returned first, then fresh orders newest first');
+update private.payment_orders set check_lease_token=null, check_lease_until=null
+  where check_lease_token=(select token from bulk_order_lease);
 do $$
 declare n int := 0; lease uuid;
 begin
@@ -876,7 +884,7 @@ select is(pg_temp.checked((select id from bulk where g=4),'review')->>'state','s
 select is(pg_temp.due_action((select id from bulk where g=4)),null,'it is not checked again');
 select ok(exists(select 1 from jsonb_array_elements(public.admin_payments_health()->'checks_stopped_for_review') e
   where e->>'order_id'=(select id::text from bulk where g=4)),'and is listed for review');
--- Open orders newest first, then everything else by due time.
+-- A single-order claim always reserves its slot for the longest-waiting due check.
 update private.payment_orders set next_check_at=clock_timestamp()-interval '3 days', status='expired'
   where id=(select id from bulk where g=5);
 update private.payment_orders set next_check_at=clock_timestamp()-interval '1 minute', status='created',
@@ -886,8 +894,8 @@ update private.payment_orders set next_check_at=clock_timestamp()-interval '1 mi
 create temporary table order_lease as select gen_random_uuid() token;
 create function pg_temp.next_claimed() returns int language sql as
   $$select b.g from public.claim_payment_checks(1,true,(select token from order_lease)) c join bulk b on b.id=c.order_id$$;
-select is(array[pg_temp.next_claimed(),pg_temp.next_claimed(),pg_temp.next_claimed()],array[6,7,5],
-  'the newest open order first, then the older one, then a 3-day-overdue late check');
+select is(array[pg_temp.next_claimed(),pg_temp.next_claimed(),pg_temp.next_claimed()],array[5,6,7],
+  'a single-order claim reserves its slot for the longest-waiting due check');
 update private.payment_orders set check_lease_token=null, check_lease_until=null
   where check_lease_token=(select token from order_lease);
 update private.payment_orders set status='cancelled' where id in (select id from bulk);

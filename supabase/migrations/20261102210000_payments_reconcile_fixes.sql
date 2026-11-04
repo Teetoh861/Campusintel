@@ -4,7 +4,7 @@
 -- 2. The card-excess support list leaves out payments already refunded in full, like the bank-transfer queue.
 -- Only these two functions change; leases, fencing, back-off and every other rule stay as they were.
 
--- A claim of p_limit orders reserves ceil(p_limit / 5) slots (10 of 50; none for a single-order claim) for the due checks
+-- A claim of p_limit orders reserves ceil(p_limit / 5) slots (10 of 50; one for a single-order claim) for the due checks
 -- that have waited longest: since their due time, or since their first failed check while they back off. The remaining
 -- slots keep the earlier order: open orders newest first, then everything else by due time. A check that has waited
 -- longest is therefore claimed within (checks waiting longer than it) / reserved slots claims, whatever else arrives.
@@ -19,29 +19,30 @@ begin
   if p_limit is null or p_limit not between 1 and 50 or p_include_late is null or p_lease_token is null then
     raise exception 'Invalid payment check claim' using errcode = '22023';
   end if;
-  v_reserved := least(ceil(p_limit / 5.0)::integer, p_limit - 1);
+  v_reserved := ceil(p_limit / 5.0)::integer;
   -- Each selection locks as it scans, skipping rows another run holds, so a concurrent run takes the next order instead.
   -- The reserved share: the due checks that have waited longest.
-  select coalesce(array_agg(x.id), '{}') into v_oldest from (
-    select o.id from private.payment_orders o
+  select coalesce(array_agg(x.id order by x.waiting_since, x.id), '{}') into v_oldest from (
+    select o.id, least(coalesce(o.check_failing_since, 'infinity'::timestamptz),
+      coalesce(o.next_check_at, o.created_at + interval '2 minutes')) as waiting_since from private.payment_orders o
     where private.payment_check_due(o, clock_timestamp())
       and (p_include_late or o.status in ('created', 'pending'))
       and (o.check_lease_until is null or o.check_lease_until <= clock_timestamp())
-    order by least(coalesce(o.check_failing_since, 'infinity'::timestamptz),
-        coalesce(o.next_check_at, o.created_at + interval '2 minutes')), o.id
+    order by waiting_since, o.id
     limit v_reserved for update of o skip locked) x;
   -- The rest, as before: open orders newest first (the most likely to have just been paid), then everything else by
   -- due time. Slots the reserved share could not fill come here too.
-  select coalesce(array_agg(x.id), '{}') into v_fresh from (
-    select o.id from private.payment_orders o
+  select coalesce(array_agg(x.id order by x.open_recent desc, x.open_created desc nulls last, x.due_at, x.id), '{}')
+    into v_fresh from (
+    select o.id, (o.status in ('created', 'pending')
+        and o.created_at > clock_timestamp() - make_interval(hours => (select reconcile_hours from private.payment_policy))) as open_recent,
+      case when o.status in ('created', 'pending') then o.created_at end as open_created,
+      coalesce(o.next_check_at, o.created_at + interval '2 minutes') as due_at from private.payment_orders o
     where private.payment_check_due(o, clock_timestamp())
       and (p_include_late or o.status in ('created', 'pending'))
       and (o.check_lease_until is null or o.check_lease_until <= clock_timestamp())
       and o.id <> all (v_oldest)
-    order by (o.status in ('created', 'pending')
-        and o.created_at > clock_timestamp() - make_interval(hours => (select reconcile_hours from private.payment_policy))) desc,
-      case when o.status in ('created', 'pending') then o.created_at end desc nulls last,
-      coalesce(o.next_check_at, o.created_at + interval '2 minutes'), o.id
+    order by open_recent desc, open_created desc nulls last, due_at, o.id
     limit p_limit - cardinality(v_oldest) for update of o skip locked) x;
   return query
     with claimed as (
@@ -52,7 +53,10 @@ begin
     select c.id, case when c.status in ('created', 'pending')
           and c.created_at > clock_timestamp() - make_interval(hours => p.reconcile_hours) then 'check'
         when c.status in ('created', 'pending') then 'expire' else 'late-check' end
-      from claimed c cross join private.payment_policy p;
+      from claimed c
+      join unnest(v_oldest || v_fresh) with ordinality as selected(id, position) on selected.id = c.id
+      cross join private.payment_policy p
+      order by selected.position;
 end;
 $$;
 
