@@ -55,7 +55,7 @@ export function CourseRow(props: CourseRowProps): ReactElement {
             <StatusRail status="unavailable">{STUDY_COPY.notYetAvailable}</StatusRail>
             {props.aiPracticeHref !== undefined && <Link href={props.aiPracticeHref} prefetch={false}
               className={'student-ai-practice-link ' + studentFocusRow}>
-              Practise from your own notes <span className="student-ai-practice-tag">AI · Unverified</span>
+              Practise from your own notes <span className="student-ai-practice-tag">Campus Bot</span>
             </Link>}
           </>
           : <p className="student-course-row-error">

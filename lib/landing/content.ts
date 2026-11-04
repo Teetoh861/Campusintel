@@ -68,7 +68,7 @@ export const landingContent = {
     tagline: 'Study Hard. Study Smart...',
     titleLead: 'Walk into every exam already',
     titleEmphasis: 'prepared.',
-    lead: 'Verified past questions, notes that follow your course outline, and model answers for theory. Everything for your exact courses, in one place.',
+    lead: 'Verified past questions, notes that follow your course outline, and suggested answers for theory. Everything for your exact courses, in one place.',
     primary: { label: 'Start for free', href: REGISTER },
     secondary: { label: 'Try a real question', href: '#try' },
     earlyAccess: 'Before launch: join Early Access for a free month',
@@ -98,8 +98,8 @@ export const landingContent = {
         text: 'Study guides compiled from class notes and recommended textbooks, explained topic by topic in the order your course is taught.' },
       { icon: 'upload', campusBot: true, title: 'Upload notes, get a quiz',
         text: 'No material for your course yet? Upload what you have and Campus Bot turns it into practice questions.' },
-      { icon: 'theory', title: 'Theory answers, model answers',
-        text: "Write your answer, then compare it with the model answer and note what you'd improve." },
+      { icon: 'theory', title: 'Theory with suggested answers',
+        text: "Write your answer, then compare it with the suggested answer and note what you'd improve." },
       { icon: 'exam', title: 'Exam mode',
         text: "Timed practice that holds your results until the end, so exam day feels like something you've done before." },
       { icon: 'tutors', badge: 'Coming soon', title: 'Peer Tutors',
@@ -121,10 +121,10 @@ export const landingContent = {
     {
       eyebrow: 'Theory questions',
       title: 'Write your answer. Compare and improve.',
-      text: 'Theory is where marks are won and lost. Type your answer, then compare it with the model answer.',
-      ticks: ['Compare your answer with a model answer', "Note what you'd improve", 'Rewrite and try again until it sticks'],
+      text: 'Theory is where marks are won and lost. Type your answer, then compare it with the suggested answer.',
+      ticks: ['Compare your answer with a suggested answer', "Note what you'd improve", 'Rewrite and try again until it sticks'],
       phones: [
-        { src: '/landing/theory.webp', width: 432, height: 896, alt: 'A theory answer beside the model answer' },
+        { src: '/landing/theory.webp', width: 432, height: 896, alt: 'A theory answer beside the suggested answer' },
       ],
       flip: true,
     },
@@ -211,7 +211,7 @@ export const landingContent = {
       { icon: 'organised', title: 'Nothing gets lost',
         text: 'Notes get scattered across group chats and disappear every semester. Here they stay organised by course and topic.' },
       { icon: 'free-trial', title: 'Try before you pay',
-        text: 'Start a free 72-hour Discovery Pass to try your department courses. GST courses are always free.' },
+        text: 'Get your free pass and try your department courses free for 3 days. GST courses are always free.' },
     ] satisfies Array<{ icon: IconName; title: string; text: string }>,
     figures: [
       { value: String(DEPARTMENT_COUNT), label: 'management science departments' },
@@ -229,7 +229,7 @@ export const landingContent = {
     items: [
       { icon: 'gst-free', title: 'GST courses, free', text: 'Free for every UNILAG student, in every faculty.' },
       { icon: 'upload', title: 'Quiz yourself from your own PDFs', text: 'Upload your notes and generate practice questions.' },
-      { icon: 'campus-bot', title: 'An AI tutor that teaches you', text: "Ask Campus Bot to explain anything you don't understand." },
+      { icon: 'campus-bot', title: 'A tutor that teaches you', text: "Ask Campus Bot to explain anything you don't understand." },
     ] satisfies Array<{ icon: IconName | 'campus-bot'; title: string; text: string }>,
   },
   faq: {
@@ -247,9 +247,9 @@ export const landingContent = {
       { question: 'What if my course has no material yet?',
         answer: "Upload your own notes and Campus Bot will generate practice from them. You can also request the course in the WhatsApp community, and if anyone has material for it, we'll share it there." },
       { question: 'How does theory practice work?',
-        answer: "You type your answer, then compare it with the model answer, note what you'd improve and try again." },
+        answer: "You type your answer, then compare it with the suggested answer, note what you'd improve and try again." },
       { question: 'Can I try it before paying?',
-        answer: 'Yes. Start a free 72-hour Discovery Pass to try your department courses. GST courses are always free.' },
+        answer: 'Yes. Get your free pass and try your department courses free for 3 days. GST courses are always free.' },
     ] satisfies FaqItem[],
   },
   finalCta: {

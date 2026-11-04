@@ -99,7 +99,7 @@ test('an ineligible student sees free GST access: no offer, no button and no rea
   assert.doesNotMatch(html, /isn’t available|not offered|email|months?\b|years?\b|already had/i)
   assert.match(html, /Free GST courses/)
   assert.match(html, /Your GST courses are open to you\./)
-  assert.match(html, /AI practice from your own notes comes with Early Access\./)
+  assert.match(html, /Campus Bot practice from your own notes comes with Early Access\./)
 })
 
 test('the free card counts the student\'s other courses, in today\'s wording while plans are not on sale', async () => {
@@ -149,7 +149,7 @@ test('a refusal can withdraw every piece of offer text; the AI line stays', asyn
   assert.match(withdrawable, /Try your department courses free/)
   const kept = html.replace(/<withdrawable>[\s\S]*?<\/withdrawable>/g, '')
   assert.doesNotMatch(strip(kept), /Free pass|Try your department/, 'nothing describing the offer stays outside it')
-  assert.match(kept, /AI practice from your own notes comes with Early Access\./)
+  assert.match(kept, /Campus Bot practice from your own notes comes with Early Access\./)
 })
 
 test('an active free pass shows its end time only: no per-course limits or allowances', async () => {
@@ -184,7 +184,7 @@ test('plans show only while sales are open, with the payment, refund and terms l
   assert.match(html, /GST courses stay free\./)
   assert.match(strip(html), /Department courses open when you subscribe\./)
   assert.match(strip(html), /Your other 3 courses: Included when you subscribe/)
-  assert.match(strip(html), /AI practice from your own notes is included when you subscribe\./)
+  assert.match(strip(html), /Campus Bot practice from your own notes is included when you subscribe\./)
   for (const closed of [discoveryDatabase, { ...discoveryDatabase, plans: catalogue }, { ...onSale, plans: [] }]) {
     assert.doesNotMatch(await render(closed, false), /plan-chooser|Choose a plan|Payment terms/)
   }

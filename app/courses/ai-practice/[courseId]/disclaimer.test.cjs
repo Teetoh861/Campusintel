@@ -1,4 +1,4 @@
-// app/courses/ai-practice/[courseId]/disclaimer.test.cjs — The Personal · Unverified label on every AI practice step.
+// app/courses/ai-practice/[courseId]/disclaimer.test.cjs — The one Campus Bot label on every personal set.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -24,22 +24,23 @@ const set = { generationId: 'g1', createdAt: '2026-10-16T10:00:00.000Z', fileNam
   questions: [question(1), question(2)] }
 const html = element => renderToStaticMarkup(element).replace(/&#x27;/g, "'")
 
-test('the full disclaimer is shown while answering a personal set', () => {
+test('the Campus Bot label is shown while answering a personal set', () => {
   const markup = html(React.createElement(PersonalPractice, { set, onClose: () => undefined }))
-  assert.ok(markup.includes('Personal · Unverified.'), 'the label is present during active answering')
-  assert.ok(markup.includes(PERSONAL_PRACTICE_DISCLAIMER), 'the disclaimer is rendered verbatim')
+  assert.equal(PERSONAL_PRACTICE_DISCLAIMER, 'Made by Campus Bot from your notes.')
+  assert.ok(markup.includes(PERSONAL_PRACTICE_DISCLAIMER), 'the label is rendered verbatim')
+  assert.doesNotMatch(markup, /Unverified|Personal ·/, 'one label only')
   assert.ok(markup.indexOf(PERSONAL_PRACTICE_DISCLAIMER) < markup.indexOf('Question 1?'), 'before the first question')
 })
 
-test('generation progress carries the unverified label next to its status', () => {
-  const generating = html(React.createElement(JourneyProgress, { phase: 'generating' }))
-  assert.match(generating, /Writing five questions.*Personal · Unverified/s)
-  for (const phase of ['uploading', 'reading']) {
-    assert.ok(!html(React.createElement(JourneyProgress, { phase })).includes('Unverified'), phase)
+test('generation progress shows its status only; the label belongs to the finished set', () => {
+  assert.match(html(React.createElement(JourneyProgress, { phase: 'generating' })), /Writing five questions/)
+  for (const phase of ['uploading', 'reading', 'generating']) {
+    const markup = html(React.createElement(JourneyProgress, { phase }))
+    assert.ok(!markup.includes('Unverified') && !markup.includes(PERSONAL_PRACTICE_DISCLAIMER), phase)
   }
 })
 
-test('the workspace leads with the verbatim disclaimer, entitled or not', () => {
+test('the workspace leads with the verbatim label, entitled or not', () => {
   for (const initialAllowance of [null, { state: 'not-entitled', source: null, total: 0, used: 0, endsAt: null },
     { state: 'active', source: 'trial', total: 10, used: 2, endsAt: '2026-10-23T00:00:00.000Z' }]) {
     const markup = html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance,

@@ -242,12 +242,12 @@ function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }
 /** Counted AI sets (a free pass or an older trial); token-funded plans show Campus Bot use instead. */
 function AiSection({ allowance, onSale }: { allowance: AllowanceSummary | null; onSale: boolean }): ReactElement {
   const line = allowance === null || allowance.state === 'not-entitled' ? accessCopy(onSale).aiSection
-    : allowance.state === 'expired' ? 'Your AI practice access has ended.'
+    : allowance.state === 'expired' ? 'Your Campus Bot access has ended.'
       : allowance.total === null ? 'Campus Bot practice from your own notes is included.'
-        : `${Math.max(0, allowance.total - allowance.used)} of ${allowance.total} AI question ` +
+        : `${Math.max(0, allowance.total - allowance.used)} of ${allowance.total} Campus Bot ` +
           `${allowance.total === 1 ? 'set' : 'sets'} left.`
   return <section aria-labelledby="ai-heading" className="student-surface min-w-0 desktop:col-span-5">
-    <h2 id="ai-heading" className="student-section-title">AI practice</h2>
+    <h2 id="ai-heading" className="student-section-title">Campus Bot</h2>
     <p className="mt-2 text-sm text-student-text-secondary">{line}</p>
   </section>
 }

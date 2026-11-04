@@ -217,7 +217,7 @@ test('published withdrawals affect the next brief; an empty bank is not built', 
   assert.equal((await f.quizRoute(exam())).props.bankSize, validQuiz.questions.length - 1)
   f.publishedState.rows = f.publishedState.rows.filter(row => row.kind !== 'cbt_question')
   const html = renderToStaticMarkup(await f.quizRoute(exam()))
-  assert.match(html, /CBT practice is not available for this course/)
+  assert.match(html, /CBT practice unavailable/)
   assert.doesNotMatch(html, /temporarily unavailable|Try again/i, 'a bank that was never built is not a temporary failure')
 }))
 
@@ -327,7 +327,7 @@ test('missing or unusable quiz configuration makes the quiz route reject the att
     { ...validQuiz, quizDurationMinutes: 0 }, { ...validQuiz, quizDurationMinutes: 1e308 }]) {
     await fixture(quiz, async f => {
       const html = renderToStaticMarkup(await f.quizRoute(exam()))
-      assert.match(html, /CBT practice is not available for this course/)
+      assert.match(html, /CBT practice unavailable/)
       assert.doesNotMatch(html, /QuizClient|Start practice/)
     })
   }

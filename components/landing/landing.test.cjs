@@ -108,10 +108,10 @@ test('landing copy carries none of the retired claims, arrows or marks', async (
     assert.equal(copy.filter(text => text.includes(phrase)).length, 0, `content: ${phrase}`)
     assert.equal(html.includes(phrase), false, `page: ${phrase}`)
   }
-  assert.doesNotMatch(html, /&rarr;|AI tutor chat|partial credit|marked instantly/)
-  for (const phrase of ['Theory answers, model answers', 'Write your answer. Compare and improve.',
+  assert.doesNotMatch(html, /&rarr;|AI tutor chat|partial credit|marked instantly|Discovery Pass|72-hour/)
+  for (const phrase of ['Theory with suggested answers', 'Write your answer. Compare and improve.',
     'Upload your notes. Get a quiz in seconds.', 'Works with PDF, Word and text files',
-    'Start a free 72-hour Discovery Pass to try your department courses. GST courses are always free.',
+    'Get your free pass and try your department courses free for 3 days. GST courses are always free.',
     'Every course across the 8 departments of the Faculty of Management Sciences, from 100 to 300 level.']) {
     assert.ok(html.includes(phrase.replace(/'/g, '&#x27;')), phrase)
   }
@@ -519,7 +519,7 @@ test('the theory section shows its real screenshot as a raster file, sized like 
   const images = [...row.matchAll(/<img ([^>]*)>/g)].map(([, attributes]) => attributes)
   assert.equal(images.length, 1)
   assert.match(images[0], /src="\/landing\/theory\.webp"/)
-  assert.match(images[0], /alt="A theory answer beside the model answer"/)
+  assert.match(images[0], /alt="A theory answer beside the suggested answer"/)
   const file = path.join(root, 'public/landing/theory.webp')
   const buffer = fs.readFileSync(file)
   assert.ok(buffer.length < THEORY_IMAGE_MAX_BYTES, `${buffer.length} bytes`)
@@ -532,6 +532,6 @@ test('the theory section shows its real screenshot as a raster file, sized like 
 test('landing copy promises only what theory practice does: no key points, scoring or self-marking', async () => {
   const text = (await renderHome({ env: CONFIGURED })).replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'")
   assert.doesNotMatch(text, /key points|mark yourself|self-mark|marking guide|Compare and mark|points you made|theory marking|score yourself/i)
-  for (const claim of ['Write your answer. Compare and improve.', 'Compare your answer with a model answer',
+  for (const claim of ['Write your answer. Compare and improve.', 'Compare your answer with a suggested answer',
     "Note what you'd improve", 'Rewrite and try again until it sticks']) assert.ok(text.includes(claim), claim)
 })

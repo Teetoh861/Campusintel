@@ -96,7 +96,7 @@ test('a failed generation keeps the document so retry does not re-upload', async
   const { deps } = harness([{ status: 200, json: { status: 'generation-failed', allowance: null } }])
   const outcome = await generateFromDocument(DOC, deps)
   assert.equal(outcome.documentId, DOC)
-  assert.match(outcome.message, /did not use any of your AI allowance/)
+  assert.match(outcome.message, /did not use any of your Campus Bot allowance/)
 })
 
 test('a reply lost after the server committed is retried as the same request: one provider call, one charge', async () => {
@@ -123,8 +123,8 @@ test('a busy reply keeps the request id until the running generation is recorded
   const server = ledger()
   const replies = [{ running: true }, { running: true }, {}]
   const { deps, requests } = harness(body => server.generate(body.requestId, replies.shift()))
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Your questions are still being prepared')
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Your questions are still being prepared')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Questions still preparing')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Questions still preparing')
   assert.equal((await generateFromDocument(DOC, deps)).kind, 'generated')
   assert.deepEqual(requests.map(request => request.body.requestId), ['r1', 'r1', 'r1'])
   assert.deepEqual(server.state, { providerCalls: 1, charged: 1 })
@@ -166,7 +166,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
   }
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
-  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['AI practice is not included in your account', 'none', 'info'])
+  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot not included', 'none', 'info'])
   // Regression F4: a trial grant is named by the policy the student's own grant was issued under, from the plan
   // summary, never by whether the database could issue a Discovery Pass. A historical seven-day trial stays a free
   // trial on a database from before the pass and on one that offers it; a pass is offered only to an account that
@@ -211,11 +211,11 @@ test('every server result has student-safe copy; unknown or broken replies degra
   assert.doesNotMatch(describeResult({ status: 'not-entitled' }, neutral).message, /Discovery|pass/i)
   assert.doesNotMatch(describeResult({ status: 'not-entitled' }).message, /Discovery|pass/i, 'the default is the neutral wording')
   assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('early_access') }, pass).message,
-    /AI access has ended/, 'Early Access copy stays neutral')
+    /Campus Bot access has ended/, 'Early Access copy stays neutral')
   // The copy switch: once plans are on sale, a student without access is pointed to a plan, pass or not.
   for (const wording of [eligible, offered, neutral]) {
     assert.equal(describeResult({ status: 'not-entitled' }, wording, true).message,
-      'AI practice is included when you subscribe. GST courses stay free.')
+      'Campus Bot is included when you subscribe. GST courses stay free.')
   }
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)
   assert.equal(broken.title, 'Something went wrong')

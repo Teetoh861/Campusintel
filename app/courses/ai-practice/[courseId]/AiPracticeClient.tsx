@@ -25,20 +25,19 @@ const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
 export function allowanceLine(allowance: AllowanceSummary | null, trial: TrialWording = NEUTRAL_TRIAL_WORDING): string | null {
   if (!allowance || allowance.state === 'not-entitled') return null
   if (allowance.state === 'expired') return `Your ${grantName(allowance, trial)} has ended.`
-  if (allowance.total === null) return 'Your AI access includes question sets without a set limit while it lasts.'
+  if (allowance.total === null) return 'Your Campus Bot access has no set limit while it lasts.'
   const left = Math.max(0, allowance.total - allowance.used)
-  const sets = `${left} of ${allowance.total} AI question ${allowance.total === 1 ? 'set' : 'sets'} left`
+  const sets = `${left} of ${allowance.total} Campus Bot ${allowance.total === 1 ? 'set' : 'sets'} left`
   if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance, trial)}.`
   return `${sets} on your ${grantName(allowance, trial)}. Upload notes of up to about ` +
     `${approximateWords(allowance.sourceCharLimit).toLocaleString('en-GB')} words.`
 }
 
-/** Progress for the current step. Generation repeats the unverified label next to the status it announces. */
+/** Progress for the current step. */
 export function JourneyProgress({ phase }: { phase: JourneyPhase }): ReactElement {
   return <div className="ai-practice-progress" role="status" aria-live="polite">
     <LoaderCircle aria-hidden="true" size={20} strokeWidth={1.75} className="animate-spin" />
-    <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}
-      {phase === 'generating' && <> <span className="student-ai-practice-tag">Personal · Unverified</span></>}</p>
+    <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}</p>
       <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p></div>
   </div>
 }

@@ -556,7 +556,7 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     state.result = institutional(ready({ cbtPractice: false }), null)
     out = await html()
     assert.match(out, /role="status"/)
-    assert.match(out, /CBT practice is not available for this course\./)
+    assert.match(out, /CBT practice unavailable\./)
     assert.doesNotMatch(out, /Try again/)
     state.result = institutional(ready({ cbtPractice: true }), practice)
     state.practice = { status: 'unavailable' }

@@ -65,8 +65,8 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
           {!aiAvailable && <StatusRail status="unavailable">Currently unavailable</StatusRail>}
         </div>
         <p>{aiAvailable
-          ? 'With AI access on your account, upload notes for courses without CampusIntell study materials. AI questions are for personal study and are not verified by CampusIntell.'
-          : 'Personal AI practice from your own notes is currently unavailable. AI questions are not verified by CampusIntell.'}</p>
+          ? 'Upload notes for courses without study materials, and Campus Bot turns them into practice questions.'
+          : 'Campus Bot practice from your notes is unavailable right now.'}</p>
       </section>
       <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
         className={`dashboard-practice-action ${studentFocusControl}`}>

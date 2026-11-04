@@ -21,7 +21,7 @@ import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Theory practice | CampusIntell', robots: { index: false, follow: false } }
-const LEDE = 'Write an answer, compare it with the model answer, then assess it yourself.'
+const LEDE = 'Write your answer, then compare it with the suggested answer.'
 
 /** Gate the complete theory workspace before resolving any published content. */
 export default async function TheoryPage({ params }: { params: Promise<{ slug: string }> }): Promise<ReactElement> {
@@ -61,14 +61,10 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
     context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>
     <div className="student-stack min-w-0">
-      <Notice tone="info" title="Student self-assessment">
-        Compare your answer with the model answer and assess how well you covered the key points. Your self-assessment is not verified or graded by AI.
-        Your written answers and reflections stay on this page only. They are never sent to CampusIntell and are not saved to attempt history.
-      </Notice>
-      {questions.length === 0 ? <Notice tone="info" title="Theory practice is not available for this course">
-        You can’t compare answers for this course right now. Check the course page for theory questions to revise or other study materials.
+      {questions.length === 0 ? <Notice tone="info" title="Theory practice unavailable">
+        Check the course page for theory questions to revise and other study materials.
       </Notice> : <div className="student-stack">
-        <p className="student-meta">Choose a question. After you submit, you’ll see the model answer and a marking guide where available. You can also submit a blank answer to compare.</p>
+        <p className="student-meta">Choose a question to start.</p>
         {questions.map(({ question, label }, index) => <details key={`${question.itemId}:${question.publishedRevision}:${continuityToken}`} name="theory-practice"
           open={index === 0} className="student-surface min-w-0">
           <summary className="min-h-11 cursor-pointer rounded-ci-btn-sm py-3 font-semibold text-student-primary [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-student-focus">
@@ -77,7 +73,7 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
           <TheoryAttempt question={question} courseSlug={course.slug} continuityToken={continuityToken} />
         </details>)}
         {materials.length > questions.length && <p className="student-meta">
-          You can revise more theory questions on the course page. Model answers are not available for those questions.
+          More theory questions, without suggested answers, are on the course page.
         </p>}
       </div>}
     </div>

@@ -44,16 +44,15 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
 
   return <div className="student-stack min-w-0">
     <h2 ref={heading} tabIndex={-1} className="student-section-title">
-      {complete ? 'Self-assessment complete' : 'Compare and self-assess'}
+      {complete ? 'Review complete' : 'Compare your answer'}
     </h2>
-    <p className="student-meta">Student self-assessment · Your judgments are not verified or AI graded.</p>
     <div className="grid min-w-0 gap-6 desktop:grid-cols-2">
       <section aria-labelledby={`${id}-yours`} className="min-w-0">
-        <h3 id={`${id}-yours`} className="mb-3 font-semibold text-student-primary">Your submitted answer</h3>
+        <h3 id={`${id}-yours`} className="mb-3 font-semibold text-student-primary">Your answer</h3>
         <p className={theoryProse}>{answer || 'You submitted an empty answer.'}</p>
       </section>
       <section aria-labelledby={`${id}-model`} className="min-w-0">
-        <h3 id={`${id}-model`} className="mb-3 font-semibold text-student-primary">Model answer</h3>
+        <h3 id={`${id}-model`} className="mb-3 font-semibold text-student-primary">Suggested answer</h3>
         <p className={theoryProse}>{feedback.modelAnswer.body}</p>
       </section>
     </div>
@@ -63,26 +62,25 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
     </section>}
     <form onSubmit={finish} className="student-stack">
       {feedback.rubric ? <>
-        <p className="student-meta">For each point, choose how well your answer covered it. The totals summarise your assessment; they do not calculate a mark.</p>
+        <p className="student-meta">Rate how well your answer covered each point.</p>
         {points.map((point, index) => <fieldset key={index} disabled={complete} className="min-w-0 rounded-ci-btn-sm border border-student-border p-3">
           <legend className="max-w-full px-1 font-medium text-student-text-primary whitespace-pre-wrap [overflow-wrap:anywhere]">{point}</legend>
-          <label htmlFor={`${id}-point-${index}`} className="mb-2 block text-sm text-student-text-primary">Your assessment of point {index + 1}</label>
+          <label htmlFor={`${id}-point-${index}`} className="mb-2 block text-sm text-student-text-primary">How did you do?</label>
           <select id={`${id}-point-${index}`} required className="student-filter-select" value={ratings[index] ?? ''}
             onChange={event => {
               const value = event.currentTarget.value
               if (value === 'covered' || value === 'partly' || value === 'not-yet') setRatings(current => ({ ...current, [index]: value }))
             }}>
-            <option value="" disabled>Choose your assessment</option>
-            <option value="covered">Covered</option>
-            <option value="partly">Partly covered</option>
-            <option value="not-yet">Not yet covered</option>
+            <option value="" disabled>Choose one</option>
+            <option value="covered">Got it</option>
+            <option value="partly">Partly</option>
+            <option value="not-yet">Not yet</option>
           </select>
         </fieldset>)}
         <p role="status" className="student-meta">
-          Student self-assessment: {counts.covered} covered · {counts.partly} partly covered · {counts['not-yet']} to revisit.
-          {' '}{counts.reviewed} of {counts.total} points assessed.
+          {counts.covered} got it · {counts.partly} partly · {counts['not-yet']} not yet · {counts.reviewed} of {counts.total} points rated.
         </p>
-      </> : <p className="student-meta">A marking guide is not available for this question. Compare your answer with the model answer and note what you would improve. No official marking points or score are provided.</p>}
+      </> : <p className="student-meta">Compare your answer with the suggested answer and note what you would improve.</p>}
       <div>
         <label htmlFor={`${id}-reflection`} className="mb-2 block font-semibold text-student-text-primary">What would you improve? (optional)</label>
         <textarea id={`${id}-reflection`} className={theoryTextarea} rows={4} maxLength={THEORY_REFLECTION_MAX_LENGTH}
@@ -94,9 +92,9 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
             // Prevent this click from submitting if React reuses the node for the Finish button.
             event.preventDefault()
             setComplete(false)
-          }} className={studentAction(btnGhost)}>Edit self-assessment</button>
+          }} className={studentAction(btnGhost)}>Edit ratings</button>
           <button type="button" onClick={onRetry} className={studentAction(btnNavy, studentFocusDark)}>Try this question again</button>
-        </> : <button type="submit" className={studentAction(btnNavy, studentFocusDark)}>Finish self-assessment</button>}
+        </> : <button type="submit" className={studentAction(btnNavy, studentFocusDark)}>Finish review</button>}
       </div>
     </form>
   </div>

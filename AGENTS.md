@@ -15,6 +15,11 @@ improved in place.
 Stack: Next.js 16 (App Router), React 19, TypeScript 5.7 strict,
 Tailwind 3.4 with shadcn/ui, react-hook-form + zod, pnpm 9, Node 22.
 
+## Student Copy (required reading)
+
+Read [docs/student-copy.md](docs/student-copy.md) before writing or
+reviewing any text a student will see. Flag copy that breaks those rules.
+
 ## Review Focus Areas
 
 When reviewing pull requests or auditing the codebase, prioritize the

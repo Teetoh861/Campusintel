@@ -170,7 +170,7 @@ export const RETURN_COPY = {
   notFoundTitle: 'We couldn’t find that payment',
   notFoundBody: 'Check Plan & Access for your current plan.',
   nowOpen: (count: number) => count > 0 ? `Now open in your ${count} ${count === 1 ? 'course' : 'courses'}` : 'Now open in your courses',
-  unlocked: ['Notes by topic', 'Practice with instant feedback', 'Exam mode', 'Theory questions with model answers'],
+  unlocked: ['Notes by topic', 'Practice with instant feedback', 'Exam mode', 'Theory questions with suggested answers'],
   setNow: 'Your Department, Level and Semester are now set until the semester ends.',
   startStudying: 'Start studying',
   viewReceipt: 'View receipt',
@@ -283,9 +283,9 @@ export function accessCopy(onSale: boolean) {
     studyLocked: 'Included when you subscribe.',
     previewOthers: (code: string) => `The other topics in ${code} are included when you subscribe.`,
     answersLine: 'Answers and explanations are included when you subscribe.',
-    aiNotEntitled: 'AI practice is included when you subscribe. GST courses stay free.',
+    aiNotEntitled: 'Campus Bot is included when you subscribe. GST courses stay free.',
     accessLede: 'GST courses are free for every student. Department courses open when you subscribe.',
-    aiSection: 'AI practice from your own notes is included when you subscribe.',
+    aiSection: 'Campus Bot practice from your own notes is included when you subscribe.',
   } as const : {
     lockedTitle: 'Included with full access',
     lockedBody: 'Department courses open fully with Early Access.',
@@ -293,9 +293,9 @@ export function accessCopy(onSale: boolean) {
     studyLocked: 'Included with full access.',
     previewOthers: (code: string) => `The other topics in ${code} come with full access.`,
     answersLine: 'Answers and explanations are included with full access.',
-    aiNotEntitled: 'AI practice opens with Early Access. GST courses stay free.',
+    aiNotEntitled: 'Campus Bot opens with Early Access. GST courses stay free.',
     accessLede: 'GST courses are free for every student. Department courses open fully with Early Access.',
-    aiSection: 'AI practice from your own notes comes with Early Access.',
+    aiSection: 'Campus Bot practice from your own notes comes with Early Access.',
   } as const
 }
 
