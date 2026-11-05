@@ -54,11 +54,11 @@ export function createBachsProvider(options: BachsOptions): PaymentProvider {
   const now = options.now ?? Date.now
 
   async function request(method: 'GET' | 'POST', path: string, timeoutMs: number,
-    body?: Record<string, unknown>, idempotencyKey?: string): Promise<{ status: number; json: Record<string, unknown> }> {
+    body?: Record<string, unknown>, idempotencyKey?: string, signal?: AbortSignal): Promise<{ status: number; json: Record<string, unknown> }> {
     let response: Response
     try {
       response = await send(new URL(path, base), {
-        method, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
+        method, cache: 'no-store', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
         headers: { Authorization: `Bearer ${options.apiKey}`, Accept: 'application/json',
           ...(body ? { 'Content-Type': 'application/json' } : {}),
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
@@ -116,9 +116,10 @@ export function createBachsProvider(options: BachsOptions): PaymentProvider {
       return event === null ? { ok: false, reason: 'malformed' } : { ok: true, event }
     },
 
-    async getCheckout(checkoutId: string): Promise<CheckoutSnapshot> {
+    async getCheckout(checkoutId: string, options?: { signal?: AbortSignal }): Promise<CheckoutSnapshot> {
       if (opaque(checkoutId) === null) throw new ProviderRejectedError('Invalid checkout id')
-      const { json } = await request('GET', `/v1/checkout-sessions/${encodeURIComponent(checkoutId)}`, TIMEOUTS.read)
+      const { json } = await request('GET', `/v1/checkout-sessions/${encodeURIComponent(checkoutId)}`, TIMEOUTS.read,
+        undefined, undefined, options?.signal)
       const status = typeof json.status === 'string' ? json.status.toLowerCase() : ''
       if (json.checkout_id !== checkoutId || !['open', 'completed', 'expired', 'cancelled'].includes(status)) {
         throw new ProviderRejectedError('Bachs checkout answer did not match the request')

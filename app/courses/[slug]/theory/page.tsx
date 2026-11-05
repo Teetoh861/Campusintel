@@ -55,7 +55,7 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   // Label every published question first so numbers match Course Detail, then keep only practicable ones.
   const labels = theoryDisplayNumbers(materials.map(material => material.question))
   const questions = materials.flatMap((material, index) =>
-    material.feedback === null ? [] : [{ question: material.question, label: labels[index] }])
+    !material.feedbackAvailable ? [] : [{ question: material.question, label: labels[index] }])
   return <StudentPage band={<PageBand title="Theory practice"
     context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>

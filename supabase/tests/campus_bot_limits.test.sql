@@ -39,10 +39,6 @@ begin
   perform public.fulfil_payment(o,'fake','ch_'||replace(o::text,'-',''),'succeeded',
     case plan when 'standard_session' then 700000 when 'plus_semester' then 600000 when 'plus_session' then 1100000
       else 400000 end,'NGN','card',clock_timestamp(),'webhook','test');
-  -- This test is one transaction, so now() (which stamps usage reservations) is its start: begin the plan before it.
-  update public.entitlement_grants set starts_at=now()-interval '1 hour' where order_id=o and plan_part=1;
-  update private.payment_orders set paid_at=now()-interval '1 hour' where id=o;
-  update private.payment_fulfilments set created_at=now()-interval '1 hour' where order_id=o;
   return o;
 end$$;
 create function pg_temp.early(n int) returns void language sql as $$
@@ -126,6 +122,17 @@ select is((select jsonb_build_array(j->>'state',j->>'model',j->'max_output_token
 select is((select jsonb_build_array(funding_source,reserved_tokens,state) from pg_temp.event((select pg_temp.gen(j) from g20)) e),
   '["paid",60000,"reserved"]','the worst-case cost is reserved against paid funding');
 select is((select count(*)::int from private.campus_bot_windows where user_id=pg_temp.u(20)),2,'the first request opens both windows');
+select is((select j->>'reservation_seconds' from g20),'300','the server receives the five-minute reservation lifetime');
+select ok((select g.created_at=e.reserved_at and bool_and(w.starts_at=e.reserved_at)
+  from public.ai_practice_generations g join public.ai_usage_events e on e.id=g.usage_event_id
+  join private.campus_bot_windows w on w.id in (e.session_window_id,e.week_window_id)
+  where g.id=(select pg_temp.gen(j) from g20) group by g.created_at,e.reserved_at),
+  'generation, usage and both new windows share the admission clock');
+select ok((select reserved_at>now() from pg_temp.event((select pg_temp.gen(j) from g20))),
+  'admission is stamped after the transaction started');
+select throws_ok($$update private.ai_practice_policy set reservation_minutes=4$$,'23514',null,
+  'the database refuses a reservation shorter than the live-server lifetime');
+
 select ok((select bool_and(case kind when 'session' then ends_at=starts_at+interval '5 hours' else ends_at=starts_at+interval '7 days' end)
   from private.campus_bot_windows where user_id=pg_temp.u(20)),'each window''s end is stored: 5 hours and a rolling 7 days');
 select is((select jsonb_build_array(model,provider_model,price_weight,written_token_weight,read_tokens_max,written_tokens_max)
@@ -199,26 +206,33 @@ select is(public.admin_campus_bot_refill(gen_random_uuid(),'Ops','support ticket
 select throws_ok($$select public.admin_campus_bot_refill(null,'Ops','')$$,'22023',null,'a refill needs a reason');
 
 -- ---------------------------------------------------------------------------
--- Early Access gets Plus limits; the higher tier funds; limits are never added.
+-- Early Access gets Standard limits; the higher tier funds; limits are never added.
 -- ---------------------------------------------------------------------------
 select pg_temp.student(21);
 select pg_temp.early(21);
 select is((select jsonb_build_array(source,tier,session_tokens,week_tokens)
   from private.campus_bot_plan(pg_temp.u(21),clock_timestamp(),array['paid','early_access'])),
-  '["early_access","plus",700000,1400000]','Early Access members get Plus limits during the free month');
+  '["early_access","standard",350000,700000]','Early Access members get Standard limits during the free month');
+update private.campus_bot_tiers set session_tokens=320000,week_tokens=640000 where tier='standard';
+select is((select jsonb_build_array(session_tokens,week_tokens) from private.campus_bot_plan(pg_temp.u(21),clock_timestamp(),
+  array['paid','early_access'])),'[320000,640000]','Early Access follows the live Standard tier settings');
+update private.campus_bot_tiers set session_tokens=350000,week_tokens=700000 where tier='standard';
 create temporary table o21 as select pg_temp.paid(21) id;
 select is((select jsonb_build_array(source,tier,session_tokens)
   from private.campus_bot_plan(pg_temp.u(21),clock_timestamp(),array['paid','early_access'])),
-  '["early_access","plus",700000]','Early Access Plus outranks paid Standard; the limits are not added');
-select is((select (v->'session'->>'limit')::int from (select pg_temp.usage_of(21) v) x),700000,'the usage read shows one limit');
+  '["early_access","standard",350000]','paid Standard plus Early Access keeps one Standard limit, with Early Access funding the equal-tier tie');
+select is((select (v->'session'->>'limit')::int from (select pg_temp.usage_of(21) v) x),350000,'the usage read shows one Standard limit');
 select pg_temp.student(22);
 select pg_temp.early(22);
 create temporary table o22 as select pg_temp.paid(22,'plus_semester') id;
-select is((select source from private.campus_bot_plan(pg_temp.u(22),clock_timestamp(),array['paid','early_access'])),
-  'early_access','between equal tiers Early Access funds');
+select is((select jsonb_build_array(source,tier,session_tokens,week_tokens)
+  from private.campus_bot_plan(pg_temp.u(22),clock_timestamp(),array['paid','early_access'])),
+  '["paid","plus",700000,1400000]','paid Plus outranks Early Access Standard without adding the limits');
+select is((select jsonb_build_array(v->>'tier',v->'session'->'limit',v->'week'->'limit')
+  from (select pg_temp.usage_of(22) v) x),'["plus",700000,1400000]','the usage read shows paid Plus while Early Access is active');
 update public.entitlement_grants set ends_at=clock_timestamp()-interval '1 second' where user_id=pg_temp.u(22) and source='early_access';
 select is((select jsonb_build_array(source,tier) from private.campus_bot_plan(pg_temp.u(22),clock_timestamp(),array['paid','early_access'])),
-  '["paid","plus"]','after the free month the paid plan funds');
+  '["paid","plus"]','paid Plus still funds after the free month ends');
 
 -- ---------------------------------------------------------------------------
 -- Paid funding follows the bound term: no slack, no rollover.
@@ -249,10 +263,18 @@ select is((select grant_id from private.campus_bot_plan(pg_temp.u(24),clock_time
 -- ---------------------------------------------------------------------------
 -- The platform's day and its reserve for paying students; undelivered tries.
 -- ---------------------------------------------------------------------------
+select pg_temp.student(29);
+select pg_temp.early(29);
+create temporary table d29 as select pg_temp.doc(29) id;
 create temporary table d21 as select pg_temp.doc(21) id;
 update private.ai_practice_policy set global_daily_generations=(select count(*)::int+1 from public.ai_usage_events
   where reserved_at>=date_trunc('day',clock_timestamp() at time zone 'utc') at time zone 'utc'), paid_daily_reserve=1;
-select is((pg_temp.begin(21,(select id from d21)))->>'state','capacity','the last slot of the day is kept for paying students');
+select is((pg_temp.begin(29,(select id from d29)))->>'state','capacity','the last slot of the day is kept for paying students');
+create temporary table mixed_reserve as select pg_temp.begin(21,(select id from d21)) j;
+select is((select j->>'state' from mixed_reserve),'started','an account with paid Standard can use the paid reserve while Early Access Standard funds');
+select is((select funding_source from pg_temp.event((select pg_temp.gen(j) from mixed_reserve))),'early_access',
+  'Early Access funds the equal Standard tier while the account keeps its paid reserve eligibility');
+update private.ai_practice_policy set global_daily_generations=global_daily_generations+1;
 update private.campus_bot_settings set writing_model='haiku';
 create temporary table d22 as select pg_temp.doc(22) id;
 select is((pg_temp.begin(22,(select id from d22)))->>'state','started','a paid set still gets it');
@@ -270,7 +292,7 @@ create temporary table o25 as select pg_temp.paid(25) id;
 create temporary table d25 as select pg_temp.doc(25) id;
 create temporary table g25 as select pg_temp.begin(25,(select id from d25)) j;
 select is((select j->>'state' from g25),'started','admitted while the plan lasts');
-select is(public.refund_order((select id from o25),'our-fault',gen_random_uuid(),array[repeat('a',64)],'Ops','wrong course')->>'state',
+select is(public.refund_order((select id from o25),'our-fault',gen_random_uuid(),array[repeat('a',64)],'Ops','wrong course',clock_timestamp())->>'state',
   'refund-pending','the plan is refunded while the set is running');
 select is(pg_temp.finish(25,(select pg_temp.gen(j) from g25))->>'status','generated','the set is still delivered');
 select is((pg_temp.event((select pg_temp.gen(j) from g25))).charged_tokens,36500::bigint,'and charged');
@@ -301,7 +323,7 @@ insert into private.discovery_claim_keys(key_version,key_check) values(999,repea
 select pg_temp.student(26);
 select is(public.discovery_pass_eligibility(pg_temp.s(26),pg_temp.hash(26))->>'eligible','true','a new student is offered the pass');
 create temporary table o26 as select pg_temp.paid(26) id;
-select public.refund_order((select id from o26),'our-fault',gen_random_uuid(),array[repeat('b',64)],'Ops','test refund');
+select public.refund_order((select id from o26),'our-fault',gen_random_uuid(),array[repeat('b',64)],'Ops','test refund',clock_timestamp());
 select is(public.discovery_pass_eligibility(pg_temp.s(26),pg_temp.hash(26))->>'eligible','false','not after a paid grant, even refunded');
 select is(public.activate_discovery_pass(pg_temp.s(26),pg_temp.hash(26),null)->>'state','trial-not-offered','and it cannot be activated');
 select pg_temp.student(27);
@@ -312,6 +334,8 @@ select is(public.discovery_preview(pg_temp.s(27),pg_temp.r('BUA201'),'cbt',false
   'after buying, the open exam is still there');
 select is(public.submit_discovery_cbt(pg_temp.s(27),pg_temp.r('BUA201'),gen_random_uuid(),0,0,'{}')->'preview'->'questions',
   '[]'::jsonb,'and finishes score-only');
+-- This legacy entitlement read uses transaction time. A real follow-up HTTP read starts after the payment commits.
+update public.entitlement_grants set starts_at=now()-interval '1 second' where order_id=(select id from o27);
 select is(public.discovery_preview(pg_temp.s(27),pg_temp.r('BUA201'),'study_guide',false)->>'state','full-access',
   'a preview never opened reads as full access');
 
@@ -349,6 +373,101 @@ select is(public.record_plan_use(pg_temp.s(28),'notes-topic',pg_temp.r('ACC-CM20
   'not-allowed','a student without access to the course records nothing');
 select is((select count(*)::int from private.plan_use_events where course_id=pg_temp.r('GST111')),0,'GST never counts');
 
+-- Early Access admission and the pure usage read both enforce Standard, including an allowed overrun.
+select pg_temp.student(36); select pg_temp.early(36);
+create temporary table d36 as select pg_temp.doc(36) id;
+create temporary table g36 as select pg_temp.begin(36,(select id from d36)) j;
+select is((select j->>'state' from g36),'started','an Early Access student starts within Standard limits');
+select is(pg_temp.finish(36,(select pg_temp.gen(j) from g36),'generated',pg_temp.usage(320000,8000))->>'status','generated',
+  'an Early Access set that overruns the estimate is still delivered');
+select is((select jsonb_build_array(v->>'tier',v->'session'->'limit',v->'session'->'left',v->'week'->'limit',v->'can_start')
+  from (select pg_temp.usage_of(36) v) x),'["standard",350000,-11500,700000,false]',
+  'Early Access is metered against Standard, not Plus, and keeps the overrun below zero');
+select is(pg_temp.begin(36,(select id from d36))->>'state','session-limit','no second set after the Standard session is spent');
+
+-- Buying after an Early Access admission does not turn that earlier request into use of the new payment.
+select pg_temp.student(35); select pg_temp.early(35);
+create temporary table prepayment as select pg_temp.gen(pg_temp.begin(35,pg_temp.doc(35))) g;
+create temporary table o35 as select pg_temp.paid(35) id;
+select is(pg_temp.finish(35,(select g from prepayment))->>'status','generated','the pre-payment request is delivered');
+select is((select count(*)::int from private.plan_use_events where order_id=(select id from o35) and kind='campus-bot-reply'),0,
+  'a request admitted before payment does not count toward that payment''s refund');
+select is((public.refund_eligibility((select id from o35),null,clock_timestamp())->'counts'->>'campus_bot_replies')::int,0,
+  'refund assessment keeps the pre-payment request out too');
+
+-- Abandonment is final for every funding type. It releases a token request too, never charging a late set.
+select pg_temp.student(30); select pg_temp.early(30);
+select pg_temp.student(31); create temporary table o31 as select pg_temp.paid(31) id;
+select pg_temp.student(32);
+insert into public.entitlement_grants(user_id,source,trial_policy,starts_at,ends_at,ai_terms,ai_units,created_by)
+ values(pg_temp.u(32),'trial','seven-day',clock_timestamp()-interval '1 day',clock_timestamp()+interval '6 days','capped',3,'bot-test');
+create temporary table abandoned as select n, pg_temp.gen(pg_temp.begin(n,pg_temp.doc(n))) g from generate_series(30,32) n;
+update public.ai_practice_generations set created_at=clock_timestamp()-interval '6 minutes'
+ where id in (select g from abandoned);
+select private.release_abandoned_ai_generations(null,5);
+select is(pg_temp.finish(n,g)->>'state','already-finished','a late abandoned set is discarded for student '||n) from abandoned;
+select is((select count(*)::int from abandoned a join public.ai_practice_generations g on g.id=a.g
+  join public.ai_usage_events e on e.id=g.usage_event_id where g.question_set is null and g.status='failed'
+  and e.state='released' and e.charged_tokens=0),3,'all abandoned funding types are discarded and charged zero');
+select is((select count(*)::int from private.campus_bot_requests r join abandoned a on a.g=r.generation_id
+  where r.charged_tokens=0 and r.settled_at is not null),2,'abandoned token requests are settled at zero');
+
+-- A direct general student read must not bypass theory plan use. Prompts and availability remain readable.
+create function pg_temp.student_content(n int, code text) returns jsonb language plpgsql as $$
+declare v jsonb;
+begin
+  perform set_config('request.jwt.claims',json_build_object('sub',pg_temp.u(n),'session_id',pg_temp.s(n),'role','authenticated')::text,true);
+  set local role authenticated;
+  select jsonb_agg(to_jsonb(c)) into v from public.read_published_managed_content(pg_temp.r(code)) c;
+  reset role; return v;
+end$$;
+select is((select count(*)::int from jsonb_array_elements(pg_temp.student_content(20,'ACC-CM201')) c
+  where c->>'kind' in ('model_answer','rubric')),0,'a direct student RPC returns neither model answers nor rubrics');
+select ok(exists(select 1 from jsonb_array_elements(pg_temp.student_content(20,'ACC-CM201')) c
+  where c->>'kind'='theory_question' and (c->>'feedback_available')::boolean),'prompts retain feedback availability');
+create temporary table reveal_q as select i.id,i.course_id,i.published_revision from public.managed_content_items i
+  where i.kind='theory_question' and i.course_id=pg_temp.r('ACC-CM201') and i.published_revision is not null
+    and exists(select 1 from public.managed_content_items a where a.parent_item_id=i.id and a.kind='model_answer'
+      and a.published_revision is not null and a.published_parent_revision=i.published_revision)
+  order by i.id limit 1;
+select pg_temp.student(33); create temporary table o33 as select pg_temp.paid(33) id;
+create temporary table revealed as select public.reveal_theory_feedback(pg_temp.s(33),course_id,id,published_revision) j from reveal_q;
+select is((select j->>'state' from revealed),'ready','the trusted reveal returns current official feedback');
+select ok(exists(select 1 from revealed,jsonb_array_elements(j->'content') c where c->>'kind'='model_answer'),
+  'the answer is delivered by the reveal only');
+select is((select count(*)::int from private.plan_use_events where order_id=(select id from o33) and kind='theory-reveal'),1,
+  'the reveal records use in the same call before returning the answer');
+select is(public.reveal_theory_feedback(pg_temp.s(33),(select course_id from reveal_q),(select id from reveal_q),
+  (select published_revision from reveal_q))->>'state','ready','reopening the same reveal remains usable');
+select is((select count(*)::int from private.plan_use_events where order_id=(select id from o33) and kind='theory-reveal'),1,
+  'the refund marker is deduplicated');
+select is(public.reveal_theory_feedback(pg_temp.s(33),(select course_id from reveal_q),(select id from reveal_q),999999)->>'state',
+  'content-changed','a stale published revision delivers nothing');
+select is(public.reveal_theory_feedback(pg_temp.s(33),pg_temp.r('BUA202'),(select id from reveal_q),
+  (select published_revision from reveal_q))->>'state','locked','an outside-list course delivers nothing');
+select is(public.reveal_theory_feedback(gen_random_uuid(),(select course_id from reveal_q),(select id from reveal_q),
+  (select published_revision from reveal_q))->>'state','signed-out','a missing live session delivers nothing');
+update public.entitlement_grants set starts_at=clock_timestamp()-interval '2 seconds',
+  ends_at=clock_timestamp()-interval '1 second' where order_id=(select id from o33);
+select is(public.reveal_theory_feedback(pg_temp.s(33),(select course_id from reveal_q),(select id from reveal_q),
+  (select published_revision from reveal_q))->>'state','locked','expired access delivers nothing');
+-- A failed marker aborts the reveal transaction: no answer can be returned ahead of the failed write.
+select pg_temp.student(34); create temporary table o34 as select pg_temp.paid(34) id;
+create function pg_temp.refuse_marker() returns trigger language plpgsql as $$begin
+  raise exception 'test marker unavailable' using errcode='23514'; end$$;
+create trigger test_refuse_theory_marker before insert on private.plan_use_events
+  for each row when (new.kind='theory-reveal') execute function pg_temp.refuse_marker();
+select throws_ok($$select public.reveal_theory_feedback(pg_temp.s(34),(select course_id from reveal_q),
+  (select id from reveal_q),(select published_revision from reveal_q))$$,'23514',null,
+  'a marker failure aborts the entire reveal instead of returning feedback');
+drop trigger test_refuse_theory_marker on private.plan_use_events;
+select is((select count(*)::int from private.plan_use_events where order_id=(select id from o34)),0,
+  'no partial reveal marker remains after the failed call');
+select ok(has_function_privilege('service_role','public.reveal_theory_feedback(uuid,uuid,uuid,bigint)','EXECUTE')
+  and not has_function_privilege('authenticated','public.reveal_theory_feedback(uuid,uuid,uuid,bigint)','EXECUTE')
+  and not has_function_privilege('anon','public.reveal_theory_feedback(uuid,uuid,uuid,bigint)','EXECUTE'),
+  'only the trusted theory route can reveal feedback');
+
 -- ---------------------------------------------------------------------------
 -- Boundary.
 -- ---------------------------------------------------------------------------
@@ -364,12 +483,14 @@ select ok(has_function_privilege('authenticated','public.get_my_campus_bot_usage
 select ok(not has_function_privilege(r,f,'EXECUTE'),'private helper closed to '||r||': '||f)
   from unnest(array['anon','authenticated','service_role']) r, unnest(array[
   'private.campus_bot_plan(uuid,timestamptz,text[])','private.campus_bot_writing(integer)',
-  'private.campus_bot_open_window(uuid,text,timestamptz)','private.campus_bot_window_use(uuid)',
+  'private.campus_bot_open_window(uuid,text,timestamptz)',
+  'private.campus_bot_open_window(uuid,text,timestamptz,timestamptz)','private.campus_bot_window_use(uuid)',
   'private.campus_bot_window_view(private.campus_bot_windows,integer)','private.ai_funding_current(uuid,timestamptz)']) f;
 select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where p.proname in ('campus_bot_plan','campus_bot_writing','campus_bot_open_window','campus_bot_window_use',
     'campus_bot_window_view','ai_funding_current','get_my_campus_bot_usage','record_plan_use','admin_campus_bot_refill',
-    'admin_set_ai_limits','admin_set_campus_bot_writing_model','begin_ai_practice_generation','finish_ai_practice_generation')
+    'admin_set_ai_limits','admin_set_campus_bot_writing_model','begin_ai_practice_generation','finish_ai_practice_generation',
+    'reveal_theory_feedback','read_published_managed_content')
     and n.nspname in ('public','private') and (not p.prosecdef or p.proconfig is distinct from array['search_path=""'])),0,
   'every 2b function is security definer with an empty search_path');
 select throws_ok($$select pg_temp.usage_of(999)$$,'42501',null,'no usage read without a live session');

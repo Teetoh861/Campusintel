@@ -1,7 +1,7 @@
 // lib/payments/refunds.ts — Refunds after part 1's refund_order has recorded the refund (and, for a plan refund, revoked
 // every grant) in its own transaction, before any money moves. Here: the provider refund, keyed by our refund request id
-// so a retry can never refund twice. Card refunds go only through Bachs, which takes one refund per payment (an excess
-// refund is a partial one). Bachs cannot refund bank transfers: those are sent from the bank to the account that paid,
+// so a retry can never refund twice. Cards keep their one Bachs refund for a plan refund; card excess goes through
+// Bachs support. Bank refunds are sent from the bank to the account that paid,
 // and recorded with our transfer reference and that account's last four digits.
 import 'server-only'
 import { createHash, createHmac } from 'node:crypto'
@@ -10,6 +10,7 @@ import { normalizeClaimEmail, readClaimHashKeys } from '@/lib/entitlements/claim
 import { ProviderRejectedError, ProviderUnavailableError } from './provider'
 import type { PaymentProvider } from './provider'
 import { call, readOrder } from './rpc'
+import { OPERATOR_WRITE_TIMEOUT_MS } from './timeouts'
 import type { PaymentRpc } from './rpc'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -58,6 +59,10 @@ export function checkManualSettlement(method: string, manual: ManualSettlement |
     throw new Error('--destination-confirmed is required: the transfer must go to the account Bachs shows as the sender')
   }
 }
+/** Card excess is handled by Bachs support, preserving the card's single provider refund for a plan refund. */
+export function checkRefundMethod(refundClass: string, method: string): void {
+  if (refundClass === 'excess' && method === 'card') throw new Error('Card excess refunds go through Bachs support')
+}
 export type RefundOutcome =
   | { state: 'refunded' | 'failed' | 'pending'; providerRefundId?: string }
   | { state: 'manual-required'; reason: 'bank-transfer' | 'no-refund-api' }
@@ -67,12 +72,13 @@ export type RefundOutcome =
 export async function settleRefund(deps: RefundDeps, refund: PendingRefund, options: { manual?: ManualSettlement | null;
   actor: string; reason: string }): Promise<RefundOutcome> {
   if (refund.refund_status !== undefined && refund.refund_status !== 'pending') return { state: 'already-final' }
+  checkRefundMethod(refund.refund_class, refund.method)
   const manual = options.manual ?? null
   checkManualSettlement(refund.method, manual)
   if (manual !== null) {
     const result = await call(deps.rpc, 'record_refund_result', { p_refund_id: refund.refund_id, p_outcome: 'refunded',
       p_provider_refund_id: null, p_manual_reference: manual.reference, p_actor: options.actor,
-      p_account_last4: manual.accountLast4 }, settled)
+      p_account_last4: manual.accountLast4 }, settled, { timeoutMs: OPERATOR_WRITE_TIMEOUT_MS })
     return result.state === 'recorded' || result.state === 'unchanged' ? { state: 'refunded' } : { state: 'already-final' }
   }
   if (refund.method === 'bank_transfer') return { state: 'manual-required', reason: 'bank-transfer' }
@@ -89,14 +95,16 @@ export async function settleRefund(deps: RefundDeps, refund: PendingRefund, opti
     if (error instanceof ProviderUnavailableError) return { state: 'provider-unavailable' }
     if (error instanceof ProviderRejectedError) {
       await call(deps.rpc, 'record_refund_result', { p_refund_id: refund.refund_id, p_outcome: 'failed',
-        p_provider_refund_id: null, p_manual_reference: null, p_actor: options.actor }, settled)
+        p_provider_refund_id: null, p_manual_reference: null, p_actor: options.actor }, settled,
+        { timeoutMs: OPERATOR_WRITE_TIMEOUT_MS })
       return { state: 'failed' }
     }
     throw error
   }
   if (answer.status !== 'pending') {
     await call(deps.rpc, 'record_refund_result', { p_refund_id: refund.refund_id, p_outcome: answer.status,
-      p_provider_refund_id: answer.refundId, p_manual_reference: null, p_actor: options.actor }, settled)
+      p_provider_refund_id: answer.refundId, p_manual_reference: null, p_actor: options.actor }, settled,
+      { timeoutMs: OPERATOR_WRITE_TIMEOUT_MS })
   }
   return { state: answer.status, providerRefundId: answer.refundId }
 }

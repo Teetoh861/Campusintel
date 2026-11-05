@@ -11,7 +11,7 @@ async function fixture(run) {
   return withTsx(async () => {
     const original = Module._load, calls = [], client = {}
     const state = { signedOut: false, result: { status: 'ready', course: { slug, href: `/courses/${slug}`,
-      code: 'INST201', title: 'Institutional theory title' }, materials: [{ question, feedback }] } }
+      code: 'INST201', title: 'Institutional theory title' }, materials: [{ question, feedbackAvailable: true, feedback: null }] } }
     function StudentAccessGate() { return null }
     function TheoryAttempt(props) { return React.createElement('div', { 'data-attempt-id': props.question.itemId }) }
     try {
@@ -70,8 +70,8 @@ test('question labels match Course Detail, including questions without a publish
   const reading = { ...question, itemId: rubric.itemId, prompt: 'Unnumbered without answer' }
   delete reading.displayNumber
   const numbered = { ...question, displayNumber: 4 }
-  f.state.result.materials = [{ question: reading, feedback: null }, { question: numbered, feedback },
-    { question: second, feedback: { ...feedback, question: second } }]
+  f.state.result.materials = [{ question: reading, feedbackAvailable: false, feedback: null }, { question: numbered, feedbackAvailable: true, feedback: null },
+    { question: second, feedbackAvailable: true, feedback: null }]
   const html = await f.html()
   assert.deepEqual(theoryDisplayNumbers([reading, numbered, second]), [5, 4, 6])
   assert.match(html, /Q4 · Explain management\./)
@@ -80,12 +80,12 @@ test('question labels match Course Detail, including questions without a publish
 }))
 
 test('missing model answers never launch practice and empty courses have a usable state', async () => fixture(async f => {
-  f.state.result.materials = [{ question, feedback: null }]
+  f.state.result.materials = [{ question, feedbackAvailable: false, feedback: null }]
   const html = await f.html()
   assert.match(html, /Theory practice isn’t available for this course/)
   assert.doesNotMatch(html, /data-attempt-id|<details/)
   assert.match(html, new RegExp(`href="/courses/${slug}"`))
-  f.state.result.materials = [{ question, feedback }, { question: { ...question, itemId: modelAnswer.itemId }, feedback: null }]
+  f.state.result.materials = [{ question, feedbackAvailable: true, feedback: null }, { question: { ...question, itemId: modelAnswer.itemId }, feedbackAvailable: false, feedback: null }]
   const partial = await f.html()
   assert.equal((partial.match(/data-attempt-id/g) || []).length, 1)
   assert.match(partial, /More theory questions are on the course page\./)

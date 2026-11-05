@@ -140,9 +140,13 @@ test('payment-verify asks the provider and fulfils as the operator; manual evide
 })
 
 test('reconcile-now runs one bounded batch through the same fulfil path', async () => {
-  const h = harness({ payment_orders_to_check: [] })
+  const h = harness({ claim_payment_checks: [] })
   await h.run(['reconcile-now'])
-  assert.deepEqual(h.requests, [{ fn: 'payment_orders_to_check', body: { p_limit: 50, p_include_late: true } }])
+  assert.equal(h.requests.length, 1)
+  assert.equal(h.requests[0].fn, 'claim_payment_checks')
+  assert.equal(h.requests[0].body.p_limit, 50)
+  assert.equal(h.requests[0].body.p_include_late, true)
+  assert.match(h.requests[0].body.p_lease_token, /^[0-9a-f-]{36}$/)
   assert.equal(h.printed().checked, 0)
 })
 
@@ -199,4 +203,15 @@ test('campus-bot-refill: one student, or everyone only with --confirm; ai-limits
   await assert.rejects(h.run(['ai-limits', '--daily', 'many', ...NOTE]), /must be an integer/)
   await assert.rejects(h.run(['campus-bot-writer', ...NOTE]), /--model is required/)
   assert.equal(h.requests.length, 5, 'refused commands send nothing')
+})
+
+test('card excess is refused before refund_order, even on a dry run; a transfer excess is allowed', async () => {
+  const card = harness({ admin_payment_status: orderStatus({ payments: [payment('card')] }) })
+  for (const extra of [[], ['--request', REQUEST, '--confirm']]) {
+    await assert.rejects(card.run(['refund', '--order', ORDER, '--class', 'excess', ...extra, ...NOTE]), /Bachs support/)
+  }
+  assert.equal(card.requests.some(request => request.fn === 'refund_order' || request.fn === 'refund_eligibility'), false)
+  const bank = harness({ admin_payment_status: orderStatus({ payments: [payment('bank_transfer')] }) })
+  await bank.run(['refund', '--order', ORDER, '--class', 'excess', ...NOTE])
+  assert.equal(bank.requests.at(-1).fn, 'refund_eligibility')
 })

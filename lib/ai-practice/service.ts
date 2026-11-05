@@ -5,6 +5,7 @@ import type { FailureReason, GenerationOutcome, UsageReport } from './contract'
 import { estimateCostUsd, PRICED_ANTHROPIC_MODELS } from './pricing'
 import { buildGenerationPrompt } from './prompt'
 import { ProviderError } from './provider'
+import { AiDeadlineError, withAiDeadline } from './lifetime'
 import type { ProviderErrorCode, ProviderResponse, QuestionGenerationProvider } from './provider'
 import { prepareSource } from './source'
 import { modelOutputSchema, validateQuestions } from './validate'
@@ -71,11 +72,12 @@ export async function generatePracticeSet(input: unknown, deps: GenerationDepend
   const started = now()
   let response: ProviderResponse
   try {
-    response = await provider.generate({ ...prompt,
+    response = await withAiDeadline(signal => provider.generate({ ...prompt,
       maxOutputTokens: limits?.maxOutputTokens ?? AI_PRACTICE_LIMITS.maxOutputTokens,
-      ...(limits !== null ? { model: limits.model } : {}), signal: AbortSignal.timeout(deps.timeoutMs) })
+      ...(limits !== null ? { model: limits.model } : {}), signal }), deps.timeoutMs)
   } catch (error) {
-    const failure = error instanceof ProviderError ? error : new ProviderError('internal')
+    const failure = error instanceof ProviderError ? error
+      : new ProviderError(error instanceof AiDeadlineError ? 'timeout' : 'internal')
     return { status: 'failed', reason: PROVIDER_FAILURES[failure.code], usage: null, providerError: failure.code,
       providerDiagnostic: failure.diagnostic }
   }
