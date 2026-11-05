@@ -48,7 +48,7 @@ export interface PaymentProvider {
   readonly id: ProviderId
   createCheckout(input: CheckoutRequest): Promise<CreatedCheckout>
   verifyWebhook(rawBody: string, headers: Headers): WebhookCheck
-  getCheckout(checkoutId: string): Promise<CheckoutSnapshot>
+  getCheckout(checkoutId: string, options?: { signal?: AbortSignal }): Promise<CheckoutSnapshot>
   /** Absent when the provider cannot refund; refunds are then settled manually with our bank reference. */
   refund?(input: RefundRequest): Promise<RefundSnapshot>
   getRefund?(refundId: string): Promise<RefundSnapshot>

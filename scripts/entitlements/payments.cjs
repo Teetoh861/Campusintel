@@ -7,6 +7,10 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REFUND_CLASSES = /^(standard|our-fault|duplicate|excess)$/
 const AUTH_TIMEOUT_MS = 30_000
+// Operator writes may wait behind account locks: 15 seconds (lib/payments/timeouts.ts OPERATOR_WRITE_TIMEOUT_MS). A write
+// that times out may still have been recorded: check payment-status, then refund-retry (docs/payments-operations.md).
+const OPERATOR_WRITE_TIMEOUT_MS = 15_000
+const operatorWrite = () => ({ signal: AbortSignal.timeout(OPERATOR_WRITE_TIMEOUT_MS) })
 
 function paymentsLib() {
   if (!require.extensions['.ts']) {
@@ -79,6 +83,7 @@ async function refund(opts, ctx) {
   const paymentId = opts.payment !== undefined ? required(opts, 'payment', UUID) : null
   const payment = paymentId !== null ? { p_payment_id: paymentId } : {}
   const order = await readOrderRecord(ctx.rpc, orderId)
+  paymentsLib().refunds.checkRefundMethod(refundClass, refundPayment(order, paymentId)?.method ?? 'unknown')
   const manual = manualSettlement(opts, order, paymentId)
   const identity = await refundIdentity(ctx, order, refundClass)
   if (opts.confirm !== true) {
@@ -89,7 +94,7 @@ async function refund(opts, ctx) {
   const { refunds } = paymentsLib()
   const recorded = await ctx.rpc('refund_order', { p_order_id: orderId, p_class: refundClass,
     p_request_id: required(opts, 'request', UUID), p_identity_hashes: identity, ...note(),
-    ...(requestedAt ? { p_requested_at: requestedAt } : {}), ...payment })
+    ...(requestedAt ? { p_requested_at: requestedAt } : {}), ...payment }, operatorWrite())
   const pending = refunds.pendingRefund.safeParse(recorded)
   if (!pending.success) return { refund: recorded }
   return { refund: recorded, settlement: await refunds.settleRefund({ rpc: ctx.rpc, providerFor: providers(ctx) },
@@ -105,6 +110,8 @@ async function refundRetry(opts, ctx) {
   const order = await readOrderRecord(ctx.rpc, orderId)
   const paymentId = plan.state === 'resend' ? plan.refund.payment_id ?? null
     : plan.state === 'renew' ? plan.failed.paymentId : null
+  if (plan.state === 'resend') refunds.checkRefundMethod(plan.refund.refund_class, plan.refund.method)
+  if (plan.state === 'renew') refunds.checkRefundMethod(plan.failed.refundClass, plan.failed.method)
   const manual = manualSettlement(opts, order, paymentId)
   const settle = pending => refunds.settleRefund(deps, pending, { manual, actor: note().p_actor, reason: note().p_reason })
   if (plan.state === 'resend') return { retried: 'resend', settlement: await settle(plan.refund) }
@@ -113,7 +120,7 @@ async function refundRetry(opts, ctx) {
   // Same class, payment and time the student first asked; a stable request id, so repeating this replays it.
   const recorded = await ctx.rpc('refund_order', { p_order_id: orderId, p_class: plan.failed.refundClass,
     p_request_id: plan.failed.requestId, p_identity_hashes: identity, ...note(), p_requested_at: plan.failed.requestedAt,
-    p_payment_id: plan.failed.paymentId })
+    p_payment_id: plan.failed.paymentId }, operatorWrite())
   const pending = refunds.pendingRefund.safeParse(recorded)
   return pending.success ? { retried: 'renew', refund: recorded, settlement: await settle(pending.data) } : { refund: recorded }
 }

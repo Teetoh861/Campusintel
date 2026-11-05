@@ -26,7 +26,7 @@ export type RouteDeps = {
 
 const FORM_MAX_BYTES = 2048
 const MIN_CRON_SECRET_BYTES = 32
-const RECONCILE_BUDGET_MS = 50_000
+const RECONCILE_BUDGET_MS = 40_000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // The same rule the database applies (payment_return_path_ok), checked first so a bad path is a refusal, not an error.
 const RETURN_PATH = /^(?!.*\/\/)(?!.*\\)(?![^?#]*:)\/[^\s\u0000-\u001f\u007f]{0,199}$/
