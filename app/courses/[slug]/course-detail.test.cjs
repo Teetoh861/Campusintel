@@ -108,7 +108,9 @@ async function fixture(run) {
       const gated = await page({ params: Promise.resolve({ slug }) })
       assert.equal(gated.type, StudentAccessGate)
       assert.equal(gated.props.returnPath, `/courses/${slug}`)
-      return gated.props.children.type(gated.props.children.props)
+      // The gate hands the page a continuity token for its background requests (opened notes topics).
+      const child = gated.props.children('page-token')
+      return child.type(child.props)
     }
     const html = async slug => renderToStaticMarkup(await granted(slug))
     await run({ state, calls, granted, html, loading })
@@ -184,6 +186,8 @@ test('notes render plain, topic and calculator payloads with formulas and exampl
   assert.ok(html.includes(EXAMPLE.replace(/₦/g, '₦')), 'example text untouched')
   assert.match(html, /x² \+ y²/)
   assert.doesNotMatch(html, /\\\(|\\frac|katex/)
+  // Each note is identified for the opened-topic tracker (plan use), by its item id only.
+  assert.equal((html.match(/<article class="student-surface student-detail-note" data-note-item="n[123]">/g) ?? []).length, 3)
   assert.match(html, /Published overview body\.\nSecond paragraph\./)
   assert.match(html, /Chapter one|Focus area|Remember this/)
   assert.match(html, /Q1<\/span>/)

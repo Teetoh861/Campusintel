@@ -3,13 +3,13 @@
 import 'server-only'
 import { createAnthropicProvider } from './anthropic'
 import { PRICED_ANTHROPIC_MODELS } from './pricing'
+import { MAX_PROVIDER_TIMEOUT_MS } from './lifetime'
 import type { QuestionGenerationProvider } from './provider'
 
 // Sonnet 5.5 is the launch model; Opus 5.5 stays selectable through AI_PRACTICE_ANTHROPIC_MODEL for evaluation.
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-5-5'
 const DEFAULT_TIMEOUT_MS = 90_000
 const MIN_TIMEOUT_MS = 10_000
-const MAX_TIMEOUT_MS = 120_000
 
 export type AiPracticeConfig =
   | { status: 'enabled'; provider: 'anthropic'; model: string; timeoutMs: number; apiKey: string }
@@ -19,7 +19,7 @@ type Env = Readonly<Record<string, string | undefined>>
 
 function timeoutFrom(value: string | undefined): number {
   if (value === undefined || !/^\d+$/.test(value)) return DEFAULT_TIMEOUT_MS
-  return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Number(value)))
+  return Math.min(MAX_PROVIDER_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Number(value)))
 }
 
 /**

@@ -104,7 +104,7 @@ const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator tr
 
 /** One published note, rendered the same wherever a student may read it. */
 export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
-  return <article className="student-surface student-detail-note">
+  return <article className="student-surface student-detail-note" data-note-item={note.itemId}>
     {'noteType' in note && <p className="student-detail-kicker">{NOTE_KICKER[note.noteType]}</p>}
     <h3>{note.title}</h3>
     <NoteBody note={note} />

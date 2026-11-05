@@ -19,6 +19,7 @@ const publishedRow = z.object({
   parent_item_id: z.string().uuid().nullable(),
   revision: z.number().int().positive(),
   payload: z.record(z.unknown()),
+  feedback_available: z.boolean().optional(),
 }).strict()
 
 export type PublishedManagedContent = z.infer<typeof publishedRow>
@@ -99,6 +100,12 @@ export async function getPublishedManagedCourse(
   } catch {
     return { status: 'unavailable' }
   }
+}
+
+/** Validate published row identities and payload envelopes, including protected theory-reveal results. */
+export function parsePublishedContentRows(input: unknown): PublishedManagedContent[] | null {
+  const parsed = publishedRow.array().safeParse(input)
+  return parsed.success ? parsed.data : null
 }
 
 const bankSizeRow = z.object({ course_id: z.string().uuid(), bank_size: z.number().int().nonnegative() }).strict()

@@ -109,7 +109,7 @@ export function createAnthropicProvider(options: AnthropicProviderOptions): Ques
       let message: Anthropic.Message
       try {
         message = await messages().messages.create({
-          model: options.model,
+          model: request.model ?? options.model,
           max_tokens: request.maxOutputTokens,
           system: request.system,
           messages: [{ role: 'user', content: request.user }],

@@ -27,7 +27,8 @@
 //   node scripts/entitlements/ops.cjs selection-status | selection-change | calendar | term-set | term-extend ...
 //       A student's course selection and the semester calendar: see scripts/entitlements/course-selection.cjs.
 //   node scripts/entitlements/ops.cjs payment-status | payments-health | open-sales | close-sales | campus-bot-model |
-//       campus-bot-cap | payment-verify | payment-fulfil | refund | refund-retry | reconcile-now ...
+//       campus-bot-cap | campus-bot-writer | campus-bot-refill | ai-limits | payment-verify | payment-fulfil | refund | refund-retry |
+//       reconcile-now ...
 //       Plan payments: see scripts/entitlements/payments.cjs and docs/payments-operations.md.
 const fs = require('node:fs')
 const { courseSelectionCall } = require('./course-selection.cjs')
@@ -50,7 +51,7 @@ function options(args) {
     const arg = args[index]
     if (!arg.startsWith('--')) { parsed._.push(arg); continue }
     const name = arg.slice(2)
-    if (['dry-run', 'confirm-public-launch', 'allow-empty', 'confirm', 'destination-confirmed'].includes(name)) { parsed[name] = true; continue }
+    if (['dry-run', 'confirm-public-launch', 'allow-empty', 'confirm', 'destination-confirmed', 'everyone'].includes(name)) { parsed[name] = true; continue }
     const value = args[index + 1]
     if (value === undefined || value.startsWith('--')) throw new Error(`--${name} needs a value`)
     parsed[name] = value

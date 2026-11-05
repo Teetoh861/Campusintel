@@ -5,7 +5,7 @@ import { authoredRubricPoints } from './rubric'
 import type { PublishedManagedContent } from '@/lib/managed-content/published'
 import type { TheoryFeedback, TheoryQuestion } from './contract'
 
-export type TheoryMaterial = { question: TheoryQuestion; feedback: TheoryFeedback | null }
+export type TheoryMaterial = { question: TheoryQuestion; feedbackAvailable: boolean; feedback: TheoryFeedback | null }
 
 /** Project only published RPC rows. The database owns the dependent theory-revision binding. */
 export function projectTheoryPractice(rows: ReadonlyArray<PublishedManagedContent>): TheoryMaterial[] | null {
@@ -20,7 +20,7 @@ export function projectTheoryPractice(rows: ReadonlyArray<PublishedManagedConten
     const answers = dependents.filter(row => row.kind === 'model_answer')
     const rubrics = dependents.filter(row => row.kind === 'rubric')
     if (answers.length > 1 || rubrics.length > 1) return null
-    if (answers.length === 0) { materials.push({ question, feedback: null }); continue }
+    if (answers.length === 0) { materials.push({ question, feedbackAvailable: source.feedback_available === true, feedback: null }); continue }
     const answer = answers[0]!
     const rubric = rubrics[0]
     const body = rubric?.payload.body
@@ -31,7 +31,7 @@ export function projectTheoryPractice(rows: ReadonlyArray<PublishedManagedConten
         : null,
     })
     if (!parsed.success) return null
-    materials.push({ question: parsed.data.question, feedback: parsed.data })
+    materials.push({ question: parsed.data.question, feedbackAvailable: true, feedback: parsed.data })
   }
   return materials
 }

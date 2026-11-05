@@ -9,6 +9,7 @@ import type { ExtractionResult } from './extract'
 import { EMPTY_PROVIDER_DIAGNOSTIC } from './provider'
 import type { ProviderDiagnostic, ProviderErrorCode, QuestionGenerationProvider } from './provider'
 import { generatePracticeSet } from './service'
+import type { GenerationLimits } from './service'
 import { prepareSource } from './source'
 import { toPersonalSetView, toStoredSet } from './stored-set'
 import { mediaTypeForFileName } from './upload-contract'
@@ -34,10 +35,10 @@ export type GenerationRecord = {
 }
 
 export type BeginResult =
-  | { state: 'started'; generationId: string }
+  | { state: 'started'; generationId: string; limits?: GenerationLimits }
   | { state: 'existing'; generationId: string }
   | { state: 'busy' | 'capacity' | 'document-unavailable' | 'request-conflict' | 'not-entitled' | 'allowance-exhausted'
-      | 'allowance-expired' | 'signed-out' }
+      | 'allowance-expired' | 'signed-out' | 'session-limit' | 'week-limit' | 'undelivered-limit' }
 
 export type ReserveResult =
   | { status: 'created'; documentId: string; storagePath: string }
@@ -235,13 +236,17 @@ async function generate(env: AiPracticeEnv, command: Extract<AiPracticeCommand, 
   if (begun.state === 'document-unavailable') return { status: 'not-found' }
   if (begun.state === 'busy' || begun.state === 'capacity' || begun.state === 'not-entitled' ||
     begun.state === 'signed-out') return { status: begun.state }
+  // Campus Bot limits (session, week, undelivered tries) read as an exhausted allowance until part 3 names each one.
+  if (begun.state === 'session-limit' || begun.state === 'week-limit' || begun.state === 'undelivered-limit') {
+    return { status: 'allowance-exhausted', allowance: await env.allowance() }
+  }
   if (begun.state !== 'started') return { status: begun.state, allowance: await env.allowance() }
 
   const outcome = await generatePracticeSet({
     course: { courseId: course.course.institutionalCourseId, code: course.course.code, title: course.course.title },
     source: { documentId: document.id, fileName: document.fileName, extractedText: document.sourceText },
     questionCount: AI_PRACTICE_LIMITS.questionsPerRequest,
-  }, { provider: env.provider, timeoutMs: env.timeoutMs })
+  }, { provider: env.provider, timeoutMs: env.timeoutMs, limits: begun.limits ?? null })
   if (outcome.status === 'failed' && outcome.providerError) {
     env.reportProviderProblem(outcome.providerError, outcome.providerDiagnostic ?? EMPTY_PROVIDER_DIAGNOSTIC)
   }

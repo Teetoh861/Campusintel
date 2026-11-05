@@ -115,12 +115,70 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | `reconcile-now` | A bounded reconcile run now. Asks Bachs. |
 | `campus-bot-model --model <name> --weight <n> --actor --reason` | A model's price weight (Haiku = 1). Pending owner approval. |
 | `campus-bot-cap --step writing\|check [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. |
+| `campus-bot-writer --model <name> --actor --reason` | The model that writes Campus Bot sets (Haiku at launch). Each request records the model and weights it is charged at, so a change applies to new sets only. |
+| `campus-bot-refill --user <uuid> --actor --reason` | Gives one student fresh Campus Bot limits: new session and week windows start at their next request. Nothing is deleted. |
+| `campus-bot-refill --everyone --confirm --actor --reason` | The same for every student. |
+| `ai-limits [--daily <n>] [--paid-reserve <n>] [--undelivered-per-day <n>] --actor --reason` | The platform's AI sets per UTC day (500 at launch; raise it as paying students grow), how many of them only paying students may use (150), and each student's undelivered tries per day (10). Unnamed settings stay as they are. |
 
 `--requested-at` is when the student asked (default now). It must lie between the payment and now. The 48-hour window
 is judged at that time; use is counted from the payment until the refund is processed, so use after asking counts.
 
 There is no manual-evidence fulfilment, by decision: a plan is granted only on a payment Bachs confirms.
 `payment-fulfil --manual-evidence` is refused.
+
+## Campus Bot limits
+
+Paid plans and Early Access fund Campus Bot sets by tokens, not by a number of sets. A paid plan funds only during the
+semester it is bound to (never in the slack after it, and a Session plan's second half only in the Second Semester).
+Early Access members get Standard limits during their free month. With a paid plan, the higher limits apply and are
+never added together: paid Plus wins over Early Access Standard; equal Standard tiers keep Early Access funding.
+An account with an active paid grant can use the paid platform reserve even when Early Access funds the request.
+Early Access alone is unpaid for that reserve. A Discovery Pass keeps its one set, and an older seven-day trial its sets.
+
+- **Limits**: a session (5 hours from the student's first request) and a week (7 days from the first request of that
+  week), per tier in `campus_bot_tiers`. Changing a tier applies to everyone at once; a reset time a student has
+  already seen never moves.
+- **Cost**: tokens from the provider's own report, every prompt token as read plus 5 x every written token, times the
+  model's weight (Haiku = 1). Only a delivered set is charged; failures, timeouts, flagged or unusable results cost
+  nothing. A set starts only if both limits cover its worst case (60,000 for Haiku), and a started set always finishes,
+  even if that takes a limit below zero. The hard source cap is 60,000 characters; `read_tokens_max` is the
+  reservation estimate, not an input-token rejection limit. A rare overrun is delivered and charged from the actual
+  usage report, and can leave a window below zero.
+- **Platform**: 500 sets a day across all students, of which the last 150 are kept for paying students; each student
+  may have 10 undelivered tries a day (`ai-limits` changes all three).
+- **Support**: a student out of tokens can be refilled with `campus-bot-refill --user <uuid>`; it starts fresh windows
+  at their next request and deletes nothing. Each admission reads the latest applicable refill once and uses that
+  same snapshot for both windows; a refill committed afterwards applies to the next admission. A set that finishes
+  after the student's access ended is kept and charged.
+
+Admission and `ai-limits` updates take the same platform lock; an admission re-reads the policy after acquiring it,
+so a queued start observes a committed daily stop. Every admission timestamp (usage reservation, generation and any
+new windows) uses the final wall clock after lock waits, including waits across UTC midnight.
+
+**Abandonment.** The database enforces `reservation_minutes >= 5`. The server bounds admission to 15 seconds,
+the provider call (including its retry) to at most 120 seconds, and settlement to 30 seconds. The reservation exceeds
+even admission plus two maximum provider calls plus settlement: 15 + 2 x 120 + 30 = 285 seconds < 300 seconds.
+Transport cancellation and a server deadline both apply, and the server refuses an admission response with an unsafe
+reservation lifetime before calling the provider. Keep this inequality when changing any timeout or adding a check step.
+An abandoned result is still discarded and charged 0, including a reply arriving after abandonment; its reservation
+and token-request row are released at 0. A live server finishes or times out before abandonment can run.
+
+## Plan use for refunds
+
+The standard refund rules count use from the payment until the refund is processed. Exams started and practice answers
+come from the attempt tables. The rest is recorded as it happens, once per order, course and item: a notes topic the
+student opens, a theory answer revealed (recorded before
+the answer is shown; if it cannot be recorded, the answer is not shown), and a Campus Bot set delivered. GST courses
+are never counted. `refund` dry runs show every count. Ordinary student published-content reads return theory
+prompts and feedback availability, with no model answers or rubrics. The theory route gets feedback through the
+service-only `reveal_theory_feedback` RPC, which rechecks the published revision and course access and records
+`record_plan_use` in the same transaction before returning any answer. A set requested before a payment does not
+count toward that payment's refund, even if delivered after the payment.
+
+A notes topic counts as opened only once it has been on screen for 30 seconds in one visit to the course page. On
+screen means 60% of the note in view, or the note filling at least 60% of the screen (so long topics on a phone count
+too). The time adds up while the student stays on the page, and nothing counts while the tab is hidden. Scrolling past a topic never counts. Each topic is sent at most once per visit (one background request, which
+the page does not wait for) and recorded at most once per order.
 
 ## Support playbook
 

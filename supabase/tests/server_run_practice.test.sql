@@ -148,7 +148,7 @@ update public.profiles set role = 'operator' where id = pg_temp.u(6);
 create temporary table published_other on commit drop as
 select i.course_id, count(*)::integer n from public.managed_content_items i
 join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
-where i.published_revision is not null and i.kind <> 'cbt_question'
+where i.published_revision is not null and i.kind not in ('cbt_question','model_answer','rubric')
   and (i.parent_item_id is null or exists (select 1 from public.managed_content_items parent
     where parent.id = i.parent_item_id and parent.published_revision = i.published_parent_revision))
 group by i.course_id;
@@ -163,9 +163,11 @@ select is((select count(*)::integer from public.read_published_managed_content(p
   where kind = 'cbt_question'), 0, 'a student with access receives no CBT question from the content read');
 select is((select count(*)::integer from public.read_published_managed_content(pg_temp.c('07'))),
   (select n from published_other where course_id = pg_temp.c('07')),
-  'and still receives every other published item of the course: overview, notes, theory and model answers');
+  'and still receives every published overview, note and theory prompt');
 select ok((select count(*) from public.read_published_managed_content(pg_temp.c('07'))
-  where kind in ('theory_question', 'model_answer')) > 0, 'theory and its model answers stay in the content read (D8)');
+  where kind='theory_question') > 0, 'theory prompts stay in the student content read');
+select is((select count(*)::integer from public.read_published_managed_content(pg_temp.c('07'))
+  where kind in ('model_answer','rubric')),0,'theory feedback is withheld from the general student content read');
 select is((select jsonb_object_agg(right(course_id::text, 2), bank_size) from public.published_cbt_summary(
     array[pg_temp.c('07'), pg_temp.c('01'), pg_temp.c('08'), pg_temp.c('07')])),
   '{"01":50,"07":150,"08":100}'::jsonb, 'the summary counts each listed course once');

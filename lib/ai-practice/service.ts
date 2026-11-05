@@ -2,9 +2,10 @@
 import 'server-only'
 import { AI_PRACTICE_LIMITS, AI_PRACTICE_PROMPT_VERSION, generationRequestSchema } from './contract'
 import type { FailureReason, GenerationOutcome, UsageReport } from './contract'
-import { estimateCostUsd } from './pricing'
+import { estimateCostUsd, PRICED_ANTHROPIC_MODELS } from './pricing'
 import { buildGenerationPrompt } from './prompt'
 import { ProviderError } from './provider'
+import { AiDeadlineError, withAiDeadline } from './lifetime'
 import type { ProviderErrorCode, ProviderResponse, QuestionGenerationProvider } from './provider'
 import { prepareSource } from './source'
 import { modelOutputSchema, validateQuestions } from './validate'
@@ -13,8 +14,13 @@ export type GenerationDependencies = {
   provider: QuestionGenerationProvider | null
   /** Whole-call deadline, retries included. */
   timeoutMs: number
+  /** The model and written-token cap the database reserved this set for (token-funded sets). The set is charged by
+   *  the provider's own usage report at the weights recorded with it, so the request must use exactly these. */
+  limits?: GenerationLimits | null
   now?: () => number
 }
+
+export type GenerationLimits = { model: string; maxOutputTokens: number }
 
 // Students see only these three plain reasons. Key, permission, billing, model and request problems are
 // operator problems and read as an ordinary outage; the precise class goes to the private diagnostic.
@@ -55,15 +61,23 @@ export async function generatePracticeSet(input: unknown, deps: GenerationDepend
   const provider = deps.provider
   if (!provider) return { status: 'failed', reason: 'not-configured', usage: null }
 
+  const limits = deps.limits ?? null
+  // A reserved model this build cannot price is never called: the reservation is released (failed costs nothing).
+  if (limits !== null && !PRICED_ANTHROPIC_MODELS.includes(limits.model)) {
+    return { status: 'failed', reason: 'not-configured', usage: null }
+  }
+
   const source = prepared.source
   const prompt = buildGenerationPrompt(request.course, source.passages, request.questionCount)
   const started = now()
   let response: ProviderResponse
   try {
-    response = await provider.generate({ ...prompt, maxOutputTokens: AI_PRACTICE_LIMITS.maxOutputTokens,
-      signal: AbortSignal.timeout(deps.timeoutMs) })
+    response = await withAiDeadline(signal => provider.generate({ ...prompt,
+      maxOutputTokens: limits?.maxOutputTokens ?? AI_PRACTICE_LIMITS.maxOutputTokens,
+      ...(limits !== null ? { model: limits.model } : {}), signal }), deps.timeoutMs)
   } catch (error) {
-    const failure = error instanceof ProviderError ? error : new ProviderError('internal')
+    const failure = error instanceof ProviderError ? error
+      : new ProviderError(error instanceof AiDeadlineError ? 'timeout' : 'internal')
     return { status: 'failed', reason: PROVIDER_FAILURES[failure.code], usage: null, providerError: failure.code,
       providerDiagnostic: failure.diagnostic }
   }

@@ -25,6 +25,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
+import { NoteUseTracker } from './NoteUseTracker'
 import { COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
   StudyNav, TheorySection, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
@@ -45,11 +46,13 @@ const BOOKMARK_CATALOG = courses.map(({ slug, code, contentKey }) => ({ slug, co
 /** Cross the student account boundary before any course content is read. */
 export default async function CourseDetailPage({ params }: PageProps): Promise<ReactElement> {
   const { slug } = await params
-  return <StudentAccessGate returnPath={`/courses/${slug}`}><CourseDetail slug={slug} /></StudentAccessGate>
+  return <StudentAccessGate returnPath={`/courses/${slug}`}>
+    {continuityToken => <CourseDetail slug={slug} continuityToken={continuityToken} />}
+  </StudentAccessGate>
 }
 
 /** Resolve the one-course truth on a fresh request-scoped client after the gate. */
-async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
+async function CourseDetail({ slug, continuityToken }: { slug: string; continuityToken: string }): Promise<ReactElement> {
   let result: StudentCourseLookupResult
   // Read only for a locked course that is offered now: an active Discovery Pass offers previews in place of the locked
   // notice. Repository-only and retired courses have no previews.
@@ -75,7 +78,8 @@ async function CourseDetail({ slug }: { slug: string }): Promise<ReactElement> {
     }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'ok' || result.status === 'repository-only') {
-    return <CourseStudyHub result={result} pass={pass} passOffered={passOffered} topics={topics} />
+    return <CourseStudyHub result={result} pass={pass} passOffered={passOffered} topics={topics}
+      continuityToken={continuityToken} />
   }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
@@ -113,8 +117,9 @@ function RequestMaterialLink({ href, prominent = false }: { href: string; promin
 }
 
 /** Compose institutional or repository identity, availability and the study families from central truth. */
-function CourseStudyHub({ result, pass, passOffered, topics }: {
+function CourseStudyHub({ result, pass, passOffered, topics, continuityToken }: {
   result: ResolvedCourse; pass: DiscoveryPass | null; passOffered: boolean; topics: ReadonlyArray<PracticeTopicRow>
+  continuityToken: string
 }): ReactElement {
   const { learning, practice } = result
   const { repository, content } = result.course
@@ -156,7 +161,10 @@ function CourseStudyHub({ result, pass, passOffered, topics }: {
         action={<RequestMaterialLink href={materialsHref} prominent />}>
         Notes, CBT practice and theory questions are not available for this course. You can request study material below.
       </Notice>}
-      {sections.includes('notes') && learning && <NotesSection notes={learning.notes} number={number('notes')} />}
+      {sections.includes('notes') && learning && <>
+        <NotesSection notes={learning.notes} number={number('notes')} />
+        <NoteUseTracker courseSlug={route.slug} continuityToken={continuityToken} />
+      </>}
       {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} topics={topics} number={number('cbtPractice')} />}
       {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
         practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}

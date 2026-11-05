@@ -135,9 +135,9 @@ select ok(exists(select 1 from pg_indexes where indexname=i),'unique key exists:
 -- ---------------------------------------------------------------------------
 select is((select jsonb_agg(jsonb_build_array(plan_key,tier,period,price_kobo,currency,ai_sets_per_term,active)
   order by plan_key) from private.plan_catalogue),
-  '[["plus_semester","plus","semester",600000,"NGN",10,true],["plus_session","plus","session",1100000,"NGN",10,true],
-    ["standard_semester","standard","semester",400000,"NGN",10,true],["standard_session","standard","session",700000,"NGN",10,true]]'::jsonb,
-  'catalogue defaults: four plans, tier and period separate');
+  '[["plus_semester","plus","semester",600000,"NGN",0,true],["plus_session","plus","session",1100000,"NGN",0,true],
+    ["standard_semester","standard","semester",400000,"NGN",0,true],["standard_session","standard","session",700000,"NGN",0,true]]'::jsonb,
+  'catalogue defaults: four plans, tier and period separate (no per-semester set count since part 2b)');
 select is((select jsonb_agg(jsonb_build_array(tier,session_hours,session_tokens,week_days,week_tokens,written_token_weight)
   order by tier) from private.campus_bot_tiers),
   '[["plus",5,700000,7,1400000,5],["standard",5,350000,7,700000,5]]'::jsonb,
@@ -176,7 +176,7 @@ select is(pg_temp.oid(pg_temp.buy(1,'standard_semester',pg_temp.req(3))),(select
 select is((select count(*)::int from private.payment_orders where user_id=pg_temp.u(1)),1,'still one order');
 select is((select jsonb_build_array(amount_kobo,currency,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens,status,return_path,
   expires_at>created_at+interval '59 minutes' and expires_at<=created_at+interval '60 minutes')
-  from private.payment_orders where user_id=pg_temp.u(1)),'[400000,"NGN",10,350000,700000,"created","/access",true]'::jsonb,
+  from private.payment_orders where user_id=pg_temp.u(1)),'[400000,"NGN",0,350000,700000,"created","/access",true]'::jsonb,
   'price, allowances, path and a 60-minute expiry are copied onto the order');
 select is(pg_temp.attach((select pg_temp.oid(a) from t1))->>'state','pending','checkout attached');
 select is(pg_temp.attach((select pg_temp.oid(a) from t1))->>'state','unchanged','same checkout again is unchanged');
@@ -190,8 +190,8 @@ select is((select jsonb_build_array(g.source,g.paid_plan,g.plan_part,g.ai_terms,
   g.campus_bot_session_tokens,g.campus_bot_week_tokens,
   g.course_term_id=(select id from private.academic_terms where session_label='2026/2027'),g.starts_at<=clock_timestamp())
   from public.entitlement_grants g where g.user_id=pg_temp.u(1)),
-  '["paid","standard_semester",1,"capped",10,"standard",350000,700000,true,true]'::jsonb,
-  'one Semester grant bound to the bought semester, with 10 AI sets and the standard Campus Bot budget');
+  '["paid","standard_semester",1,"capped",0,"standard",350000,700000,true,true]'::jsonb,
+  'one Semester grant bound to the bought semester, with the standard Campus Bot budget and no set count');
 select is(pg_temp.allowed(1,'BUA201'),true,'own course opens');
 select is(pg_temp.allowed(1,'BUA202'),false,'outside course stays closed');
 select is(private.course_selection_state(pg_temp.u(1))->>'state','locked','paying locks the courses');
@@ -337,7 +337,7 @@ select is(pg_temp.grants((select id from o20)),2,'two grants');
 select is((select jsonb_build_array(g.course_term_id is null,g.term_session_label,
   g.term_period_id='30000000-0000-4000-8000-000000000002',g.starts_at>clock_timestamp(),g.ai_units,g.campus_bot_week_tokens)
   from public.entitlement_grants g where order_id=(select id from o20) and plan_part=2),
-  '[true,"2026/2027",true,true,10,700000]'::jsonb,'second half pending, keyed to Second Semester 2026/2027, not started');
+  '[true,"2026/2027",true,true,0,700000]'::jsonb,'second half pending, keyed to Second Semester 2026/2027, not started');
 select is((select g2.starts_at from public.entitlement_grants g2 where order_id=(select id from o20) and plan_part=2),
   (select private.grant_effective_end(g1) from public.entitlement_grants g1 where order_id=(select id from o20) and plan_part=1),
   'the second half starts where the first ends');
@@ -543,7 +543,9 @@ select is((select count(*)::int from private.entitlement_events e join public.en
 -- ---------------------------------------------------------------------------
 -- Must-hold 4: settings changes never touch existing rows.
 -- ---------------------------------------------------------------------------
-select is(public.admin_set_plan('standard_semester',450000,6,null,'Ops','price test')->>'state','changed','price changed');
+select is(public.admin_set_plan('standard_semester',450000,null,null,'Ops','price test')->>'state','changed','price changed');
+select throws_ok($$select public.admin_set_plan('standard_semester',null,6,null,'Ops','sets test')$$,'23514',null,
+  'the per-semester set count is retired');
 select is(public.admin_set_campus_bot_tier('standard',null,50000,null,130000,null,'Ops','budget test')->>'state','changed',
   'Campus Bot budget changed');
 select is(jsonb_build_array(public.admin_set_campus_bot_model('sonnet',15,'Ops','weight test')->'model'->'price_weight',
@@ -553,16 +555,16 @@ select is(jsonb_build_array(public.admin_set_campus_bot_model('sonnet',15,'Ops',
 select public.admin_set_campus_bot_model('sonnet',20,'Ops','restore');
 select public.admin_set_campus_bot_request_cap('check',3000,1500,'Ops','restore');
 select is((select jsonb_build_array(amount_kobo,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens)
-  from private.payment_orders where id=(select pg_temp.oid(a) from t1)),'[400000,10,350000,700000]','existing order keeps its price and allowances');
+  from private.payment_orders where id=(select pg_temp.oid(a) from t1)),'[400000,0,350000,700000]','existing order keeps its price and allowances');
 select is((select jsonb_build_array(ai_units,campus_bot_session_tokens,campus_bot_week_tokens) from public.entitlement_grants
-  where order_id=(select pg_temp.oid(a) from t1)),'[10,350000,700000]','existing grant keeps its allowances');
+  where order_id=(select pg_temp.oid(a) from t1)),'[0,350000,700000]','existing grant keeps its allowances');
 select pg_temp.student(40);
 create temporary table o40 as select pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400))) id;
 select is((select jsonb_build_array(amount_kobo,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens) from private.payment_orders
-  where id=(select id from o40)),'[450000,6,50000,130000]','a new order takes the new values');
+  where id=(select id from o40)),'[450000,0,50000,130000]','a new order takes the new values');
 select is(pg_temp.pay(pg_temp.oid(pg_temp.buy(40,'standard_semester',pg_temp.req(400))),'ch_newprice',400000)->>'outcome','amount-mismatch',
   'and must be paid at its own price');
-select public.admin_set_plan('standard_semester',400000,10,null,'Ops','restore');
+select public.admin_set_plan('standard_semester',400000,null,null,'Ops','restore');
 select public.admin_set_campus_bot_tier('standard',null,350000,null,700000,null,'Ops','restore');
 -- A plus plan copies the plus price and budget.
 select pg_temp.student(41);
