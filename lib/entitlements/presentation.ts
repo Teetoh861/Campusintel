@@ -251,24 +251,36 @@ export const CAMPUS_BOT_LIMIT_COPY = {
   undelivered: 'Campus Bot couldn’t finish your last few sets. Try again tomorrow.',
 } as const
 
+/** The Payment terms page, word for word as the owner approved it (2026-11-05). Prices are the launch catalogue
+ *  (20261102190000_payments.sql); a price change needs this table and the catalogue changed together.
+ *  Each "message us" in a body line becomes the app's message-us link. */
 export const TERMS_COPY = {
   title: 'Payment terms',
-  // PENDING OWNER APPROVAL (part 3): the full refund rule in plain words.
+  table: {
+    columns: ['Semester', 'Session (both semesters)'],
+    rows: [{ plan: 'Standard', semesterKobo: 400000, sessionKobo: 700000 }, { plan: 'Plus', semesterKobo: 600000, sessionKobo: 1100000 }],
+  },
+  intro: 'Both plans include all your department courses for your level, with notes, practice questions and Campus Bot. ' +
+    'Plus gives you twice as much Campus Bot. GST courses are always free.',
   sections: [
-    { heading: 'Refunds within 48 hours', body: [
-      'You can ask for a refund within 48 hours of paying, as long as you haven’t used your plan.',
-      'Using your plan means any of these: you received a Campus Bot set, started an exam, answered more than 10 ' +
-        'practice questions, or opened more than 3 notes topics. GST courses never count.',
-    ] },
-    { heading: 'Our mistakes and double payments', body: [
-      'If you paid twice for the same plan, or something went wrong on our side, we refund you at any time.',
-    ] },
-    { heading: 'How refunds are paid', body: [
-      'Refunds go back to the card or account that paid.', 'Card refunds take 5–7 working days to reach you.',
-    ] },
-    { heading: 'Asking for a refund', body: [
-      'Message us. Please don’t use your plan while we process your request.',
-    ] },
+    { heading: 'Paying', body: 'Pay once by card or bank transfer. Your plan doesn’t renew on its own, so you’re only charged ' +
+      'when you buy. Bachs handles payments for us, and we never see your card details.' },
+    { heading: 'When your plan starts', body: 'Your plan starts as soon as your payment is confirmed. If it hasn’t started ' +
+      '30 minutes after you’ve paid, message us with your payment reference.' },
+    { heading: 'How long it lasts', body: 'A Semester plan lasts until the semester ends, and a Session plan until the ' +
+      'session ends. With a Session plan, your First Semester courses stay open all session. You’ll find your end date on ' +
+      'Plan & Access.' },
+    { heading: 'Your courses', body: 'Your plan is for the department, level and semester you confirm before paying. To ' +
+      'change them or add a carry-over course, message us.' },
+    { heading: 'Campus Bot', body: 'Campus Bot has a 5-hour limit and a weekly limit. Your usage bar shows what’s left and ' +
+      'when it resets.' },
+    { heading: 'Your account', body: 'Your plan is just for you, and you can be signed in on one device at a time.' },
+    { heading: 'Refunds', body: 'Changed your mind? You can get a full refund within 48 hours of paying, as long as you ' +
+      'haven’t used Campus Bot or a large part of your plan. Just message us, and please don’t use your plan while we ' +
+      'process it. Refunds go back to the card or account you paid with, and your plan ends once the refund is made.' },
+    { heading: 'Wrong amount', body: 'Paid too much? Your plan starts and we refund the extra. Paid too little? It’s ' +
+      'refunded in full.' },
+    { heading: 'Changes', body: 'Prices may change for future plans. A plan you’ve already paid for keeps its price and end date.' },
   ],
 } as const
 

@@ -93,10 +93,9 @@ export function ResultsScreen(props: Props): ReactElement {
           onClick={props.onRetake}>Practise again</button> : null}
         {canStartNew && !wholeBank ? <>
           <button type="button" className={studentAction(btnGhost)} disabled={starting} onClick={props.onRetake}>Retake with new questions</button>
-          <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={starting} onClick={props.onRedo}>Redo these questions</button>
+          <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={starting} onClick={props.onRedo}>Redo the same questions</button>
         </> : null}
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent')}>{PRACTICE_COPY.backToCourse}</Link>
-        {canStartNew && !wholeBank ? <p className="student-practice-help !mt-0">Retake gives you a new set of questions. Redo repeats these questions in the same order.</p> : null}
       </section>
     </div>
   </StudentPage>

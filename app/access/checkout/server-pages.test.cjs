@@ -211,12 +211,13 @@ test('a receipt shows our order\'s plan, amount, date, reference and status; any
   assert.match(text(bad.html), /We couldn’t find that payment/)
 })
 
-test('Payment terms state the whole refund rule in plain words', async () => {
+test('Payment terms state the approved terms in plain words', async () => {
   const words = text((await page('../../payment-terms/page.tsx', undefined, {})).html)
-  for (const line of [/within 48 hours of paying, as long as you haven’t used your plan/,
-    /received a Campus Bot set, started an exam, answered more than 10 practice questions, or opened more than 3 notes topics\. GST courses never count\./,
-    /If you paid twice for the same plan, or something went wrong on our side, we refund you at any time\./,
-    /Refunds go back to the card or account that paid\./, /Card refunds take 5–7 working days/]) {
+  for (const line of [/Standard ₦4,000 ₦7,000 Plus ₦6,000 ₦11,000/,
+    /You can get a full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan\./,
+    /Refunds go back to the card or account you paid with, and your plan ends once the refund is made\./,
+    /Paid too much\? Your plan starts and we refund the extra\. Paid too little\? It’s refunded in full\./,
+    /Prices may change for future plans\. A plan you’ve already paid for keeps its price and end date\./]) {
     assert.match(words, line)
   }
   assert.doesNotMatch(words, /token|order_|status/i)

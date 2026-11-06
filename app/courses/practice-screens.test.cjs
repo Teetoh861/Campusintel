@@ -138,8 +138,8 @@ test('results show the server grading with the locked bands, truthful counts and
   assert.match(text(html), /Correct 7 .*Incorrect 2 .*Unanswered 1/)
   assert.match(html, /Result saved to your account\./)
   assert.doesNotMatch(html, /weakest|Mastered|Revisit|Section [A-Z]\b|history|best score/i)
-  assert.deepEqual(actions(html), ['Review answers', 'Retake with new questions', 'Redo these questions', 'Back to course'])
-  assert.match(html, /Retake gives you a new set of questions\. Redo repeats these questions in the same order\./)
+  assert.deepEqual(actions(html), ['Review answers', 'Retake with new questions', 'Redo the same questions', 'Back to course'])
+  assert.doesNotMatch(html, /Retake gives you|Redo repeats/, 'the buttons name what they do')
   assert.match(html, /href="\/courses\/bua-216"/)
   assert.match(text(html), /3 questions to review/)
   // D4: a bank no larger than the attempt offers one "Practise again".
