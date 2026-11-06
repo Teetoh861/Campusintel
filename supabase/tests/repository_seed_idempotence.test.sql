@@ -52,6 +52,25 @@ select is((select payload->>'examTip' from public.managed_content_revisions
   'Include the formula AND explain what costs are deducted. Give an example.',
   'a corrected tip keeps the rest of its text');
 
+-- A correction target that has gone missing is recreated by the replay with the corrected text, not the seeded one.
+set local session_replication_role = replica;
+delete from public.managed_content_publications where item_id = 'd4c93605-c101-542c-835e-b9fe4f271618';
+delete from public.managed_content_reviews where item_id = 'd4c93605-c101-542c-835e-b9fe4f271618';
+delete from public.managed_content_revisions where item_id = 'd4c93605-c101-542c-835e-b9fe4f271618';
+delete from public.managed_content_items where id = 'd4c93605-c101-542c-835e-b9fe4f271618';
+set local session_replication_role = origin;
+select is((select count(*)::int from public.managed_content_items where id = 'd4c93605-c101-542c-835e-b9fe4f271618'), 0,
+  'the target is missing before the replay');
+select private.replay_repository_content_seed();
+select is((select jsonb_build_array(i.current_revision, i.published_revision, r.payload->>'examTip')
+    from public.managed_content_items i join public.managed_content_revisions r on r.item_id = i.id and r.revision = 1
+    where i.id = 'd4c93605-c101-542c-835e-b9fe4f271618'),
+  '[1,1,"Include the formula AND explain what costs are deducted. Give an example."]'::jsonb,
+  'the replay recreates a missing target with the corrected exam tip');
+select is((select count(*)::int from public.managed_content_revisions
+  where authored_by = '00000000-0000-4000-8000-000000000042' and payload->>'examTip' like '%if time%'), 0,
+  'no exam tip keeps time advice after recreating a target');
+
 select ok(not has_function_privilege('authenticated',
   'private.replay_repository_content_seed()', 'EXECUTE'),
   'browser API roles cannot invoke migration-only seed replay');

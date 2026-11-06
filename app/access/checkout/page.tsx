@@ -65,11 +65,12 @@ async function ConfirmCourses({ plan, status, continuityToken, here }: { plan: P
     <Notice title="Your plan couldn’t be loaded" action={<a href={here} className={studentAction(btnGhost)}>Try again</a>}>
       Please try again in a few minutes.</Notice>
   </StudentPage>
-  if (entitlement.paid !== null || status === 'already-paid') return <StudentPage band={band()}>
+  // Only the server's paid summary decides this. A stale status=already-paid in the address shows checkout as normal.
+  if (entitlement.paid !== null) return <StudentPage band={band()}>
     <Notice tone="info" title={RETURN_COPY.alreadyTitle} action={<Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
       className={studentAction(btnNavy, studentFocusDark)}>Go to my courses</Link>}>
-      {entitlement.paid !== null ? `${paidPlanName(entitlement.paid)} covers your courses${entitlement.paid.first_ends_at
-        ? ` until ${formatAccessLastDay(entitlement.paid.first_ends_at)}` : ''}.` : 'Your plan covers your courses this semester.'}
+      {`${paidPlanName(entitlement.paid)} covers your courses${entitlement.paid.first_ends_at
+        ? ` until ${formatAccessLastDay(entitlement.paid.first_ends_at)}` : ''}.`}
     </Notice>
   </StudentPage>
   if (onSale === null) return <StudentPage band={band()}>
@@ -95,7 +96,7 @@ async function ConfirmCourses({ plan, status, continuityToken, here }: { plan: P
     </Notice>
   </StudentPage>
   const early = entitlement.access?.source === 'early_access' ? entitlement.access.ends_at : null
-  const problem = status === null ? null : CHECKOUT_PROBLEM[status] ?? CHECKOUT_PROBLEM.unavailable!
+  const problem = status === null || status === 'already-paid' ? null : CHECKOUT_PROBLEM[status] ?? CHECKOUT_PROBLEM.unavailable!
   return <StudentPage band={band(lede)}>
     <div className="mx-auto grid w-full max-w-[680px] gap-6">
       {problem !== null && <Notice tone="error" title={problem}>{null}</Notice>}

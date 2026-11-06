@@ -101,6 +101,9 @@ select is(pg_temp.ent(1)->'paid'->>'plan','standard_semester','the paid plan');
 select is(pg_temp.ent(1)->'paid'->>'order_id',(select id::text from o1),'its order');
 select is(pg_temp.ent(1)->'paid'->>'amount_kobo','400000','its amount');
 select is(pg_temp.ent(1)->'paid'->>'term_session_label','2026/2027','its session');
+select is(jsonb_build_array(pg_temp.ent(1)->'paid'->>'period_key',pg_temp.ent(1)->'paid'->>'period_name'),
+  (select jsonb_build_array(ap.key,ap.display_name) from private.payment_orders o join public.academic_periods ap
+    on ap.id=o.term_period_id where o.id=(select id from o1)),'the semester the plan was bought for, by its own name');
 select is(pg_temp.ent(1)->'paid'->'second_starts_at','null'::jsonb,'a Semester plan has no second half');
 select is((pg_temp.ent(1)->'paid'->>'first_ends_at')::timestamptz,(pg_temp.ent(1)->'term'->>'ends_at')::timestamptz,
   'it ends with the semester, not at the stored slack');

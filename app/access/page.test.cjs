@@ -214,6 +214,17 @@ test('a semester plan shows no Second Semester row; a second half that is set sh
   assert.match(strip(await render(set)), /Second Semester Mon, 12 Apr 2027 to Fri, 20 Aug 2027/)
 })
 
+test('a Semester plan bought for the Second Semester is labelled with that semester, not the First', async () => {
+  const second = { ...subscribed, paid: { ...paid, plan: 'plus_semester', tier: 'plus', period: 'semester',
+    period_key: 'second-semester', period_name: 'Second Semester', first_ends_at: '2027-08-20T22:59:59+00:00' } }
+  const text = strip(await render(second))
+  assert.match(text, /Second Semester Until Fri, 20 Aug 2027/)
+  assert.doesNotMatch(text, /First Semester/)
+  const first = { ...subscribed, paid: { ...paid, plan: 'plus_semester', tier: 'plus', period: 'semester',
+    period_key: 'first-semester', period_name: 'First Semester' } }
+  assert.match(strip(await render(first)), /First Semester Until Mon, 8 Mar 2027/)
+})
+
 test('after a refund the free card says so, and the receipt is marked; never "subscribed"', async () => {
   const refunding = { ...onSale, receipts: [{ order_id: ORDER, plan: 'plus_semester', amount_kobo: 600000,
     paid_at: '2026-10-29T10:00:00+00:00', status: 'refund-pending' }] }

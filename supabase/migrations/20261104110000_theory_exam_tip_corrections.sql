@@ -25,8 +25,12 @@ create function private.replay_repository_content_seed()
 returns void language plpgsql security invoker set search_path = '' as $replay$
 declare
   v_undone uuid[] := array[]::uuid[];
+  v_present uuid[];
   v_item uuid;
 begin
+  -- Targets that exist before the replay; any other target the replay creates is new and gets the correction too.
+  select coalesce(array_agg(i.id), array[]::uuid[]) into v_present from public.managed_content_items i
+    where i.id = any (array['d4c93605-c101-542c-835e-b9fe4f271618', '4104a77c-9ab1-5705-8fac-c11370a3fc0d', 'eeffeb74-741b-5268-9148-1976e9af0363']::uuid[]);
   v_item := null;
   update public.managed_content_revisions r
     set payload = jsonb_set(r.payload, '{examTip}', to_jsonb('Include the formula AND explain what costs are deducted. Give an example if time permits.'::text))
@@ -52,15 +56,24 @@ begin
   update public.managed_content_revisions r
     set payload = jsonb_set(r.payload, '{examTip}', to_jsonb('Include the formula AND explain what costs are deducted. Give an example.'::text))
     where r.item_id = 'd4c93605-c101-542c-835e-b9fe4f271618'::uuid and r.revision = 1 and r.authored_by = '00000000-0000-4000-8000-000000000042'::uuid
-      and r.item_id = any (v_undone) and r.payload ->> 'examTip' = 'Include the formula AND explain what costs are deducted. Give an example if time permits.';
+      and r.payload ->> 'examTip' = 'Include the formula AND explain what costs are deducted. Give an example if time permits.'
+      and (r.item_id = any (v_undone) or (r.item_id <> all (v_present) and exists (select 1
+        from public.managed_content_items i where i.id = r.item_id and i.created_by = '00000000-0000-4000-8000-000000000042'::uuid
+          and i.current_revision = 1 and i.published_revision = 1)));
   update public.managed_content_revisions r
     set payload = jsonb_set(r.payload, '{examTip}', to_jsonb('State that capitalization STOPS, expense the interest, and explain the logic. Mention the exception about brief delays.'::text))
     where r.item_id = '4104a77c-9ab1-5705-8fac-c11370a3fc0d'::uuid and r.revision = 1 and r.authored_by = '00000000-0000-4000-8000-000000000042'::uuid
-      and r.item_id = any (v_undone) and r.payload ->> 'examTip' = 'State that capitalization STOPS, expense the interest, and explain the logic. Mention the exception about brief delays if time allows.';
+      and r.payload ->> 'examTip' = 'State that capitalization STOPS, expense the interest, and explain the logic. Mention the exception about brief delays if time allows.'
+      and (r.item_id = any (v_undone) or (r.item_id <> all (v_present) and exists (select 1
+        from public.managed_content_items i where i.id = r.item_id and i.created_by = '00000000-0000-4000-8000-000000000042'::uuid
+          and i.current_revision = 1 and i.published_revision = 1)));
   update public.managed_content_revisions r
     set payload = jsonb_set(r.payload, '{examTip}', to_jsonb('List and explain three clearly. State the direction of the difference (cashbook higher/lower). Mention one or two additional reasons.'::text))
     where r.item_id = 'eeffeb74-741b-5268-9148-1976e9af0363'::uuid and r.revision = 1 and r.authored_by = '00000000-0000-4000-8000-000000000042'::uuid
-      and r.item_id = any (v_undone) and r.payload ->> 'examTip' = 'List and explain three clearly. State the direction of the difference (cashbook higher/lower). Mention one or two additional reasons if time allows.';
+      and r.payload ->> 'examTip' = 'List and explain three clearly. State the direction of the difference (cashbook higher/lower). Mention one or two additional reasons if time allows.'
+      and (r.item_id = any (v_undone) or (r.item_id <> all (v_present) and exists (select 1
+        from public.managed_content_items i where i.id = r.item_id and i.created_by = '00000000-0000-4000-8000-000000000042'::uuid
+          and i.current_revision = 1 and i.published_revision = 1)));
 end;
 $replay$;
 

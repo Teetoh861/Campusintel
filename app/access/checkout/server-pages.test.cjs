@@ -143,7 +143,6 @@ test('already paid, plans closed, a plan not sold now, or a failed read: no form
     term_session_label: '2026/2027' }
   const cases = [
     [{ entitlement: { paid } }, null, /You’re already subscribed Standard · Semester covers your courses until Mon, 8 Mar 2027\./],
-    [{}, 'already-paid', /You’re already subscribed Your plan covers your courses this semester\./],
     [{ entitlement: { plans_on_sale: false, plans: [] } }, null, /Plans aren’t on sale right now\. GST courses stay free\./],
     [{ entitlement: { plans: catalogue.filter(plan => plan.period === 'semester') } }, null,
       /That plan isn’t available right now\. Choose another plan on Plan &amp; Access\./],
@@ -156,6 +155,12 @@ test('already paid, plans closed, a plan not sold now, or a failed read: no form
     assert.match(text(html), line)
     assert.doesNotMatch(html, /checkout-form|₦4,000 a/)
   }
+})
+
+test('status=already-paid in the address without a paid plan on the server shows checkout as normal', async () => {
+  const { html } = await confirm('standard_semester', { entitlement: { paid: null } }, 'already-paid')
+  assert.match(html, /<checkout-form/, 'the student can still pay')
+  assert.doesNotMatch(text(html), /already subscribed|We couldn’t open the payment page/)
 })
 
 test('an unknown plan goes back to Plan & Access; signed out goes to sign-in and returns to this plan', async () => {

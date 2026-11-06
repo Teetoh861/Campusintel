@@ -229,7 +229,8 @@ function seededManifest(manifest) {
 
 /** One correction migration. Live migration-owned rows that still hold the seeded text are corrected; operator edits
  *  are left alone. The committed seed replay compares revision one with the text it seeded, so the replay is wrapped:
- *  it undoes these corrections, runs the earlier replay unchanged, and reapplies them to the same rows. */
+ *  it undoes these corrections, runs the earlier replay unchanged, and reapplies them to the rows it undid and to any
+ *  target the replay created because it was missing. */
 function correctionSql(manifest, migration) {
   const corrections = CORRECTIONS.filter(correction => correction.migration === migration)
   const version = migration.split('_')[0]
@@ -253,7 +254,10 @@ function correctionSql(manifest, migration) {
   lines.push('', `alter function private.replay_repository_content_seed() rename to ${previous};`,
     'create function private.replay_repository_content_seed()',
     "returns void language plpgsql security invoker set search_path = '' as $replay$",
-    'declare', '  v_undone uuid[] := array[]::uuid[];', '  v_item uuid;', 'begin')
+    'declare', '  v_undone uuid[] := array[]::uuid[];', '  v_present uuid[];', '  v_item uuid;', 'begin',
+    '  -- Targets that exist before the replay; any other target the replay creates is new and gets the correction too.',
+    '  select coalesce(array_agg(i.id), array[]::uuid[]) into v_present from public.managed_content_items i',
+    `    where i.id = any (array[${corrections.map(correction => `'${correctedItem(manifest, correction).itemId}'`).join(', ')}]::uuid[]);`)
   for (const correction of corrections) {
     const item = correctedItem(manifest, correction)
     lines.push('  v_item := null;', '  update public.managed_content_revisions r', `    ${set(correction, correction.seeded)}`,
@@ -264,7 +268,12 @@ function correctionSql(manifest, migration) {
   for (const correction of corrections) {
     const item = correctedItem(manifest, correction)
     lines.push('  update public.managed_content_revisions r', `    ${set(correction, correction.corrected)}`,
-      ...owned(item).map(line => '  ' + line), `      and r.item_id = any (v_undone) and r.payload ->> ${field(correction)} = ${sqlLiteral(correction.seeded)};`)
+      ...owned(item).map(line => '  ' + line),
+      `      and r.payload ->> ${field(correction)} = ${sqlLiteral(correction.seeded)}`,
+      // Rows undone above, or a target the replay just created as a live, migration-owned revision one.
+      '      and (r.item_id = any (v_undone) or (r.item_id <> all (v_present) and exists (select 1',
+      `        from public.managed_content_items i where i.id = r.item_id and i.created_by = '${manifest.actor}'::uuid`,
+      '          and i.current_revision = 1 and i.published_revision = 1)));')
   }
   lines.push('end;', '$replay$;', '',
     `revoke all on function private.replay_repository_content_seed(), private.${previous}()`,

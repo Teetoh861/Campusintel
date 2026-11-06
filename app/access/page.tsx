@@ -174,7 +174,7 @@ function Subscribed({ paid }: { paid: PaidPlan }): ReactElement {
       <h3 className="mt-1 text-xl font-bold text-student-text-primary">{paidPlanName(paid)}</h3>
       <dl className="mt-3 grid border-t border-student-border text-sm">
         <div className="flex justify-between gap-3 border-b border-student-border py-3 last:border-b-0">
-          <dt className="text-student-text-secondary">First Semester</dt>
+          <dt className="text-student-text-secondary">{paid.period === 'session' ? 'First Semester' : paid.period_name ?? 'This semester'}</dt>
           <dd className="text-right font-semibold text-student-text-primary">{first}</dd>
         </div>
         {paid.period === 'session' && <div className="flex justify-between gap-3 py-3">

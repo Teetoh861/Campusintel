@@ -27,7 +27,10 @@ const termSummary = z.object({ session_label: z.string().min(1), period_key: z.s
 // The plan our own order says is paid, with its effective dates (capped at each semester's end).
 const paidPlan = z.object({ plan: planKey, tier: z.enum(PLAN_TIERS), period: z.enum(PLAN_PERIODS), order_id: z.string().uuid(),
   amount_kobo: kobo, paid_at: timestamp, first_ends_at: timestamp.nullable(), second_starts_at: timestamp.nullable(),
-  second_ends_at: timestamp.nullable(), term_session_label: z.string().min(1) })
+  second_ends_at: timestamp.nullable(), term_session_label: z.string().min(1),
+  // The semester the plan was bought for (20261104120000); absent from databases before that migration.
+  period_key: z.string().min(1).nullable().optional().default(null),
+  period_name: z.string().min(1).nullable().optional().default(null) })
 const receipt = z.object({ order_id: z.string().uuid(), plan: planKey, amount_kobo: kobo, paid_at: timestamp,
   status: z.enum(['paid', 'paid-duplicate', 'refund-pending', 'refunded']) })
 
