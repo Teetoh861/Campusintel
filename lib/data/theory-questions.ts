@@ -56,7 +56,7 @@ The three main categories are:
 NRV = Estimated selling price in the ordinary course of business - Estimated costs necessary to make the sale
 
 The estimated costs to make the sale include marketing costs, advertising costs, and transport/delivery costs to get the product to the customer.`,
-        examTip: 'Include the formula AND explain what costs are deducted. Give an example if time permits.',
+        examTip: 'Include the formula AND explain what costs are deducted. Give an example.',
       },
       {
         id: 4,
@@ -163,7 +163,7 @@ Borrowing costs can only be capitalized when they are directly related to bringi
 
 **Exception:**
 Brief, temporary delays that are a necessary part of the construction process do not stop capitalization.`,
-        examTip: 'State that capitalization STOPS, expense the interest, and explain the logic. Mention the exception about brief delays if time allows.',
+        examTip: 'State that capitalization STOPS, expense the interest, and explain the logic. Mention the exception about brief delays.',
       },
       {
         id: 10,
@@ -264,7 +264,7 @@ Cr Bank/Cash Account ₦2,000,000
 - These need to be added to or deducted from the cash book during reconciliation
 
 **Additional reasons:** Dishonored cheques, bank errors, timing differences.`,
-        examTip: 'List and explain three clearly. State the direction of the difference (cashbook higher/lower). Mention one or two additional reasons if time allows.',
+        examTip: 'List and explain three clearly. State the direction of the difference (cashbook higher/lower). Mention one or two additional reasons.',
       },
       {
         id: 14,

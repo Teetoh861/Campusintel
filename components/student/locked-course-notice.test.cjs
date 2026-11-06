@@ -5,7 +5,7 @@ const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const { courseAdditionContact, courseChangeContact, COURSE_ADDITION_MESSAGE, COURSE_CHANGE_MESSAGE } = require('../../lib/whatsapp.ts')
 
-function render(number, props = { outsideList: true, passOffered: true }) {
+function render(number, props = { outsideList: true, passHours: 72 }) {
   const load = Module._load, extension = Module._extensions['.tsx']
   const file = require.resolve('./LockedCourseNotice.tsx')
   try {
@@ -44,7 +44,7 @@ test('missing or invalid WhatsApp configuration opens Help & Support', () => {
 })
 
 test('open selection recovery has one confirmation action and no plan or contact offer',()=>{
-  const html=render('2349012345678',{reason:'needs-selection',passOffered:true,backHref:'/courses',backLabel:'Back'})
+  const html=render('2349012345678',{reason:'needs-selection',passHours:72,backHref:'/courses',backLabel:'Back'})
   assert.match(html,/Confirm your courses for this semester\./)
   assert.match(html,/href="\/profile-selection"/)
   assert.match(html,/>Confirm my courses</)
@@ -53,11 +53,23 @@ test('open selection recovery has one confirmation action and no plan or contact
 })
 test('locked semester mismatch has one team-contact action using the existing change message',()=>{
   for(const number of ['2349012345678','']) {
-    const html=render(number,{reason:'selection-locked',passOffered:true,backHref:'/courses',backLabel:'Back'})
+    const html=render(number,{reason:'selection-locked',passHours:72,backHref:'/courses',backLabel:'Back'})
     assert.match(html,/Your courses are set for another semester\./)
     assert.match(html,/>Message us</)
     assert.equal((html.match(/<a\b/g)||[]).length,1)
     assert.ok(html.includes(number ? encodeURIComponent(COURSE_CHANGE_MESSAGE) : 'href="/contact"'))
     assert.doesNotMatch(html,/Confirm my courses|Discovery|Early Access|See how to unlock|>Back</)
   }
+})
+
+test('a locked course offers the free pass in the one offer wording, linking to where it starts', () => {
+  const html = render('2349012345678', { passHours: 72 })
+  const offer = html.match(/<div data-pass-offer="">[\s\S]*$/)[0]
+  assert.match(offer, /Free pass/)
+  assert.match(offer, /Try your department courses free for 3 days\./)
+  assert.match(offer, /<a [^>]*href="\/access"[^>]*>Get your free pass<\/a>/)
+  assert.doesNotMatch(html, /CBT|study guide|one per|preview them first|Discovery/i, 'what the pass includes stays in the modal')
+  assert.match(html, /Included with full access/)
+  assert.doesNotMatch(render('2349012345678', { passHours: null }), /data-pass-offer|Free pass/)
+  assert.doesNotMatch(render('2349012345678', {}), /data-pass-offer|Free pass/)
 })

@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 /** Announce loading without exposing unverified course content. */
 export default function Loading() {
-  return <StudentPage band={<PageBand title="Theory practice" lede="Write, compare and assess your answer." />}>
+  return <StudentPage band={<PageBand title="Theory practice" />}>
     <StudentLoadingState message="Loading theory practice.">
       <Skeleton className="h-64 w-full animate-none" />
     </StudentLoadingState>

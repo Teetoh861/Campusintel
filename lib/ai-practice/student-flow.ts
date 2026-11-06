@@ -38,7 +38,8 @@ export type BeginResult =
   | { state: 'started'; generationId: string; limits?: GenerationLimits }
   | { state: 'existing'; generationId: string }
   | { state: 'busy' | 'capacity' | 'document-unavailable' | 'request-conflict' | 'not-entitled' | 'allowance-exhausted'
-      | 'allowance-expired' | 'signed-out' | 'session-limit' | 'week-limit' | 'undelivered-limit' }
+      | 'allowance-expired' | 'signed-out' }
+  | { state: 'session-limit' | 'week-limit' | 'undelivered-limit'; resetsAt: string | null }
 
 export type ReserveResult =
   | { status: 'created'; documentId: string; storagePath: string }
@@ -236,9 +237,10 @@ async function generate(env: AiPracticeEnv, command: Extract<AiPracticeCommand, 
   if (begun.state === 'document-unavailable') return { status: 'not-found' }
   if (begun.state === 'busy' || begun.state === 'capacity' || begun.state === 'not-entitled' ||
     begun.state === 'signed-out') return { status: begun.state }
-  // Campus Bot limits (session, week, undelivered tries) read as an exhausted allowance until part 3 names each one.
+  // Campus Bot limits: this session's, this week's (each with its stored reset time), or undelivered tries today.
   if (begun.state === 'session-limit' || begun.state === 'week-limit' || begun.state === 'undelivered-limit') {
-    return { status: 'allowance-exhausted', allowance: await env.allowance() }
+    return { status: 'campus-bot-limit', limit: begun.state === 'session-limit' ? 'session' : begun.state === 'week-limit'
+      ? 'week' : 'undelivered', resetsAt: begun.state === 'undelivered-limit' ? null : begun.resetsAt }
   }
   if (begun.state !== 'started') return { status: begun.state, allowance: await env.allowance() }
 

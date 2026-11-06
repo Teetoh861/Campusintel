@@ -1,7 +1,7 @@
 // app/courses/ai-practice/[courseId]/journey.ts — Browser-side upload → read → generate sequence, free of React.
 // Each step reports progress; every failure becomes a student-safe message. fetch is injected for tests.
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
-import { NEUTRAL_TRIAL_WORDING, trialGrantName } from '@/lib/entitlements/presentation'
+import { CAMPUS_BOT_LIMIT_COPY, NEUTRAL_TRIAL_WORDING, accessCopy, trialGrantName } from '@/lib/entitlements/presentation'
 import { MAX_UPLOAD_BYTES, UPLOAD_REJECTION_MESSAGES, mediaTypeForFileName } from '@/lib/ai-practice/upload-contract'
 import type { AiPracticeCommand, AiPracticeResult, AllowanceSummary, PersonalSetView }
   from '@/lib/ai-practice/upload-contract'
@@ -52,25 +52,29 @@ export type JourneyDeps = {
   continuityToken: string
   courseId: string
   /** The student's own trial grant and whether this student is eligible to start a pass (lib/entitlements/presentation.ts
-   *  trialWording); copy names a Discovery Pass only where that is what the student holds or can get. */
+   *  trialWording); copy names a free pass only where that is what the student holds or can get. */
   trial: TrialWording
+  /** The copy switch (plans_on_sale): "included when you subscribe" once plans are on sale. */
+  plansOnSale?: boolean
   onPhase(phase: JourneyPhase): void
   requests: GenerationRequests
 }
 
-export const NOT_ENTITLED_TITLE = 'AI practice is not included in your account'
+export const NOT_ENTITLED_TITLE = 'Campus Bot isn’t included in your account'
+export const CAMPUS_BOT_LIMIT_TITLE = 'Campus Bot limit reached'
 
 /** Why AI practice is closed and where it opens. The pass is named only when this student is eligible for one. */
-export function notEntitledMessage(trial: TrialWording): string {
+export function notEntitledMessage(trial: TrialWording, plansOnSale: boolean = false): string {
+  if (plansOnSale) return accessCopy(true).aiNotEntitled
   return trial.passAvailable
-    ? 'AI practice opens with a Discovery Pass or Early Access. Get your pass from Plan & Access. GST courses stay free.'
-    : 'AI practice opens with Early Access. GST courses stay free.'
+    ? 'Campus Bot opens with a free pass or Early Access. Get your free pass from Plan & Access. GST courses stay free.'
+    : accessCopy(false).aiNotEntitled
 }
 
 /** How the student's grant is named in copy: a trial grant by the policy it was actually issued under (a Discovery
  *  Pass, or the seven-day free trial from before it), and neutrally when that policy is not known. */
 export function grantName(allowance: AllowanceSummary | null | undefined, trial: TrialWording): string {
-  if (allowance?.source !== 'trial') return 'AI access'
+  if (allowance?.source !== 'trial') return 'Campus Bot access'
   return trialGrantName(trial.policy)
 }
 
@@ -79,39 +83,43 @@ const problem = (title: string, message: string, retry: 'same-file' | 'new-file'
   ({ kind: 'problem', tone, title, message, retry })
 
 /** Map any non-success result to what the student should read and do next. */
-export function describeResult(result: AiPracticeResult, trial: TrialWording = NEUTRAL_TRIAL_WORDING): JourneyOutcome {
+export function describeResult(result: AiPracticeResult, trial: TrialWording = NEUTRAL_TRIAL_WORDING,
+  plansOnSale: boolean = false): JourneyOutcome {
   switch (result.status) {
     case 'generated': return { kind: 'generated', set: result.set, allowance: result.allowance }
     case 'upload-rejected': return problem('We could not use this file', UPLOAD_REJECTION_MESSAGES[result.reason])
     case 'insufficient-source': return { ...problem('Not enough to work with',
       'Your notes did not contain enough clear material for five fair questions. Try fuller notes on one topic. ' +
-      'This did not use any of your AI allowance.', 'new-file', 'info'), allowance: result.allowance }
-    case 'flagged-for-review': return { ...problem('We could not generate questions from this file',
+      'This did not use any of your Campus Bot allowance.', 'new-file', 'info'), allowance: result.allowance }
+    case 'flagged-for-review': return { ...problem('We couldn’t use this file',
       'We couldn’t use this material for course practice. Upload clear, appropriate study notes for this course instead. ' +
-      'This did not use any of your AI allowance.', 'new-file', 'info'), allowance: result.allowance }
-    case 'generation-failed': return { ...problem('Your questions could not be created',
-      'Something went wrong while writing your questions. This did not use any of your AI allowance. Try again.',
+      'This did not use any of your Campus Bot allowance.', 'new-file', 'info'), allowance: result.allowance }
+    case 'generation-failed': return { ...problem('We couldn’t create your questions',
+      'Something went wrong while writing your questions. This did not use any of your Campus Bot allowance. Try again.',
       'same-file'), allowance: result.allowance }
-    case 'allowance-exhausted': return { ...problem('AI allowance used up',
-      `You have used all of the AI practice included in your ${grantName(result.allowance, trial)}. ` +
-      'Verified CampusIntell content stays available.', 'none', 'info'), allowance: result.allowance }
-    case 'allowance-expired': return { ...problem('AI access has ended',
-      `Your ${grantName(result.allowance, trial)} has ended. Verified CampusIntell content stays available.`, 'none', 'info'),
+    case 'allowance-exhausted': return { ...problem('You’ve used your Campus Bot allowance',
+      `You have used all of the Campus Bot practice included in your ${grantName(result.allowance, trial)}. ` +
+      'Your course materials stay available.', 'none', 'info'), allowance: result.allowance }
+    case 'allowance-expired': return { ...problem('Your Campus Bot access has ended',
+      `Your ${grantName(result.allowance, trial)} has ended. Your course materials stay available.`, 'none', 'info'),
       allowance: result.allowance }
-    case 'not-entitled': return problem(NOT_ENTITLED_TITLE, notEntitledMessage(trial), 'none', 'info')
-    case 'busy': return problem('Your questions are still being prepared',
+    case 'not-entitled': return problem(NOT_ENTITLED_TITLE, notEntitledMessage(trial, plansOnSale), 'none', 'info')
+    case 'campus-bot-limit': return problem(CAMPUS_BOT_LIMIT_TITLE, result.limit === 'session'
+      ? CAMPUS_BOT_LIMIT_COPY.session(result.resetsAt) : result.limit === 'week' ? CAMPUS_BOT_LIMIT_COPY.week(result.resetsAt)
+        : CAMPUS_BOT_LIMIT_COPY.undelivered, 'none', 'info')
+    case 'busy': return problem('Still preparing your questions',
       'Please wait a moment, then try again.', 'same-file', 'info')
-    case 'capacity': return problem('AI practice is busy',
+    case 'capacity': return problem('Campus Bot is busy',
       'Too many students are generating questions right now. Try again later.', 'same-file', 'info')
     case 'upload-limit': return problem('Daily upload limit reached',
       'You have uploaded the maximum number of files for today. Try again tomorrow.', 'none', 'info')
-    case 'pass-upload-limit': return problem('Discovery Pass uploads used',
+    case 'pass-upload-limit': return problem('Free pass uploads used',
       'Your pass includes a small number of uploads and they have been used. They do not renew.', 'none', 'info')
-    case 'not-eligible': return problem('This course has verified content',
-      'Use the CampusIntell study material for this course instead.', 'none', 'info')
+    case 'not-eligible': return problem('This course has study materials',
+      'Use the study materials for this course instead.', 'none', 'info')
     case 'signed-out': return { ...problem('Signed out', 'Sign in again to continue.', 'none'), signedOut: true }
     case 'session-changed': return problem('Your sign-in has changed', 'Reload this page and try again.', 'none')
-    case 'disabled': return problem('AI practice is not available', 'Try again later.', 'none', 'info')
+    case 'disabled': return problem('Campus Bot is unavailable', 'Try again later.', 'none', 'info')
     case 'not-found': return problem('Upload not found', 'Choose your file again.')
     default: return problem('Something went wrong', 'Check your connection and try again.', 'same-file')
   }
@@ -146,7 +154,7 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
   deps.onPhase('uploading')
   const reserved = await command(deps, { operation: 'reserve-upload', courseId: deps.courseId,
     fileName: file.name, mediaType, byteSize: file.size })
-  if (reserved.status !== 'upload-reserved') return describeResult(reserved, deps.trial)
+  if (reserved.status !== 'upload-reserved') return describeResult(reserved, deps.trial, deps.plansOnSale)
   try {
     // Straight to private Storage: the file never passes through an application function.
     const put = await deps.fetch(reserved.uploadUrl, { method: 'PUT', cache: 'no-store',
@@ -158,7 +166,7 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
   }
   deps.onPhase('reading')
   const processed = await command(deps, { operation: 'process-upload', documentId: reserved.documentId })
-  if (processed.status !== 'upload-ready') return describeResult(processed, deps.trial)
+  if (processed.status !== 'upload-ready') return describeResult(processed, deps.trial, deps.plansOnSale)
   return generateFromDocument(reserved.documentId, deps)
 }
 
@@ -168,6 +176,6 @@ export async function generateFromDocument(documentId: string, deps: JourneyDeps
   const result = await command(deps, { operation: 'generate', documentId,
     requestId: deps.requests.requestIdFor(documentId) })
   deps.requests.settle(documentId, result)
-  const outcome = describeResult(result, deps.trial)
+  const outcome = describeResult(result, deps.trial, deps.plansOnSale)
   return outcome.kind === 'problem' && outcome.retry === 'same-file' ? { ...outcome, documentId } : outcome
 }

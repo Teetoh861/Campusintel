@@ -25,7 +25,7 @@ const identity = { courseCode: 'BUA 216', courseTitle: 'Financial Management', r
 async function flow(initial, run) {
   const load = Module._load, saved = { window: global.window, document: global.document, setTimeout: global.setTimeout }
   const realSetTimeout = global.setTimeout
-  const answers = [], requests = [], records = new Map()
+  const answers = [], requests = [], assigned = [], records = new Map()
   const events = new Map()
   const store = { getItem: key => records.get(key) ?? null, setItem: (key, value) => records.set(key, value),
     removeItem: key => records.delete(key) }
@@ -56,7 +56,7 @@ async function flow(initial, run) {
   global.window = { sessionStorage: store, localStorage: store,
     addEventListener: (event, callback) => { if (!events.has(event)) events.set(event, new Set()); events.get(event).add(callback) },
     removeEventListener: (event, callback) => events.get(event)?.delete(callback),
-    location: { pathname: `/courses/${COURSE}/quiz` },
+    location: { pathname: `/courses/${COURSE}/quiz`, assign: href => { assigned.push(href) } },
     history: { replaceState() {} } }
   global.document = { body: { setAttribute() {}, removeAttribute() {} } }
   // The automatic re-check's waits run at once; the number of requests still shows every re-check.
@@ -86,7 +86,7 @@ async function flow(initial, run) {
         return tree
       }
       const settle = async () => { for (let n = 0; n < 40; n++) await new Promise(resolve => realSetTimeout(resolve, 2)) }
-      await run({ render, settle, answers, requests, emit: event => { for (const callback of events.get(event) ?? []) callback() } })
+      await run({ render, settle, answers, requests, assigned, emit: event => { for (const callback of events.get(event) ?? []) callback() } })
     })
   } finally {
     Module._load = load
@@ -345,6 +345,7 @@ test('a restored review ignores network failures, rate limits, unavailable and u
   })
 })
 
+// Signed out goes to sign-in and comes back to this result; the others leave in place.
 for (const status of ['not-found', 'signed-out', 'no-review']) test(`a restored review leaves on definite ${status}`, async () => {
   const attempt = reviewAttempt()
   await flow({ kind: 'graded', latest: false, attempt }, async f => {
@@ -353,9 +354,23 @@ for (const status of ['not-found', 'signed-out', 'no-review']) test(`a restored 
     f.answers.push(status === 'no-review' ? { status: 'graded', now: NOW,
       attempt: { ...attempt, reviewAvailable: false, questions: [], reviewUnavailableReason: 'outside-list' } } : { status })
     f.emit('pageshow'); await f.settle()
+    if (status === 'signed-out') {
+      assert.deepEqual(f.assigned, [`/login?next=${encodeURIComponent(`/courses/${COURSE}/quiz?attempt=${attempt.id}`)}`])
+      return
+    }
+    assert.deepEqual(f.assigned, [])
     const next = f.render()
     assert.equal(next.type.name, status === 'no-review' ? 'ScoreOnly' : 'IntroScreen')
     if (status === 'no-review') assert.equal(next.props.attempt.reviewUnavailableReason, 'outside-list')
+  })
+})
+
+test('opening a review while signed out goes to sign-in and returns to this result', async () => {
+  const attempt = reviewAttempt()
+  await flow({ kind: 'graded', latest: false, attempt }, async f => {
+    f.answers.push({ status: 'signed-out' })
+    f.render().props.onReview(); await f.settle()
+    assert.deepEqual(f.assigned, [`/login?next=${encodeURIComponent(`/courses/${COURSE}/quiz?attempt=${attempt.id}`)}`])
   })
 })
 

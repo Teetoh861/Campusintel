@@ -192,8 +192,9 @@ the page does not wait for) and recorded at most once per order.
   receipt image or a bank transfer alert.
 - Order shows no checkout id but the student has a Bachs receipt: find the checkout in the Bachs dashboard and run
   `payment-fulfil --order <id> --provider-ref <checkout id>`.
-- `amount-mismatch`: the student paid less than the price, or in another currency. No plan was granted. Refund the
-  payment (`refund ... --class our-fault` if we caused it, otherwise agree the next step with the student).
+- `amount-mismatch`: the student paid less than the price, or in another currency. No plan was granted. Always
+  refund the payment in full with `refund ... --class our-fault`, as the Payment terms promise. The class refunds the
+  whole amount and does not count towards the student's refund limit.
 - `unfulfilled`: paid after the semester ended or after the account was deleted. Refund it (`our-fault`).
 
 **Refunds.**

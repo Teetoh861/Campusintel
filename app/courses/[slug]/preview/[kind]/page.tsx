@@ -16,7 +16,7 @@ import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } fro
 import { examSecondsFor, readDiscoveryPreview } from '@/lib/entitlements/discovery'
 import { kindFromSegment, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
 import { discoveryOffered } from '@/lib/entitlements/contract'
-import { DISCOVERY_PASS_LABEL, formatAccessDate, trialWording } from '@/lib/entitlements/presentation'
+import { DISCOVERY_PASS_LABEL, DISCOVERY_PASS_NOUN, accessCopy, formatAccessDate, trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -61,8 +61,11 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   }
   const { repository, content } = lookup.course
   const route = repository.route
-  // A course the student can already read in full needs no preview.
-  if (content.state !== 'locked' || content.reason === 'outside-list') redirect(route.href)
+  // A course the student can already read in full needs no preview, except a free-pass preview opened before they
+  // bought a plan: it keeps its deadline and its score-only result (checked below).
+  const unlocked = content.state !== 'locked'
+  if (!unlocked && content.reason === 'outside-list') redirect(route.href)
+  if (unlocked && lookup.status !== 'ok') redirect(route.href)
   // Previews belong to courses offered now; a repository-only or retired course has none.
   if (lookup.status !== 'ok' || !hasActiveCourseOffering(lookup.course)) return notFound()
   const course: CourseIdentity = { href: route.href, slug: route.slug, code: lookup.course.code,
@@ -75,6 +78,8 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   ])
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (result.status === 'free-course' || result.status === 'full-access') redirect(route.href)
+  if (unlocked && result.status !== 'ready') redirect(route.href)
+  const plansOnSale = plan.status === 'ok' && plan.entitlement.plans_on_sale
   // A pass is named as something to start only when this student is eligible for one (read on the server, fail closed).
   const offered = plan.status === 'ok' && trialWording(plan.entitlement).passAvailable
   const examQuestions = plan.status === 'ok' && discoveryOffered(plan.entitlement) ? plan.entitlement.discovery.cbt_questions : null
@@ -84,7 +89,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   return <StudentPage band={band}>
     <div className="grid min-w-0 max-w-3xl gap-4">
       <PreviewBody result={result} kind={kind} course={course} examQuestions={examQuestions} offered={offered}
-        continuityToken={continuityToken} />
+        continuityToken={continuityToken} plansOnSale={plansOnSale} />
       <Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
         Back to {course.code}
       </Link>
@@ -94,17 +99,21 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
 
 const SECONDS_PER_MINUTE = 60
 
-function PreviewBody({ result, kind, course, examQuestions, offered, continuityToken }: {
+function PreviewBody({ result, kind, course, examQuestions, offered, continuityToken, plansOnSale }: {
   result: DiscoveryResult; kind: DiscoveryKind; course: CourseIdentity; examQuestions: number | null
   /** Whether this student can still start a pass; otherwise the pass is never named, only full access. */
   offered: boolean
   continuityToken: string
+  /** The copy switch (plans_on_sale). */
+  plansOnSale: boolean
 }): ReactElement {
+  const copy = accessCopy(plansOnSale)
   const plan = <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
     className={studentAction(btnNavy, studentFocusDark)}>View your plan</Link>
   switch (result.status) {
     case 'ready':
-      return <Pinned preview={result.preview} now={result.now} course={course} continuityToken={continuityToken} />
+      return <Pinned preview={result.preview} now={result.now} course={course} continuityToken={continuityToken}
+        plansOnSale={plansOnSale} />
     case 'available':
       if (kind === 'cbt') {
         const seconds = examSecondsFor(course.slug)
@@ -115,8 +124,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
           <p className="student-detail-prose mt-2">
             {examQuestions ?? 'The'}{examQuestions !== null && '-question'} exam, timed at {minutes} minutes like the real
             CBT. The timer starts when you begin and keeps running if you leave the page. Your answers save as you go,
-            and only answers saved before time runs out count. When you submit, you’ll see your score with the correct
-            answers.
+            and only answers saved before time runs out count. When you submit, you’ll see your score.
           </p>
           <p className="student-meta mt-2">Your pass includes one CBT exam, on the course you start it on.</p>
           <div className="mt-4">
@@ -142,7 +150,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
     case 'not-enough-time':
       return <Notice tone="info" title="Not enough time left on your pass" action={plan}>
         The {course.code} CBT exam takes {Math.round((examSecondsFor(course.slug) ?? 0) / SECONDS_PER_MINUTE)} minutes,
-        and your {DISCOVERY_PASS_LABEL} ends {formatAccessDate(result.endsAt)}. Nothing was used.
+        and your {DISCOVERY_PASS_NOUN} ends {formatAccessDate(result.endsAt)}. Nothing was used.
       </Notice>
     case 'used-elsewhere':
       return <Notice tone="info" title="Already used on another course" action={result.courseSlug !== null
@@ -151,16 +159,16 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         Your {TITLE[kind].toLowerCase()} is on {result.courseCode ?? 'another course'}. Your pass includes one.
       </Notice>
     case 'expired':
-      return <Notice tone="info" title={`Your ${DISCOVERY_PASS_LABEL} has ended`} action={plan}>
+      return <Notice tone="info" title={`Your ${DISCOVERY_PASS_NOUN} has ended`} action={plan}>
         This is no longer available. GST courses stay free.
       </Notice>
     case 'no-pass':
       if (!offered) {
-        return <Notice tone="info" title="Included with full access" action={plan}>
-          Department courses open fully with Early Access. GST courses stay free.
+        return <Notice tone="info" title={copy.lockedTitle} action={plan}>
+          {copy.lockedBody} GST courses stay free.
         </Notice>
       }
-      return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_LABEL}`} action={plan}>
+      return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}`} action={plan}>
         Start your free pass from Plan & Access to try a department course.
       </Notice>
     case 'nothing-to-preview':
@@ -177,15 +185,16 @@ function NotOffered({ course, what }: { course: CourseIdentity; what: string }):
   </Notice>
 }
 
-function Pinned({ preview, now, course, continuityToken }: {
-  preview: DiscoveryPreview; now: string; course: CourseIdentity; continuityToken: string
+function Pinned({ preview, now, course, continuityToken, plansOnSale }: {
+  preview: DiscoveryPreview; now: string; course: CourseIdentity; continuityToken: string; plansOnSale: boolean
 }): ReactElement {
   if (preview.kind === 'cbt') {
     return <DiscoveryExam continuityToken={continuityToken} courseSlug={course.slug} questions={preview.questions}
-      deadlineAt={preview.deadline_at} serverNow={now} savedSheet={preview.saved} initialResult={preview.result} />
+      deadlineAt={preview.deadline_at} serverNow={now} savedSheet={preview.saved} initialResult={preview.result}
+      plansOnSale={plansOnSale} />
   }
   return <>{preview.items.map(item => <NoteArticle key={item.item_id}
     note={{ itemId: item.item_id, publishedRevision: item.revision, ...item.note }} />)}
-    <p className="student-meta">The other topics in {course.code} come with full access.</p>
+    <p className="student-meta">{accessCopy(plansOnSale).previewOthers(course.code)}</p>
   </>
 }

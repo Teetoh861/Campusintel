@@ -49,7 +49,7 @@ export type AiGrantSource = 'trial' | 'early_access' | 'paid' | 'test'
 export type AllowanceSummary = {
   state: 'not-entitled' | 'active' | 'expired'
   source: AiGrantSource | null
-  /** Null for an uncapped grant (Early Access): no per-student total, while the global and daily guards still apply. */
+  /** Null for a token-funded grant (paid or Early Access): no set count; session and week token limits apply. */
   total: number | null
   used: number
   endsAt: string | null
@@ -92,6 +92,8 @@ export type AiPracticeResult =
   | { status: 'generated'; set: PersonalSetView; allowance: AllowanceSummary | null }
   | { status: 'insufficient-source' | 'flagged-for-review' | 'generation-failed'; allowance: AllowanceSummary | null }
   | { status: 'allowance-exhausted' | 'allowance-expired'; allowance: AllowanceSummary | null }
+  // A Campus Bot limit (tokens): this session's or this week's, with when it resets, or too many undelivered tries today.
+  | { status: 'campus-bot-limit'; limit: 'session' | 'week' | 'undelivered'; resetsAt: string | null }
   | { status: 'not-entitled' }
   | { status: 'busy' | 'capacity' | 'upload-limit' | 'pass-upload-limit' | 'not-eligible' | 'disabled' | 'not-found' | 'signed-out'
       | 'session-changed' | 'invalid-request' | 'unavailable' }
@@ -105,5 +107,5 @@ export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
   'empty': 'We could not find any text in this file. Upload a file with selectable text; scanned images are not supported.',
   'too-short': 'There is not enough text here to write fair questions. Upload fuller notes (at least about 150 words).',
   'too-much-text': 'This file has more text than we can use at once. Upload one topic or chapter at a time.',
-  'pass-upload-limit': 'Your Discovery Pass includes one AI upload, and another file already used it.',
+  'pass-upload-limit': 'Your free pass includes one Campus Bot upload, and another file already used it.',
 }

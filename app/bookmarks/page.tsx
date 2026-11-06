@@ -3,6 +3,7 @@ import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { presentStudentCourseRow } from '@/components/student/StudentCourseRow'
+import { readPlansOnSale } from '@/lib/entitlements/server'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
@@ -30,8 +31,10 @@ export default function BookmarksPage(): ReactElement {
 async function Bookmarks(): Promise<ReactElement> {
   let result: { status: 'ok'; courses: (RoutedStudentCourse | RepositoryOnlyCourse)[] }
     | { status: 'signed-out' | 'unavailable' | 'invariant-failure' }
+  let plansOnSale = false
   try {
     const client = await createClient()
+    plansOnSale = await readPlansOnSale(client)
     const context = await getStudentSessionContext(undefined, client)
     if (context === null) result = { status: 'signed-out' }
     else {
@@ -53,7 +56,7 @@ async function Bookmarks(): Promise<ReactElement> {
       ? <BookmarksClient catalog={result.courses.map(course => ({
         // Legacy device aliases come from the shelved route; presentation comes from the shared adapter.
         slug: course.repository.route.slug, code: course.repository.route.course.code,
-        contentKey: course.repository.contentKey, row: presentStudentCourseRow(course),
+        contentKey: course.repository.contentKey, row: presentStudentCourseRow(course, { plansOnSale }),
       }))} />
       : <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'courses-unavailable'}
         retryHref={BOOKMARKS_PATH} />}

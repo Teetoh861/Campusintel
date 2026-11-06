@@ -44,11 +44,11 @@ test('temporary problems and built courses never show the AI path', () => {
   withEnv(ENABLED, () => assert.equal('aiPracticeHref' in presentStudentCourseRow(temporary), false))
 })
 
-test('the rendered row keeps "not yet available" first and labels the link as AI and unverified', () => {
+test('the rendered row keeps "not yet available" first and labels the link as Campus Bot', () => {
   const { StudentCourseRow } = load()
   const html = withEnv(ENABLED, () => renderToStaticMarkup(React.createElement(StudentCourseRow, { course: unbuilt })))
   assert.ok(html.indexOf('student-ai-practice-link') > html.indexOf('MKT 201'))
   assert.match(html, /href="\/courses\/ai-practice\/41111111-1111-4111-8111-111111111111"/)
   assert.match(html, /Practise from your own notes/)
-  assert.match(html, /AI · Unverified/)
+  assert.match(html, /student-ai-practice-tag">Campus Bot</)
 })

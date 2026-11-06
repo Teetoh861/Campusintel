@@ -41,7 +41,7 @@ const PROBLEMS: Record<string, Problem> = {
   'resume-failed': { title: PRACTICE_COPY.resumeFailedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
   'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
-  'locked': { title: 'You can’t start a new attempt right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
+  'locked': { title: 'You can’t start a new practice right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
   'signed-out': { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody },
   'session-changed': { title: 'You signed in on another tab.', body: 'Refresh this page to continue.' },
   // An instant start whose topic the course no longer has.
@@ -74,6 +74,8 @@ type Props = {
   topics: ReadonlyArray<string>
   lastResultHref: string | null
   initial: QuizInitial
+  /** The copy switch (plans_on_sale) for the score-only result. */
+  plansOnSale?: boolean
 }
 
 export type View =
@@ -284,6 +286,7 @@ export function QuizClient(props: Props): ReactElement | null {
     const { attempt } = view
     const canStartNew = brief !== null && (attempt.canStartNew ?? attempt.reviewAvailable)
     if (!attempt.reviewAvailable) return <ScoreOnly {...identity} attempt={attempt} courseHref={props.courseHref}
+      plansOnSale={props.plansOnSale}
       canStartNew={canStartNew} starting={busy}
       onRetake={() => { if (brief !== null) start('new', null, brief) }} />
     if (attempt.mode === 'instant') {

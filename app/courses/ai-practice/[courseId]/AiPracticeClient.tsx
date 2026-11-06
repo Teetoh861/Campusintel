@@ -21,24 +21,24 @@ const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
   generating: { title: 'Writing five questions', detail: 'This may take a moment. Keep this page open.' },
 }
 
-/** One honest sentence about the student's AI grant; nothing when there is none or it cannot be read. */
+/** One honest sentence about a counted grant; nothing for token-funded access (paid or Early Access, which have
+ *  session and week limits), when there is none, or when it cannot be read. */
 export function allowanceLine(allowance: AllowanceSummary | null, trial: TrialWording = NEUTRAL_TRIAL_WORDING): string | null {
   if (!allowance || allowance.state === 'not-entitled') return null
   if (allowance.state === 'expired') return `Your ${grantName(allowance, trial)} has ended.`
-  if (allowance.total === null) return 'Your AI access includes question sets without a set limit while it lasts.'
+  if (allowance.total === null) return null
   const left = Math.max(0, allowance.total - allowance.used)
-  const sets = `${left} of ${allowance.total} AI question ${allowance.total === 1 ? 'set' : 'sets'} left`
+  const sets = `${left} of ${allowance.total} Campus Bot ${allowance.total === 1 ? 'set' : 'sets'} left`
   if (allowance.sourceCharLimit === undefined) return `${sets} in your ${grantName(allowance, trial)}.`
   return `${sets} on your ${grantName(allowance, trial)}. Upload notes of up to about ` +
     `${approximateWords(allowance.sourceCharLimit).toLocaleString('en-GB')} words.`
 }
 
-/** Progress for the current step. Generation repeats the unverified label next to the status it announces. */
+/** Progress for the current step. */
 export function JourneyProgress({ phase }: { phase: JourneyPhase }): ReactElement {
   return <div className="ai-practice-progress" role="status" aria-live="polite">
     <LoaderCircle aria-hidden="true" size={20} strokeWidth={1.75} className="animate-spin" />
-    <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}
-      {phase === 'generating' && <> <span className="student-ai-practice-tag">Personal · Unverified</span></>}</p>
+    <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}</p>
       <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p></div>
   </div>
 }
@@ -52,10 +52,12 @@ type Props = {
   canGenerate?: boolean
   uploadsUnavailableReason?: 'outside-list' | 'paused'
   trial?: TrialWording
+  /** The copy switch (plans_on_sale). */
+  plansOnSale?: boolean
 }
 
 export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets,
-  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true, uploadsUnavailableReason }: Props):
+  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true, uploadsUnavailableReason, plansOnSale = false }: Props):
   ReactElement {
   const input = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<JourneyPhase | null>(null)
@@ -80,7 +82,8 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     setOutcome(result)
   }
 
-  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, onPhase: setPhase, requests })
+  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, plansOnSale, onPhase: setPhase,
+    requests })
 
   async function upload(file: File): Promise<void> {
     setOutcome(null)
@@ -103,10 +106,10 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     <PersonalDisclaimer />
     {!canGenerate && sets.length > 0 && uploadsUnavailableReason ? <p className="ai-practice-upload-help">
       {uploadsUnavailableReason === 'outside-list'
-        ? 'Uploads are available for courses in your current list. Your saved sets are still here.'
+        ? 'Uploads are available for your courses this semester. Your saved sets are still here.'
         : 'Uploads are paused for now. Your saved sets are still here.'}
     </p> : null}
-    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial)}</Notice>}
+    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial, plansOnSale)}</Notice>}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
       <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter

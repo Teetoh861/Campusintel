@@ -31,7 +31,7 @@ test('success and a replay refresh the server-rendered plan; passing refusals st
 })
 
 test('every refusal of this account closes the offer with the one approved sentence and no reason', () => {
-  assert.equal(PASS_REFUSED, 'Discovery Pass isn’t available on this account. Free GST courses are still open to you.')
+  assert.equal(PASS_REFUSED, 'A free pass isn’t available on this account. Free GST courses are still open to you.')
   for (const result of [{ status: 'already-claimed' }, { status: 'already-claimed', retentionMonths: 60 },
     { status: 'trial-not-offered' }, { status: 'early-access-active', availableFrom: '2026-11-25T09:00:00.000Z' }]) {
     const { message, next } = describeResult(result)
