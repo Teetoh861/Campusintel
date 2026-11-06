@@ -1,1 +1,3 @@
-* -text
+# The owner's bank files are kept byte for byte (MANIFEST.csv has CRLF line endings), so git neither converts nor
+# whitespace-checks them.
+* -text -whitespace
