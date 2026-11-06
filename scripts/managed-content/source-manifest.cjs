@@ -183,4 +183,4 @@ function buildManifest() {
   return { actor: ACTOR, courses: courseRows, items }
 }
 
-module.exports = { buildManifest, loadSource }
+module.exports = { buildManifest, loadSource, uuidV5 }
