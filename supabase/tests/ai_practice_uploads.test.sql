@@ -2,6 +2,8 @@
 -- Account lifecycle and purge, retention and Storage policy for AI practice.
 begin;
 select no_plan();
+-- The deletion worker and monitor act on every due job, so set aside jobs other runs left (rolled back with the rest).
+delete from private.account_deletion_jobs;
 
 -- Structure and deny-by-default access ---------------------------------------
 select has_table('public', 'ai_practice_documents', 'documents table exists');
@@ -112,8 +114,9 @@ select is((public.create_ai_practice_document('a1111111-1111-4111-8111-111111111
   (select value from fixture where key = 'course'), 'notes.txt', 'text/plain', 10, array['trial', 'early_access'])
   ->> 'status'), 'not-entitled', 'without a grant no upload slot is reserved');
 reset role;
-select is((select count(*)::integer from public.ai_practice_documents) + (select count(*)::integer
-  from public.ai_allowance_windows), 0, 'a refused reservation creates nothing and never starts a trial');
+select is((select count(*)::integer from public.ai_practice_documents where user_id = '21111111-1111-4111-8111-111111111111')
+  + (select count(*)::integer from public.ai_allowance_windows where user_id = '21111111-1111-4111-8111-111111111111'), 0,
+  'a refused reservation creates nothing and never starts a trial');
 set local role service_role;
 reset role;
 -- Since 20261017100000_trial_entitlements.sql a production trial grant comes only from activation; the

@@ -179,7 +179,7 @@ select is((select count(*)::int from public.student_bookmarks), 1,
   'second account can add and read only its own bookmark');
 reset role;
 
-select is((select count(*)::int from public.student_bookmarks), 2,
+select is((select count(*)::int from public.student_bookmarks where user_id in ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222')), 2,
   'cross-account delete did not affect the first owner');
 
 set local role authenticated;
@@ -190,7 +190,7 @@ select is((select count(*)::int from public.student_bookmarks), 0,
   'the first owner can remove its own bookmark and cannot see the second account');
 reset role;
 
-select is((select count(*)::int from public.student_bookmarks), 1,
+select is((select count(*)::int from public.student_bookmarks where user_id in ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222')), 1,
   'removing one account bookmark preserves the other account');
 
 select * from finish();

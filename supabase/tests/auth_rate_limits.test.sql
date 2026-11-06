@@ -34,7 +34,8 @@ values('LOGIN','account',repeat('3',64),clock_timestamp() - interval '2 hours');
 set local role service_role;
 select ok(public.consume_auth_rate_limit('CONFIRM_EMAIL',repeat('1',64),repeat('2',64),5,900,20,900), 'expired windows do not count');
 reset role;
-select is((select count(*)::int from public.auth_rate_limit_events where created_at < clock_timestamp() - interval '1 hour'),0,'old records cleaned');
+select is((select count(*)::int from public.auth_rate_limit_events where bucket = repeat('3',64)
+  and created_at < clock_timestamp() - interval '1 hour'),0,'old records cleaned');
 set local role service_role;
 select throws_ok($$select public.consume_auth_rate_limit('BOGUS',repeat('a',64),repeat('b',64),20,900,30,300)$$,'22023',null,'unknown action rejected');
 select throws_ok($$select public.consume_auth_rate_limit(null,repeat('a',64),repeat('b',64),20,900,30,300)$$,'22023',null,'null action rejected');

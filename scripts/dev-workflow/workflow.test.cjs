@@ -8,6 +8,7 @@ const { test } = require('node:test')
 const { repository } = require('./repo.cjs')
 const { packageReview } = require('./review.cjs')
 const { collectTestFiles, runVerification, scope, testCommand } = require('./verify.cjs')
+const { CONTAINER_VARIABLES, FLAGS, TEST_STACK, projectId } = require('./database-suites.cjs')
 
 const CLI = path.join(__dirname, 'cli.cjs')
 const RUNNER = path.join(__dirname, 'run-tests.cjs')
@@ -53,7 +54,7 @@ test('PR verification starts scoped Supabase with the pinned CLI and shows start
 test('every image is pulled from GitHub\'s registry, signed in with the workflow\'s own token before the database starts', () => {
   const { workflow } = startStep()
   // The CLI reads SUPABASE_INTERNAL_IMAGE_REGISTRY for every pull; set for the whole job, so supabase test db uses it too.
-  assert.match(workflow, /\n {4}env:\n(?: {6}#.*\n)* {6}SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr\.io\n {4}steps:/)
+  assert.match(workflow, /\n {4}env:\n(?: {6}(?:#.*|[A-Z_]+: \S+)\n)* {6}SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr\.io\n {4}steps:/)
   assert.match(workflow, /\npermissions:\n {2}contents: read\n(?: {2}#.*\n)* {2}packages: read\n\n/, 'only reading packages is added')
   const login = workflow.split('      - name: Sign in to GitHub\'s container registry\n')[1]?.split('\n      - ')[0]
   assert.ok(login, 'the job signs in to ghcr.io')
@@ -509,7 +510,9 @@ test('verification checks whitespace in untracked files without treating a norma
 test('scope requires SQL tests and generated parity for managed-content sources', () => {
   assert.deepEqual(scope(['lib/data/courses.ts']), { db: true, content: true })
   assert.deepEqual(scope(['supabase/tests/profile_selection.test.sql']), { db: true, content: false })
-  assert.deepEqual(scope(['components/ui/button.tsx']), { db: false, content: false })
+  assert.deepEqual(scope(['components/ui/button.tsx']), { db: true, content: false }, 'app code runs the race suites')
+  assert.deepEqual(scope(['.github/workflows/pr-verification.yml']), { db: true, content: false })
+  assert.deepEqual(scope(['docs/release.md', 'README.md', 'public/logo.png']), { db: false, content: false })
 })
 
 test('verification distinguishes an unavailable DB service from failed SQL tests', t => {
@@ -538,6 +541,115 @@ test('verification distinguishes an unavailable DB service from failed SQL tests
     stderr: program === 'supabase' && args[0] === 'test' ? 'connection refused' : '',
   })) })
   assert.equal(interrupted.rows.find(row => row.name === 'Database tests').status, 'BLOCKED')
+})
+
+/** A fixture repository with database suites that log when they start and end, run by the real test runner. */
+function raceFixture(t, project, suites) {
+  const f = fixture(t)
+  fs.mkdirSync(path.join(f.root, 'supabase'), { recursive: true })
+  fs.writeFileSync(path.join(f.root, 'supabase', 'config.toml'), `project_id = "${project}"\n`)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  const log = path.join(f.root, 'suites.log')
+  for (const [file, body] of Object.entries(suites)) {
+    fs.mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true })
+    fs.writeFileSync(path.join(f.root, file), [
+      "const { test } = require('node:test')",
+      "const assert = require('node:assert/strict')",
+      "const fs = require('node:fs')",
+      `const log = line => fs.appendFileSync(${JSON.stringify(log)}, line + '\\n')`,
+      `log('start ${file}')`,
+      body,
+      "test('ends', () => new Promise(resolve => setTimeout(resolve, 150)).then(() => log('end " + file + "')))",
+      '',
+    ].join('\n'))
+  }
+  const runs = []
+  const execute = (program, args, options) => {
+    if (!args.includes(RUNNER)) return { status: 0, stdout: '', stderr: '' }
+    runs.push({ files: args.slice(args.indexOf(RUNNER) + 1), env: options.env })
+    return args.some(arg => arg.endsWith('.database.test.cjs')) ? spawnSync(program, args, options)
+      : { status: 0, stdout: TAP_PASS, stderr: '' }
+  }
+  const lines = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : []
+  return { f, execute, runs, lines }
+}
+
+const RACE_SUITE = "test('opted in', () => { assert.equal(process.env.PRACTICE_DB_TEST, '1'); " +
+  "assert.equal(process.env.PRACTICE_DB_CONTAINER, 'supabase_db_ci-access-own-fixture') })"
+
+test('race suites run one file at a time on the test stack, after the pgTAP tests, outside the application batch', t => {
+  const { f, execute, runs, lines } = raceFixture(t, 'ci-access-own-fixture', {
+    'lib/one.database.test.cjs': RACE_SUITE,
+    'lib/two.database.test.cjs': RACE_SUITE,
+  })
+  const report = runVerification(repository(f.root), { execute })
+  const row = report.rows.find(item => item.name === 'Database race tests')
+  assert.equal(row.status, 'PASS', report.output)
+  assert.match(row.detail, /^2 files one at a time, 4 passed in \d+ s$/)
+  assert.ok(report.rows.findIndex(item => item.name === 'Database tests') < report.rows.indexOf(row))
+  const suiteRuns = runs.filter(item => item.files.some(file => file.endsWith('.database.test.cjs')))
+  assert.deepEqual(suiteRuns.map(item => item.files), [['lib/one.database.test.cjs'], ['lib/two.database.test.cjs']])
+  assert.deepEqual(lines(), ['start lib/one.database.test.cjs', 'end lib/one.database.test.cjs',
+    'start lib/two.database.test.cjs', 'end lib/two.database.test.cjs'], 'never two suites at once')
+  for (const item of runs.filter(entry => !suiteRuns.includes(entry))) {
+    assert.ok(!item.files.some(file => file.endsWith('.database.test.cjs')), 'the application batch has no database suite')
+    assert.equal(item.env.PRACTICE_DB_TEST, undefined, 'no other batch is opted in')
+  }
+})
+
+test('a failing or skipped race suite fails verification and is named with its failing test', t => {
+  const { f, execute } = raceFixture(t, 'ci-access-own-fixture', {
+    'lib/fails.database.test.cjs': "test('racing starts open one attempt', () => assert.equal(2, 1, 'two attempts'))",
+    'lib/passes.database.test.cjs': RACE_SUITE,
+    'lib/skips.database.test.cjs': "test('needs a flag', { skip: process.env.UNSET_DB_TEST !== '1' }, () => {})",
+  })
+  const report = runVerification(repository(f.root), { execute })
+  const row = report.rows.find(item => item.name === 'Database race tests')
+  assert.equal(row.status, 'FAIL')
+  assert.equal(row.detail, '2 of 3 files failed: lib/fails.database.test.cjs, lib/skips.database.test.cjs')
+  assert.match(report.output, /Database race tests: lib\/fails\.database\.test\.cjs — 1 failed, exit 1\n {2}racing starts open one attempt\n.*fails\.database\.test\.cjs:\d+:\d+/)
+  assert.match(report.output, /two attempts/)
+  assert.match(report.output, /Database race tests: lib\/skips\.database\.test\.cjs — 1 skipped \(its opt-in flag or container is not set\)/)
+  assert.equal(report.exitCode, 1)
+})
+
+test('race suites refuse a stack that is not a test stack, and skip with the other database checks', t => {
+  const shared = raceFixture(t, 'Campusintel', { 'lib/one.database.test.cjs': RACE_SUITE })
+  const blocked = runVerification(repository(shared.f.root), { execute: shared.execute })
+  const row = blocked.rows.find(item => item.name === 'Database race tests')
+  assert.equal(row.status, 'BLOCKED')
+  assert.match(row.detail, /need a test stack, not Campusintel: start one with SUPABASE_PROJECT_ID=ci-access-own-<name>/)
+  assert.deepEqual(shared.lines(), [], 'no suite ran')
+  assert.equal(blocked.exitCode, 1)
+
+  const docsOnly = fixture(t)
+  fs.writeFileSync(path.join(docsOnly.root, 'notes.md'), 'notes\n')
+  const skipped = runVerification(repository(docsOnly.root), { execute: mockExecute(() => ({ status: 0 })) })
+  assert.equal(skipped.rows.find(item => item.name === 'Database race tests').status, 'SKIP')
+})
+
+test('the stack is SUPABASE_PROJECT_ID, else project_id in the configuration SUPABASE_WORKDIR points at', t => {
+  const f = fixture(t)
+  fs.mkdirSync(path.join(f.root, 'copy', 'supabase'), { recursive: true })
+  fs.writeFileSync(path.join(f.root, 'copy', 'supabase', 'config.toml'), '# copy\nproject_id = "ci-access-own-copy"\n')
+  assert.equal(projectId(f.root, { SUPABASE_WORKDIR: 'copy' }), 'ci-access-own-copy')
+  assert.equal(projectId(f.root, { SUPABASE_WORKDIR: 'copy', SUPABASE_PROJECT_ID: 'ci-access-own-ci' }), 'ci-access-own-ci')
+  assert.equal(projectId(f.root, {}), null)
+})
+
+test('CI names its database as a test stack, and the verifier opts in exactly the flags the suites read', () => {
+  const { workflow } = startStep()
+  const ciProject = /\n {6}SUPABASE_PROJECT_ID: (\S+)\n/.exec(workflow)?.[1]
+  assert.match(ciProject ?? '', TEST_STACK)
+  const root = path.join(__dirname, '../..')
+  const { database } = collectTestFiles(root)
+  // The suites and the fixtures they load.
+  const fixtures = fs.readdirSync(path.join(root, 'lib'), { recursive: true })
+    .filter(file => /fixture.*\.cjs$/.test(file)).map(file => path.join('lib', file))
+  const sources = [...database, ...fixtures]
+  const read = new Set(sources.flatMap(file => [...fs.readFileSync(path.join(root, file), 'utf8')
+    .matchAll(/process\.env\.([A-Z_]+_DB_(?:TEST|CONTAINER))\b/g)].map(match => match[1])))
+  assert.deepEqual([...read].sort(), [...FLAGS, ...CONTAINER_VARIABLES].sort())
 })
 
 test('cleanup from an unrelated worktree leaves unmerged work intact', t => {

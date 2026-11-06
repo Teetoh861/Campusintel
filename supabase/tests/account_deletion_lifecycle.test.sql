@@ -1,5 +1,7 @@
 begin;
 select no_plan();
+-- The deletion worker and monitor act on every due job, so set aside jobs other runs left (rolled back with the rest).
+delete from private.account_deletion_jobs;
 
 select ok(not has_table_privilege('authenticated', 'private.account_deletion_jobs', 'SELECT'), 'jobs are never student-readable');
 select ok(not has_table_privilege('service_role', 'private.account_deletion_jobs', 'DELETE'), 'service has narrow RPCs, no job table writes');
@@ -102,7 +104,8 @@ values ('a1000000-0000-4000-8000-000000000001', statement_timestamp() - interval
   statement_timestamp() + interval '1 hour', statement_timestamp() + interval '1 hour');
 select public.issue_recovery_grant(repeat('3',64), 'a1000000-0000-4000-8000-000000000001', repeat('4',64));
 update private.account_deletion_jobs set requested_at = deadline - interval '720 hours' - interval '2 hours',
-  deadline = deadline - interval '2 hours', retry_at = deadline - interval '2 hours';
+  deadline = deadline - interval '2 hours', retry_at = deadline - interval '2 hours'
+  where user_id = 'a1000000-0000-4000-8000-000000000001';
 set local role authenticated;
 select is(public.read_account_lifecycle()->>'status', 'expired', 'deadline makes account expired before worker execution');
 select is(public.cancel_student_deletion((public.read_account_lifecycle()->>'requestId')::uuid)->>'status', 'expired', 'late cancellation denied');
@@ -119,7 +122,8 @@ select is((public.run_account_deletion_jobs()->>'completed')::integer, 1, 'due s
 select is((public.run_account_deletion_jobs()->>'completed')::integer, 0, 'repeated purge is idempotent');
 reset role;
 select is((select count(*)::integer from auth.users where id = 'a1000000-0000-4000-8000-000000000001'), 0, 'student Auth identity removed');
-select is((select count(*)::integer from private.account_deletion_jobs), 0, 'no identifying job receipt retained');
+select is((select count(*)::integer from private.account_deletion_jobs where user_id = 'a1000000-0000-4000-8000-000000000001'), 0,
+  'no identifying job receipt retained');
 select is((select count(*)::integer from auth.users where id in ('a1000000-0000-4000-8000-000000000002','a1000000-0000-4000-8000-000000000003')), 2, 'other student and operator preserved');
 select * from finish();
 rollback;

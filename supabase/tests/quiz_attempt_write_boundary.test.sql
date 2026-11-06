@@ -96,7 +96,8 @@ select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000001',
   2, 'start', null, 'in_progress', (select selection from quiz_fixture)),
   '{"status":"conflict"}'::jsonb, 'an old-style start with a browser-chosen selection is refused');
 reset role;
-select is((select count(*)::int from public.quiz_attempts), 0, 'and pins nothing');
+select is((select count(*)::int from public.quiz_attempts where user_id in ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222')), 0,
+  'and pins nothing');
 select pg_temp.legacy_attempt('a2000000-0000-4000-8000-000000000001',
   (select content_revision from quiz_selected where ordinal = 0));
 set local role service_role;
@@ -110,12 +111,12 @@ select is(public.write_quiz_attempt('a1000000-0000-4000-8000-000000000002',
 select throws_ok($$select * from public.quiz_attempt_questions$$, '42501', null,
   'service capability has no direct snapshot table read');
 reset role;
-select is((select count(*)::int from public.quiz_attempt_questions), 2,
+select is((select count(*)::int from public.quiz_attempt_questions where attempt_id = 'a2000000-0000-4000-8000-000000000001'), 2,
   'one attempt stores each selected question and revision once');
 select ok((select bool_and(q.content_revision = s.content_revision and q.ordinal = s.ordinal
   and q.item_id = s.item_id) from public.quiz_attempt_questions q
   join quiz_selected s on s.question_id = q.question_id), 'snapshot pins exact managed item revisions');
-select is((select count(*)::int from public.quiz_attempt_answers), 0,
+select is((select count(*)::int from public.quiz_attempt_answers where attempt_id = 'a2000000-0000-4000-8000-000000000001'), 0,
   'starting a quiz does not manufacture answers');
 
 -- Simulate an approved operator publication while the first attempt is active.

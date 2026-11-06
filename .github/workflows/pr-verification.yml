@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
+      # The CI database is a test stack: its containers are named supabase_db_ci-access-own-ci, which the database race
+      # suites require before they commit rows. The CLI reads it in place of project_id in supabase/config.toml.
+      SUPABASE_PROJECT_ID: ci-access-own-ci
       # The Supabase CLI pulls every image, the pgTAP runner included, from this registry (SUPABASE_INTERNAL_IMAGE_REGISTRY,
       # read by GetRegistry in apps/cli-go/internal/utils/docker.go at CLI v2.109.1), with the credentials of docker login.
       SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
@@ -90,4 +93,5 @@ jobs:
             echo "::warning::Could not pull $PG_PROVE_IMAGE in advance; supabase test db will pull its own runner."
           fi
       - name: Verify application and applicable optional checks
+        # After the pgTAP tests, the verifier runs every database race suite one file at a time on this database.
         run: node scripts/dev-workflow/cli.cjs verify
