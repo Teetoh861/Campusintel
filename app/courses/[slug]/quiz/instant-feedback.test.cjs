@@ -268,3 +268,11 @@ test('the end says how many were right, then Practise again, Next topic and Back
   assert.match(early, /<h1[^>]*>2 of 3 right<\/h1>/, 'correct out of answered')
   assert.doesNotMatch(early, /Practise again/, 'no new attempt without access')
 }))
+
+test('Practise again is offered only on a topic the course still has', async () => withTsx(async () => {
+  const { canPractiseTopicAgain } = require('./instant-feedback.ts')
+  assert.equal(canPractiseTopicAgain('Listening Skills', ['Listening Skills', 'The Sounds of English']), true)
+  assert.equal(canPractiseTopicAgain('Leadership Overview', ['An Overview of Leadership']), false, 'a retired topic')
+  assert.equal(canPractiseTopicAgain('Listening Skills', []), false, 'topics not read: never a button that may fail')
+  assert.equal(canPractiseTopicAgain(null, ['Listening Skills']), false, 'an exam has no topic')
+}))

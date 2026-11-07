@@ -28,7 +28,7 @@ begin
   perform 1 from public.managed_content_items
     where course_id = v_course and kind = 'cbt_question' order by id for update;
   -- Decision 3: the course's catalogue title becomes the bank's (apply) or goes back (rollback), in this same statement.
-  if v_bank->'title' <> 'null'::jsonb then
+  if v_bank ? 'title' then
     update public.institutional_courses set display_title = case when p_action = 'apply'
         then v_bank->'title'->>'bank' else v_bank->'title'->>'catalogue' end
       where repository_course_id = v_course and course_code = v_bank->>'code'

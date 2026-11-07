@@ -21,6 +21,7 @@ import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { practicePolicyFor } from '@/lib/practice/server'
 import { readPracticeTopics, readTopicProgress, topicRowsOf } from '@/lib/practice/topics'
+import { OFFICIAL_BANK_SECTIONS } from '@/lib/data/official-bank-sections'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
@@ -174,7 +175,8 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
       {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} topics={topics} number={number('cbtPractice')} />}
       {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
         practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}
-      {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview} number={number('overview')} />}
+      {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview}
+        bankTopics={OFFICIAL_BANK_SECTIONS[route.slug]} number={number('overview')} />}
       {sections.includes('reading') && <ReadingList textbooks={route.course.textbooks} number={number('reading')} />}
     </div>
   </StudentPage>

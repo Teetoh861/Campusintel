@@ -169,9 +169,12 @@ export function TheorySection({ items, number, practiceHref }: {
   </StudySection>
 }
 
-/** Published overview context; every block renders only when the managed payload carries it. */
-export function OverviewSection({ overview, number }: { overview: ManagedOverview; number: number }): ReactElement {
-  const topics = overview.topics ?? [], examFocus = overview.examFocus ?? []
+/** Published overview context; every block renders only when the managed payload carries it. A course whose questions
+ * come from an official bank lists the bank's topic names, in the bank's order, in place of the overview's topics. */
+export function OverviewSection({ overview, bankTopics, number }: {
+  overview: ManagedOverview; bankTopics?: ReadonlyArray<string>; number: number
+}): ReactElement {
+  const topics = bankTopics ? [] : overview.topics ?? [], examFocus = overview.examFocus ?? []
   const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
   return <StudySection id="overview" number={number} lede="Explore the topics and key ideas for this course.">
     {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
@@ -182,6 +185,12 @@ export function OverviewSection({ overview, number }: { overview: ManagedOvervie
           <span>{pad2(index + 1)}</span>
           <div><p className="student-detail-strong">{item.title}</p><p className="student-detail-prose">{item.description}</p></div>
         </li>)}
+      </ol>
+    </div>}
+    {bankTopics && bankTopics.length > 0 && <div className="student-detail-group">
+      <h3>Syllabus topics</h3>
+      <ol className="student-detail-numbered student-surface">
+        {bankTopics.map((topic, index) => <li key={topic}><span>{pad2(index + 1)}</span><p className="student-detail-strong">{topic}</p></li>)}
       </ol>
     </div>}
     {topics.length > 0 && <div className="student-detail-group">

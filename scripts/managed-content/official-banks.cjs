@@ -200,7 +200,8 @@ function jsonLiteral(value, tag) {
 /** The generated forward migration for one course. */
 function migrationSql(plan, seedActor) {
   const data = {
-    code: plan.code, courseId: plan.courseId, seedActor, actor: BANK_ACTOR, bankCount: plan.counts.bank, title: plan.title,
+    code: plan.code, courseId: plan.courseId, seedActor, actor: BANK_ACTOR, bankCount: plan.counts.bank,
+    ...(plan.title ? { title: plan.title } : {}),
     audited: plan.audited.map(item => item.itemId),
     keep: plan.keep.map(row => ({ itemId: row.itemId, revise: row.revise, payload: row.payload })),
     retire: plan.retire,
@@ -237,8 +238,8 @@ begin
   -- Every CBT question of the course, locked in one order before anything is read or written.
   perform 1 from public.managed_content_items
     where course_id = v_course and kind = 'cbt_question' order by id for update;
-  -- Decision 3: the course's catalogue title becomes the bank's (apply) or goes back (rollback), in this same statement.
-  if v_bank->'title' <> 'null'::jsonb then
+${plan.title ? `  -- Decision 3: the course's catalogue title becomes the bank's (apply) or goes back (rollback), in this same statement.
+  if v_bank ? 'title' then
     update public.institutional_courses set display_title = case when p_action = 'apply'
         then v_bank->'title'->>'bank' else v_bank->'title'->>'catalogue' end
       where repository_course_id = v_course and course_code = v_bank->>'code'
@@ -249,7 +250,7 @@ begin
       raise exception 'Official bank %: the catalogue title is not the audited one', v_bank->>'code';
     end if;
   end if;
-  select coalesce(jsonb_object_agg(value, 1), '{}') into v_audited from jsonb_array_elements_text(v_bank->'audited');
+` : ''}  select coalesce(jsonb_object_agg(value, 1), '{}') into v_audited from jsonb_array_elements_text(v_bank->'audited');
   select coalesce(jsonb_object_agg(k.value->>'itemId', case when (k.value->>'revise')::boolean then 2 else 1 end), '{}')
     || coalesce((select jsonb_object_agg(a.value->>'itemId', 1) from jsonb_array_elements(v_bank->'add') a), '{}')
     into v_final from jsonb_array_elements(v_bank->'keep') k;
