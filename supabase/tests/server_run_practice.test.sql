@@ -7,10 +7,11 @@
 begin;
 select no_plan();
 
--- These cases were written for the repository seed: course 01 (ENT211) with 50 questions and course 07 (ACC-CM201)
--- with 150. Their official bank imports are rolled back inside this transaction, which republishes exactly those.
+-- These cases were written for the repository seed: course 01 (ENT211) with 50 questions, course 07 (ACC-CM201)
+-- with 150 and course 08 (GST111) with 100. Their official bank imports are rolled back inside this transaction, which republishes exactly those.
 select is(private.official_bank_ent211('rollback'), 'rolled-back', 'course 01 runs on its 50 seeded questions');
 select is(private.official_bank_acc_cm201('rollback'), 'rolled-back', 'course 07 runs on its 150 seeded questions');
+select is(private.official_bank_gst111('rollback'), 'rolled-back', 'course 08 runs on its 100 seeded questions');
 
 -- Helpers ------------------------------------------------------------------------------------------------------------
 create function pg_temp.u(n integer) returns uuid language sql immutable

@@ -8,6 +8,10 @@
 begin;
 select no_plan();
 
+-- Course 08 (GST111) is used with the topics and questions it was seeded with: its official bank import is rolled back
+-- inside this transaction.
+select is(private.official_bank_gst111('rollback'), 'rolled-back', 'course 08 runs on its seeded questions');
+
 -- Helpers ------------------------------------------------------------------------------------------------------------
 create function pg_temp.u(n integer) returns uuid language sql immutable
   as $$ select ('f1000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid $$;

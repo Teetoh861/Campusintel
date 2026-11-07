@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { uuidV5 } = require('./source-manifest.cjs')
 const { IMPORTS } = require('./official-banks/imports.cjs')
-const { APPROVED_ANSWER_KEY_CHANGES } = require('./official-banks/decisions.cjs')
+const { APPROVED_ANSWER_KEY_CHANGES, BANK_TITLES } = require('./official-banks/decisions.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const BANK_DIR = path.join(__dirname, 'official-banks')
@@ -159,8 +159,12 @@ function planImport(entry, manifest, banks, identity) {
   assert.deepEqual(counts, entry.expected, `${entry.code}: counts differ from the audit`)
   assert.equal(counts.kept + counts.added, counts.bank)
   const functionName = `official_bank_${entry.code.toLowerCase().replaceAll('-', '_')}`
+  // Decision 3: the bank document's title, without its leading course code, replaces the catalogue title.
+  const title = BANK_TITLES[entry.code] ? { catalogue: BANK_TITLES[entry.code].catalogue,
+    bank: textField(bank.title.startsWith(`${entry.code} `) ? bank.title.slice(entry.code.length + 1) : bank.title,
+      240, `${entry.code} title`) } : null
   return { ...entry, courseId: course.courseId, slug: course.slug, functionName, bank, audited: published,
-    keep, retire, add, counts, changed: keep.filter(row => row.revise).length }
+    keep, retire, add, counts, title, changed: keep.filter(row => row.revise).length }
 }
 
 /** Every configured import, checked for identity collisions with the seed and with each other. */
@@ -196,7 +200,7 @@ function jsonLiteral(value, tag) {
 /** The generated forward migration for one course. */
 function migrationSql(plan, seedActor) {
   const data = {
-    code: plan.code, courseId: plan.courseId, seedActor, actor: BANK_ACTOR, bankCount: plan.counts.bank,
+    code: plan.code, courseId: plan.courseId, seedActor, actor: BANK_ACTOR, bankCount: plan.counts.bank, title: plan.title,
     audited: plan.audited.map(item => item.itemId),
     keep: plan.keep.map(row => ({ itemId: row.itemId, revise: row.revise, payload: row.payload })),
     retire: plan.retire,
@@ -233,6 +237,18 @@ begin
   -- Every CBT question of the course, locked in one order before anything is read or written.
   perform 1 from public.managed_content_items
     where course_id = v_course and kind = 'cbt_question' order by id for update;
+  -- Decision 3: the course's catalogue title becomes the bank's (apply) or goes back (rollback), in this same statement.
+  if v_bank->'title' <> 'null'::jsonb then
+    update public.institutional_courses set display_title = case when p_action = 'apply'
+        then v_bank->'title'->>'bank' else v_bank->'title'->>'catalogue' end
+      where repository_course_id = v_course and course_code = v_bank->>'code'
+        and display_title = case when p_action = 'apply' then v_bank->'title'->>'catalogue' else v_bank->'title'->>'bank' end;
+    if not exists (select 1 from public.institutional_courses where repository_course_id = v_course
+        and course_code = v_bank->>'code' and display_title = case when p_action = 'apply'
+          then v_bank->'title'->>'bank' else v_bank->'title'->>'catalogue' end) then
+      raise exception 'Official bank %: the catalogue title is not the audited one', v_bank->>'code';
+    end if;
+  end if;
   select coalesce(jsonb_object_agg(value, 1), '{}') into v_audited from jsonb_array_elements_text(v_bank->'audited');
   select coalesce(jsonb_object_agg(k.value->>'itemId', case when (k.value->>'revise')::boolean then 2 else 1 end), '{}')
     || coalesce((select jsonb_object_agg(a.value->>'itemId', 1) from jsonb_array_elements(v_bank->'add') a), '{}')
@@ -426,6 +442,9 @@ function behaviourTestSql(plans) {
       `select is(${fn}('rollback'), 'rolled-back', ${label('rollback runs')});`,
       `select ok(${live(plan.courseId)} = ${jsonLiteral(audited, 'audited_set')},`,
       `  ${label('rollback republishes exactly the audited set at revision one')});`,
+      ...(plan.title ? [
+        `select is((select display_title from public.institutional_courses where repository_course_id = '${plan.courseId}'),`,
+        `  ${sqlText(plan.title.catalogue)}, ${label('rollback restores the catalogue title')});`] : []),
       `select is((select count(*)::int from public.managed_content_items where course_id = '${plan.courseId}'`,
       `  and kind = 'cbt_question'), ${plan.counts.published + plan.counts.added}, ${label('rollback deletes nothing')});`,
       `select is((select count(*)::int from public.managed_content_publications p join public.managed_content_items i`,
@@ -458,6 +477,9 @@ function behaviourTestSql(plans) {
       `  ${label('the failed apply wrote nothing')});`,
       '',
       `select is(${fn}('apply'), 'applied', ${label('apply after a rollback republishes the bank set')});`,
+      ...(plan.title ? [
+        `select is((select display_title from public.institutional_courses where repository_course_id = '${plan.courseId}'),`,
+        `  ${sqlText(plan.title.bank)}, ${label('the catalogue shows the bank title (decision 3)')});`] : []),
       `select ok(${live(plan.courseId)} = ${jsonLiteral(final, 'final_set')},`,
       `  ${label('the bank set is published again')});`,
       '')
