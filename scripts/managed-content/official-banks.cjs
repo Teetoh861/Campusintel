@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { uuidV5 } = require('./source-manifest.cjs')
 const { IMPORTS } = require('./official-banks/imports.cjs')
-const { APPROVED_ANSWER_KEY_CHANGES, BANK_TITLES } = require('./official-banks/decisions.cjs')
+const { APPROVED_ANSWER_KEY_CHANGES, OFFICIAL_COURSES } = require('./official-banks/decisions.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const BANK_DIR = path.join(__dirname, 'official-banks')
@@ -159,10 +159,10 @@ function planImport(entry, manifest, banks, identity) {
   assert.deepEqual(counts, entry.expected, `${entry.code}: counts differ from the audit`)
   assert.equal(counts.kept + counts.added, counts.bank)
   const functionName = `official_bank_${entry.code.toLowerCase().replaceAll('-', '_')}`
-  // Decision 3: the bank document's title, without its leading course code, replaces the catalogue title.
-  const title = BANK_TITLES[entry.code] ? { catalogue: BANK_TITLES[entry.code].catalogue,
-    bank: textField(bank.title.startsWith(`${entry.code} `) ? bank.title.slice(entry.code.length + 1) : bank.title,
-      240, `${entry.code} title`) } : null
+  // The owner's official title replaces a catalogue title that differs from it; the bank document's title is not used.
+  const official = OFFICIAL_COURSES[entry.code]
+  const title = official?.catalogue ? { catalogue: official.catalogue, bank: textField(official.title, 240, `${entry.code} title`) }
+    : null
   return { ...entry, courseId: course.courseId, slug: course.slug, functionName, bank, audited: published,
     keep, retire, add, counts, title, changed: keep.filter(row => row.revise).length }
 }
@@ -238,7 +238,7 @@ begin
   -- Every CBT question of the course, locked in one order before anything is read or written.
   perform 1 from public.managed_content_items
     where course_id = v_course and kind = 'cbt_question' order by id for update;
-${plan.title ? `  -- Decision 3: the course's catalogue title becomes the bank's (apply) or goes back (rollback), in this same statement.
+${plan.title ? `  -- The owner's official title replaces the catalogue's (apply) or the catalogue's comes back (rollback), in this statement.
   if v_bank ? 'title' then
     update public.institutional_courses set display_title = case when p_action = 'apply'
         then v_bank->'title'->>'bank' else v_bank->'title'->>'catalogue' end
@@ -480,7 +480,7 @@ function behaviourTestSql(plans) {
       `select is(${fn}('apply'), 'applied', ${label('apply after a rollback republishes the bank set')});`,
       ...(plan.title ? [
         `select is((select display_title from public.institutional_courses where repository_course_id = '${plan.courseId}'),`,
-        `  ${sqlText(plan.title.bank)}, ${label('the catalogue shows the bank title (decision 3)')});`] : []),
+        `  ${sqlText(plan.title.bank)}, ${label('the catalogue shows the official title')});`] : []),
       `select ok(${live(plan.courseId)} = ${jsonLiteral(final, 'final_set')},`,
       `  ${label('the bank set is published again')});`,
       '')
