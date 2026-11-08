@@ -86,12 +86,16 @@ select is(
 );
 
 select is(
-  (select count(*)::int from public.institutional_courses
-   where id between '50000000-0000-4000-8000-000000000102'
-                and '50000000-0000-4000-8000-000000000149'
-     and (repository_course_id is not null or is_free)),
-  0,
-  'new catalogue rows neither infer content links nor free-tier status'
+  (select array_agg(institutional_courses.course_code || '=' || coalesce(courses.content_key, 'unlinked')
+                    || case when institutional_courses.is_free then ' free' else '' end
+                    order by institutional_courses.id)
+   from public.institutional_courses
+   left join public.courses on courses.id = institutional_courses.repository_course_id
+   where institutional_courses.id between '50000000-0000-4000-8000-000000000102'
+                                      and '50000000-0000-4000-8000-000000000149'
+     and (institutional_courses.repository_course_id is not null or institutional_courses.is_free)),
+  array['ACS101=introduction-actuarial-science', 'LAG-ACS213=mathematics-business']::text[],
+  'new catalogue rows infer no content links or free-tier status; only the ACS101 and LAG-ACS213 official banks link theirs'
 );
 
 select is(

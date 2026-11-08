@@ -26,9 +26,23 @@ test('a course without a bank keeps its overview topics with their descriptions'
   assert.match(text(html), /Syllabus topics CH 1 Old chapter one CH 2 Old chapter two/)
 }))
 
+test('a course created for its bank has an overview of bank topic names only: no lede, no body', async () => withTsx(async () => {
+  const { OverviewSection, studySections } = require('./sections.tsx')
+  const html = renderToStaticMarkup(React.createElement(OverviewSection, { overview: null,
+    bankTopics: ['Week 1', 'Week 2'], number: 2 }))
+  assert.match(text(html), /Syllabus topics 01 Week 1 02 Week 2$/)
+  assert.doesNotMatch(html, /Explore the topics|student-reading/, 'no intro text')
+  assert.deepEqual(studySections({ study: null, learning: null, practice: null, textbooks: 0, bankTopics: 2 }), ['overview'])
+  assert.deepEqual(studySections({ study: null, learning: null, practice: null, textbooks: 0 }), [], 'no topics, no overview')
+}))
+
 test('every imported course has its bank topics for the overview', async () => withTsx(async () => {
   const { OFFICIAL_BANK_SECTIONS } = require('../../../lib/data/official-bank-sections.ts')
-  assert.deepEqual(Object.keys(OFFICIAL_BANK_SECTIONS).sort(), ['entrepreneurship-innovation', 'financial-accounting-1',
-    'introduction-financial-management', 'leadership-governance', 'principles-business-administration',
-    'principles-business-administration-2', 'quantitative-analysis-management', 'use-of-english'])
+  const { OFFICIAL_BANK_COURSES } = require('../../../lib/data/official-bank-courses.ts')
+  const existing = ['entrepreneurship-innovation', 'financial-accounting-1', 'introduction-financial-management',
+    'leadership-governance', 'principles-business-administration', 'principles-business-administration-2',
+    'quantitative-analysis-management', 'use-of-english']
+  assert.deepEqual(Object.keys(OFFICIAL_BANK_SECTIONS).sort(),
+    [...existing, ...OFFICIAL_BANK_COURSES.map(course => course.slug)].sort())
+  assert.equal(OFFICIAL_BANK_COURSES.length, 19)
 }))

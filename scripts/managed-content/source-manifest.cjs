@@ -29,7 +29,8 @@ function loadSource() {
   }
   try {
     return {
-      courses: require(path.join(ROOT, 'lib/data/courses.ts')).courses,
+      // The seed's own courses; courses created for an official bank come from their bank migrations instead.
+      courses: require(path.join(ROOT, 'lib/data/courses.ts')).repositorySeedCourses,
       quizzes: require(path.join(ROOT, 'lib/data/quizzes.ts')).quizzes,
       theory: require(path.join(ROOT, 'lib/data/theory-questions.ts')).theoryContent,
       notes: require(path.join(ROOT, 'lib/data/topic-notes.ts')).topicNotes,

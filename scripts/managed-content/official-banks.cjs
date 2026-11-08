@@ -8,7 +8,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { uuidV5 } = require('./source-manifest.cjs')
 const { IMPORTS } = require('./official-banks/imports.cjs')
-const { APPROVED_ANSWER_KEY_CHANGES, OFFICIAL_COURSES } = require('./official-banks/decisions.cjs')
+const { APPROVED_ANSWER_KEY_CHANGES, EXAM_MINUTES, EXAM_QUESTIONS, OFFICIAL_COURSES } = require('./official-banks/decisions.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const BANK_DIR = path.join(__dirname, 'official-banks')
@@ -21,6 +21,7 @@ const LETTERS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 
 const BEHAVIOUR_TEST = path.join(ROOT, 'supabase/tests/official_banks.test.sql')
 const SECTIONS_MODULE = path.join(ROOT, 'lib/data/official-bank-sections.ts')
+const COURSES_MODULE = path.join(ROOT, 'lib/data/official-bank-courses.ts')
 
 /** Minimal CSV reader for the committed manifest and identity map (quoted fields, CRLF or LF). */
 function readCsv(filename) {
@@ -124,11 +125,35 @@ function jsonEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+/** The repository slug pattern: the official title in lower case, without short joining words, Roman numerals as digits. */
+function slugFor(title) {
+  const words = title.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean)
+    .filter(word => !['to', 'of', 'for', 'in', 'and', 'the'].includes(word))
+  return words.map(word => ({ i: '1', ii: '2', iii: '3' })[word] ?? word).join('-')
+}
+
+/** A new course's registry identity, catalogue link, applicability and practice settings, from the owner's list. */
+function newCourseShell(entry, manifest) {
+  const official = OFFICIAL_COURSES[entry.code]
+  assert.ok(official, `${entry.code}: not on the owner's official list`)
+  assert.equal(entry.contentKey, slugFor(official.title), `${entry.code}: slug must follow the repository pattern`)
+  assert.ok(!manifest.courses.some(row => row.contentKey === entry.contentKey || row.slug === entry.contentKey),
+    `${entry.code}: slug already used`)
+  assert.ok([30, 40].includes(EXAM_MINUTES[entry.code]), `${entry.code}: exam minutes`)
+  return { courseId: uuidV5(`course:${entry.contentKey}`), slug: entry.contentKey,
+    shell: { contentKey: entry.contentKey, titles: [...new Set([official.catalogue ?? official.title, official.title])],
+      level: official.level, semesters: official.semesters },
+    course: { code: entry.code, title: official.title, level: Number(official.level.slice(0, 3)),
+      semester: official.semesters[0] === 'second-semester' ? 2 : 1, units: official.units,
+      examQuestions: EXAM_QUESTIONS, examMinutes: EXAM_MINUTES[entry.code] } }
+}
+
 /** One course's import: the audited published set, what is kept (and revised), retired and added. */
 function planImport(entry, manifest, banks, identity) {
   const bank = banks.get(entry.code)
   assert.ok(bank, `${entry.code}: no committed bank`)
-  const course = manifest.courses.find(row => row.contentKey === entry.contentKey)
+  const created = entry.newCourse ? newCourseShell(entry, manifest) : null
+  const course = created ?? manifest.courses.find(row => row.contentKey === entry.contentKey)
   assert.ok(course, `${entry.code}: unknown repository course ${entry.contentKey}`)
   const published = manifest.items.filter(item => item.courseId === course.courseId && item.kind === 'cbt_question')
   const bySourceKey = new Map(published.map(item => [item.sourceKey, item]))
@@ -164,7 +189,8 @@ function planImport(entry, manifest, banks, identity) {
   const title = official?.catalogue ? { catalogue: official.catalogue, bank: textField(official.title, 240, `${entry.code} title`) }
     : null
   return { ...entry, courseId: course.courseId, slug: course.slug, functionName, bank, audited: published,
-    keep, retire, add, counts, title, changed: keep.filter(row => row.revise).length }
+    keep, retire, add, counts, title, changed: keep.filter(row => row.revise).length,
+    shell: created?.shell ?? null, course: created?.course ?? null }
 }
 
 /** Every configured import, checked for identity collisions with the seed and with each other. */
@@ -202,6 +228,7 @@ function migrationSql(plan, seedActor) {
   const data = {
     code: plan.code, courseId: plan.courseId, seedActor, actor: BANK_ACTOR, bankCount: plan.counts.bank,
     ...(plan.title ? { title: plan.title } : {}),
+    ...(plan.shell ? { shell: plan.shell } : {}),
     audited: plan.audited.map(item => item.itemId),
     keep: plan.keep.map(row => ({ itemId: row.itemId, revise: row.revise, payload: row.payload })),
     retire: plan.retire,
@@ -231,14 +258,41 @@ declare
   v_row jsonb;
   v_id uuid;
   v_item public.managed_content_items%rowtype;
-begin
+${plan.shell ? '  v_catalogue uuid;\n' : ''}begin
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;
   -- Every CBT question of the course, locked in one order before anything is read or written.
   perform 1 from public.managed_content_items
     where course_id = v_course and kind = 'cbt_question' order by id for update;
-${plan.title ? `  -- The owner's official title replaces the catalogue's (apply) or the catalogue's comes back (rollback), in this statement.
+${plan.shell ? `  -- A new course, once: its repository identity and the link from its catalogue course, which must already apply at the
+  -- official level and semesters. A rerun finds them in place; anything else is refused.
+  if p_action = 'apply' then
+    insert into public.courses (id, content_key, is_shared)
+      values (v_course, v_bank->'shell'->>'contentKey', null) on conflict do nothing;
+    if not exists (select 1 from public.courses where id = v_course and content_key = v_bank->'shell'->>'contentKey') then
+      raise exception 'Official bank %: the repository identity is not this course''s', v_bank->>'code';
+    end if;
+    update public.institutional_courses set repository_course_id = v_course
+      where course_code = v_bank->>'code' and repository_course_id is null
+        and display_title in (select jsonb_array_elements_text(v_bank->'shell'->'titles'));
+    select id into v_catalogue from public.institutional_courses
+      where course_code = v_bank->>'code' and repository_course_id = v_course;
+    if v_catalogue is null or (select count(*) from public.institutional_courses where course_code = v_bank->>'code') <> 1 then
+      raise exception 'Official bank %: the catalogue course is not linked exactly once', v_bank->>'code';
+    end if;
+    -- Which students see the course stays the catalogue's: the import never adds or removes applicability rows.
+    -- It refuses a catalogue course that does not already apply at the official level in every official semester.
+    if exists (select 1 from jsonb_array_elements_text(v_bank->'shell'->'semesters') s(key)
+        where not exists (select 1 from public.course_applicability a
+          join public.academic_levels l on l.id = a.academic_level_id
+          join public.academic_periods p on p.id = a.academic_period_id
+          where a.institutional_course_id = v_catalogue and l.key = v_bank->'shell'->>'level' and p.key = s.key)) then
+      raise exception 'Official bank %: the catalogue course does not apply at the official level in every official semester',
+        v_bank->>'code';
+    end if;
+  end if;
+` : ''}${plan.title ? `  -- The owner's official title replaces the catalogue's (apply) or the catalogue's comes back (rollback), in this statement.
   if v_bank ? 'title' then
     update public.institutional_courses set display_title = case when p_action = 'apply'
         then v_bank->'title'->>'bank' else v_bank->'title'->>'catalogue' end
@@ -407,6 +461,8 @@ function behaviourTestSql(plans) {
     'begin;',
     'select no_plan();',
     '',
+    'create temporary table bank_applicability_start on commit drop as select * from public.course_applicability;',
+    '',
     'create temporary table bank_rows on commit drop as',
     '  select (select count(*) from public.managed_content_items) items,',
     '    (select count(*) from public.managed_content_revisions) revisions,',
@@ -426,6 +482,34 @@ function behaviourTestSql(plans) {
       ...plan.add.map(row => [row.itemId, 1])])
     const last = plan.add.at(-1)
     const label = text => sqlText(`${plan.code}: ${text}`)
+    if (plan.shell) {
+      const official = `(select id from public.institutional_courses where course_code = '${plan.code}')`
+      lines.push(`-- ${plan.code}: a new course`,
+        `select is((select content_key from public.courses where id = '${plan.courseId}' and is_shared is null),`,
+        `  '${plan.shell.contentKey}', ${label('the new repository identity is registered, its sharing unresolved')});`,
+        `select is((select is_free from public.institutional_courses where course_code = '${plan.code}'), false,`,
+        `  ${label('the course is not free')});`,
+        `select is((select repository_course_id from public.institutional_courses where course_code = '${plan.code}'),`,
+        `  '${plan.courseId}'::uuid, ${label('its catalogue course links to it')});`,
+        `select is((select display_title from public.institutional_courses where course_code = '${plan.code}'),`,
+        `  ${sqlText(plan.course.title)}, ${label('the catalogue shows the official title')});`,
+        `select is((select array_agg(distinct p.key order by p.key) from public.course_applicability a`,
+        `  join public.academic_levels l on l.id = a.academic_level_id join public.academic_periods p on p.id = a.academic_period_id`,
+        `  where a.institutional_course_id = ${official} and l.key = '${plan.shell.level}'),`,
+        `  array[${plan.shell.semesters.map(key => `'${key}'`).join(', ')}]::text[],`,
+        `  ${label('it applies at the official level in every official semester')});`,
+        `-- Apply refuses a catalogue course missing from an official semester; the removed rows are then put back.`,
+        `create temporary table bank_applicability_${plan.functionName} on commit drop as`,
+        `  select * from public.course_applicability where institutional_course_id = ${official};`,
+        `delete from public.course_applicability where institutional_course_id = ${official}`,
+        `  and academic_period_id = (select id from public.academic_periods where key = '${plan.shell.semesters[0]}');`,
+        `select throws_ok($$select ${fn}('apply')$$, 'P0001',`,
+        `  ${sqlText(`Official bank ${plan.code}: the catalogue course does not apply at the official level in every official semester`)},`,
+        `  ${label('apply refuses a catalogue course missing from an official semester')});`,
+        `insert into public.course_applicability select * from bank_applicability_${plan.functionName}`,
+        `  where (institutional_course_id, department_id, academic_level_id, academic_period_id) not in`,
+        `    (select institutional_course_id, department_id, academic_level_id, academic_period_id from public.course_applicability);`)
+    }
     lines.push(`-- ${plan.code} (${plan.contentKey})`,
       `select is((select count(*)::int from public.managed_content_items where course_id = '${plan.courseId}'`,
       `  and kind = 'cbt_question' and published_revision is not null), ${plan.counts.bank},`,
@@ -455,11 +539,13 @@ function behaviourTestSql(plans) {
       `select is(${fn}('rollback'), 'unchanged', ${label('a second rollback does nothing')});`,
       '',
       `-- A live set that is neither the audited nor the bank set is refused, and nothing changes.`,
-      `update public.managed_content_items set published_revision = null where id = '${plan.audited[0].itemId}';`,
+      plan.audited.length ? `update public.managed_content_items set published_revision = null where id = '${plan.audited[0].itemId}';`
+        : `update public.managed_content_items set published_revision = 1 where id = '${plan.add[0].itemId}';`,
       `select throws_ok($$select ${fn}('apply')$$, 'P0001',`,
       `  ${sqlText(`Official bank ${plan.code}: the published questions are not the audited set`)},`,
       `  ${label('apply refuses a published set other than the audited one')});`,
-      `update public.managed_content_items set published_revision = 1 where id = '${plan.audited[0].itemId}';`,
+      plan.audited.length ? `update public.managed_content_items set published_revision = 1 where id = '${plan.audited[0].itemId}';`
+        : `update public.managed_content_items set published_revision = null where id = '${plan.add[0].itemId}';`,
       '',
       `-- A failure on the last question rolls back everything written before it. After the rollback that question`,
       `-- exists unpublished; its stored text is changed so it is no longer the bank's, then restored.`,
@@ -485,7 +571,11 @@ function behaviourTestSql(plans) {
       `  ${label('the bank set is published again')});`,
       '')
   }
-  lines.push('select * from finish();', 'rollback;', '')
+  lines.push('-- Every apply, rerun, refusal and rollback above leaves the course lists exactly as the migrations left them.',
+    'select ok((select count(*) from bank_applicability_start) = (select count(*) from public.course_applicability)',
+    '  and not exists (select * from bank_applicability_start except select * from public.course_applicability),',
+    "  'the imports add and remove no applicability rows');",
+    'select * from finish();', 'rollback;', '')
   return lines.join('\n')
 }
 
@@ -497,6 +587,35 @@ function sectionsModule(plans) {
     '// Practice topics for courses whose questions come from an official bank, in order of first appearance.',
     'export const OFFICIAL_BANK_SECTIONS: Readonly<Record<string, readonly string[]>> = {',
     ...entries,
+    '}',
+    '',
+  ].join('\n')
+}
+
+/** The new courses' shelf entries and practice settings (read by lib/data/courses.ts and lib/data/quizzes.ts). Only
+ *  identity, the owner's list and exam settings: no overview, tagline or description is written. */
+function coursesModule(plans) {
+  const created = plans.filter(plan => plan.course)
+  const courses = created.map(plan => `  { id: ${JSON.stringify(`bank-${plan.code}`)}, contentKey: ${JSON.stringify(plan.slug)}, `
+    + `slug: ${JSON.stringify(plan.slug)}, code: ${JSON.stringify(plan.code)},\n    title: ${JSON.stringify(plan.course.title)}, `
+    + `level: ${plan.course.level}, semester: ${plan.course.semester}, credits: ${plan.course.units}, `
+    + `textbooks: [], topics: [], examFocus: [], resources: [] },`)
+  const quizzes = created.map(plan => `  ${JSON.stringify(plan.slug)}: { courseSlug: ${JSON.stringify(plan.slug)}, `
+    + `courseCode: ${JSON.stringify(plan.code)}, title: ${JSON.stringify(plan.course.title)},\n    `
+    + `maxQuizQuestions: ${plan.course.examQuestions}, quizDurationMinutes: ${plan.course.examMinutes} },`)
+  return [
+    '// lib/data/official-bank-courses.ts — GENERATED by scripts/managed-content/generate.cjs; do not edit.',
+    '// Courses created for an official bank: shelf identity from the owner\'s course list (title, level, first semester,',
+    '// units) and exam settings. Which students see a course is decided by its catalogue applicability, not by these fields.',
+    "import type { Course } from '@/lib/types'",
+    '',
+    'export const OFFICIAL_BANK_COURSES: Course[] = [',
+    ...courses,
+    ']',
+    '',
+    'export const OFFICIAL_BANK_QUIZZES: Readonly<Record<string, { courseSlug: string; courseCode: string; title: string;',
+    '  maxQuizQuestions: number; quizDurationMinutes: number }>> = {',
+    ...quizzes,
     '}',
     '',
   ].join('\n')
@@ -517,7 +636,7 @@ function publishedCbt(plan) {
 function bankOutputs(manifest, plans) {
   const outputs = plans.map(plan =>
     [path.join(ROOT, 'supabase/migrations', plan.migration), migrationSql(plan, manifest.actor)])
-  outputs.push([SECTIONS_MODULE, sectionsModule(plans)])
+  outputs.push([SECTIONS_MODULE, sectionsModule(plans)], [COURSES_MODULE, coursesModule(plans)])
   if (plans.length) outputs.push([BEHAVIOUR_TEST, behaviourTestSql(plans)])
   return outputs
 }

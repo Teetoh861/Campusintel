@@ -2,7 +2,7 @@
 // generated migration. Each entry also states the audited counts (REPORT.md table), which the generator must reproduce.
 // Migrations sort after every other migration; regenerate with later timestamps if one is added before them.
 
-/** @type {{code: string, contentKey: string, migration: string,
+/** @type {{code: string, contentKey: string, migration: string, newCourse?: boolean,
  *   expected: {published: number, kept: number, retired: number, added: number, bank: number}}[]} */
 const IMPORTS = [
   // Batch 1: Business Administration 200 Level, First Semester.
@@ -23,6 +23,45 @@ const IMPORTS = [
     expected: { published: 136, kept: 79, retired: 57, added: 691, bank: 770 } },
   { code: 'BUA216', contentKey: 'introduction-financial-management', migration: '20261106110300_official_bank_bua216.sql',
     expected: { published: 111, kept: 0, retired: 111, added: 1099, bank: 1099 } },
+  // The 19 courses created for their official bank (owner's list, 7 Nov 2026).
+  { code: 'ECO201', contentKey: 'introduction-microeconomics', migration: '20261106120000_official_bank_eco201.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 820, bank: 820 } },
+  { code: 'LAG-ACS209', contentKey: 'business-statistics-1', migration: '20261106120100_official_bank_lag_acs209.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 864, bank: 864 } },
+  { code: 'LAG-ACS213', contentKey: 'mathematics-business', migration: '20261106120200_official_bank_lag_acs213.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 1262, bank: 1262 } },
+  { code: 'FIN-CM209', contentKey: 'elements-banking', migration: '20261106120300_official_bank_fin_cm209.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 1445, bank: 1445 } },
+  { code: 'AMS101', contentKey: 'principles-management', migration: '20261106120400_official_bank_ams101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 2204, bank: 2204 } },
+  { code: 'AMS103', contentKey: 'introduction-computer', migration: '20261106120500_official_bank_ams103.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 1273, bank: 1273 } },
+  { code: 'ACC101', contentKey: 'introduction-financial-accounting-1', migration: '20261106120600_official_bank_acc101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 587, bank: 587 } },
+  { code: 'ECO101', contentKey: 'principles-economics-1', migration: '20261106120700_official_bank_eco101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 916, bank: 916 } },
+  { code: 'BUA101', contentKey: 'introduction-business-1', migration: '20261106120800_official_bank_bua101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 389, bank: 389 } },
+  { code: 'FIN101', contentKey: 'introduction-finance', migration: '20261106120900_official_bank_fin101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 305, bank: 305 } },
+  { code: 'INS101', contentKey: 'introduction-insurance', migration: '20261106121000_official_bank_ins101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 458, bank: 458 } },
+  { code: 'SOC101', contentKey: 'introduction-sociology-1', migration: '20261106121100_official_bank_soc101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 523, bank: 523 } },
+  { code: 'ACS101', contentKey: 'introduction-actuarial-science', migration: '20261106121200_official_bank_acs101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 654, bank: 654 } },
+  { code: 'PUL101', contentKey: 'legal-methods-1', migration: '20261106121300_official_bank_pul101.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 632, bank: 632 } },
+  { code: 'LAG-BUA111', contentKey: 'principles-marketing', migration: '20261106121400_official_bank_lag_bua111.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 688, bank: 688 } },
+  { code: 'LAG-BUA123', contentKey: 'marketing-communication', migration: '20261106121500_official_bank_lag_bua123.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 516, bank: 516 } },
+  { code: 'LAG-BUA125', contentKey: 'managerial-economics', migration: '20261106121600_official_bank_lag_bua125.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 572, bank: 572 } },
+  { code: 'FIN216', contentKey: 'fundamentals-deposit-insurance', migration: '20261106121700_official_bank_fin216.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 820, bank: 820 } },
+  { code: 'TAX-CM223', contentKey: 'business-taxation-2', migration: '20261106121800_official_bank_tax_cm223.sql', newCourse: true,
+    expected: { published: 0, kept: 0, retired: 0, added: 396, bank: 396 } },
 ]
 
 module.exports = { IMPORTS }

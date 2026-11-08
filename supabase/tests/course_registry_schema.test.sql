@@ -7,8 +7,8 @@ select plan(36);
 
 select is(
   (select count(*)::int from public.courses),
-  15,
-  'the repository content registry still contains exactly fifteen identities'
+  34,
+  'the repository content registry contains exactly thirty-four identities: fifteen seeded and nineteen official banks'
 );
 
 select is(
@@ -29,8 +29,28 @@ select is(
     'philosophy-logic-human-existence', '40000000-0000-4000-8000-000000000013',
     'introduction-financial-management', '40000000-0000-4000-8000-000000000014',
     'bua218', '40000000-0000-4000-8000-000000000015'
+  ) || jsonb_build_object(
+    'introduction-financial-accounting-1', 'bf4eae11-b8cf-51d1-bfb1-5f32b1b2d55a',
+    'introduction-actuarial-science', 'd1b6b70d-037b-5e9e-a4d4-17103525cc56',
+    'principles-management', 'fa9abff6-1f94-5735-bbd3-c9104da6df05',
+    'introduction-computer', '0264c494-3ae3-5279-b2a2-2ae91167839e',
+    'introduction-business-1', '3377fae6-5ab9-5742-95e3-75b94650a294',
+    'principles-economics-1', 'e01c0d3f-3f5e-5197-b96f-ac7935fc2fe8',
+    'introduction-microeconomics', 'da06b311-1382-53a8-8057-d3513764c222',
+    'elements-banking', '58f61fa3-cc23-5d99-bde7-5581043985ed',
+    'introduction-finance', '203d7e61-c829-5419-a664-5a478e05a8a6',
+    'fundamentals-deposit-insurance', '8e4bf369-a375-52bc-b5c2-fa55b4d5676c',
+    'introduction-insurance', 'cd0f182c-a770-5232-892c-22fdc00d8686',
+    'business-statistics-1', '66dc36be-2c4d-5821-ac32-a5c8e4ae4886',
+    'mathematics-business', 'e6ebc3e3-e990-5459-84af-06a4f05aea89',
+    'principles-marketing', '0d6682a1-b7b0-5109-b86a-2fabbfbea8b4',
+    'marketing-communication', 'ced55987-74eb-5998-929a-c1d5275c5a3b',
+    'managerial-economics', 'caf0ea5d-6cc0-5bd0-8719-c6f1a95ceec1',
+    'legal-methods-1', '4df568c2-4a68-52ab-80d6-380e5921d119',
+    'introduction-sociology-1', 'f0a98038-5829-537e-bb07-a06605f6e2a4',
+    'business-taxation-2', 'b7bba625-d122-5afa-8b13-127d96411059'
   ),
-  'all fifteen repository content identities and stable IDs remain intact'
+  'all fifteen seeded identities keep their stable IDs and the nineteen official-bank identities are exact'
 );
 
 select is(
@@ -45,7 +65,7 @@ select is(
 
 select is(
   (select count(distinct content_key)::int from public.courses),
-  15,
+  34,
   'repository content keys remain unique'
 );
 
@@ -82,8 +102,8 @@ select is(
     from public.institutional_courses
     where repository_course_id is not null
   ),
-  14,
-  'fourteen confirmed catalogue-to-content links are established'
+  33,
+  'thirty-three confirmed catalogue-to-content links are established, nineteen of them official banks'
 );
 
 select is(
@@ -92,7 +112,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is not null
   ),
-  14,
+  33,
   'confirmed content links are one-to-one'
 );
 
@@ -102,7 +122,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is null
   ),
-  140,
+  121,
   'institutional catalogue courses may exist without repository content'
 );
 
@@ -131,6 +151,11 @@ select is(
   ),
   array[
     'ACC-CM201=financial-accounting-1',
+    'ACC101=introduction-financial-accounting-1',
+    'ACS101=introduction-actuarial-science',
+    'AMS101=principles-management',
+    'AMS103=introduction-computer',
+    'BUA101=introduction-business-1',
     'BUA201=principles-business-administration',
     'BUA202=principles-business-administration-2',
     'BUA203=business-statistics',
@@ -138,14 +163,28 @@ select is(
     'BUA205=leadership-governance',
     'BUA216=introduction-financial-management',
     'BUA218=bua218',
+    'ECO101=principles-economics-1',
+    'ECO201=introduction-microeconomics',
     'ENT211=entrepreneurship-innovation',
+    'FIN-CM209=elements-banking',
+    'FIN101=introduction-finance',
+    'FIN216=fundamentals-deposit-insurance',
     'GST111=use-of-english',
     'GST112=nigerian-peoples-and-culture',
     'GST212=philosophy-logic-human-existence',
+    'INS101=introduction-insurance',
+    'LAG-ACS209=business-statistics-1',
+    'LAG-ACS213=mathematics-business',
+    'LAG-BUA111=principles-marketing',
+    'LAG-BUA123=marketing-communication',
+    'LAG-BUA125=managerial-economics',
     'LAG-BUA210=business-mathematics',
-    'LAG-BUA221=consumer-behaviour'
+    'LAG-BUA221=consumer-behaviour',
+    'PUL101=legal-methods-1',
+    'SOC101=introduction-sociology-1',
+    'TAX-CM223=business-taxation-2'
   ]::text[],
-  'the fourteen confirmed content links resolve to the exact repository identities'
+  'the thirty-three confirmed content links resolve to the exact repository identities'
 );
 
 select is(
@@ -466,8 +505,8 @@ select is(
       on institutional_courses.id = course_applicability.institutional_course_id
     where institutional_courses.repository_course_id is not null
   ),
-  45,
-  'the three approved links expose five existing department mappings without adding applicability'
+  103,
+  'the approved links expose existing mappings without adding applicability: 45 before, plus 58 for the nineteen official banks'
 );
 
 select is(
@@ -548,18 +587,42 @@ select is(
     ]::text[],
     'unknown', array[
       'business-mathematics',
+      'business-statistics-1',
+      'business-taxation-2',
       'consumer-behaviour',
+      'elements-banking',
       'financial-accounting-1',
-      'international-organisational-behaviour'
+      'fundamentals-deposit-insurance',
+      'international-organisational-behaviour',
+      'introduction-actuarial-science',
+      'introduction-business-1',
+      'introduction-computer',
+      'introduction-finance',
+      'introduction-financial-accounting-1',
+      'introduction-insurance',
+      'introduction-microeconomics',
+      'introduction-sociology-1',
+      'legal-methods-1',
+      'managerial-economics',
+      'marketing-communication',
+      'mathematics-business',
+      'principles-economics-1',
+      'principles-management',
+      'principles-marketing'
     ]::text[]
   ),
-  'repository editorial sharing classifications remain exactly intact'
+  'seeded sharing classifications remain exactly intact and the nineteen official-bank identities are unresolved'
 );
 
 select is(
   (
-    select count(*)::int
+    select array_agg(
+      institutional_courses.course_code || '=' || coalesce(courses.content_key, 'unlinked')
+      order by institutional_courses.course_code
+    )
     from public.institutional_courses
+    left join public.courses
+      on courses.id = institutional_courses.repository_course_id
     where course_code in (
       'EHR206', 'HER206',
       'ACS207', 'ACS-CM207',
@@ -568,10 +631,22 @@ select is(
       'IRP121', 'LAG-EHR222',
       'ACC121', 'ACC-CM204'
     )
-      and repository_course_id is null
   ),
-  12,
-  'all explicitly ambiguous code/title relationships remain separate and unlinked'
+  array[
+    'ACC-CM204=unlinked',
+    'ACC121=unlinked',
+    'ACS-CM207=unlinked',
+    'ACS207=unlinked',
+    'EHR206=unlinked',
+    'FIN-CM101=unlinked',
+    'FIN-CM210=unlinked',
+    'FIN101=introduction-finance',
+    'FIN120=unlinked',
+    'HER206=unlinked',
+    'IRP121=unlinked',
+    'LAG-EHR222=unlinked'
+  ]::text[],
+  'ambiguous code/title relationships remain separate: only FIN101 links, to its own official bank; the other eleven stay unlinked'
 );
 
 select is(

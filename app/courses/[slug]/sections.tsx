@@ -22,15 +22,18 @@ const STUDY_SECTION_LABELS: Record<StudySectionId, string> = {
 }
 
 /** Sections in product order: the study families as the shared owner orders them, then context. */
-export function studySections({ study, learning, practice, textbooks }: {
+export function studySections({ study, learning, practice, textbooks, bankTopics = 0 }: {
   study: StudyAvailability | null
   learning: StudentCourseDetailLearning | null
   practice: StudentCoursePractice | null
   textbooks: number
+  // A course whose questions come from an official bank has an overview of its bank topics even with no stored one.
+  bankTopics?: number
 }): StudySectionId[] {
   const families = study === null ? [] : STUDY_FAMILIES.map(family => family.id).filter(id =>
     study[id] && (id === 'cbtPractice' ? practice !== null : learning !== null))
-  return [...families, ...(learning?.overview ? ['overview' as const] : []), ...(textbooks > 0 ? ['reading' as const] : [])]
+  return [...families, ...(learning?.overview || bankTopics > 0 ? ['overview' as const] : []),
+    ...(textbooks > 0 ? ['reading' as const] : [])]
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -172,12 +175,13 @@ export function TheorySection({ items, number, practiceHref }: {
 /** Published overview context; every block renders only when the managed payload carries it. A course whose questions
  * come from an official bank lists the bank's topic names, in the bank's order, in place of the overview's topics. */
 export function OverviewSection({ overview, bankTopics, number }: {
-  overview: ManagedOverview; bankTopics?: ReadonlyArray<string>; number: number
+  overview: ManagedOverview | null; bankTopics?: ReadonlyArray<string>; number: number
 }): ReactElement {
-  const topics = bankTopics ? [] : overview.topics ?? [], examFocus = overview.examFocus ?? []
-  const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
-  return <StudySection id="overview" number={number} lede="Explore the topics and key ideas for this course.">
-    {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
+  const topics = bankTopics ? [] : overview?.topics ?? [], examFocus = overview?.examFocus ?? []
+  const keyTakeaways = overview?.keyTakeaways ?? [], formulaSheet = overview?.formulaSheet ?? []
+  // A course with only its bank topics gets no lede: the topic list is the overview.
+  return <StudySection id="overview" number={number} lede={overview ? 'Explore the topics and key ideas for this course.' : undefined}>
+    {overview?.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
     {keyTakeaways.length > 0 && <div className="student-detail-group">
       <h3>Key takeaways</h3>
       <ol className="student-detail-numbered student-surface">

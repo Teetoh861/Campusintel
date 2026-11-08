@@ -43,14 +43,15 @@ export interface Course {
   slug: string
   code: string
   title: string
-  overview: string
+  // Repository courses carry an overview; courses created for an official bank have none.
+  overview?: string
   // Short, punchy one-liner for the homepage featured cards (falls back to
   // overview where unset). Distinct from the longer overview prose.
   tagline?: string
   level: number // 200, 300, 400
   semester: number // 1, 2
   credits: number
-  difficulty: 'Easy' | 'Medium' | 'Hard'
+  difficulty?: 'Easy' | 'Medium' | 'Hard'
   featured?: boolean // shown in the homepage's curated set
   examCritical?: boolean // gets the "Exam-critical" treatment; quiz CTA still requires a usable quiz
   lecturer?: string

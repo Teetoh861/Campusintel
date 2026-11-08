@@ -138,7 +138,7 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   const scopeNotice = content.state === 'locked' && content.reason !== undefined
   const sections = locked || content.state === 'not-available' ? [] : studySections({
     study: content.state === 'ready' ? content.study : null,
-    learning, practice, textbooks: route.course.textbooks.length,
+    learning, practice, textbooks: route.course.textbooks.length, bankTopics: OFFICIAL_BANK_SECTIONS[route.slug]?.length,
   })
   const contents = sections.length >= 2
   const number = (id: StudySectionId) => sections.indexOf(id) + 1
@@ -175,7 +175,7 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
       {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} topics={topics} number={number('cbtPractice')} />}
       {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
         practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}
-      {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview}
+      {sections.includes('overview') && <OverviewSection overview={learning?.overview ?? null}
         bankTopics={OFFICIAL_BANK_SECTIONS[route.slug]} number={number('overview')} />}
       {sections.includes('reading') && <ReadingList textbooks={route.course.textbooks} number={number('reading')} />}
     </div>

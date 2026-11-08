@@ -1,7 +1,9 @@
 import { Course } from '@/lib/types'
 import { buildMaterialRequestEmailUrl } from '@/lib/material-email'
+import { OFFICIAL_BANK_COURSES } from './official-bank-courses'
 
-export const courses: Course[] = [
+/** The repository courses the content seed was generated from (scripts/managed-content/source-manifest.cjs). */
+export const repositorySeedCourses: Course[] = [
   {
     id: '1',
     contentKey: 'entrepreneurship-innovation',
@@ -1046,6 +1048,9 @@ export const courses: Course[] = [
       },
     ],
   },]
+
+/** Every shelved course: the repository's, then those created for an official bank. */
+export const courses: Course[] = [...repositorySeedCourses, ...OFFICIAL_BANK_COURSES]
 
 export function getCourseBySlug(slug: string): Course | undefined {
   return courses.find((course) => course.slug === slug)

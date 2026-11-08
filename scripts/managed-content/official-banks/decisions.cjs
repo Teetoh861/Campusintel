@@ -31,4 +31,14 @@ const OFFICIAL_COURSES = {
   BUA216: { title: 'Introduction to Financial Management', level: '200-level', semesters: ['second-semester'], units: 3 },
 }
 
-module.exports = { APPROVED_ANSWER_KEY_CHANGES, OFFICIAL_COURSES }
+/** Exam length for the new courses: 50 questions; 40 minutes where the bank has calculation questions, 30 otherwise
+ *  (owner's list, 7 Nov 2026). LAG-BUA111: 40, because its 18 flagged questions are real calculations (market share,
+ *  market potential, CTR, CPM, CPC, ROAS, a least-squares trend). */
+const EXAM_QUESTIONS = 50
+const EXAM_MINUTES = {
+  AMS101: 30, BUA101: 30, 'LAG-BUA123': 30, PUL101: 30, SOC101: 30,
+  ACC101: 40, ACS101: 40, AMS103: 40, ECO101: 40, ECO201: 40, FIN101: 40, FIN216: 40, 'FIN-CM209': 40, INS101: 40,
+  'LAG-ACS209': 40, 'LAG-ACS213': 40, 'LAG-BUA125': 40, 'TAX-CM223': 40, 'LAG-BUA111': 40,
+}
+
+module.exports = { APPROVED_ANSWER_KEY_CHANGES, EXAM_MINUTES, EXAM_QUESTIONS, OFFICIAL_COURSES }
