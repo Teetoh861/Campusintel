@@ -132,7 +132,10 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
       actions={<><Link href={checkoutHref(order.plan)} prefetch={false}
         className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.tryAgain}</Link>{back}</>} />
     case 'amount-mismatch': return <Outcome icon="alert" title={RETURN_COPY.mismatchTitle} body={RETURN_COPY.mismatchBody}
-      alert order={order} actions={<>{back}{support()}</>} />
+      alert order={order} actions={<>{back}{support()}</>}
+      // What the student actually paid, not the plan price; no amount row when it wasn't naira (or isn't known).
+      amount={order.received_currency === 'NGN' && typeof order.received_kobo === 'number'
+        ? { label: RETURN_COPY.amountReceived, kobo: order.received_kobo } : null} />
     case 'paid-duplicate': return <Outcome icon="check" title={RETURN_COPY.alreadyTitle} body={RETURN_COPY.duplicateBody}
       order={order} actions={courses} />
     case 'refund-pending': return <Outcome icon="check" title={RETURN_COPY.refundPendingTitle}
@@ -143,10 +146,13 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
   }
 }
 
-function Outcome({ icon, title, body, actions, order, status = false, alert = false, after = null }: {
+function Outcome({ icon, title, body, actions, order, status = false, alert = false, after = null, amount }: {
   icon: 'busy' | 'alert' | 'check'; title: string; body: string; actions: ReactNode; order?: OrderView; status?: boolean
   alert?: boolean; after?: ReactNode
+  // The amount row: the plan price by default; null leaves the row out.
+  amount?: { label: string; kobo: number } | null
 }): ReactElement {
+  const shown = amount === undefined ? (order ? { label: RETURN_COPY.amount, kobo: order.amount_kobo } : null) : amount
   const Icon = icon === 'busy' ? LoaderCircle : icon === 'alert' ? CircleAlert : CircleCheck
   return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state={order?.state ?? 'not-found'}>
     <div className="grid gap-3" role={status ? 'status' : alert ? 'alert' : undefined} aria-live={status ? 'polite' : undefined}>
@@ -160,10 +166,10 @@ function Outcome({ icon, title, body, actions, order, status = false, alert = fa
         <dt className="text-student-text-secondary">{RETURN_COPY.plan}</dt>
         <dd className="font-semibold text-student-text-primary">{planName(order.tier, order.period)}</dd>
       </div>
-      <div className="flex justify-between gap-3 border-b border-student-border py-3">
-        <dt className="text-student-text-secondary">{RETURN_COPY.amount}</dt>
-        <dd className="font-semibold text-student-text-primary">{naira(order.amount_kobo)}</dd>
-      </div>
+      {shown && <div className="flex justify-between gap-3 border-b border-student-border py-3">
+        <dt className="text-student-text-secondary">{shown.label}</dt>
+        <dd className="font-semibold text-student-text-primary">{naira(shown.kobo)}</dd>
+      </div>}
       <div className="flex justify-between gap-3 py-3">
         <dt className="text-student-text-secondary">{RETURN_COPY.reference}</dt>
         <dd className="font-semibold text-student-text-primary">{paymentReference(order.order_id)}</dd>

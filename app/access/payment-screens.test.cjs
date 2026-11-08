@@ -308,6 +308,20 @@ test('each settled state has its own screen; failed never promises no charge', a
       assert.equal(intervals.length, 0, `${state}: nothing to poll`)
     })
   }
+  // The wrong-amount page shows what was actually received, never the plan price as if it were paid.
+  await returnPage({ kind: 'order', order: order('amount-mismatch', { received_kobo: 300000, received_currency: 'NGN' }) },
+    async ({ html }) => {
+      const words = text(html())
+      assert.match(words, /Plan Standard · Semester Amount received ₦3,000 Payment reference 3F2C9A1B7D/)
+      assert.doesNotMatch(words, /₦4,000|Amount ₦/, 'no plan price on this page')
+    })
+  for (const received of [{ received_kobo: 40000, received_currency: 'USD' }, { received_kobo: null, received_currency: null }, {}]) {
+    await returnPage({ kind: 'order', order: order('amount-mismatch', received) }, async ({ html }) => {
+      const words = text(html())
+      assert.match(words, /Plan Standard · Semester Payment reference 3F2C9A1B7D/, JSON.stringify(received))
+      assert.doesNotMatch(words, /Amount|₦/, `no amount row without a naira amount received: ${JSON.stringify(received)}`)
+    })
+  }
   await returnPage({ kind: 'order', order: order('amount-mismatch') }, async ({ html }) => {
     assert.match(html(), /role="alert"/)
     assert.doesNotMatch(html(), /Confirming your payment|role="status"/, 'a wrong amount is never shown as confirming')

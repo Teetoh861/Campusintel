@@ -179,7 +179,7 @@ export const RETURN_COPY = {
   messageUs: 'Message us',
   backToAccess: 'Back to Plan & Access',
   accessLink: 'Plan & Access',
-  plan: 'Plan', amount: 'Amount', reference: 'Payment reference',
+  plan: 'Plan', amount: 'Amount', amountReceived: 'Amount received', reference: 'Payment reference',
 } as const
 
 /** What a paid plan opens, in this order; each line only when one of the student's own courses has it. */
