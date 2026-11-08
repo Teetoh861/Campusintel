@@ -25,8 +25,10 @@ const wire = { now: NOW, planned_launch_at: '2026-10-24T23:00:00+00:00', actual_
   plans_on_sale: true, plans: catalogue,
   term: { session_label: '2026/2027', period_key: 'first-semester', period_name: 'First Semester', ends_at: '2027-03-08T22:59:59+00:00' } }
 const courses = { status: 'ok', courses: [
-  { institutionalCourseId: 'c1', title: 'Financial Management', code: 'BUA 216', isFree: false },
-  { institutionalCourseId: 'c2', title: 'Use of English', code: 'GST 112', isFree: true }] }
+  { institutionalCourseId: 'c1', title: 'Financial Management', code: 'BUA 216', isFree: false,
+    content: { state: 'ready', study: { notes: true, cbtPractice: true, theory: false, overview: true } } },
+  { institutionalCourseId: 'c2', title: 'Use of English', code: 'GST 112', isFree: true,
+    content: { state: 'ready', study: { notes: false, cbtPractice: true, theory: false, overview: false } } }] }
 const profile = { status: 'complete', selection: { department: { label: 'Business Administration' },
   academicLevel: { label: '200 Level' }, academicPeriod: { label: 'First Semester' } } }
 
@@ -43,7 +45,8 @@ async function page(file, args, state = {}) {
       'data-token': props.continuityToken }) }
     function ReturnStatus(props) { return React.createElement('return-status', { 'data-order': props.orderId ?? '',
       'data-read': props.initial.kind === 'order' ? props.initial.order.state : props.initial.kind,
-      'data-courses': String(props.courseCount) }) }
+      'data-courses': String(props.courseCount),
+      'data-features': props.features === null ? 'null' : props.features.join('|') }) }
     const client = { rpc: async (name, params) => { rpcCalls.push([name, params]); return state.rpc ?? { data: null, error: null } } }
     try {
       Module._load = function(name, ...args) {
@@ -178,7 +181,11 @@ test('the return page reads our own order only; another student\'s order and unk
     amount_kobo: 400000, created_at: NOW, paid_at: NOW, ends_at: null, second_starts_at: null, second_ends_at: null }
   const ok = await returned(ORDER.toUpperCase(), { rpc: { data: mine, error: null } })
   assert.deepEqual(ok.rpcCalls, [['get_my_payment_order', { p_order_id: ORDER }]])
-  assert.match(ok.html, new RegExp(`data-order="${ORDER}" data-read="paid" data-courses="2"`))
+  assert.match(ok.html, new RegExp(`data-order="${ORDER}" data-read="paid" data-courses="2" ` +
+    'data-features="Notes by topic\\|Practice with instant feedback\\|Exam mode"'), 'only what these courses have: no theory')
+  // A course still locked (read before the payment confirmed): nothing is claimed until the page reads it again.
+  const locked = { ...courses, courses: [courses.courses[0], { ...courses.courses[1], content: { state: 'locked' } }] }
+  assert.match((await returned(ORDER, { rpc: { data: mine, error: null }, courses: locked })).html, /data-features="null"/)
   // get_my_payment_order answers not-found for an order that isn't this student's (no detail leaks).
   const other = await returned(ORDER, { rpc: { data: { state: 'not-found' }, error: null } })
   assert.match(other.html, /data-read="not-found"/)
@@ -199,7 +206,8 @@ test('a receipt shows our order\'s plan, amount, date, reference and status; any
     created_at: NOW, paid_at: '2026-11-03T10:01:00+01:00', ends_at: null, second_starts_at: null, second_ends_at: null }
   const words = text((await receipt(ORDER, { rpc: { data: paid, error: null } })).html)
   assert.match(words, /CampusIntell Receipt Plan Plus · Session Amount ₦11,000 Paid Tue, 3 Nov 2026, 10:01 \(Lagos\)/)
-  assert.match(words, new RegExp(`Payment reference 3F2C9A1B7D Order ${ORDER} Status Paid Save or print`))
+  assert.match(words, /Payment reference 3F2C9A1B7D Status Paid Save or print/)
+  assert.doesNotMatch(words, new RegExp(ORDER), 'the internal order id is not on the receipt')
   for (const state of [{ rpc: { data: { ...paid, state: 'confirming', paid_at: null }, error: null } },
     { rpc: { data: { state: 'not-found' }, error: null } }, { rpc: { data: null, error: { code: 'XX000' } } }]) {
     const missing = text((await receipt(ORDER, state)).html)

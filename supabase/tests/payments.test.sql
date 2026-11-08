@@ -620,8 +620,8 @@ select throws_ok($$select public.create_payment_order(gen_random_uuid(),'standar
 reset role;
 select pg_temp.claims(2);
 set local role authenticated;
-select is(public.get_my_payment_order(current_setting('pay.mismatch')::uuid)->>'state','confirming',
-  'a mismatch is never shown as paid');
+select is(public.get_my_payment_order(current_setting('pay.mismatch')::uuid)->>'state','amount-mismatch',
+  'a mismatch shows its own state, never paid or confirming');
 reset role;
 update auth.sessions set not_after=clock_timestamp() where id=pg_temp.s(1);
 select pg_temp.claims(1);

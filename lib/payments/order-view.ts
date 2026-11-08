@@ -3,7 +3,8 @@
 import { z } from 'zod'
 
 const timestamp = z.string().min(1)
-export const ORDER_STATES = ['confirming', 'paid', 'failed', 'cancelled', 'paid-duplicate', 'refund-pending', 'refunded'] as const
+export const ORDER_STATES = ['confirming', 'paid', 'failed', 'cancelled', 'amount-mismatch', 'paid-duplicate', 'refund-pending',
+  'refunded'] as const
 export const orderView = z.object({
   state: z.enum(ORDER_STATES), order_id: z.string().uuid(),
   plan: z.enum(['standard_semester', 'standard_session', 'plus_semester', 'plus_session']),

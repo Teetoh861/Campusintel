@@ -6,6 +6,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
+import { unlockedFeatures } from '@/lib/entitlements/presentation'
 import { readOrderAnswer } from '@/lib/payments/order-view'
 import { createClient } from '@/lib/supabase/server'
 import { ReturnStatus } from './ReturnStatus'
@@ -39,6 +40,7 @@ async function PaymentReturn({ orderId, here }: { orderId: string | null; here: 
   if (initial.kind === 'signed-out') return redirectForStudentState('signed-out', here)
   const current = await getCurrentStudentCoursesForVerifiedStudent(client, context.user).catch(() => null)
   return <StudentPage>
-    <ReturnStatus orderId={orderId} initial={initial} courseCount={current?.status === 'ok' ? current.courses.length : 0} />
+    <ReturnStatus orderId={orderId} initial={initial} courseCount={current?.status === 'ok' ? current.courses.length : 0}
+      features={current?.status === 'ok' ? unlockedFeatures(current.courses.map(course => course.content)) : null} />
   </StudentPage>
 }

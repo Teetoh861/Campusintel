@@ -53,7 +53,7 @@ async function Receipt({ id, here }: { id: string; here: string }): Promise<Reac
   </StudentPage>
   const rows: Array<[string, string]> = [['Plan', planName(order.tier, order.period)], ['Amount', naira(order.amount_kobo)],
     ['Paid', formatAccessDate(order.paid_at!)], [RETURN_COPY.reference, paymentReference(order.order_id)],
-    ['Order', order.order_id], ['Status', STATUS_LINE[order.state] ?? 'Paid']]
+    ['Status', STATUS_LINE[order.state] ?? 'Paid']]
   return <StudentPage band={<PageBand title="Receipt" context={<p>CampusIntell</p>} />}>
     <div className="mx-auto grid w-full max-w-[560px] gap-6">
       <dl className="student-surface grid py-1 text-sm">
