@@ -77,9 +77,12 @@ export function ApplicabilityList({ applicability }: {
   </ul>
 }
 
-/** The bounded formula rail: text scrolls inside its own card and is never rewritten. */
+/** The formula rail: the text is never rewritten. Long formulas wrap at their spaces; a hyphenated word such as
+ * "Break-Even" is kept whole so a line never breaks inside it. */
 export function FormulaRail({ formula }: { formula: string }): ReactElement {
-  return <div className="student-formula-rail"><code>{formula}</code></div>
+  const parts = formula.split(/(\S*\S-\S\S*)/)
+  return <div className="student-formula-rail"><code>{parts.length === 1 ? formula : parts.map((part, index) =>
+    index % 2 === 1 ? <span key={index} className="student-formula-word">{part}</span> : part)}</code></div>
 }
 
 function Aside({ kicker, children }: { kicker: string; children: ReactNode }): ReactElement {
