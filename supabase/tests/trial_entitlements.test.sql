@@ -37,6 +37,8 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid 
 select has_table('private', 'early_access_members', 'trusted Early Access list exists');
 select has_table('private', 'entitlement_events', 'audit trail exists');
 select hasnt_function('public', 'claim_early_access', 'there is no manual Early Access claim: enrollment is automatic');
+select is((select early_access_enrollment_days from private.entitlement_policy), 14,
+  'Early Access can be claimed for 14 days after the actual launch');
 select is((select actual_launch_at from private.entitlement_policy), null,
   'the actual public launch starts unset; the planned date is never used in its place');
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.entitlement_grants'::regclass,

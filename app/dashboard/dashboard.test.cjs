@@ -76,13 +76,13 @@ test('sprint plan 23 Oct item 2: home is a real personalized command centre with
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8'), /CourseRow|use client|cache\(|unstable_cache|use cache/)
 }))
 
-test('Practice describes personal AI practice according to its availability, separate from material requests', async () => fixture(async f => {
+test('Practice describes Campus Bot practice according to its availability, separate from material requests', async () => fixture(async f => {
   const html = await f.html()
   assert.match(html, /Verified CBT practice/)
   assert.match(html, /href="\/my-courses"/)
   assert.match(html, /Practise from your notes/)
   assert.match(html, /Currently unavailable/)
-  assert.match(html, /Personal AI practice from your own notes is currently unavailable/)
+  assert.match(html, /Campus Bot practice from your notes is unavailable right now/)
   const upload = html.match(/<section aria-labelledby="upload-practice-title"[\s\S]*?<\/section>/)?.[0]
   assert.ok(upload)
   assert.doesNotMatch(upload, /<a |<button|type="file"|href=/)
@@ -98,8 +98,7 @@ test('Practice describes personal AI practice according to its availability, sep
   f.state.aiAvailable = true
   const enabled = await f.html()
   assert.doesNotMatch(enabled, /Currently unavailable|Coming soon/)
-  assert.match(enabled, /With AI access on your account, upload notes for courses without CampusIntell study materials/)
-  assert.match(enabled, /AI questions are for personal study and are not verified by CampusIntell/)
+  assert.match(enabled, /Upload notes for courses without study materials, and Campus Bot turns them into practice questions/)
 }))
 
 test('academic identity owns a full-width band outside the bounded course/action workspace', async () => fixture(async f => {

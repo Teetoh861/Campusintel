@@ -75,7 +75,7 @@ export function ResultsScreen(props: Props): ReactElement {
           <span className="student-practice-score-pct">{percent}%</span>
           <span className="student-practice-score-of">{correct} of {total} correct</span>
         </div>
-        <p className="student-practice-band"><b>{practiceBand(percent)}</b><span>{PRACTICE_COPY.bandNote}</span></p>
+        <p className="student-practice-band"><b>{practiceBand(percent)}</b></p>
         <dl className="student-practice-break">
           <div><dt><Check aria-hidden="true" size={16} strokeWidth={2.25} />Correct</dt><dd>{correct}</dd></div>
           <div><dt><X aria-hidden="true" size={16} strokeWidth={2.25} />Incorrect</dt><dd>{incorrect}</dd></div>
@@ -93,10 +93,9 @@ export function ResultsScreen(props: Props): ReactElement {
           onClick={props.onRetake}>Practise again</button> : null}
         {canStartNew && !wholeBank ? <>
           <button type="button" className={studentAction(btnGhost)} disabled={starting} onClick={props.onRetake}>Retake with new questions</button>
-          <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={starting} onClick={props.onRedo}>Redo these questions</button>
+          <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={starting} onClick={props.onRedo}>Redo the same questions</button>
         </> : null}
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent')}>{PRACTICE_COPY.backToCourse}</Link>
-        {canStartNew && !wholeBank ? <p className="student-practice-help !mt-0">Retake gives you a new set of questions. Redo repeats these questions in the same order.</p> : null}
       </section>
     </div>
   </StudentPage>

@@ -183,3 +183,14 @@ export async function runEntitlementRequest(input: unknown, response: NextRespon
     return { status: 'unavailable' }
   }
 }
+
+/** The copy switch (payment_policy.sales_open) for pages that read nothing else from the plan. Fails closed: false
+ *  keeps today's wording and shows no plans. */
+export async function readPlansOnSale(client: StudentClient): Promise<boolean> {
+  try {
+    const { data, error } = await client.rpc('plans_on_sale')
+    return !error && data === true
+  } catch {
+    return false
+  }
+}

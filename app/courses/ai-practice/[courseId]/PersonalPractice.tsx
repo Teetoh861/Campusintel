@@ -11,9 +11,9 @@ import type { ReactElement } from 'react'
 
 const optionLetter = (index: number) => String.fromCharCode(65 + index)
 
-/** The label every AI practice surface carries: while uploading, while generating and while answering. */
+/** The one label every Campus Bot set carries. */
 export function PersonalDisclaimer(): ReactElement {
-  return <p className="ai-practice-disclaimer"><b>Personal · Unverified.</b> {PERSONAL_PRACTICE_DISCLAIMER}</p>
+  return <p className="ai-practice-disclaimer">{PERSONAL_PRACTICE_DISCLAIMER}</p>
 }
 
 /** Count answered and correct questions for the summary line. */
@@ -73,7 +73,7 @@ export function PersonalPractice({ set, onClose }: { set: PersonalSetView; onClo
         : <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={onClose}>Finish</button>}
     </div>
     {finished && <p className="ai-practice-summary" role="status">
-      You scored {score.correct} out of {score.total}. Personal practice scores are not saved to your CampusIntell results.
+      You scored {score.correct} out of {score.total}.
     </p>}
   </section>
 }

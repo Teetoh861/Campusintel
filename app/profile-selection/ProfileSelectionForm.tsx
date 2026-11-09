@@ -9,7 +9,7 @@ import { btnBase, buttonClassName, btnGhost, btnNavy, btnSm, cx } from '@/compon
 import { studentFocusControl, studentFocusDark } from '@/components/student/ui'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
 import { AUTH_CONTINUITY_HEADER, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
-import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import { PROFILE_SELECTION_PATH, selectionReturnPath } from '@/lib/profile/paths'
 import { FIRST_NAME_ERROR, FIRST_NAME_MAX_LENGTH, firstNameSchema } from '@/lib/profile/first-name'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 import { CoursesSetNotice } from './CoursesSetNotice'
@@ -69,8 +69,10 @@ function isSelectable(options: Choice[], id: string): boolean {
 }
 
 /** Keep only a draft in browser memory; successful navigation requires a confirmed server save. */
-export function ProfileSelectionForm({ initial, continuityToken, mode = 'open' }: {
+export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', returnPath = null }: {
   initial: ProfileView; continuityToken: string; mode?: CourseSelectionMode
+  /** An allow-listed page to return to after a save (Confirm courses, a practice result); otherwise home. */
+  returnPath?: string | null
 }): ReactElement {
   const [draft, setDraft] = useState<Draft>(() => initialDraft(initial))
   // Only a saved selection can be shown as set; the database refusal (CI423) switches an open form to this view.
@@ -162,7 +164,7 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open' }
             parsed.data.selection.academicPeriod.id === submitted.academicPeriodId &&
             parsed.data.firstName === draft.first_name.trim()) {
           navigating = true
-          window.location.replace(STUDENT_HOME_PATH)
+          window.location.replace(selectionReturnPath(returnPath) ?? STUDENT_HOME_PATH)
           return
         }
         setNotice({ message: 'We couldn’t confirm your changes were saved. Reload the page to check.', reload: true })

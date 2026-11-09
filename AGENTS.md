@@ -15,6 +15,17 @@ improved in place.
 Stack: Next.js 16 (App Router), React 19, TypeScript 5.7 strict,
 Tailwind 3.4 with shadcn/ui, react-hook-form + zod, pnpm 9, Node 22.
 
+## Student Copy (required reading)
+
+Read [docs/student-copy.md](docs/student-copy.md) before writing or
+reviewing any text a student will see. Flag copy that breaks those rules.
+
+## Browser Checks (required)
+
+Every browser check must look at every screenshot it takes, not only compare
+page text. Report anything unreadable, overlapping or cut off, at every
+width checked, as a finding.
+
 ## Review Focus Areas
 
 When reviewing pull requests or auditing the codebase, prioritize the
@@ -130,3 +141,13 @@ When producing findings:
 - Do not propose architectural rewrites. This codebase is being
   hardened in place.
 - Group findings by severity, then by file.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

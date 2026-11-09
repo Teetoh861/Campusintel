@@ -1,4 +1,4 @@
-// app/access/trial-flow.ts — What the student is told after the Discovery Pass activation command.
+// app/access/trial-flow.ts — What the student is told after the free pass (Discovery Pass) activation command.
 import type { EntitlementResult } from '@/lib/entitlements/contract'
 
 export type FlowMessage = { tone: 'error' | 'info' | 'success'; text: string }
@@ -8,14 +8,14 @@ export type FlowMessage = { tone: 'error' | 'info' | 'success'; text: string }
 export type NextStep = 'stay' | 'refresh' | 'close'
 
 /** The one answer for every refusal of this account: never a reason (an email, a period or Early Access). */
-export const PASS_REFUSED = 'Discovery Pass isn’t available on this account. Free GST courses are still open to you.'
+export const PASS_REFUSED = 'A free pass isn’t available on this account. Free GST courses are still open to you.'
 
 /** Plain, specific copy for every result. Never reveals anything about another account. */
 export function describeResult(result: EntitlementResult): { message: FlowMessage | null; next: NextStep } {
   switch (result.status) {
     case 'pass-activated': return { next: 'refresh', message: { tone: 'success', text: 'Your pass is active. Updating your plan…' } }
     case 'already-activated': return { next: 'refresh', message: { tone: 'info',
-      text: 'This account has already had its Discovery Pass. Updating your plan…' } }
+      text: 'This account has already had its free pass. Updating your plan…' } }
     // Final for this account: the offer closes where it was asked for, and is not rendered again.
     case 'already-claimed':
     case 'early-access-active':

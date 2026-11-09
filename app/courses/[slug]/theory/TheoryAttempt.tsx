@@ -16,12 +16,12 @@ function refusalMessage(status: Exclude<TheorySubmitResult['status'], 'ready'>):
   }
   if (status === 'incomplete') return 'Complete your student profile before practising. Copy your answer before leaving this page.'
   if (status === 'locked') {
-    return 'Your access to this course has ended, so the model answer can’t be shown. Your answer is still here; copy it before leaving.'
+    return 'Your access to this course has ended, so the suggested answer can’t be shown. Your answer is still here; copy it before leaving.'
   }
   if (status === 'content-changed' || status === 'not-found') {
-    return 'This question or its model answer has changed or is no longer available. Your answer is still here; copy it before reloading the page.'
+    return 'This question or its suggested answer has changed or is no longer available. Your answer is still here; copy it before reloading the page.'
   }
-  return 'We couldn’t load the model answer. Your answer is still here. Try submitting again.'
+  return 'We couldn’t load the suggested answer. Your answer is still here. Try again.'
 }
 
 /** Keep each question's draft in page memory only and reveal no feedback until submission succeeds. */
@@ -71,14 +71,14 @@ export function TheoryAttempt({ question, courseSlug, continuityToken }: {
         <textarea id={`${id}-answer`} ref={answerField} className={theoryTextarea} rows={9}
           maxLength={THEORY_ANSWER_MAX_LENGTH} value={answer} disabled={busy}
           aria-describedby={`${id}-help ${id}-count`} onChange={event => setAnswer(event.currentTarget.value)} />
-        <p id={`${id}-help`} className="student-meta mt-2">Write as much as you can. You can also submit an empty answer to start self-assessment.</p>
+        <p id={`${id}-help`} className="student-meta mt-2">Type your answer.</p>
         <p id={`${id}-count`} className="student-meta mt-1">{answer.length} / {THEORY_ANSWER_MAX_LENGTH} characters</p>
       </div>
       {error && <p role="alert" className="student-meta">{error}</p>}
       <div><button type="submit" disabled={busy} className={studentAction(btnNavy, studentFocusDark)}>
-        {busy ? 'Loading model answer…' : 'Submit and compare'}
+        {busy ? 'Loading answer…' : 'Show answer'}
       </button></div>
-      {busy && <p role="status" className="student-meta">Loading the model answer so you can compare.</p>}
+      {busy && <p role="status" className="student-meta">Loading the suggested answer.</p>}
     </form> : <SelfAssessment feedback={feedback} answer={answer} courseSlug={courseSlug} onRetry={retry} />}
   </div>
 }

@@ -56,7 +56,8 @@ const allowanceRow = z.object({ state: z.enum(['not-entitled', 'active', 'expire
 const beginRow = z.object({ state: z.string(), generation_id: uuid.optional(),
   reservation_seconds: z.number().int().positive().optional(),
   model: z.string().regex(/^claude-[a-z0-9-]{1,60}$/).optional(),
-  max_output_tokens: z.number().int().min(1).max(1_000_000).optional() })
+  max_output_tokens: z.number().int().min(1).max(1_000_000).optional(),
+  resets_at: z.string().min(1).nullable().optional() })
 const generationRow = z.object({ id: uuid, status: z.enum(['running', 'generated', 'insufficient_source',
   'flagged_for_review', 'failed']), created_at: z.string(), question_set: z.unknown() })
 
@@ -182,6 +183,9 @@ export function createSupabaseAiPracticeEnv(client: StudentClient, userId: strin
           ? { state, generationId, limits: { model, maxOutputTokens } } : { state, generationId }
       }
       if (state === 'existing') return generationId ? { state, generationId } : null
+      if (state === 'session-limit' || state === 'week-limit' || state === 'undelivered-limit') {
+        return { state, resetsAt: parsed.data.resets_at ?? null }
+      }
       if (BEGIN_REFUSALS.has(state)) return { state } as BeginResult
       return null
     },

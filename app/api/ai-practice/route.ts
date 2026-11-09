@@ -28,6 +28,7 @@ const HTTP_STATUS: Partial<Record<AiPracticeResult['status'], number>> = {
   'pass-upload-limit': 429,
   'allowance-exhausted': 402,
   'allowance-expired': 402,
+  'campus-bot-limit': 429,
 }
 
 function privateJson(body: unknown, status: number, headers?: Headers): Response {

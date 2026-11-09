@@ -30,7 +30,7 @@ type PageProps = { params: Promise<{ courseId: string }> }
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Practise from your notes | CampusIntell', robots: { index: false, follow: false } }
 
-const LEDE = 'With AI access on your account, use your own notes to create personal practice questions. AI questions are not verified by CampusIntell.'
+const LEDE = 'Turn your own notes into practice questions with Campus Bot.'
 
 export default async function AiPracticePage({ params }: PageProps): Promise<ReactElement> {
   const { courseId } = await params
@@ -68,13 +68,13 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
   if (!scoped && sets.length === 0) redirect(STUDENT_DESTINATIONS.myCourses.href)
   const enabled = isAiPracticeAvailable()
   if (!enabled && sets.length === 0) {
-    return <Unavailable title="AI practice is currently unavailable" message="You can still browse your courses for available study materials." />
+    return <Unavailable title="Campus Bot is unavailable" message="You can still browse your courses for available study materials." />
   }
   // A course with verified content always sends students to it; AI practice never competes with it.
   // A locked course is built too: its page explains how to unlock it.
   if (sets.length === 0 && (isActionableStudentCourse(course) || isLockedStudentCourse(course))) redirect(course.repository.route.href)
   if (sets.length === 0 && !isAiPracticeEligible(course)) {
-    return <Unavailable title="This course is temporarily unavailable" message="Try again in a few minutes." />
+    return <Unavailable title="This course isn’t available right now" message="Try again in a few minutes." />
   }
   // AI copy names the student's own grant (a Discovery Pass, or a seven-day trial issued before it) and offers a pass
   // only when this account can still start one; a read failure stays neutral.
@@ -84,6 +84,7 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
   return <StudentPage band={<PageBand title="Practise from your notes" lede={LEDE}
     context={<p className="ai-practice-context"><b>{course.code}</b> · {course.title}</p>} />}>
     <AiPracticeClient courseId={course.institutionalCourseId} continuityToken={continuityToken}
+      plansOnSale={plan !== null && plan.status === 'ok' && plan.entitlement.plans_on_sale}
       initialAllowance={allowance} recentSets={sets} trial={trial}
       uploadsUnavailableReason={!scoped ? 'outside-list' : !enabled ? 'paused' : undefined}
       canGenerate={enabled && scoped && isAiPracticeEligible(course)} />

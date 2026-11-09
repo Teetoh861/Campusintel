@@ -78,7 +78,7 @@ export default async function AccountPage(): Promise<ReactElement> {
         <div className="grid min-w-0 content-start gap-4">
           <section aria-labelledby="plan-access-heading" className="student-surface">
             <h2 id="plan-access-heading" className="student-section-title">{STUDENT_DESTINATIONS.access.label}</h2>
-            <p className="mb-4 mt-2 text-sm text-student-text-secondary">Your free trial, Early Access and AI practice allowance.</p>
+            <p className="mb-4 mt-2 text-sm text-student-text-secondary">Your free trial, Early Access and Campus Bot allowance.</p>
             <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnGhost)}>View your plan</Link>
           </section>
           <section aria-labelledby="security-heading" className="student-surface">

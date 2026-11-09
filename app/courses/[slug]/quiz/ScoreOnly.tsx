@@ -3,8 +3,8 @@ import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { ANSWERS_ACCESS_LINE } from '@/lib/practice/result-copy'
-import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import { accessCopy } from '@/lib/entitlements/presentation'
+import { profileSelectionHref } from '@/lib/profile/paths'
 import { wholeBankAttempt } from '@/lib/practice/contract'
 import { practiceIdentity, PRACTICE_COPY } from './practice-presentation'
 import type { GradedAttempt } from '@/lib/practice/contract'
@@ -18,6 +18,8 @@ type Props = {
   canStartNew: boolean
   starting: boolean
   onRetake: () => void
+  /** The copy switch (plans_on_sale). */
+  plansOnSale?: boolean
 }
 
 /** Scores remain available when the database withholds the answer review. */
@@ -26,13 +28,16 @@ export function ScoreOnly(props: Props) {
   const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
   const reason = attempt.reviewUnavailableReason
   const line = reason === 'needs-selection' ? 'Confirm your courses for this semester to see answers.'
-    : reason === 'outside-list' ? 'Answers are available for courses in your current list.' : ANSWERS_ACCESS_LINE
+    : reason === 'outside-list' ? 'Answers are available for your courses this semester.'
+      : accessCopy(props.plansOnSale ?? false).answersLine
+  // Confirm courses comes back to this result after the save.
+  const confirmHref = profileSelectionHref(`${props.courseHref}/quiz?attempt=${attempt.id}`)
   return <StudentPage band={<PageBand title="Practice result" context={<p>{identity.context}</p>} />}>
     <div className="max-w-[720px] space-y-5">
       <p className="text-2xl font-bold tabular-nums">{attempt.result.score} of {attempt.result.total} correct</p>
       <p>{line}</p>
       <div className="flex flex-wrap gap-3">
-        {reason === 'needs-selection' ? <Link href={PROFILE_SELECTION_PATH} prefetch={false}
+        {reason === 'needs-selection' ? <Link href={confirmHref} prefetch={false}
           className={studentAction(btnNavy, studentFocusDark)}>Confirm courses</Link> : null}
         {props.canStartNew ? <button type="button" disabled={props.starting} onClick={props.onRetake}
           className={studentAction(btnGhost)}>{wholeBankAttempt(attempt) ? 'Practise again' : 'Retake with new questions'}</button> : null}

@@ -77,7 +77,7 @@ function SemesterContext({ selection, total, ready }: {
 /** Render only the current session owner's persisted institutional semester. */
 export default async function MyCoursesPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <StudentPage band={<MyCoursesBand />}>
-    <Notice title="My Courses is currently unavailable" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
+    <Notice title="My Courses isn’t available right now" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
   </StudentPage>
 
   let verified: {
@@ -127,7 +127,8 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
         <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
         <CourseRegister label="Your semester courses">
           {result.courses.map(course => <StudentCourseRow key={course.institutionalCourseId} course={course}
-            progress={progressByCourse.get(course.institutionalCourseId)} />)}
+            progress={progressByCourse.get(course.institutionalCourseId)}
+            plansOnSale={entitlement.status === 'ok' && entitlement.entitlement.plans_on_sale} />)}
         </CourseRegister>
         {result.courses.some(course => getStudentCourseUnavailability(course) === 'missing') &&
           <div className="student-register-request">
