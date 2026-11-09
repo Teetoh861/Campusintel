@@ -172,8 +172,16 @@ export function TheorySection({ items, number, practiceHref }: {
   </StudySection>
 }
 
+/** The bank topic names a bank course's overview lists: none when Practice already lists them, so they show once.
+ * An empty list still marks a bank course, whose overview never falls back to its stored topics. */
+export function overviewBankTopics(bankTopics: ReadonlyArray<string> | undefined,
+  practiceListsTopics: boolean): ReadonlyArray<string> | undefined {
+  return bankTopics && practiceListsTopics ? [] : bankTopics
+}
+
 /** Published overview context; every block renders only when the managed payload carries it. A course whose questions
- * come from an official bank lists the bank's topic names, in the bank's order, in place of the overview's topics. */
+ * come from an official bank lists the bank's topic names, in the bank's order, in place of the overview's topics,
+ * unless Practice lists them (an empty `bankTopics`). */
 export function OverviewSection({ overview, bankTopics, number }: {
   overview: ManagedOverview | null; bankTopics?: ReadonlyArray<string>; number: number
 }): ReactElement {

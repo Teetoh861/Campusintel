@@ -28,7 +28,7 @@ import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
 import { NoteUseTracker } from './NoteUseTracker'
 import { COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
-  StudyNav, TheorySection, studySections } from './sections'
+  StudyNav, TheorySection, overviewBankTopics, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
 import type { PracticeTopicRow } from '@/lib/practice/topics'
@@ -136,9 +136,12 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   const materialsHref = `${route.href}/materials`
   const locked = content.state === 'locked'
   const scopeNotice = content.state === 'locked' && content.reason !== undefined
+  const study = content.state === 'ready' ? content.study : null
+  // A bank course's topics show once: in Practice when it lists them, otherwise in the overview.
+  const bankTopics = overviewBankTopics(OFFICIAL_BANK_SECTIONS[route.slug],
+    study?.cbtPractice === true && practice !== null && topics.length > 0)
   const sections = locked || content.state === 'not-available' ? [] : studySections({
-    study: content.state === 'ready' ? content.study : null,
-    learning, practice, textbooks: route.course.textbooks.length, bankTopics: OFFICIAL_BANK_SECTIONS[route.slug]?.length,
+    study, learning, practice, textbooks: route.course.textbooks.length, bankTopics: bankTopics?.length,
   })
   const contents = sections.length >= 2
   const number = (id: StudySectionId) => sections.indexOf(id) + 1
@@ -176,7 +179,7 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
       {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
         practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}
       {sections.includes('overview') && <OverviewSection overview={learning?.overview ?? null}
-        bankTopics={OFFICIAL_BANK_SECTIONS[route.slug]} number={number('overview')} />}
+        bankTopics={bankTopics} number={number('overview')} />}
       {sections.includes('reading') && <ReadingList textbooks={route.course.textbooks} number={number('reading')} />}
     </div>
   </StudentPage>

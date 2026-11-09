@@ -36,6 +36,28 @@ test('a course created for its bank has an overview of bank topic names only: no
   assert.deepEqual(studySections({ study: null, learning: null, practice: null, textbooks: 0 }), [], 'no topics, no overview')
 }))
 
+test('the topic list shows once: in Practice when it lists the topics, otherwise in the overview', async () => withTsx(async () => {
+  const { OverviewSection, overviewBankTopics, studySections } = require('./sections.tsx')
+  const bankTopics = ['Week 1', 'Week 2']
+  assert.deepEqual(overviewBankTopics(bankTopics, true), [])
+  assert.deepEqual(overviewBankTopics(bankTopics, false), bankTopics, 'a failed topic read leaves the list in the overview')
+  assert.equal(overviewBankTopics(undefined, true), undefined, 'a course without a bank is unchanged')
+
+  // A course created for its bank: Practice lists the topics, so there is no overview to repeat them.
+  const study = { notes: false, cbtPractice: true, theory: false, overview: false }
+  const practice = { href: '/courses/x/quiz', attemptSize: 50, timerSeconds: 2400 }
+  assert.deepEqual(studySections({ study, learning: null, practice, textbooks: 0,
+    bankTopics: overviewBankTopics(bankTopics, true).length }), ['cbtPractice'])
+  assert.deepEqual(studySections({ study, learning: null, practice, textbooks: 0,
+    bankTopics: overviewBankTopics(bankTopics, false).length }), ['cbtPractice', 'overview'])
+
+  // An existing course keeps the rest of its overview, without the list and without its old stored topics.
+  const html = renderToStaticMarkup(React.createElement(OverviewSection, { overview,
+    bankTopics: overviewBankTopics(bankTopics, true), number: 3 }))
+  assert.doesNotMatch(html, /Syllabus topics|Week 1|Old chapter/)
+  assert.match(text(html), /Published overview body\./)
+}))
+
 test('every imported course has its bank topics for the overview', async () => withTsx(async () => {
   const { OFFICIAL_BANK_SECTIONS } = require('../../../lib/data/official-bank-sections.ts')
   const { OFFICIAL_BANK_COURSES } = require('../../../lib/data/official-bank-courses.ts')
