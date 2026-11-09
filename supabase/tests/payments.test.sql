@@ -610,6 +610,8 @@ select set_config('pay.own',(select pg_temp.oid(a) from t1)::text,true), set_con
 select pg_temp.claims(1);
 set local role authenticated;
 select is(public.get_my_payment_order(current_setting('pay.own')::uuid)->>'state','paid','own paid order');
+select ok((select r->'received_kobo' = 'null'::jsonb and r->'received_currency' = 'null'::jsonb
+    from public.get_my_payment_order(current_setting('pay.own')::uuid) r), 'a paid order reports no separate amount received');
 select is(public.get_my_payment_order(current_setting('pay.other')::uuid)->>'state','not-found',
   'another student''s order looks unknown');
 select is(public.get_my_payment_order(current_setting('pay.mismatch')::uuid)->>'state','not-found','not visible across students');
@@ -620,8 +622,11 @@ select throws_ok($$select public.create_payment_order(gen_random_uuid(),'standar
 reset role;
 select pg_temp.claims(2);
 set local role authenticated;
-select is(public.get_my_payment_order(current_setting('pay.mismatch')::uuid)->>'state','confirming',
-  'a mismatch is never shown as paid');
+select is(public.get_my_payment_order(current_setting('pay.mismatch')::uuid)->>'state','amount-mismatch',
+  'a mismatch shows its own state, never paid or confirming');
+select is((select array[r->>'received_kobo', r->>'received_currency', r->>'amount_kobo']
+    from public.get_my_payment_order(current_setting('pay.mismatch')::uuid) r), array['4000', 'NGN', '400000'],
+  'a mismatch reports the amount actually received beside the plan price');
 reset role;
 update auth.sessions set not_after=clock_timestamp() where id=pg_temp.s(1);
 select pg_temp.claims(1);

@@ -178,11 +178,11 @@ account is enrolled automatically, with its own full month starting then, when:
 Eligibility is the trusted list only, matched to the account's **confirmed** email (case-insensitive): a typed or
 unconfirmed address proves nothing. Each list entry, and each duplicate group (same phone at an import before 26
 October 2026, or grouped by an operator), enrolls once. An existing grant is never reset or extended by logins,
-imports, sweeps or repeat reconciliation. Enrollment closes `early_access_enrollment_days` after the actual launch (**28, approved by the owner on 23 October
-2026**: the 28-day window is for claiming after launch, and the list itself closes at launch, as `early_access_status()`
-already enforces for members who join on or after the actual launch). The PROVISIONAL marking in
-`20261017100000_trial_entitlements.sql` is a SQL source comment, not a database `COMMENT`, so that migration is left
-untouched and the approval is recorded here. No phone code and no per-student AI cap apply during the month.
+imports, sweeps or repeat reconciliation. Enrollment closes `early_access_enrollment_days` after the actual launch (**14 days, the current policy**, set by
+`20261105110000_early_access_claim_window.sql`; it replaces the 28 days approved on 23 October 2026). The 14-day window
+is for claiming after launch, and the list itself closes at launch, as `early_access_status()` already enforces for
+members who join on or after the actual launch. The PROVISIONAL marking in `20261017100000_trial_entitlements.sql` is a
+SQL source comment, not a database `COMMENT`, so that migration is left untouched and the policy is recorded here. No phone code and no per-student AI cap apply during the month.
 
 Concurrency: every Early Access path takes locks in one total order: policy row; account rows and account locks
 (ascending, all before anything below, so a sweep locks every account of its batch first); import identity locks
@@ -325,8 +325,8 @@ deletion form tells students that a protected record is kept; it does not state 
    full access and AI allowance (audited as `trial.seven-day-preserved`). `get_my_entitlement()` still returns
    `trial_days` (the pass length in whole days) beside `trial_hours`, so older application instances keep working
    during a rollout.
-2. Early Access enrollment window: **decided 23 October 2026**, 28 days after the actual launch for claiming; the list
-   closes at launch.
+2. Early Access enrollment window: **14 days** after the actual launch for claiming (current policy,
+   `20261105110000_early_access_claim_window.sql`; 28 days was decided on 23 October 2026); the list closes at launch.
 3. Trial after Early Access: **decided 23 October 2026**, never (`trial_after_early_access` retired, kept false).
 4. Retention and deletion: keyed pass claims expire 5 years after activation (**decided 23 October 2026**). Historical
    phone hashes, imported list data (names, emails, phone hashes), used list entries and de-identified audit rows are

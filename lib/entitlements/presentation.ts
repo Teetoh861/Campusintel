@@ -83,7 +83,7 @@ export const PLAN_COPY = {
   } satisfies Record<PlanTier, string>,
   perPeriod: { semester: 'a semester', session: 'a session' } satisfies Record<PlanPeriod, string>,
   payment: 'You’ll pay securely by card or bank transfer on our payment partner’s page.',
-  refund: 'Refunds within 48 hours if you haven’t used your plan.',
+  refund: 'Full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan.',
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
   keepSemester: 'Keep Semester',
@@ -169,8 +169,9 @@ export const RETURN_COPY = {
   refundedTitle: 'Your payment was refunded',
   notFoundTitle: 'We couldn’t find that payment',
   notFoundBody: 'Check Plan & Access for your current plan.',
+  mismatchTitle: 'Payment didn’t match the plan price',
+  mismatchBody: 'We’ll refund the full amount. You can then pay for your plan again.',
   nowOpen: (count: number) => count > 0 ? `Now open in your ${count} ${count === 1 ? 'course' : 'courses'}` : 'Now open in your courses',
-  unlocked: ['Notes by topic', 'Practice with instant feedback', 'Exam mode', 'Theory questions with suggested answers'],
   setNow: 'Your Department, Level and Semester are now set until the semester ends.',
   startStudying: 'Start studying',
   viewReceipt: 'View receipt',
@@ -178,8 +179,25 @@ export const RETURN_COPY = {
   messageUs: 'Message us',
   backToAccess: 'Back to Plan & Access',
   accessLink: 'Plan & Access',
-  plan: 'Plan', amount: 'Amount', reference: 'Payment reference',
+  plan: 'Plan', amount: 'Amount', amountReceived: 'Amount received', reference: 'Payment reference',
 } as const
+
+/** What a paid plan opens, in this order; each line only when one of the student's own courses has it. */
+const UNLOCKED_FEATURES = [
+  { has: 'notes', line: 'Notes by topic' },
+  { has: 'cbtPractice', line: 'Practice with instant feedback' },
+  { has: 'cbtPractice', line: 'Exam mode' },
+  { has: 'theory', line: 'Theory questions with suggested answers' },
+] as const
+type StudyFlags = { notes: boolean; cbtPractice: boolean; theory: boolean }
+
+/** The lines "You're subscribed" lists for the student's courses, or null while any course is still locked (its
+ *  content unread), so nothing is listed that the student's courses may not have. */
+export function unlockedFeatures(contents: ReadonlyArray<{ state: string; study?: StudyFlags }>): string[] | null {
+  if (contents.some(content => content.state === 'locked' || content.state === 'temporarily-unavailable')) return null
+  const studies = contents.flatMap(content => content.study === undefined ? [] : [content.study])
+  return UNLOCKED_FEATURES.filter(feature => studies.some(study => study[feature.has])).map(feature => feature.line)
+}
 
 /** What the confirmed plan keeps open, in the student's own dates. */
 export function subscribedBody(plan: { tier: PlanTier; period: PlanPeriod; ends_at: string | null;

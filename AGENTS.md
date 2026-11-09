@@ -20,6 +20,12 @@ Tailwind 3.4 with shadcn/ui, react-hook-form + zod, pnpm 9, Node 22.
 Read [docs/student-copy.md](docs/student-copy.md) before writing or
 reviewing any text a student will see. Flag copy that breaks those rules.
 
+## Browser Checks (required)
+
+Every browser check must look at every screenshot it takes, not only compare
+page text. Report anything unreadable, overlapping or cut off, at every
+width checked, as a finding.
+
 ## Review Focus Areas
 
 When reviewing pull requests or auditing the codebase, prioritize the

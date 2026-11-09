@@ -3,6 +3,7 @@
 // GET /api/payments/orders/[id] (no-store) for two minutes, then shows "still confirming" with Check again. "You're
 // subscribed" appears only when the order says paid; nothing is inferred from the redirect, a timer or a cache.
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -31,8 +32,12 @@ async function fetchOrder(orderId: string, signal?: AbortSignal): Promise<OrderR
   }
 }
 
-export function ReturnStatus({ orderId, initial, courseCount }: { orderId: string | null; initial: OrderRead; courseCount: number }):
-  ReactElement {
+export function ReturnStatus({ orderId, initial, courseCount, features }: { orderId: string | null; initial: OrderRead
+  courseCount: number
+  // What the student's own courses offer; null while the server read them locked (the payment was still confirming).
+  features: ReadonlyArray<string> | null }): ReactElement {
+  const router = useRouter()
+  const refreshed = useRef(false)
   const [read, setRead] = useState<OrderRead>(initial)
   const [stopped, setStopped] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -58,6 +63,12 @@ export function ReturnStatus({ orderId, initial, courseCount }: { orderId: strin
   // Haptic: done, once, when the payment is confirmed (where the device supports it).
   const confirmed = read.kind === 'order' && read.order.state === 'paid'
   useEffect(() => { if (confirmed) navigator.vibrate?.(20) }, [confirmed])
+  // Confirmed after the server read the courses locked: read them again, once, to list what they actually offer.
+  useEffect(() => {
+    if (!confirmed || features !== null || refreshed.current) return
+    refreshed.current = true
+    router.refresh()
+  }, [confirmed, features, router])
 
   const checkAgain = useCallback(async () => {
     if (orderId === null) return
@@ -100,12 +111,12 @@ export function ReturnStatus({ orderId, initial, courseCount }: { orderId: strin
         <p className="text-student-text-secondary">{subscribedBody({ tier: order.tier, period: order.period,
           ends_at: order.ends_at, second_starts_at: order.second_starts_at })}</p>
       </div>
-      <div className="student-surface">
+      {features !== null && features.length > 0 && <div className="student-surface">
         <h2 className="font-bold text-student-text-primary">{RETURN_COPY.nowOpen(courseCount)}</h2>
-        <ul className="mt-3 grid gap-2.5">{RETURN_COPY.unlocked.map(item => <li key={item}
+        <ul className="mt-3 grid gap-2.5">{features.map(item => <li key={item}
           className="flex items-start gap-2.5 text-sm text-student-text-primary">
           <Check aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-student-primary" /><span>{item}</span></li>)}</ul>
-      </div>
+      </div>}
       <p className="text-sm text-student-text-secondary">{RETURN_COPY.setNow}</p>
       <div className="grid gap-2 tablet:flex">
         <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
@@ -120,6 +131,11 @@ export function ReturnStatus({ orderId, initial, courseCount }: { orderId: strin
     case 'cancelled': return <Outcome icon="alert" title={RETURN_COPY.cancelledTitle} body={RETURN_COPY.cancelledBody} order={order}
       actions={<><Link href={checkoutHref(order.plan)} prefetch={false}
         className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.tryAgain}</Link>{back}</>} />
+    case 'amount-mismatch': return <Outcome icon="alert" title={RETURN_COPY.mismatchTitle} body={RETURN_COPY.mismatchBody}
+      alert order={order} actions={<>{back}{support()}</>}
+      // What the student actually paid, not the plan price; no amount row when it wasn't naira (or isn't known).
+      amount={order.received_currency === 'NGN' && typeof order.received_kobo === 'number'
+        ? { label: RETURN_COPY.amountReceived, kobo: order.received_kobo } : null} />
     case 'paid-duplicate': return <Outcome icon="check" title={RETURN_COPY.alreadyTitle} body={RETURN_COPY.duplicateBody}
       order={order} actions={courses} />
     case 'refund-pending': return <Outcome icon="check" title={RETURN_COPY.refundPendingTitle}
@@ -130,10 +146,13 @@ export function ReturnStatus({ orderId, initial, courseCount }: { orderId: strin
   }
 }
 
-function Outcome({ icon, title, body, actions, order, status = false, alert = false, after = null }: {
+function Outcome({ icon, title, body, actions, order, status = false, alert = false, after = null, amount }: {
   icon: 'busy' | 'alert' | 'check'; title: string; body: string; actions: ReactNode; order?: OrderView; status?: boolean
   alert?: boolean; after?: ReactNode
+  // The amount row: the plan price by default; null leaves the row out.
+  amount?: { label: string; kobo: number } | null
 }): ReactElement {
+  const shown = amount === undefined ? (order ? { label: RETURN_COPY.amount, kobo: order.amount_kobo } : null) : amount
   const Icon = icon === 'busy' ? LoaderCircle : icon === 'alert' ? CircleAlert : CircleCheck
   return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state={order?.state ?? 'not-found'}>
     <div className="grid gap-3" role={status ? 'status' : alert ? 'alert' : undefined} aria-live={status ? 'polite' : undefined}>
@@ -147,10 +166,10 @@ function Outcome({ icon, title, body, actions, order, status = false, alert = fa
         <dt className="text-student-text-secondary">{RETURN_COPY.plan}</dt>
         <dd className="font-semibold text-student-text-primary">{planName(order.tier, order.period)}</dd>
       </div>
-      <div className="flex justify-between gap-3 border-b border-student-border py-3">
-        <dt className="text-student-text-secondary">{RETURN_COPY.amount}</dt>
-        <dd className="font-semibold text-student-text-primary">{naira(order.amount_kobo)}</dd>
-      </div>
+      {shown && <div className="flex justify-between gap-3 border-b border-student-border py-3">
+        <dt className="text-student-text-secondary">{shown.label}</dt>
+        <dd className="font-semibold text-student-text-primary">{naira(shown.kobo)}</dd>
+      </div>}
       <div className="flex justify-between gap-3 py-3">
         <dt className="text-student-text-secondary">{RETURN_COPY.reference}</dt>
         <dd className="font-semibold text-student-text-primary">{paymentReference(order.order_id)}</dd>

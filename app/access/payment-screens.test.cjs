@@ -173,8 +173,8 @@ const order = (state, extra = {}) => ({ state, order_id: ORDER, plan: 'standard_
   amount_kobo: 400000, created_at: '2026-11-03T10:00:00+01:00', paid_at: state === 'paid' ? '2026-11-03T10:01:00+01:00' : null,
   ends_at: state === 'paid' ? '2027-03-08T23:59:59+01:00' : null, second_starts_at: null, second_ends_at: null, ...extra })
 
-async function returnPage(initial, run, { courseCount = 6 } = {}) {
-  const intervals = [], vibrations = [], assigned = [], fetches = []
+async function returnPage(initial, run, { courseCount = 6, features = null } = {}) {
+  const intervals = [], vibrations = [], assigned = [], fetches = [], refreshes = []
   let now = Date.parse('2026-11-03T10:00:30+01:00')
   const answers = []
   const realNow = Date.now
@@ -187,12 +187,12 @@ async function returnPage(initial, run, { courseCount = 6 } = {}) {
     return { status: next.status, json: async () => next.body } }
   Date.now = () => now
   try {
-    await drive('./checkout/return/ReturnStatus.tsx', 'ReturnStatus', { orderId: ORDER, initial, courseCount },
+    await drive('./checkout/return/ReturnStatus.tsx', 'ReturnStatus', { orderId: ORDER, initial, courseCount, features },
       async ({ render, html }) => {
         const settle = async () => { for (let n = 0; n < 10; n++) await new Promise(resolve => setImmediate(resolve)) }
         const tick = async ms => { now += ms; for (const interval of intervals) if (interval.live) interval.fn(); await settle() }
-        await run({ render, html, tick, settle, answers, intervals, vibrations, assigned, fetches })
-      })
+        await run({ render, html, tick, settle, answers, intervals, vibrations, assigned, fetches, refreshes })
+      }, { 'next/navigation': { useRouter: () => ({ refresh: () => refreshes.push(1) }) } })
   } finally {
     Date.now = realNow; delete global.window; delete global.fetch
     if (savedNavigator) Object.defineProperty(globalThis, 'navigator', savedNavigator); else delete globalThis.navigator
@@ -200,7 +200,8 @@ async function returnPage(initial, run, { courseCount = 6 } = {}) {
 }
 
 test('confirming: role="status", polls our order every 3 seconds with no-store, then You\'re subscribed only when paid', async () => {
-  await returnPage({ kind: 'order', order: order('confirming') }, async ({ html, tick, answers, intervals, vibrations, fetches }) => {
+  await returnPage({ kind: 'order', order: order('confirming') }, async ({ html, tick, answers, intervals, vibrations, fetches,
+    refreshes }) => {
     const first = html()
     assert.match(first, /data-return-state="confirming"/)
     assert.match(first, /role="status" aria-live="polite"/)
@@ -219,13 +220,33 @@ test('confirming: role="status", polls our order every 3 seconds with no-store, 
     const paid = html()
     assert.match(paid, /data-return-state="paid"/)
     assert.match(text(paid), /You’re subscribed Standard · Semester keeps your courses open until Mon, 8 Mar 2027\./)
-    assert.match(text(paid), /Now open in your 6 courses/)
+    // The courses were read while still locked: nothing is listed until the page reads them again, once.
+    assert.doesNotMatch(text(paid), /Now open in your|Notes by topic|Theory questions/)
+    assert.equal(refreshes.length, 1, 'the page reads the now-open courses again')
     assert.match(paid, /href="\/my-courses"[^>]*>Start studying<\/a>/)
     assert.match(paid, new RegExp(`href="/access/receipts/${ORDER}"[^>]*>View receipt</a>`))
     html()
+    assert.equal(refreshes.length, 1, 'and only once')
     assert.deepEqual(vibrations, [20], 'one haptic, once')
     assert.equal(intervals.filter(interval => interval.live).length, 0, 'polling stops once paid')
   })
+})
+
+test('You\'re subscribed lists only what the student\'s courses have', async () => {
+  const has = ['Notes by topic', 'Practice with instant feedback', 'Exam mode']
+  await returnPage({ kind: 'order', order: order('paid') }, async ({ html, refreshes }) => {
+    const paid = text(html())
+    assert.match(paid, /Now open in your 6 courses Notes by topic Practice with instant feedback Exam mode/)
+    assert.doesNotMatch(paid, /Theory questions/, 'no course of this student has theory')
+    assert.equal(refreshes.length, 0, 'the courses were read open: nothing to read again')
+  }, { features: has })
+  await returnPage({ kind: 'order', order: order('paid') }, async ({ html }) => {
+    assert.match(text(html()), /Now open in your 6 courses Theory questions with suggested answers/)
+    assert.doesNotMatch(text(html()), /Notes by topic|Exam mode/)
+  }, { features: ['Theory questions with suggested answers'] })
+  await returnPage({ kind: 'order', order: order('paid') }, async ({ html }) => {
+    assert.doesNotMatch(text(html()), /Now open in your/, 'nothing to list: no list at all')
+  }, { features: [] })
 })
 
 test('after two minutes: still confirming with Check again; Check again asks once and shows the answer', async () => {
@@ -275,6 +296,8 @@ test('each settled state has its own screen; failed never promises no charge', a
     'paid-duplicate': [/You’re already subscribed We received two payments for this plan\. We’ll refund the extra one\./, /Go to my courses/],
     'refund-pending': [/Your refund is being processed Your refund of ₦4,000 is being processed\. Your plan has ended\./, /Back to Plan &amp; Access/],
     refunded: [/Your payment was refunded Your plan has ended\. GST courses stay free\./, /Back to Plan &amp; Access/],
+    'amount-mismatch': [/Payment didn’t match the plan price We’ll refund the full amount\. You can then pay for your plan again\./,
+      /Back to Plan &amp; Access/],
   }
   for (const [state, [line, action]] of Object.entries(cases)) {
     await returnPage({ kind: 'order', order: order(state) }, async ({ html, intervals }) => {
@@ -285,6 +308,25 @@ test('each settled state has its own screen; failed never promises no charge', a
       assert.equal(intervals.length, 0, `${state}: nothing to poll`)
     })
   }
+  // The wrong-amount page shows what was actually received, never the plan price as if it were paid.
+  await returnPage({ kind: 'order', order: order('amount-mismatch', { received_kobo: 300000, received_currency: 'NGN' }) },
+    async ({ html }) => {
+      const words = text(html())
+      assert.match(words, /Plan Standard · Semester Amount received ₦3,000 Payment reference 3F2C9A1B7D/)
+      assert.doesNotMatch(words, /₦4,000|Amount ₦/, 'no plan price on this page')
+    })
+  for (const received of [{ received_kobo: 40000, received_currency: 'USD' }, { received_kobo: null, received_currency: null }, {}]) {
+    await returnPage({ kind: 'order', order: order('amount-mismatch', received) }, async ({ html }) => {
+      const words = text(html())
+      assert.match(words, /Plan Standard · Semester Payment reference 3F2C9A1B7D/, JSON.stringify(received))
+      assert.doesNotMatch(words, /Amount|₦/, `no amount row without a naira amount received: ${JSON.stringify(received)}`)
+    })
+  }
+  await returnPage({ kind: 'order', order: order('amount-mismatch') }, async ({ html }) => {
+    assert.match(html(), /role="alert"/)
+    assert.doesNotMatch(html(), /Confirming your payment|role="status"/, 'a wrong amount is never shown as confirming')
+    assert.match(html(), /href="https:\/\/wa\.me\/[^"]*3F2C9A1B7D[^"]*"[^>]*>Message us</)
+  })
   await returnPage({ kind: 'order', order: order('failed') }, async ({ html }) => {
     assert.match(html(), /role="alert"/)
     assert.match(html(), /href="https:\/\/wa\.me\/[^"]*3F2C9A1B7D[^"]*"[^>]*>Message us</)

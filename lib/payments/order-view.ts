@@ -3,13 +3,16 @@
 import { z } from 'zod'
 
 const timestamp = z.string().min(1)
-export const ORDER_STATES = ['confirming', 'paid', 'failed', 'cancelled', 'paid-duplicate', 'refund-pending', 'refunded'] as const
+export const ORDER_STATES = ['confirming', 'paid', 'failed', 'cancelled', 'amount-mismatch', 'paid-duplicate', 'refund-pending',
+  'refunded'] as const
 export const orderView = z.object({
   state: z.enum(ORDER_STATES), order_id: z.string().uuid(),
   plan: z.enum(['standard_semester', 'standard_session', 'plus_semester', 'plus_session']),
   tier: z.enum(['standard', 'plus']), period: z.enum(['semester', 'session']),
   amount_kobo: z.number().int().positive(), created_at: timestamp, paid_at: timestamp.nullable(),
   ends_at: timestamp.nullable(), second_starts_at: timestamp.nullable(), second_ends_at: timestamp.nullable(),
+  // What a payment that didn't match the plan price actually brought in (amount-mismatch only; null otherwise).
+  received_kobo: z.number().int().positive().nullable().optional(), received_currency: z.string().nullable().optional(),
 }).passthrough()
 export type OrderView = z.infer<typeof orderView>
 export type OrderRead = { kind: 'order'; order: OrderView } | { kind: 'not-found' | 'signed-out' | 'unavailable' }
