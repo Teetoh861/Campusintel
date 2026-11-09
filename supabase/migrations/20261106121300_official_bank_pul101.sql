@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_pul101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_pul101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_pul101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_pul101', 'bank', 0, $official_bank_source${"code":"PUL101","courseId":"4df568c2-4a68-52ab-80d6-380e5921d119","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":632,"shell":{"contentKey":"legal-methods-1","titles":["Legal Methods I"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_pul101', 'bank', 0, $official_bank_source${"code":"PUL101","courseId":"4df568c2-4a68-52ab-80d6-380e5921d119","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":632,"shell":{"contentKey":"legal-methods-1","titles":["Legal Methods I"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":632}}$official_bank_source$::jsonb),
   ('official_bank_pul101', 'add', 1, $official_bank_source${"itemId":"1f6d959c-53e3-5e45-be28-fed0ca3fd521","questionId":"6a16b774-0085-5a4f-ac78-550122c93a81","sourceKey":"bank:PUL101:PQ-001-01","payload":{"prompt":"John Austin defined law as \"a command set by a superior being to inferior beings and enforced by sanctions.\" Which school of thought does this definition represent?","options":["The Historical School","The Natural Law School","The Positivist (Analytical) School","The Sociological School"],"correctOption":2,"section":"Law in Social Context: Meaning, Definitions and Schools of Thought","explanation":"This is Austin's command theory, the classic positivist view: law is whatever the sovereign lays down and backs with a sanction, whether or not it is moral. Option B is wrong because natural lawyers test law against morality and right reason. Option A looks to the customs and spirit of the people, and Option D looks to how law actually works in society."}}$official_bank_source$::jsonb),
   ('official_bank_pul101', 'add', 2, $official_bank_source${"itemId":"f78b0372-8889-51ed-8718-24a976d264bc","questionId":"33492848-9cc0-5e41-a906-0122d8b397ab","sourceKey":"bank:PUL101:PQ-001-02","payload":{"prompt":"Which of the following is NOT an element of Austin's definition of law?","options":["The subjects are in the habit of obeying the sovereign because of his power to impose sanctions","A law is valid only if it agrees with morality","There must be a definite sovereign","The sovereign is not under any legal limitation"],"correctOption":1,"section":"Law in Social Context: Meaning, Definitions and Schools of Thought","explanation":"Austin deliberately separated law from morality, so a moral test of validity is no part of his definition. His elements are a definite sovereign (Option C), a sovereign who is legally unlimited, the 'uncommanded commander' (Option D), and habitual obedience by subjects backed by sanctions (Option A)."}}$official_bank_source$::jsonb),
   ('official_bank_pul101', 'add', 3, $official_bank_source${"itemId":"3c849c7b-2a49-5f08-baf4-a6f357015ccd","questionId":"023593ee-aca6-56c7-a45d-65b1bb165f31","sourceKey":"bank:PUL101:PQ-001-03","payload":{"prompt":"Which jurist propounded the Pure Theory of Law, which sees law as a hierarchy of norms whose validity is traced back to a basic norm called the grundnorm?","options":["Hans Kelsen","Friedrich Carl von Savigny","Jeremy Bentham","Eugen Ehrlich"],"correctOption":0,"section":"Law in Social Context: Meaning, Definitions and Schools of Thought","explanation":"Kelsen described law as a system of norms, each valid because a higher norm created it, until you reach the grundnorm, which is not itself created by any norm. Option B founded the Historical School, Option D is known for the sociological idea of 'living law', and Option C founded the Utilitarian School."}}$official_bank_source$::jsonb),
@@ -741,17 +732,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_pul101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_pul101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_pul101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_pul101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_pul101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_pul101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_pul101', 'PUL101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -763,9 +745,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'PUL101' then
-    raise exception 'Official bank PUL101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

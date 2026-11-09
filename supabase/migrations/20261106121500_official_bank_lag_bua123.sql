@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_lag_bua123('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_lag_bua123. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_lag_bua123 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_lag_bua123', 'bank', 0, $official_bank_source${"code":"LAG-BUA123","courseId":"ced55987-74eb-5998-929a-c1d5275c5a3b","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":516,"shell":{"contentKey":"marketing-communication","titles":["Marketing Communication"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_lag_bua123', 'bank', 0, $official_bank_source${"code":"LAG-BUA123","courseId":"ced55987-74eb-5998-929a-c1d5275c5a3b","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":516,"shell":{"contentKey":"marketing-communication","titles":["Marketing Communication"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":516}}$official_bank_source$::jsonb),
   ('official_bank_lag_bua123', 'add', 1, $official_bank_source${"itemId":"50923867-f356-527e-bbaf-fb5069c9e271","questionId":"df57e02b-b03f-5be5-9289-06ec7bfea414","sourceKey":"bank:LAG-BUA123:PQ-001","payload":{"prompt":"Marketing communication can be most comprehensively defined as:","options":["A one-way process by which a firm announces its prices to buyers","The physical movement of goods from producers to final consumers","The set of activities used to design and manufacture new products","A strategic process of creating, delivering and exchanging value-laden messages to shape customer perceptions and behaviours"],"correctOption":3,"section":"Nature, Types, Roles and Objectives of Marketing Communication","explanation":"Marketing communication is about the messages a firm creates and shares with its audiences so that they understand it, think well of it and act, for example by buying. Option A is too narrow because it is one-way and only about price, while B describes distribution and C describes product development, which are other parts of marketing."}}$official_bank_source$::jsonb),
   ('official_bank_lag_bua123', 'add', 2, $official_bank_source${"itemId":"f2a319b6-dfba-5146-ad5a-9b43a5537b37","questionId":"f3d9185e-4799-51db-8862-caf329c75031","sourceKey":"bank:LAG-BUA123:PQ-002","payload":{"prompt":"Which invention marked the birth of print advertising by revolutionising the way information was shared?","options":["The radio, which began carrying commercials in the 1920s","The printing press, invented by Johannes Gutenberg in the 15th century","Television, which became the dominant platform by the 1950s","The Internet, which arrived in the late 20th century"],"correctOption":1,"section":"Nature, Types, Roles and Objectives of Marketing Communication","explanation":"Before Gutenberg's printing press, information lived in handwritten manuscripts that only the elite could access; printing made mass print advertising possible, and printed adverts soon appeared in 17th-century newspapers. Options A, C and D were important later stages in the history of marketing communication, but they came centuries after print advertising began."}}$official_bank_source$::jsonb),
   ('official_bank_lag_bua123', 'add', 3, $official_bank_source${"itemId":"fe2ed240-370d-570d-83da-615d8fdef8d9","questionId":"bdb9693f-406f-50f4-a2ef-af8af1cbcbdc","sourceKey":"bank:LAG-BUA123:PQ-002-b","payload":{"prompt":"Hotmail's 1996 strategy of adding the line \"Get your free email at Hotmail\" to every email its users sent is an early example of:","options":["Personal selling, where a salesperson meets each prospect face-to-face","Sales promotion, where buyers receive coupons and rebates","Viral digital marketing, where users spread the message as they use the product","Publicity, where a news editor writes a story about the firm"],"correctOption":2,"section":"Nature, Types, Roles and Objectives of Marketing Communication","explanation":"Every email a user sent carried the advert to new people, so the message spread itself from person to person, which is what makes it viral; it helped Hotmail gain millions of users within months. Option A needs face-to-face contact, B relies on incentives such as coupons, and D depends on coverage in the editorial section of the news media, none of which happened here."}}$official_bank_source$::jsonb),
@@ -603,17 +594,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_lag_bua123(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_lag_bua123' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua123' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua123' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua123' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua123' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_lag_bua123', 'LAG-BUA123');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -625,9 +607,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'LAG-BUA123' then
-    raise exception 'Official bank LAG-BUA123: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

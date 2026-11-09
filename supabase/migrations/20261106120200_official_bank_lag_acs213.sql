@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_lag_acs213('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_lag_acs213. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_lag_acs213 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_lag_acs213', 'bank', 0, $official_bank_source${"code":"LAG-ACS213","courseId":"e6ebc3e3-e990-5459-84af-06a4f05aea89","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":1262,"shell":{"contentKey":"mathematics-business","titles":["Mathematics for Business"],"level":"200-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_lag_acs213', 'bank', 0, $official_bank_source${"code":"LAG-ACS213","courseId":"e6ebc3e3-e990-5459-84af-06a4f05aea89","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":1262,"shell":{"contentKey":"mathematics-business","titles":["Mathematics for Business"],"level":"200-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":1262}}$official_bank_source$::jsonb),
   ('official_bank_lag_acs213', 'add', 1, $official_bank_source${"itemId":"e4abf00a-b425-52bb-8682-37e3a43136cd","questionId":"61ae6479-1e7b-5ede-8bd0-df06a21cc795","sourceKey":"bank:LAG-ACS213:A213-0063","payload":{"prompt":"The marginal cost of a firm is C'(x) = 9x^2 + 4x - 20, obtain the cost function C(x) if the fixed cost is N1000.","options":["C(x) = 3x^2 + 2x^2 - 20","C(x) = 2x^2 + 3x^3 - 20","C(x) = x^2 + 2x^2 - 20","C(x) = 3x^3 + 2x^2 - 20x + 1000"],"correctOption":3,"section":"Integral Calculus Applications","explanation":"Total cost is the integral of marginal cost: C(x) = integral of (9x^2 + 4x - 20) dx = 3x^3 + 2x^2 - 20x + K, and since C(0) = fixed cost, K = 1000. So C(x) = 3x^3 + 2x^2 - 20x + 1000. Options A, B and C mishandle the powers, turn the -20x term into a constant -20 and leave out the N1000 fixed cost."}}$official_bank_source$::jsonb),
   ('official_bank_lag_acs213', 'add', 2, $official_bank_source${"itemId":"9664d288-93ba-56ca-9123-283e1e2638b1","questionId":"d4e7a5e8-d39a-5142-965a-2762c39a0d9a","sourceKey":"bank:LAG-ACS213:A213-0064","payload":{"prompt":"The marginal revenue function of a firm is f(x) = 500 - 4x for an output x tons per day. Determine the total revenue function (revenue is zero when nothing is sold).","options":["R(x) = 500x - 2x^2 - 20","R(x) = 500x - 2x^2 + C","R(x) = 500x - 2x^2","R(x) = 50x - 2x^2 - C"],"correctOption":2,"section":"Integral Calculus Applications","explanation":"Total revenue is the integral of marginal revenue: R(x) = integral of (500 - 4x) dx = 500x - 2x^2 + K, and because R(0) = 0 the constant K = 0, giving R(x) = 500x - 2x^2. Option B is only the general antiderivative with the constant left unknown, option A adds a constant that is not there, and option D has the wrong coefficient (50x)."}}$official_bank_source$::jsonb),
   ('official_bank_lag_acs213', 'add', 3, $official_bank_source${"itemId":"ca0ca4ff-d82a-5de0-b8e8-87eb90842b5c","questionId":"104621e8-4768-545b-b04c-90696099b008","sourceKey":"bank:LAG-ACS213:A213-0065","payload":{"prompt":"The marginal revenue function of a firm is R'(x) = 100 + 50x - 3x^2. Find the total revenue earned from the total sale of 5 additional units if 5 units are currently being produced.","options":["1,500","150","1,540","1005"],"correctOption":0,"section":"Integral Calculus Applications","explanation":"Extra revenue from raising sales from 5 to 10 units is the integral of R'(x) dx from 5 to 10: [100x + 25x^2 - x^3] from 5 to 10 = (1,000 + 2,500 - 1,000) - (500 + 625 - 125) = 2,500 - 1,000 = 1,500. The limits run from the current 5 units to 10 units; integrating from 0 to 5 would give only the revenue of the first 5 units (1,000), and option B (150) is off by a factor of 10."}}$official_bank_source$::jsonb),
@@ -1441,17 +1432,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_lag_acs213(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_lag_acs213' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs213' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs213' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs213' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs213' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_lag_acs213', 'LAG-ACS213');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -1463,9 +1445,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'LAG-ACS213' then
-    raise exception 'Official bank LAG-ACS213: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

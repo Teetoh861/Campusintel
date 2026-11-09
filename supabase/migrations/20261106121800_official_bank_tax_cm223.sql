@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_tax_cm223('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_tax_cm223. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_tax_cm223 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_tax_cm223', 'bank', 0, $official_bank_source${"code":"TAX-CM223","courseId":"b7bba625-d122-5afa-8b13-127d96411059","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":396,"shell":{"contentKey":"business-taxation-2","titles":["Business Taxation II"],"level":"200-level","semesters":["second-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_tax_cm223', 'bank', 0, $official_bank_source${"code":"TAX-CM223","courseId":"b7bba625-d122-5afa-8b13-127d96411059","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":396,"shell":{"contentKey":"business-taxation-2","titles":["Business Taxation II"],"level":"200-level","semesters":["second-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":396}}$official_bank_source$::jsonb),
   ('official_bank_tax_cm223', 'add', 1, $official_bank_source${"itemId":"6706bf70-3c73-5e0a-a58b-f56c57dd627b","questionId":"6426d599-a7f9-5289-933c-da986ed9e212","sourceKey":"bank:TAX-CM223:PQ-002-a","payload":{"prompt":"Under the Nigeria Tax Administration Act 2025, which statement best describes withholding tax?","options":["It is tax the recipient pays to the tax authority after receiving the gross amount","It is a separate final tax on the payer's own profits","It is a consumption tax added on top of the invoice amount, like VAT","It is tax deducted by the payer when a payment is made and credited as an advance payment against the recipient's income tax"],"correctOption":3,"section":"Withholding Tax","explanation":"Withholding tax is a collection mechanism, not a separate tax: the payer acts as agent, deducts tax at the date of payment or settlement and remits it, and the recipient later uses the deduction as a credit against its final income tax. Option B wrongly treats it as a tax on the payer. Option A reverses the roles, and option C confuses it with VAT, which is added to the price rather than deducted from it."}}$official_bank_source$::jsonb),
   ('official_bank_tax_cm223', 'add', 2, $official_bank_source${"itemId":"46e8cba1-fa99-53b2-9c8b-7592f34a808d","questionId":"16d3d882-abdf-5d6f-a1d5-439ac84ed4ee","sourceKey":"bank:TAX-CM223:PQ-002-b","payload":{"prompt":"Under section 51(1) of the Nigeria Tax Administration Act 2025, where are the specific withholding tax rates found?","options":["In the annual Appropriation Act","In regulations on deduction of tax at the time of payment, not in the text of the NTA 2025 or NTAA 2025","In circulars issued separately by each State Internal Revenue Service","In a rate table in the Nigeria Tax Act 2025 itself"],"correctOption":1,"section":"Withholding Tax","explanation":"Section 51(1) NTAA 2025 requires the payer to deduct tax at the rate prescribed in regulations relating to deduction of tax, so the detailed rate table sits in subsidiary legislation. This lets rates be adjusted without amending the Acts. Option D is the tempting wrong choice, but neither 2025 Act contains the withholding rate table. Options A and C are not the legal home of the rates."}}$official_bank_source$::jsonb),
   ('official_bank_tax_cm223', 'add', 3, $official_bank_source${"itemId":"105061ec-9416-5f1f-a5d4-2445f6c54dca","questionId":"786291b3-0715-5b46-8650-684d859759d2","sourceKey":"bank:TAX-CM223:PQ-002-c","payload":{"prompt":"Withholding tax regulations made under repealed laws, such as the 2024 Withholding Tax Regulations made under the old income tax Acts, still apply under the 2025 framework mainly because","options":["the Nigeria Revenue Service re-issues them every year as a circular","the repealed Companies Income Tax Act remains in force until 2030","the savings provisions keep subsidiary legislation made under repealed Acts in force, so far as it is not inconsistent with the new Acts","regulations always survive the repeal of their parent Act, whatever the new law says"],"correctOption":2,"section":"Withholding Tax","explanation":"When the 2025 Acts repealed the old income tax laws, savings provisions preserved existing subsidiary legislation to the extent it is consistent with the new Acts, which is why the existing withholding rates continue to apply. Option B is wrong because the old Acts were repealed. Option D overstates the position, since the regulations survive only because of the savings provisions and only where not inconsistent."}}$official_bank_source$::jsonb),
@@ -468,17 +459,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_tax_cm223(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_tax_cm223' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_tax_cm223' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_tax_cm223' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_tax_cm223' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_tax_cm223' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_tax_cm223', 'TAX-CM223');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -490,9 +472,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'TAX-CM223' then
-    raise exception 'Official bank TAX-CM223: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

@@ -137,9 +137,10 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   const locked = content.state === 'locked'
   const scopeNotice = content.state === 'locked' && content.reason !== undefined
   const study = content.state === 'ready' ? content.study : null
-  // A bank course's topics show once: in Practice when it lists them, otherwise in the overview.
+  // A bank course's topics show once: in Practice when it lists them, otherwise in the overview. A course's own
+  // syllabus topics stay in its overview.
   const bankTopics = overviewBankTopics(OFFICIAL_BANK_SECTIONS[route.slug],
-    study?.cbtPractice === true && practice !== null && topics.length > 0)
+    study?.cbtPractice === true && practice !== null && topics.length > 0, learning?.overview?.topics?.length ?? 0)
   const sections = locked || content.state === 'not-available' ? [] : studySections({
     study, learning, practice, textbooks: route.course.textbooks.length, bankTopics: bankTopics?.length,
   })

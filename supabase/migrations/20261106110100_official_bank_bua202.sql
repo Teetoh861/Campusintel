@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_bua202('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_bua202. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_bua202 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_bua202', 'bank', 0, $official_bank_source${"code":"BUA202","courseId":"40000000-0000-4000-8000-000000000011","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":699}$official_bank_source$::jsonb),
+  ('official_bank_bua202', 'bank', 0, $official_bank_source${"code":"BUA202","courseId":"40000000-0000-4000-8000-000000000011","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":699,"rows":{"audited":385,"keep":5,"retire":380,"add":694}}$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 1, $official_bank_source$"55cf63f2-39e9-5bc5-91cb-8bc02cef47b0"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 2, $official_bank_source$"c821338f-0812-5c99-8c65-390be56c445c"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 3, $official_bank_source$"d8084626-d125-5a94-947b-f7e0d2eed5ee"$official_bank_source$::jsonb),
@@ -76,9 +67,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_bua202', 'audited', 53, $official_bank_source$"9e062f1f-acc6-5883-b1c3-0c8ab862ec80"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 54, $official_bank_source$"dc5e9e23-6000-59ad-bffa-eaf09beeb536"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 55, $official_bank_source$"fc363ee2-23de-54b8-b577-c654238a0751"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 56, $official_bank_source$"5aa64057-4ff5-558f-be77-28ffce01309e"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 57, $official_bank_source$"18bd85af-e2d5-5b32-9cbf-8308be758034"$official_bank_source$::jsonb);
+  ('official_bank_bua202', 'audited', 56, $official_bank_source$"5aa64057-4ff5-558f-be77-28ffce01309e"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_bua202', 'audited', 57, $official_bank_source$"18bd85af-e2d5-5b32-9cbf-8308be758034"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 58, $official_bank_source$"74f2b33b-e7b7-5db4-be12-d3509840d8d6"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 59, $official_bank_source$"801521f0-3b31-5d69-914d-e77989c9a316"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 60, $official_bank_source$"45c7a24a-f211-5a15-9237-e7ddf37a50f4"$official_bank_source$::jsonb),
@@ -136,9 +127,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_bua202', 'audited', 112, $official_bank_source$"7e3ea648-618d-54cf-a7a4-06c30f417679"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 113, $official_bank_source$"7703a922-0cc3-58e6-b91b-fa4f1d151718"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 114, $official_bank_source$"c6d24589-80eb-5282-b205-625b1effec35"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 115, $official_bank_source$"ab482f8a-2cce-529b-9aa7-e9a51aa63fa3"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 116, $official_bank_source$"b4670776-942b-5862-ad91-aafc0c73dd83"$official_bank_source$::jsonb);
+  ('official_bank_bua202', 'audited', 115, $official_bank_source$"ab482f8a-2cce-529b-9aa7-e9a51aa63fa3"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_bua202', 'audited', 116, $official_bank_source$"b4670776-942b-5862-ad91-aafc0c73dd83"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 117, $official_bank_source$"f4ff1bcf-a209-5311-b508-e6537ca51dc9"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 118, $official_bank_source$"331e0354-e2d5-5081-b768-2c45ffbb1fc8"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 119, $official_bank_source$"3affd9ec-5298-57d0-b51b-9a562a07c2ea"$official_bank_source$::jsonb),
@@ -195,9 +186,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_bua202', 'audited', 170, $official_bank_source$"60d73c50-7556-5b32-8c0b-ec83adc6b4e3"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 171, $official_bank_source$"c2aee6cf-cc9f-537c-a35d-755f087baea3"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 172, $official_bank_source$"5fa95669-ff78-5455-a151-f67c741d807b"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 173, $official_bank_source$"689dd3dc-76eb-5450-9c1c-022690e2a837"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 174, $official_bank_source$"b605da26-cac5-5f16-8817-607de2d27a6c"$official_bank_source$::jsonb);
+  ('official_bank_bua202', 'audited', 173, $official_bank_source$"689dd3dc-76eb-5450-9c1c-022690e2a837"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_bua202', 'audited', 174, $official_bank_source$"b605da26-cac5-5f16-8817-607de2d27a6c"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 175, $official_bank_source$"c6a3e9c8-587e-53e2-92fc-e50069459c20"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 176, $official_bank_source$"c79440dd-72c2-5ecb-8c23-db883ff5682a"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 177, $official_bank_source$"9ed94da1-ea9c-5b19-b5f4-de56cafbd153"$official_bank_source$::jsonb),
@@ -254,9 +245,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_bua202', 'audited', 228, $official_bank_source$"3ba8cba9-5b6b-5610-ae1c-2b0fd81c4560"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 229, $official_bank_source$"44e1133b-b30b-5047-975c-e15340e30899"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 230, $official_bank_source$"30792771-f525-5215-a85d-81d062360e42"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 231, $official_bank_source$"b421cf25-cd5c-5858-88ae-400faa1e7d32"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 232, $official_bank_source$"51a549b6-4fbf-540e-bfbf-2e2b1bb47c1e"$official_bank_source$::jsonb);
+  ('official_bank_bua202', 'audited', 231, $official_bank_source$"b421cf25-cd5c-5858-88ae-400faa1e7d32"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_bua202', 'audited', 232, $official_bank_source$"51a549b6-4fbf-540e-bfbf-2e2b1bb47c1e"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 233, $official_bank_source$"4efedc6e-52cf-52e8-99d0-06f7dbebe54c"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 234, $official_bank_source$"36f7a3d0-ed8a-5db4-aa76-2757c4bba75a"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 235, $official_bank_source$"9d05501e-a552-5530-996b-622ecb93581c"$official_bank_source$::jsonb),
@@ -313,9 +304,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_bua202', 'audited', 286, $official_bank_source$"e8b09e5f-8002-55b4-8dd9-14f0f856519b"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 287, $official_bank_source$"276f103e-eedb-5f94-80c7-a2d742a40551"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 288, $official_bank_source$"e8aaaf63-27d6-5f56-bc77-843c2afddb99"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 289, $official_bank_source$"b6128495-151b-5358-b078-49da8f82e1e3"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 290, $official_bank_source$"49be591e-f915-5b79-a275-d23d6c205c5b"$official_bank_source$::jsonb);
+  ('official_bank_bua202', 'audited', 289, $official_bank_source$"b6128495-151b-5358-b078-49da8f82e1e3"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_bua202', 'audited', 290, $official_bank_source$"49be591e-f915-5b79-a275-d23d6c205c5b"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 291, $official_bank_source$"2f409592-6747-53ee-8a13-1eb164c770f8"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 292, $official_bank_source$"98cd0646-b780-50c6-b05e-04c9e5fac3a6"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 293, $official_bank_source$"aef6d808-7fd0-57b6-92f8-b6ebb183f5f7"$official_bank_source$::jsonb),
@@ -372,9 +363,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_bua202', 'audited', 344, $official_bank_source$"49f948af-7936-53b3-b7e4-85d8ba491097"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 345, $official_bank_source$"989262e7-b1c8-511e-a0c0-2e3ed32e7d88"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 346, $official_bank_source$"fc73c4e7-e63a-5576-a946-34b6436098fa"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 347, $official_bank_source$"0b05bd4d-0810-56d9-a870-48f4d8265f9a"$official_bank_source$::jsonb),
-  ('official_bank_bua202', 'audited', 348, $official_bank_source$"cc93659b-375b-5a8e-bdaf-a1ad7856a466"$official_bank_source$::jsonb);
+  ('official_bank_bua202', 'audited', 347, $official_bank_source$"0b05bd4d-0810-56d9-a870-48f4d8265f9a"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_bua202', 'audited', 348, $official_bank_source$"cc93659b-375b-5a8e-bdaf-a1ad7856a466"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 349, $official_bank_source$"98a47084-f8cb-535d-a781-751946fd1c34"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 350, $official_bank_source$"3fbe33c3-8f1c-59f2-a365-cc11589c8147"$official_bank_source$::jsonb),
   ('official_bank_bua202', 'audited', 351, $official_bank_source$"0e947f2c-b008-5ef2-ab5e-4e2d90bc4450"$official_bank_source$::jsonb),
@@ -1586,17 +1577,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_bua202(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_bua202' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua202' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua202' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua202' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua202' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_bua202', 'BUA202');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -1607,9 +1589,6 @@ declare
   v_id uuid;
   v_item public.managed_content_items%rowtype;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'BUA202' then
-    raise exception 'Official bank BUA202: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

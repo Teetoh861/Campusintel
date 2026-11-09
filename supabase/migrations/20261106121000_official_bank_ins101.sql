@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_ins101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_ins101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_ins101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_ins101', 'bank', 0, $official_bank_source${"code":"INS101","courseId":"cd0f182c-a770-5232-892c-22fdc00d8686","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":458,"shell":{"contentKey":"introduction-insurance","titles":["Introduction to Insurance"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_ins101', 'bank', 0, $official_bank_source${"code":"INS101","courseId":"cd0f182c-a770-5232-892c-22fdc00d8686","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":458,"shell":{"contentKey":"introduction-insurance","titles":["Introduction to Insurance"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":458}}$official_bank_source$::jsonb),
   ('official_bank_ins101', 'add', 1, $official_bank_source${"itemId":"ce091df0-12c1-526d-9aea-3d6bd35eae3c","questionId":"e5162475-b8aa-5fd0-9027-9313405a0400","sourceKey":"bank:INS101:INS-0010","payload":{"prompt":"A pure risk is defined as","options":["anything that increases either the severity or frequency of loss","a risk that produces a loss where the outcome is either a loss or no loss","the possibility that a loss will occur","the proximate cause of loss"],"correctOption":1,"section":"Concept of risk and insurance","explanation":"A pure risk is one where the only possible outcomes are a loss or no loss; there is no chance of gain. Option A describes a hazard, which increases the chance or size of a loss. Option D is wrong because proximate cause is the dominant cause of a loss, not a type of risk."}}$official_bank_source$::jsonb),
   ('official_bank_ins101', 'add', 2, $official_bank_source${"itemId":"0e6fa1de-706c-5009-883b-d76f6e7551b6","questionId":"6a1dbd08-6e6a-5c25-be94-a1e02b480570","sourceKey":"bank:INS101:INS-0025","payload":{"prompt":"The possibility that actual results may differ from predicted results is known as______________.","options":["Risk","Uncertainty","Peril","Hazards"],"correctOption":0,"section":"Concept of risk and insurance","explanation":"Risk is the possibility that actual results will differ from what was expected or predicted. Option B, uncertainty, is close, but it describes the doubt a person feels about the future rather than the variation itself. Options C and D are wrong because a peril is the cause of a loss and a hazard is something that increases the chance of loss."}}$official_bank_source$::jsonb),
   ('official_bank_ins101', 'add', 3, $official_bank_source${"itemId":"99eecef6-87a2-5438-b10a-0899eaf32647","questionId":"6eb027cc-c3c9-585c-ad65-ed293ad345dc","sourceKey":"bank:INS101:INS-0026","payload":{"prompt":"Which of the following definitions could easily pass for what risk basically is about?","options":["A variation in possible outcome","The degree of uncertainty associated to a particular loss","The combination of hazards","All of the above"],"correctOption":3,"section":"Concept of risk and insurance","explanation":"Risk has been described in several ways: as variation in possible outcomes, as the degree of uncertainty about a loss, and as a combination of hazards measured by probability. Since each statement captures part of what risk means, D is the best answer. Picking only A, B or C would leave out the other accepted descriptions."}}$official_bank_source$::jsonb),
@@ -531,17 +522,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_ins101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_ins101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ins101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ins101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ins101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ins101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_ins101', 'INS101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -553,9 +535,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'INS101' then
-    raise exception 'Official bank INS101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

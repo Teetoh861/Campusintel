@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_fin_cm209('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_fin_cm209. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_fin_cm209 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_fin_cm209', 'bank', 0, $official_bank_source${"code":"FIN-CM209","courseId":"58f61fa3-cc23-5d99-bde7-5581043985ed","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":1445,"title":{"catalogue":"Element of Banking","bank":"Elements of Banking"},"shell":{"contentKey":"elements-banking","titles":["Element of Banking","Elements of Banking"],"level":"200-level","semesters":["first-semester","second-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_fin_cm209', 'bank', 0, $official_bank_source${"code":"FIN-CM209","courseId":"58f61fa3-cc23-5d99-bde7-5581043985ed","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":1445,"title":{"catalogue":"Element of Banking","bank":"Elements of Banking"},"shell":{"contentKey":"elements-banking","titles":["Element of Banking","Elements of Banking"],"level":"200-level","semesters":["first-semester","second-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":1445}}$official_bank_source$::jsonb),
   ('official_bank_fin_cm209', 'add', 1, $official_bank_source${"itemId":"3d5efc40-b71a-508f-a925-3a7cee06b0d5","questionId":"b04bcd97-33e0-56c7-ac3d-225219e8527e","sourceKey":"bank:FIN-CM209:F209-0001","payload":{"prompt":"Which of the following best defines the financial system?","options":["The set of government agencies that collect taxes and spend public revenue","The network of financial institutions, markets, instruments and regulations that channels funds from surplus units to deficit units in an economy","The group of commercial banks that accept deposits and grant loans to the public","The market in which long-term securities such as shares and bonds are traded"],"correctOption":1,"section":"The Business of Banking and the Financial System","explanation":"The financial system is the whole network of institutions, markets, instruments and regulators that moves funds from savers (surplus units) to borrowers (deficit units), helping to mobilise savings and allocate capital. Option C is too narrow, because commercial banks are only one type of financial institution within the system. Option D describes the capital market, which is just one of the financial markets, while option A describes the government's fiscal machinery rather than the financial system."}}$official_bank_source$::jsonb),
   ('official_bank_fin_cm209', 'add', 2, $official_bank_source${"itemId":"bc698f8b-7490-5f6f-8016-22f779a54410","questionId":"9c04e009-5e2c-5854-aa8e-f8b793f8dc5d","sourceKey":"bank:FIN-CM209:F209-0001-b","payload":{"prompt":"In a financial system, funds are mainly channelled","options":["from importers to exporters through the foreign exchange market","from deficit units (borrowers) to surplus units (savers)","from surplus units (savers) to deficit units (borrowers)","from the central bank directly to households for their daily spending"],"correctOption":2,"section":"The Business of Banking and the Financial System","explanation":"Surplus units are people and organisations that earn more than they spend, and the financial system moves their idle savings to deficit units who need funds for consumption or investment. Option B reverses this flow, since borrowers receive funds rather than supply them. Options D and A describe narrow or incorrect flows that do not capture the basic intermediation role of the financial system."}}$official_bank_source$::jsonb),
   ('official_bank_fin_cm209', 'add', 3, $official_bank_source${"itemId":"55541101-f7fb-5950-8972-fa42decdbff7","questionId":"021abbf5-513e-5fb7-b055-174dac57b02a","sourceKey":"bank:FIN-CM209:F209-0002","payload":{"prompt":"Which of the following is NOT an objective of the financial system?","options":["Fixing the prices of all goods and services in the economy","Provision of liquidity to investors and businesses","Mobilisation of savings from individuals and organisations","Facilitation of payment and settlement of transactions"],"correctOption":0,"section":"The Business of Banking and the Financial System","explanation":"The financial system does not set the prices of goods and services; prices are mostly determined by the market forces of demand and supply. Mobilising savings (option C), providing liquidity (option B) and facilitating payments and settlements (option D) are all genuine objectives of the financial system, alongside efficient allocation of funds and risk management."}}$official_bank_source$::jsonb),
@@ -1662,17 +1653,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_fin_cm209(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_fin_cm209' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin_cm209' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin_cm209' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin_cm209' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin_cm209' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_fin_cm209', 'FIN-CM209');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -1684,9 +1666,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'FIN-CM209' then
-    raise exception 'Official bank FIN-CM209: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

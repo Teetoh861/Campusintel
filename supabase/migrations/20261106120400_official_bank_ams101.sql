@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_ams101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_ams101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_ams101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_ams101', 'bank', 0, $official_bank_source${"code":"AMS101","courseId":"fa9abff6-1f94-5735-bbd3-c9104da6df05","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":2204,"shell":{"contentKey":"principles-management","titles":["Principles of Management"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_ams101', 'bank', 0, $official_bank_source${"code":"AMS101","courseId":"fa9abff6-1f94-5735-bbd3-c9104da6df05","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":2204,"shell":{"contentKey":"principles-management","titles":["Principles of Management"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":2204}}$official_bank_source$::jsonb),
   ('official_bank_ams101', 'add', 1, $official_bank_source${"itemId":"20b4bffc-b7c3-51c9-b2ee-0eed40a7bcc1","questionId":"a3826008-da85-5b6f-be85-72e24a0a3c37","sourceKey":"bank:AMS101:AMS101-U001","payload":{"prompt":"Management is best defined as:","options":["Supervising employees only.","Coordinating resources to achieve goals.","Delegating authority effectively.","Monitoring employee behavior."],"correctOption":1,"section":"Managers and Management","explanation":"Management is the process of coordinating resources, including people, money and equipment, so that the organization reaches its goals efficiently and effectively. Option A is too narrow, because supervising people is only one part of what managers do. Options C and D are also single activities within management, not a definition of it."}}$official_bank_source$::jsonb),
   ('official_bank_ams101', 'add', 2, $official_bank_source${"itemId":"c86f1558-a577-51f3-8cf5-555e76eb955d","questionId":"8d0fe23e-7c96-5ea4-9447-5efdce72ea28","sourceKey":"bank:AMS101:AMS101-U002","payload":{"prompt":"Which of the following best represents 'efficiency'?","options":["Maximizing profits.","Reducing costs while achieving goals.","Expanding operations globally.","Increasing employee satisfaction."],"correctOption":1,"section":"Managers and Management","explanation":"Efficiency means \"doing things right\": getting results while wasting as few resources as possible, so reducing costs while still achieving goals fits it best. Option A, maximizing profits, is an outcome rather than a description of resource use. Options C and D describe growth and morale, not efficiency."}}$official_bank_source$::jsonb),
   ('official_bank_ams101', 'add', 3, $official_bank_source${"itemId":"7f98bc32-7c6f-5994-b0f7-695298f5d1bb","questionId":"8bea3d4e-7d6e-506e-a4eb-0dfb944cb96c","sourceKey":"bank:AMS101:AMS101-U003","payload":{"prompt":"Effectiveness in management focuses on:","options":["Minimizing resources used.","Meeting organizational goals.","Delegating tasks.","Monitoring employee performance."],"correctOption":1,"section":"Managers and Management","explanation":"Effectiveness means \"doing the right things\", that is, carrying out the tasks that help the organization reach its goals. Option A, minimizing resources used, describes efficiency, which is about means rather than ends. Options C and D are activities, not the focus of effectiveness."}}$official_bank_source$::jsonb),
@@ -2460,17 +2451,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_ams101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_ams101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ams101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ams101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ams101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_ams101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_ams101', 'AMS101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -2482,9 +2464,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'AMS101' then
-    raise exception 'Official bank AMS101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

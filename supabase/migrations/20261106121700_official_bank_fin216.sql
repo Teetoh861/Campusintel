@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_fin216('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_fin216. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_fin216 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_fin216', 'bank', 0, $official_bank_source${"code":"FIN216","courseId":"8e4bf369-a375-52bc-b5c2-fa55b4d5676c","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":820,"shell":{"contentKey":"fundamentals-deposit-insurance","titles":["Fundamentals of Deposit Insurance"],"level":"200-level","semesters":["second-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_fin216', 'bank', 0, $official_bank_source${"code":"FIN216","courseId":"8e4bf369-a375-52bc-b5c2-fa55b4d5676c","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":820,"shell":{"contentKey":"fundamentals-deposit-insurance","titles":["Fundamentals of Deposit Insurance"],"level":"200-level","semesters":["second-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":820}}$official_bank_source$::jsonb),
   ('official_bank_fin216', 'add', 1, $official_bank_source${"itemId":"264fbe06-a84d-5213-9c6c-23dd93f0fc21","questionId":"1ae2efcf-6dea-51aa-9993-ee42720b67ff","sourceKey":"bank:FIN216:F216-0005","payload":{"prompt":"The NDIC was established by Decree No. 22 of ____","options":["2023","1988","1989","2006"],"correctOption":1,"section":"Overview of Deposit Insurance in Nigeria and Globally","explanation":"The NDIC was created by Decree No. 22 of 15 June 1988, following the earlier recommendation for a depositors' protection fund. It is easy to pick 1989 (option C), but that is the year the corporation actually began operations. 2006 and 2023 are the years of later Acts that repealed and replaced the original law, not the year the NDIC was set up."}}$official_bank_source$::jsonb),
   ('official_bank_fin216', 'add', 2, $official_bank_source${"itemId":"c7348e2c-7d05-58bd-957c-03311044eba4","questionId":"5e8c1e84-f702-53c9-a0c4-86955d106108","sourceKey":"bank:FIN216:F216-0005-b","payload":{"prompt":"The NDIC Act 2006 was repealed and replaced by the Nigeria Deposit Insurance Corporation Act of ____","options":["2023","2016","1988","2006"],"correctOption":0,"section":"Overview of Deposit Insurance in Nigeria and Globally","explanation":"The NDIC Act No. 33 of 2023 repealed the 2006 Act and is now the main law governing the NDIC. Option D is the Act that was replaced, not the replacement, and 1988 is the year of the original decree that created the NDIC. 2016 is not the year of any NDIC Act."}}$official_bank_source$::jsonb),
   ('official_bank_fin216', 'add', 3, $official_bank_source${"itemId":"c9177d25-e750-5364-badb-b51a659324a8","questionId":"6be78be8-be29-534d-9466-2738df01c8ef","sourceKey":"bank:FIN216:F216-0006","payload":{"prompt":"In 1983, a committee set up by the ____ recommended a depositors' protection fund, which led to the creation of the NDIC.","options":["Federal Government","Central Bank","Stock Exchange","Federal Ministry of Finance"],"correctOption":1,"section":"Overview of Deposit Insurance in Nigeria and Globally","explanation":"In 1983 the Board of the Central Bank of Nigeria set up a committee to review the banking system, and it recommended a Depositors' Protection Fund, the idea that became the NDIC. Option A and option D are tempting because the Federal Government and the Ministry of Finance were involved in later legislation and ownership, but the committee itself came from the CBN. The Stock Exchange in option C had no role in it."}}$official_bank_source$::jsonb),
@@ -946,17 +937,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_fin216(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_fin216' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin216' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin216' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin216' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin216' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_fin216', 'FIN216');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -968,9 +950,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'FIN216' then
-    raise exception 'Official bank FIN216: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

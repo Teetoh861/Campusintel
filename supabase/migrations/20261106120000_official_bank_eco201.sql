@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_eco201('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_eco201. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_eco201 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_eco201', 'bank', 0, $official_bank_source${"code":"ECO201","courseId":"da06b311-1382-53a8-8057-d3513764c222","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":820,"shell":{"contentKey":"introduction-microeconomics","titles":["Introduction to Microeconomics"],"level":"200-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_eco201', 'bank', 0, $official_bank_source${"code":"ECO201","courseId":"da06b311-1382-53a8-8057-d3513764c222","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":820,"shell":{"contentKey":"introduction-microeconomics","titles":["Introduction to Microeconomics"],"level":"200-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":820}}$official_bank_source$::jsonb),
   ('official_bank_eco201', 'add', 1, $official_bank_source${"itemId":"01473ba7-6c53-5476-ad78-d3cf016e0ce0","questionId":"eb718e75-1653-5db6-bb45-7ba8c0ee4fce","sourceKey":"bank:ECO201:E201-0001","payload":{"prompt":"According to Adam Smith, everyday actions in a free market are motivated by ______.","options":["Invisible hand","Market forces","pricing","Self-interest"],"correctOption":3,"section":"Foundations of Microeconomics","explanation":"Adam Smith argued that in a free market people go about their everyday buying, selling and working out of self-interest, each trying to do the best for themselves. The invisible hand in option A is not the motive itself; it is his name for the way all these self-interested actions end up coordinated, as if guided, to benefit society. Market forces and pricing (options B and C) are the mechanism through which this happens, not what motivates individuals."}}$official_bank_source$::jsonb),
   ('official_bank_eco201', 'add', 2, $official_bank_source${"itemId":"5e8d3f0f-b7fc-5ae2-8ba9-00d1fdc39434","questionId":"7759a06f-8b6a-5fcd-823b-772c03fcd1e3","sourceKey":"bank:ECO201:E201-0002","payload":{"prompt":"Microeconomics knowledge underlines the saying that we all live in a world ______.","options":["Filled with wants","Filled with scarcity","Filled with rent","Filled with riches"],"correctOption":1,"section":"Foundations of Microeconomics","explanation":"Microeconomics starts from scarcity: our wants are unlimited but the resources to satisfy them are limited, so we must make choices. Option A (wants) is only half the story, because wants alone would not create an economic problem if resources were unlimited. Rent and riches (options C and D) have nothing to do with this basic idea."}}$official_bank_source$::jsonb),
   ('official_bank_eco201', 'add', 3, $official_bank_source${"itemId":"6d80df41-259f-5b4a-be86-6777477a7012","questionId":"36a8234a-2441-5628-b028-7606ce876b98","sourceKey":"bank:ECO201:E201-0003","payload":{"prompt":"______ measures the choice of building roads that Governor Ambode gave up many years ago.","options":["Waste of public funds","Public cost","Opportunity sacrificed","Opportunity cost"],"correctOption":3,"section":"Foundations of Microeconomics","explanation":"Opportunity cost is the value of the next best alternative given up when a choice is made, so the roads the governor did not build measure the opportunity cost of what he chose instead. Option C, 'opportunity sacrificed', sounds similar but is not the economic term. Options A and B are not measures of a forgone alternative at all."}}$official_bank_source$::jsonb),
@@ -941,17 +932,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_eco201(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_eco201' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco201' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco201' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco201' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco201' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_eco201', 'ECO201');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -963,9 +945,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'ECO201' then
-    raise exception 'Official bank ECO201: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

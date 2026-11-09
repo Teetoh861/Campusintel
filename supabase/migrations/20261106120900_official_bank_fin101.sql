@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_fin101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_fin101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_fin101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_fin101', 'bank', 0, $official_bank_source${"code":"FIN101","courseId":"203d7e61-c829-5419-a664-5a478e05a8a6","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":305,"shell":{"contentKey":"introduction-finance","titles":["Introduction to Finance"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_fin101', 'bank', 0, $official_bank_source${"code":"FIN101","courseId":"203d7e61-c829-5419-a664-5a478e05a8a6","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":305,"shell":{"contentKey":"introduction-finance","titles":["Introduction to Finance"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":305}}$official_bank_source$::jsonb),
   ('official_bank_fin101', 'add', 1, $official_bank_source${"itemId":"f57c77e5-649b-575a-b49b-7b0a97d45dfe","questionId":"46479a2f-9dc3-539a-a505-77e89fc6d501","sourceKey":"bank:FIN101:FIN-0306","payload":{"prompt":"One of the following is NOT a major source of short-term finance.","options":["Factoring","Bill finance","Leasing","Trade credit"],"correctOption":2,"section":"Overview of Finance","explanation":"Leasing is a medium- to long-term source of finance, because it lets a firm use an asset such as a vehicle or machine over several years without buying it. Factoring (A), bill finance (B) and trade credit (D) all provide funds for a few months at most, so they are short-term sources."}}$official_bank_source$::jsonb),
   ('official_bank_fin101', 'add', 2, $official_bank_source${"itemId":"9a810727-598b-5aa1-8a74-55969656174b","questionId":"b3c43e1f-2117-5b7d-b70e-86a39d157421","sourceKey":"bank:FIN101:FIN-0310","payload":{"prompt":"The raising of capital funds and using them to generate returns, and paying returns to the suppliers of funds, are known as ------ functions of the firm.","options":["Marketing","Accounting","Finance","Production"],"correctOption":2,"section":"Overview of Finance","explanation":"The finance function covers obtaining funds, investing them to earn returns, and rewarding those who supplied the funds through interest and dividends. Marketing (A) deals with selling the firm's products, accounting (B) with recording and reporting transactions, and production (D) with turning inputs into goods."}}$official_bank_source$::jsonb),
   ('official_bank_fin101', 'add', 3, $official_bank_source${"itemId":"8aa12ec8-fae6-5c34-92a8-823ee4d6458a","questionId":"fb6b3881-70dc-50fc-a066-0898a6ca2310","sourceKey":"bank:FIN101:FIN-0344","payload":{"prompt":"One of the characteristics of finance is that ------","options":["It hinders business growth","It serves as a standard upon which business can be measured","It distorts the expansion of business","It does not link the other activities of a business together"],"correctOption":1,"section":"Overview of Finance","explanation":"Finance provides a common money measure for every part of a business, so performance, costs and growth can all be judged in financial terms. Options A and C describe the opposite of what finance does, since funds make growth and expansion possible. Option D is also false, because finance links production, marketing and other activities through budgets and funds."}}$official_bank_source$::jsonb),
@@ -361,17 +352,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_fin101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_fin101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_fin101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_fin101', 'FIN101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -383,9 +365,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'FIN101' then
-    raise exception 'Official bank FIN101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

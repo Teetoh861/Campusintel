@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_bua101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_bua101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_bua101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_bua101', 'bank', 0, $official_bank_source${"code":"BUA101","courseId":"3377fae6-5ab9-5742-95e3-75b94650a294","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":389,"shell":{"contentKey":"introduction-business-1","titles":["Introduction to Business I"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_bua101', 'bank', 0, $official_bank_source${"code":"BUA101","courseId":"3377fae6-5ab9-5742-95e3-75b94650a294","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":389,"shell":{"contentKey":"introduction-business-1","titles":["Introduction to Business I"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":389}}$official_bank_source$::jsonb),
   ('official_bank_bua101', 'add', 1, $official_bank_source${"itemId":"4e1c5755-c2c5-5cb6-9c49-08aa47e35b13","questionId":"3a5c22cb-db45-5272-8216-2b7ac9e74dc9","sourceKey":"bank:BUA101:BUA-0001","payload":{"prompt":"Shareholders as a business stakeholder receive","options":["Dividends","Wages and salaries","Provision of infrastructure","Community services"],"correctOption":0,"section":"Developing a Business Mindset","explanation":"Shareholders are the owners of a company, and their reward for investing is a share of the profit paid out as dividends. Option B, wages and salaries, goes to employees, while C and D describe what government and the community expect from a business."}}$official_bank_source$::jsonb),
   ('official_bank_bua101', 'add', 2, $official_bank_source${"itemId":"4eaf8362-dd13-5800-b432-7f3d3dff9c99","questionId":"9bf7b6e9-e5ce-5057-861d-b4c542098f8f","sourceKey":"bank:BUA101:BUA-0003","payload":{"prompt":"All BUT the following are major reasons for separating business operations into functional areas","options":["efficiency","expertise","increased costs","effectiveness"],"correctOption":2,"section":"Developing a Business Mindset","explanation":"Firms split work into functional areas such as marketing, finance and production so that people can specialise, which brings expertise, efficiency and effectiveness. Increased costs are not a goal of this arrangement, so C is the exception. Options A, B and D are all genuine benefits of dividing work by function."}}$official_bank_source$::jsonb),
   ('official_bank_bua101', 'add', 3, $official_bank_source${"itemId":"3a2c9ed5-295f-5367-aed3-d85b6e867c0e","questionId":"fb3560fb-9ea9-5805-8962-7f8379ef9e3c","sourceKey":"bank:BUA101:BUA-0017","payload":{"prompt":"Which of the following is a general force?","options":["Technological conditions","Customers","Competitors","Investors"],"correctOption":0,"section":"Developing a Business Mindset","explanation":"General (macro) forces are broad conditions that affect all organisations, such as technological, economic, political-legal and socio-cultural conditions. Customers, competitors and investors (B, C and D) are specific forces in a firm's task environment that it deals with directly."}}$official_bank_source$::jsonb),
@@ -453,17 +444,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_bua101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_bua101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_bua101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_bua101', 'BUA101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -475,9 +457,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'BUA101' then
-    raise exception 'Official bank BUA101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

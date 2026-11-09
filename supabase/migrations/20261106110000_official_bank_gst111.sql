@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_gst111('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_gst111. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_gst111 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_gst111', 'bank', 0, $official_bank_source${"code":"GST111","courseId":"40000000-0000-4000-8000-000000000008","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":650}$official_bank_source$::jsonb),
+  ('official_bank_gst111', 'bank', 0, $official_bank_source${"code":"GST111","courseId":"40000000-0000-4000-8000-000000000008","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":650,"rows":{"audited":100,"keep":0,"retire":100,"add":650}}$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 1, $official_bank_source$"0fdbdf02-46d0-5102-bf1a-9b4603de5603"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 2, $official_bank_source$"44c557af-743a-5a97-83f2-9eae2721caff"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 3, $official_bank_source$"6ff4dbd9-69d3-5203-8ed4-f9d9468f16bc"$official_bank_source$::jsonb),
@@ -76,9 +67,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_gst111', 'audited', 53, $official_bank_source$"bed0061b-7a28-5a94-b87f-2831e499f2e6"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 54, $official_bank_source$"727c0d2d-84cd-5fc3-b2db-52a8485a116d"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 55, $official_bank_source$"5d6133b9-7694-540d-8ff8-4bace9855b23"$official_bank_source$::jsonb),
-  ('official_bank_gst111', 'audited', 56, $official_bank_source$"dca42f92-74d3-5d80-bb73-439f3e969fe3"$official_bank_source$::jsonb),
-  ('official_bank_gst111', 'audited', 57, $official_bank_source$"375adf6f-7386-5f46-b0da-ec4d3d8bbb4b"$official_bank_source$::jsonb);
+  ('official_bank_gst111', 'audited', 56, $official_bank_source$"dca42f92-74d3-5d80-bb73-439f3e969fe3"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_gst111', 'audited', 57, $official_bank_source$"375adf6f-7386-5f46-b0da-ec4d3d8bbb4b"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 58, $official_bank_source$"9c42d3f8-e30a-5f88-bc16-275a61db2a85"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 59, $official_bank_source$"33d8cbe6-ec86-55b5-aa50-a2d358d76314"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'audited', 60, $official_bank_source$"298bf41b-6946-5e06-848d-086425e3df4d"$official_bank_source$::jsonb),
@@ -136,9 +127,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_gst111', 'retire', 12, $official_bank_source$"2f5ce2b2-bd56-5bbf-b90f-411d94a6ef87"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 13, $official_bank_source$"bb8b130d-5bf4-5985-86d6-8508c8afb9cd"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 14, $official_bank_source$"75c98684-b4e5-5ab9-aed5-421dacd2eaa7"$official_bank_source$::jsonb),
-  ('official_bank_gst111', 'retire', 15, $official_bank_source$"31036258-faaf-56db-86d5-5a1ab5a527a5"$official_bank_source$::jsonb),
-  ('official_bank_gst111', 'retire', 16, $official_bank_source$"0af1cfb0-1e70-5d64-83df-8adc188fe1c0"$official_bank_source$::jsonb);
+  ('official_bank_gst111', 'retire', 15, $official_bank_source$"31036258-faaf-56db-86d5-5a1ab5a527a5"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_gst111', 'retire', 16, $official_bank_source$"0af1cfb0-1e70-5d64-83df-8adc188fe1c0"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 17, $official_bank_source$"b34ae6e7-7252-5b5b-a157-0318fa4210f4"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 18, $official_bank_source$"1f2879ad-20d0-526d-beb6-41356799d479"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 19, $official_bank_source$"65659aec-da9e-53ed-babb-3e0660680f19"$official_bank_source$::jsonb),
@@ -196,9 +187,9 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
   ('official_bank_gst111', 'retire', 71, $official_bank_source$"6b06fb9b-48cd-5bf3-9d8b-6f2f8befe231"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 72, $official_bank_source$"0a2e40fc-d638-5894-a4da-fd7f7e43348c"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 73, $official_bank_source$"e7ab14a9-61b7-510d-9c91-779c63eb74cd"$official_bank_source$::jsonb),
-  ('official_bank_gst111', 'retire', 74, $official_bank_source$"bde86858-a89e-5529-bbe9-222b3664e49c"$official_bank_source$::jsonb),
-  ('official_bank_gst111', 'retire', 75, $official_bank_source$"d2e3c20f-94bf-5619-824e-94c8e5813adf"$official_bank_source$::jsonb);
+  ('official_bank_gst111', 'retire', 74, $official_bank_source$"bde86858-a89e-5529-bbe9-222b3664e49c"$official_bank_source$::jsonb);
 insert into private.official_bank_rows (bank, part, ordinal, value) values
+  ('official_bank_gst111', 'retire', 75, $official_bank_source$"d2e3c20f-94bf-5619-824e-94c8e5813adf"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 76, $official_bank_source$"966ead57-7b60-58f6-98d2-d915a642ad00"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 77, $official_bank_source$"007b1baf-5547-5020-b7d7-70f57080979f"$official_bank_source$::jsonb),
   ('official_bank_gst111', 'retire', 78, $official_bank_source$"9e248c53-89a5-5d52-84f2-87f281e7c43f"$official_bank_source$::jsonb),
@@ -946,17 +937,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_gst111(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_gst111' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_gst111' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_gst111' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_gst111' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_gst111' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_gst111', 'GST111');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -967,9 +949,6 @@ declare
   v_id uuid;
   v_item public.managed_content_items%rowtype;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'GST111' then
-    raise exception 'Official bank GST111: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

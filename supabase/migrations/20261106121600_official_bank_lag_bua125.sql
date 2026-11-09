@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_lag_bua125('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_lag_bua125. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_lag_bua125 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_lag_bua125', 'bank', 0, $official_bank_source${"code":"LAG-BUA125","courseId":"caf0ea5d-6cc0-5bd0-8719-c6f1a95ceec1","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":572,"shell":{"contentKey":"managerial-economics","titles":["Managerial Economics"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_lag_bua125', 'bank', 0, $official_bank_source${"code":"LAG-BUA125","courseId":"caf0ea5d-6cc0-5bd0-8719-c6f1a95ceec1","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":572,"shell":{"contentKey":"managerial-economics","titles":["Managerial Economics"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":572}}$official_bank_source$::jsonb),
   ('official_bank_lag_bua125', 'add', 1, $official_bank_source${"itemId":"6cdf10e3-0ba6-5d73-b68f-20366ed96ce0","questionId":"0bad2140-fdfa-55fd-abdd-c7e300aaa138","sourceKey":"bank:LAG-BUA125:PQ-001-a","payload":{"prompt":"Which of the following best defines Managerial Economics?","options":["The use of economic theories, concepts and models to make business decisions in any type of organisation","The study of how a central bank controls the money supply and interest rates","The study of how managers motivate and lead their employees","The recording and summarising of a firm's financial transactions"],"correctOption":0,"section":"Introduction to Managerial Economics and Managerial Decisions","explanation":"Managerial economics applies economic theories, concepts and models to improve decision making, whatever the type of organisation, so option A is right. Option B describes monetary policy, which is a government and central bank matter. Option D is accounting, and option C is about leadership and human relations, not economic analysis of decisions."}}$official_bank_source$::jsonb),
   ('official_bank_lag_bua125', 'add', 2, $official_bank_source${"itemId":"c3c0e57a-d107-5335-9ce5-4a660c3a55cf","questionId":"6b18b738-53f3-5248-83c4-40738ccfc5c6","sourceKey":"bank:LAG-BUA125:PQ-001-b","payload":{"prompt":"Managerial economics is useful for decision making in which of the following?","options":["Profit-making companies only","Profit-making organisations, non-profit organisations and the public sector","Government ministries and agencies only","Multinational companies only"],"correctOption":1,"section":"Introduction to Managerial Economics and Managerial Decisions","explanation":"Option B is correct because managers in every kind of organisation, from a sole proprietorship to an NGO or a government ministry, must decide how to use scarce resources, and managerial economics tools apply to all of them. Options A, C and D each wrongly limit it to one group; a Vice Chancellor, a Commissioner or the head of a charity also performs managerial decision making."}}$official_bank_source$::jsonb),
   ('official_bank_lag_bua125', 'add', 3, $official_bank_source${"itemId":"dc993ebb-96b7-5027-9ac0-0c35a824f606","questionId":"3cc493cc-103b-5bed-be50-26c6d824db51","sourceKey":"bank:LAG-BUA125:PQ-002-a","payload":{"prompt":"Which of the following is a goal of managerial economics?","options":["Employing as many workers as possible regardless of output","Removing every form of risk from business decisions","Replacing managers' decisions with government directives","Achieving optimum allocation of the organisation's resources"],"correctOption":3,"section":"Introduction to Managerial Economics and Managerial Decisions","explanation":"A central goal of managerial economics is optimum resource allocation: putting scarce men, money and materials to their best use, so option D is right. Option A ignores efficiency, which is another important goal. Option B is impossible, since decisions are always made with some risk, and option C contradicts the whole idea of improving managers' own decision making."}}$official_bank_source$::jsonb),
@@ -664,17 +655,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_lag_bua125(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_lag_bua125' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua125' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua125' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua125' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_bua125' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_lag_bua125', 'LAG-BUA125');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -686,9 +668,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'LAG-BUA125' then
-    raise exception 'Official bank LAG-BUA125: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

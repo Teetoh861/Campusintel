@@ -172,20 +172,21 @@ export function TheorySection({ items, number, practiceHref }: {
   </StudySection>
 }
 
-/** The bank topic names a bank course's overview lists: none when Practice already lists them, so they show once.
- * An empty list still marks a bank course, whose overview never falls back to its stored topics. */
-export function overviewBankTopics(bankTopics: ReadonlyArray<string> | undefined,
-  practiceListsTopics: boolean): ReadonlyArray<string> | undefined {
-  return bankTopics && practiceListsTopics ? [] : bankTopics
+/** The bank topic names a bank course's overview lists, so its topics show once: none when Practice lists them, and
+ * none for a course with its own syllabus topics, which its overview keeps. */
+export function overviewBankTopics(bankTopics: ReadonlyArray<string> | undefined, practiceListsTopics: boolean,
+  ownTopics: number): ReadonlyArray<string> | undefined {
+  return bankTopics && bankTopics.length > 0 && !practiceListsTopics && ownTopics === 0 ? bankTopics : undefined
 }
 
 /** Published overview context; every block renders only when the managed payload carries it. A course whose questions
- * come from an official bank lists the bank's topic names, in the bank's order, in place of the overview's topics,
- * unless Practice lists them (an empty `bankTopics`). */
+ * come from an official bank and that has no syllabus topics of its own lists the bank's topic names, in the bank's
+ * order (see overviewBankTopics). */
 export function OverviewSection({ overview, bankTopics, number }: {
   overview: ManagedOverview | null; bankTopics?: ReadonlyArray<string>; number: number
 }): ReactElement {
-  const topics = bankTopics ? [] : overview?.topics ?? [], examFocus = overview?.examFocus ?? []
+  const topics = overview?.topics ?? [], examFocus = overview?.examFocus ?? []
+  const bankList = topics.length > 0 ? [] : bankTopics ?? []
   const keyTakeaways = overview?.keyTakeaways ?? [], formulaSheet = overview?.formulaSheet ?? []
   // A course with only its bank topics gets no lede: the topic list is the overview.
   return <StudySection id="overview" number={number} lede={overview ? 'Explore the topics and key ideas for this course.' : undefined}>
@@ -199,10 +200,10 @@ export function OverviewSection({ overview, bankTopics, number }: {
         </li>)}
       </ol>
     </div>}
-    {bankTopics && bankTopics.length > 0 && <div className="student-detail-group">
+    {bankList.length > 0 && <div className="student-detail-group">
       <h3>Syllabus topics</h3>
       <ol className="student-detail-numbered student-surface">
-        {bankTopics.map((topic, index) => <li key={topic}><span>{pad2(index + 1)}</span><p className="student-detail-strong">{topic}</p></li>)}
+        {bankList.map((topic, index) => <li key={topic}><span>{pad2(index + 1)}</span><p className="student-detail-strong">{topic}</p></li>)}
       </ol>
     </div>}
     {topics.length > 0 && <div className="student-detail-group">

@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_soc101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_soc101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_soc101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_soc101', 'bank', 0, $official_bank_source${"code":"SOC101","courseId":"f0a98038-5829-537e-bb07-a06605f6e2a4","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":523,"shell":{"contentKey":"introduction-sociology-1","titles":["Introduction to Sociology I"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_soc101', 'bank', 0, $official_bank_source${"code":"SOC101","courseId":"f0a98038-5829-537e-bb07-a06605f6e2a4","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":523,"shell":{"contentKey":"introduction-sociology-1","titles":["Introduction to Sociology I"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":523}}$official_bank_source$::jsonb),
   ('official_bank_soc101', 'add', 1, $official_bank_source${"itemId":"697efd28-69ec-5e11-9a0b-ca37b3017d3d","questionId":"7801a55f-68e8-5c81-b3a7-105b12c4ba9e","sourceKey":"bank:SOC101:SOC-0025","payload":{"prompt":"C. Wright Mills' term for the ability to look beyond personal, everyday explanations of actions and see the wider social forces behind them is","options":["Sociological insight","Sociological understanding","Sociological imagination","Sociological illumination"],"correctOption":2,"section":"Definition and scope of sociology","explanation":"The sociological imagination, a term from C. Wright Mills, is the ability to connect personal experiences and everyday actions to the wider social forces that shape them. Options A, B and D sound similar but are not the recognized name for this idea."}}$official_bank_source$::jsonb),
   ('official_bank_soc101', 'add', 2, $official_bank_source${"itemId":"03c467e0-d1d7-5ba7-886f-9f87a07d32fb","questionId":"ed6e5b09-2d0d-501b-a423-a5473c3c6b02","sourceKey":"bank:SOC101:SOC-0033","payload":{"prompt":"The application of the method of natural science to the study of man is known as","options":["Naturism","Empiricism","Objectivism","Positivism"],"correctOption":3,"section":"Definition and scope of sociology","explanation":"Positivism, associated with Auguste Comte, is the view that the methods of the natural sciences should be used to study society. Empiricism (B) and objectivism (C) are features of scientific study, relying on observation and avoiding bias, but they are not the name for this overall approach."}}$official_bank_source$::jsonb),
   ('official_bank_soc101', 'add', 3, $official_bank_source${"itemId":"d3864ac1-8b42-5b3d-9ed5-e007b5d6ad53","questionId":"c7ee64f3-8a74-5c7f-9821-794a07ef3e8c","sourceKey":"bank:SOC101:SOC-0035","payload":{"prompt":"The definition of Sociology as \"a science which attempts the interpretive understanding of social action in order thereby to arrive at a causal explanation of its course and effects\" was given by ________","options":["Alex Inkeles","Max Weber","Emile Durkheim","Herbert Spencer"],"correctOption":1,"section":"Definition and scope of sociology","explanation":"This is Max Weber's well-known definition, which reflects his focus on understanding the meanings people attach to their actions. Durkheim (C) instead defined sociology as the study of social facts, and Spencer (D) took an evolutionary, organic view of society."}}$official_bank_source$::jsonb),
@@ -602,17 +593,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_soc101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_soc101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_soc101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_soc101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_soc101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_soc101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_soc101', 'SOC101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -624,9 +606,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'SOC101' then
-    raise exception 'Official bank SOC101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

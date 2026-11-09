@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_eco101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_eco101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_eco101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_eco101', 'bank', 0, $official_bank_source${"code":"ECO101","courseId":"e01c0d3f-3f5e-5197-b96f-ac7935fc2fe8","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":916,"shell":{"contentKey":"principles-economics-1","titles":["Principles of Economics I"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_eco101', 'bank', 0, $official_bank_source${"code":"ECO101","courseId":"e01c0d3f-3f5e-5197-b96f-ac7935fc2fe8","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":916,"shell":{"contentKey":"principles-economics-1","titles":["Principles of Economics I"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":916}}$official_bank_source$::jsonb),
   ('official_bank_eco101', 'add', 1, $official_bank_source${"itemId":"b7bb76ac-5f9e-5df9-9bc8-fb1c6985f19f","questionId":"ac18f5a3-8d11-5ae7-9029-9dcfbc479dbb","sourceKey":"bank:ECO101:ECO-0031","payload":{"prompt":"A point on a production possibilities frontier:","options":["could indicate an optimal use of resources.","is less efficient that a point inside the production possibilities frontier","reflects an unattainable level unless technology is further developed to fully employ all resources to their optimum capacity","Implies that too much labor and not enough capital is being used"],"correctOption":0,"section":"Nature of Economic Science","explanation":"Points on the production possibilities frontier show combinations where all resources are fully and efficiently used, so a point on it can show an optimal use of resources. Option B has it backwards, because points inside the frontier are the inefficient ones. Option C describes points outside the frontier, and option D has no basis in the PPC."}}$official_bank_source$::jsonb),
   ('official_bank_eco101', 'add', 2, $official_bank_source${"itemId":"8ba58ee0-650c-5f28-905a-2a8880758e88","questionId":"b9fef29a-8fef-5cfb-9669-18a1371e99a9","sourceKey":"bank:ECO101:ECO-0034","payload":{"prompt":"What is the opportunity cost of one year at College or University?","options":["one year to re-write UTME.","at least one year of earnings in a paid employment","Joblessness","idleness and social vices."],"correctOption":1,"section":"Nature of Economic Science","explanation":"Opportunity cost is the value of the next best alternative given up, and for a year at university that is mainly the earnings you could have made from a paid job in that year. Options A, C and D are not alternatives you give up by choosing school; they are other situations, not the forgone next best use of your time."}}$official_bank_source$::jsonb),
   ('official_bank_eco101', 'add', 3, $official_bank_source${"itemId":"b5a13dbf-7577-5299-ad8b-cca6d722524a","questionId":"3b117a87-302f-5993-87d3-60b78aed379b","sourceKey":"bank:ECO101:ECO-0051","payload":{"prompt":"Opportunity cost is","options":["Implicit cost","Alternative forgone","Economic surplus denied","Sacrifice for Consumption"],"correctOption":1,"section":"Nature of Economic Science","explanation":"Opportunity cost is the next best alternative given up when a choice is made. Option A, implicit cost, is one kind of opportunity cost to a firm, not the definition. Options C and D are vague and not the standard meaning."}}$official_bank_source$::jsonb),
@@ -1042,17 +1033,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_eco101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_eco101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_eco101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_eco101', 'ECO101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -1064,9 +1046,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'ECO101' then
-    raise exception 'Official bank ECO101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

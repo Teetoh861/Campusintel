@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_lag_acs209('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_lag_acs209. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_lag_acs209 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_lag_acs209', 'bank', 0, $official_bank_source${"code":"LAG-ACS209","courseId":"66dc36be-2c4d-5821-ac32-a5c8e4ae4886","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":864,"shell":{"contentKey":"business-statistics-1","titles":["Business Statistics I"],"level":"200-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_lag_acs209', 'bank', 0, $official_bank_source${"code":"LAG-ACS209","courseId":"66dc36be-2c4d-5821-ac32-a5c8e4ae4886","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":864,"shell":{"contentKey":"business-statistics-1","titles":["Business Statistics I"],"level":"200-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":864}}$official_bank_source$::jsonb),
   ('official_bank_lag_acs209', 'add', 1, $official_bank_source${"itemId":"bab24262-8041-5e0d-aaec-1e84c5ef9974","questionId":"edd662fb-0520-584e-8771-35bfe734198d","sourceKey":"bank:LAG-ACS209:ELT-077","payload":{"prompt":"Methods of organizing, summarizing and presenting data in an informative way are called","options":["Descriptive statistics","Inferential statistics","Theoretical statistics","Applied statistics"],"correctOption":0,"section":"Introduction to Statistics and Data Collection","explanation":"Descriptive statistics organises, summarises and presents data using tables, charts and measures such as the mean. Option B, inferential statistics, goes further and draws conclusions about a population from a sample. Options C and D describe the kind of statistics (theory versus application), not this task."}}$official_bank_source$::jsonb),
   ('official_bank_lag_acs209', 'add', 2, $official_bank_source${"itemId":"eb079027-8323-5498-8c54-0c31abc77d33","questionId":"f1d09e4d-12f6-52b3-bb42-97c0615f6bd2","sourceKey":"bank:LAG-ACS209:ELT-078","payload":{"prompt":"The methods used to determine something about a population on the basis of a sample are called","options":["Inferential statistics","Descriptive statistics","Applied statistics","Theoretical statistics"],"correctOption":0,"section":"Introduction to Statistics and Data Collection","explanation":"Inferential statistics uses information from a sample to make estimates, predictions or decisions about the whole population. Option B, descriptive statistics, only summarises the data actually collected. Options C and D refer to broad branches of the subject rather than this method."}}$official_bank_source$::jsonb),
   ('official_bank_lag_acs209', 'add', 3, $official_bank_source${"itemId":"c44b58f6-f2fc-536d-8382-8cc20f6d5882","questionId":"297f5b61-7f63-5476-aba6-6a3ecc027b04","sourceKey":"bank:LAG-ACS209:ELT-079","payload":{"prompt":"When the characteristic being studied is nonnumeric, it is called a","options":["Quantitative variable","Qualitative variable","Discrete variable","Continuous variable"],"correctOption":1,"section":"Introduction to Statistics and Data Collection","explanation":"A qualitative variable records a non-numeric characteristic such as hall of residence, gender or colour. Option A, quantitative, is the opposite and is measured with numbers. Options C and D, discrete and continuous, are both types of quantitative variable."}}$official_bank_source$::jsonb),
@@ -979,17 +970,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_lag_acs209(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_lag_acs209' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs209' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs209' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs209' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_lag_acs209' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_lag_acs209', 'LAG-ACS209');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -1001,9 +983,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'LAG-ACS209' then
-    raise exception 'Official bank LAG-ACS209: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

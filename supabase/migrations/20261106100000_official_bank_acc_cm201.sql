@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_acc_cm201('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_acc_cm201. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_acc_cm201 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_acc_cm201', 'bank', 0, $official_bank_source${"code":"ACC-CM201","courseId":"40000000-0000-4000-8000-000000000007","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":503}$official_bank_source$::jsonb),
+  ('official_bank_acc_cm201', 'bank', 0, $official_bank_source${"code":"ACC-CM201","courseId":"40000000-0000-4000-8000-000000000007","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":503,"rows":{"audited":150,"keep":1,"retire":149,"add":502}}$official_bank_source$::jsonb),
   ('official_bank_acc_cm201', 'audited', 1, $official_bank_source$"68d6eefe-8a32-5d48-911f-ae889dea972d"$official_bank_source$::jsonb),
   ('official_bank_acc_cm201', 'audited', 2, $official_bank_source$"cf0cc3c5-dfc9-5afe-ac4d-8edf5b40ccec"$official_bank_source$::jsonb),
   ('official_bank_acc_cm201', 'audited', 3, $official_bank_source$"53071fda-49a0-5119-a0f9-f3f532cb7941"$official_bank_source$::jsonb),
@@ -898,17 +889,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_acc_cm201(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_acc_cm201' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc_cm201' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc_cm201' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc_cm201' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc_cm201' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_acc_cm201', 'ACC-CM201');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -919,9 +901,6 @@ declare
   v_id uuid;
   v_item public.managed_content_items%rowtype;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'ACC-CM201' then
-    raise exception 'Official bank ACC-CM201: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

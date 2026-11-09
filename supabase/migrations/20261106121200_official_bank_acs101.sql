@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_acs101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_acs101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_acs101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_acs101', 'bank', 0, $official_bank_source${"code":"ACS101","courseId":"d1b6b70d-037b-5e9e-a4d4-17103525cc56","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":654,"shell":{"contentKey":"introduction-actuarial-science","titles":["Introduction to Actuarial Science"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_acs101', 'bank', 0, $official_bank_source${"code":"ACS101","courseId":"d1b6b70d-037b-5e9e-a4d4-17103525cc56","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":654,"shell":{"contentKey":"introduction-actuarial-science","titles":["Introduction to Actuarial Science"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":654}}$official_bank_source$::jsonb),
   ('official_bank_acs101', 'add', 1, $official_bank_source${"itemId":"5d9672ab-0625-5e01-98a3-57569884fe7e","questionId":"6d0f39de-6187-5ba8-a371-49893b3c807a","sourceKey":"bank:ACS101:PQ-001","payload":{"prompt":"An actuary is a business professional who manages ________ related to insurance product design, pensions and other financial corporate planning.","options":["financial risk","equipment","management account","financial account"],"correctOption":0,"section":"Nature of Actuarial Science and the Actuary","explanation":"An actuary analyses, measures and manages the financial implications of future risk, so financial risk is what the job is built around. Options B, C and D are not the focus: an actuary does not manage equipment, and management or financial accounts belong to the work of accountants rather than actuaries."}}$official_bank_source$::jsonb),
   ('official_bank_acs101', 'add', 2, $official_bank_source${"itemId":"c9d756c2-86bf-578d-bcdd-a701c457fe9d","questionId":"1eac8539-7a84-5d34-9d9e-20d3f05fc9a9","sourceKey":"bank:ACS101:PQ-002","payload":{"prompt":"By applying knowledge of probability, statistics, risk theory and financial principles, an actuary is able to ________ future risk with respect to insurance, annuity and pension programmes.","options":["initiate","decide","quantify","digitalize"],"correctOption":2,"section":"Nature of Actuarial Science and the Actuary","explanation":"To quantify a risk means to put a number on it, such as the expected cost of claims or the probability of death, and that measurement is the core of actuarial work. Option B (decide) does not fit because the tools measure the risk rather than decide it, while A (initiate) and D (digitalize) have nothing to do with measuring uncertainty."}}$official_bank_source$::jsonb),
   ('official_bank_acs101', 'add', 3, $official_bank_source${"itemId":"44cfbe31-87ea-5a3d-9398-ccf6bfe88852","questionId":"f72b5466-250b-50f8-8bff-9f8a7d0eb95e","sourceKey":"bank:ACS101:PQ-003","payload":{"prompt":"Actuarial science deals with evaluating risks and maintaining the ________ of insurance or financial organisations.","options":["economic stability","advertising budget","office buildings","staff uniforms"],"correctOption":0,"section":"Nature of Actuarial Science and the Actuary","explanation":"Actuarial science evaluates risks so that insurers and other financial organisations stay financially sound, which is what maintaining their economic stability means. Options B, C and D are everyday business matters that have nothing to do with measuring and managing financial risk."}}$official_bank_source$::jsonb),
@@ -756,17 +747,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_acs101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_acs101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acs101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acs101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acs101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acs101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_acs101', 'ACS101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -778,9 +760,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'ACS101' then
-    raise exception 'Official bank ACS101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;

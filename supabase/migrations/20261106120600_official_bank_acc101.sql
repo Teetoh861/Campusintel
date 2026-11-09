@@ -7,20 +7,11 @@
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
 -- private.official_bank_acc101('rollback') republishes the audited set through the same publish history; nothing is deleted.
 
--- The bank's source, one list element per row, kept for private.official_bank_acc101. Written in small statements: the
--- migration runner takes far longer over one very long statement.
-create table if not exists private.official_bank_rows (
-  bank text not null,
-  part text not null check (part in ('bank', 'audited', 'keep', 'retire', 'add')),
-  ordinal integer not null check (ordinal >= 0),
-  value jsonb not null,
-  primary key (bank, part, ordinal)
-);
-alter table private.official_bank_rows enable row level security;
-revoke all on table private.official_bank_rows from public, anon, authenticated, service_role;
-
+-- The bank's source, one list element per row, kept for private.official_bank_acc101 in private.official_bank_rows
+-- (created by 20261106090000_official_bank_rows.sql). Written in small statements: the migration runner takes far
+-- longer over one very long statement.
 insert into private.official_bank_rows (bank, part, ordinal, value) values
-  ('official_bank_acc101', 'bank', 0, $official_bank_source${"code":"ACC101","courseId":"bf4eae11-b8cf-51d1-bfb1-5f32b1b2d55a","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":587,"shell":{"contentKey":"introduction-financial-accounting-1","titles":["Introduction to Financial Accounting I"],"level":"100-level","semesters":["first-semester"]}}$official_bank_source$::jsonb),
+  ('official_bank_acc101', 'bank', 0, $official_bank_source${"code":"ACC101","courseId":"bf4eae11-b8cf-51d1-bfb1-5f32b1b2d55a","seedActor":"00000000-0000-4000-8000-000000000042","actor":"00000000-0000-4000-8000-000000000043","bankCount":587,"shell":{"contentKey":"introduction-financial-accounting-1","titles":["Introduction to Financial Accounting I"],"level":"100-level","semesters":["first-semester"]},"rows":{"audited":0,"keep":0,"retire":0,"add":587}}$official_bank_source$::jsonb),
   ('official_bank_acc101', 'add', 1, $official_bank_source${"itemId":"4237fb07-7b69-58c7-8666-518268bc9d50","questionId":"bb1f436e-9123-50bb-ab55-0bf5ea4000a0","sourceKey":"bank:ACC101:ACC-0209","payload":{"prompt":"Any definition of accounting must necessarily address the fact that accounting involves","options":["Provision of information for management use only","Identifying and recording of transactions of a business","Provision of qualitative data for shareholders","None of the above"],"correctOption":1,"section":"Nature, scope and objectives of accounting","explanation":"Every definition of accounting starts with identifying and recording business transactions, which are then classified, summarised and communicated. Option A is too narrow because accounting serves many users, not only management. Option C is wrong because accounting deals mainly with quantitative financial data, not only qualitative data for shareholders."}}$official_bank_source$::jsonb),
   ('official_bank_acc101', 'add', 2, $official_bank_source${"itemId":"22627568-7556-54ff-bab6-48c738503c3e","questionId":"606af168-32e9-53dc-96ef-dbd58d371f11","sourceKey":"bank:ACC101:ACC-0213","payload":{"prompt":"book keeping is a ____ activity","options":["Recording","interpreting","Reporting","Analysing"],"correctOption":0,"section":"Nature, scope and objectives of accounting","explanation":"Bookkeeping is the recording side of accounting: entering transactions in the books of prime entry and ledgers. Interpreting (B), reporting (C) and analysing (D) are wider accounting tasks that come after the bookkeeping is done."}}$official_bank_source$::jsonb),
   ('official_bank_acc101', 'add', 3, $official_bank_source${"itemId":"efbdc5cd-6338-5471-96f1-bcc91a38813b","questionId":"7120fdcf-a4c5-58dc-89e5-ad2e8e9fc881","sourceKey":"bank:ACC101:ACC-0230","payload":{"prompt":"The two primary objectives of a business are","options":["Earn a profit and remain solvent","Earn a profit and create wealth","Earn a profit and prepare financial statements","Earn a profit and report financial performance"],"correctOption":0,"section":"Nature, scope and objectives of accounting","explanation":"The two main goals of a business are to earn a profit and to stay solvent, meaning it can pay its debts as they fall due. Option B is close, but creating wealth is really another way of describing profit. Options C and D describe accounting tasks that help measure these goals, not the goals themselves."}}$official_bank_source$::jsonb),
@@ -678,17 +669,8 @@ insert into private.official_bank_rows (bank, part, ordinal, value) values
 create function private.official_bank_acc101(p_action text)
 returns text language plpgsql security invoker set search_path = '' as $official_bank$
 declare
-  -- The bank as one document: its scalars, then each list in its original order.
-  v_bank jsonb := (select r.value from private.official_bank_rows r
-    where r.bank = 'official_bank_acc101' and r.part = 'bank' and r.ordinal = 0) || jsonb_build_object(
-    'audited', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc101' and r.part = 'audited'), '[]'),
-    'keep', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc101' and r.part = 'keep'), '[]'),
-    'retire', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc101' and r.part = 'retire'), '[]'),
-    'add', coalesce((select jsonb_agg(r.value order by r.ordinal)
-      from private.official_bank_rows r where r.bank = 'official_bank_acc101' and r.part = 'add'), '[]'));
+  -- The bank as one document, rebuilt from its rows; refused before anything is read or written if a row is missing.
+  v_bank jsonb := private.official_bank_source('official_bank_acc101', 'ACC101');
   v_course uuid := (v_bank->>'courseId')::uuid;
   v_actor uuid := (v_bank->>'actor')::uuid;
   v_seed_actor uuid := (v_bank->>'seedActor')::uuid;
@@ -700,9 +682,6 @@ declare
   v_item public.managed_content_items%rowtype;
   v_catalogue uuid;
 begin
-  if v_bank is null or v_bank->>'code' is distinct from 'ACC101' then
-    raise exception 'Official bank ACC101: its source rows are missing';
-  end if;
   if p_action is null or p_action not in ('apply', 'rollback') then
     raise exception 'Official bank %: unknown action %', v_bank->>'code', p_action;
   end if;
