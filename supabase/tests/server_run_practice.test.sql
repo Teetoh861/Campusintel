@@ -7,6 +7,12 @@
 begin;
 select no_plan();
 
+-- These cases were written for the repository seed: course 01 (ENT211) with 50 questions, course 07 (ACC-CM201)
+-- with 150 and course 08 (GST111) with 100. Their official bank imports are rolled back inside this transaction, which republishes exactly those.
+select is(private.official_bank_ent211('rollback'), 'rolled-back', 'course 01 runs on its 50 seeded questions');
+select is(private.official_bank_acc_cm201('rollback'), 'rolled-back', 'course 07 runs on its 150 seeded questions');
+select is(private.official_bank_gst111('rollback'), 'rolled-back', 'course 08 runs on its 100 seeded questions');
+
 -- Helpers ------------------------------------------------------------------------------------------------------------
 create function pg_temp.u(n integer) returns uuid language sql immutable
   as $$ select ('d1000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid $$;
@@ -210,8 +216,8 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"d1000000-0000-4000-8000-000000000006","role":"authenticated","session_id":"d2000000-0000-4000-8000-000000000006"}';
 select is((select count(*)::integer from public.list_managed_content(pg_temp.c('07'))
-  where kind = 'cbt_question' and payload ? 'correctOption'), 150,
-  'the operator editor still lists every CBT question with its correct option');
+  where kind = 'cbt_question' and payload ? 'correctOption'), 652,
+  'the operator editor still lists every CBT question with its correct option (150 seeded and 502 from the bank, unpublished here)');
 reset role;
 
 -- One pool, whatever the start skips: withdrawn and malformed rows are counted by neither.

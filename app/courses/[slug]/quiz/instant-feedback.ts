@@ -38,6 +38,12 @@ export function optionMarkOf(index: number, feedback: PickFeedback | undefined):
 }
 
 /** "7 of 10 right": correct out of the questions answered. */
+/** Practise again only on a topic the course still has: a topic retired since the run offers no button, rather than
+ *  an error after the tap. An empty list (topics not read) offers it on no topic either. */
+export function canPractiseTopicAgain(topic: string | null, topics: ReadonlyArray<string>): boolean {
+  return topic !== null && topics.includes(topic)
+}
+
 export function instantScoreLine(score: number, answered: number): string {
   return answered === 0 ? 'No questions answered' : `${score} of ${answered} right`
 }

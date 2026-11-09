@@ -22,15 +22,18 @@ const STUDY_SECTION_LABELS: Record<StudySectionId, string> = {
 }
 
 /** Sections in product order: the study families as the shared owner orders them, then context. */
-export function studySections({ study, learning, practice, textbooks }: {
+export function studySections({ study, learning, practice, textbooks, bankTopics = 0 }: {
   study: StudyAvailability | null
   learning: StudentCourseDetailLearning | null
   practice: StudentCoursePractice | null
   textbooks: number
+  // A course whose questions come from an official bank has an overview of its bank topics even with no stored one.
+  bankTopics?: number
 }): StudySectionId[] {
   const families = study === null ? [] : STUDY_FAMILIES.map(family => family.id).filter(id =>
     study[id] && (id === 'cbtPractice' ? practice !== null : learning !== null))
-  return [...families, ...(learning?.overview ? ['overview' as const] : []), ...(textbooks > 0 ? ['reading' as const] : [])]
+  return [...families, ...(learning?.overview || bankTopics > 0 ? ['overview' as const] : []),
+    ...(textbooks > 0 ? ['reading' as const] : [])]
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -169,12 +172,25 @@ export function TheorySection({ items, number, practiceHref }: {
   </StudySection>
 }
 
-/** Published overview context; every block renders only when the managed payload carries it. */
-export function OverviewSection({ overview, number }: { overview: ManagedOverview; number: number }): ReactElement {
-  const topics = overview.topics ?? [], examFocus = overview.examFocus ?? []
-  const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
-  return <StudySection id="overview" number={number} lede="Explore the topics and key ideas for this course.">
-    {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
+/** The bank topic names a bank course's overview lists, so its topics show once: none when Practice lists them, and
+ * none for a course with its own syllabus topics, which its overview keeps. */
+export function overviewBankTopics(bankTopics: ReadonlyArray<string> | undefined, practiceListsTopics: boolean,
+  ownTopics: number): ReadonlyArray<string> | undefined {
+  return bankTopics && bankTopics.length > 0 && !practiceListsTopics && ownTopics === 0 ? bankTopics : undefined
+}
+
+/** Published overview context; every block renders only when the managed payload carries it. A course whose questions
+ * come from an official bank and that has no syllabus topics of its own lists the bank's topic names, in the bank's
+ * order (see overviewBankTopics). */
+export function OverviewSection({ overview, bankTopics, number }: {
+  overview: ManagedOverview | null; bankTopics?: ReadonlyArray<string>; number: number
+}): ReactElement {
+  const topics = overview?.topics ?? [], examFocus = overview?.examFocus ?? []
+  const bankList = topics.length > 0 ? [] : bankTopics ?? []
+  const keyTakeaways = overview?.keyTakeaways ?? [], formulaSheet = overview?.formulaSheet ?? []
+  // A course with only its bank topics gets no lede: the topic list is the overview.
+  return <StudySection id="overview" number={number} lede={overview ? 'Explore the topics and key ideas for this course.' : undefined}>
+    {overview?.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
     {keyTakeaways.length > 0 && <div className="student-detail-group">
       <h3>Key takeaways</h3>
       <ol className="student-detail-numbered student-surface">
@@ -182,6 +198,12 @@ export function OverviewSection({ overview, number }: { overview: ManagedOvervie
           <span>{pad2(index + 1)}</span>
           <div><p className="student-detail-strong">{item.title}</p><p className="student-detail-prose">{item.description}</p></div>
         </li>)}
+      </ol>
+    </div>}
+    {bankList.length > 0 && <div className="student-detail-group">
+      <h3>Syllabus topics</h3>
+      <ol className="student-detail-numbered student-surface">
+        {bankList.map((topic, index) => <li key={topic}><span>{pad2(index + 1)}</span><p className="student-detail-strong">{topic}</p></li>)}
       </ol>
     </div>}
     {topics.length > 0 && <div className="student-detail-group">

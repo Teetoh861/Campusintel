@@ -6,6 +6,10 @@
 begin;
 select no_plan();
 
+-- Course 08 (GST111) is used with the topics and questions it was seeded with: its official bank import is rolled back
+-- inside this transaction.
+select is(private.official_bank_gst111('rollback'), 'rolled-back', 'course 08 runs on its seeded questions');
+
 -- Helpers ------------------------------------------------------------------------------------------------------------
 create function pg_temp.u(n integer) returns uuid language sql immutable
   as $$ select ('f4000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid $$;
@@ -305,7 +309,7 @@ insert into outcome values ('outside-topic', pg_temp.tstart(20, 20, '11',
   'Week 10 — Nigeria''s Banking, Financial System, and Securities Market'));
 insert into outcome values ('outside-exam', public.practice_start(pg_temp.s(20), pg_temp.a(21), pg_temp.c('11'), 'new', null,
   5, 1800, '[]', 5, 1800, false));
-insert into outcome values ('own-topic', pg_temp.tstart(20, 22, '02', 'Ethics & CSR'));
+insert into outcome values ('own-topic', pg_temp.tstart(20, 22, '02', 'Forms of Business Ownership'));
 reset role;
 select is(jsonb_build_array(pg_temp.o('outside-topic'), pg_temp.o('outside-exam')),
   '[{"state":"locked"},{"state":"locked"}]'::jsonb, 'a topic or exam start for a course outside the list is refused');
@@ -316,8 +320,8 @@ select is(pg_temp.o('own-topic') ->> 'state', 'ready', 'an own course''s topic s
 -- A pending grant binds once, inside the start, which then goes ahead; a replay binds nothing more.
 select is(pg_temp.bindings(21), 0, 'student 21''s grant is pending');
 set local role service_role;
-insert into outcome values ('pending', pg_temp.tstart(21, 23, '02', 'Ethics & CSR'));
-insert into outcome values ('pending-replay', pg_temp.tstart(21, 23, '02', 'Ethics & CSR'));
+insert into outcome values ('pending', pg_temp.tstart(21, 23, '02', 'Forms of Business Ownership'));
+insert into outcome values ('pending-replay', pg_temp.tstart(21, 23, '02', 'Forms of Business Ownership'));
 reset role;
 select is(jsonb_build_object('state', pg_temp.o('pending') ->> 'state', 'replay', pg_temp.o('pending-replay') ->> 'state',
     'bindings', pg_temp.bindings(21),
@@ -330,7 +334,7 @@ select is(jsonb_build_object('state', pg_temp.o('pending') ->> 'state', 'replay'
 select is(public.admin_change_grant((select id from public.entitlement_grants where user_id = pg_temp.u(20)), 'revoke',
   null, null, 'Ops', 'test') ->> 'state', 'changed', 'the plan is revoked');
 set local role service_role;
-insert into outcome values ('revoked', pg_temp.tstart(20, 24, '02', 'Accounting & Operations'));
+insert into outcome values ('revoked', pg_temp.tstart(20, 24, '02', 'The Business Environment'));
 reset role;
 select is(pg_temp.o('revoked'), '{"state":"locked"}'::jsonb, 'after a revoke, another topic is refused');
 select is((select status from public.quiz_attempts where id = pg_temp.a(22)), 'in_progress',

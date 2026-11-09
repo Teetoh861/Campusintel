@@ -1,3 +1,6 @@
+import { OFFICIAL_BANK_SECTIONS } from './official-bank-sections'
+import { OFFICIAL_BANK_QUIZZES } from './official-bank-courses'
+
 export interface QuizQuestion {
   id: number
   questionId: string
@@ -24424,7 +24427,7 @@ export function getQuizByCourseSlug(slug: string): CourseQuiz | undefined {
 export function getQuizConfigurationByCourseSlug(
   slug: string,
 ): Omit<CourseQuiz, 'questions' | 'totalQuestions'> | undefined {
-  const quiz = quizzes[slug]
+  const quiz = quizzes[slug] ?? OFFICIAL_BANK_QUIZZES[slug]
   if (!quiz) return undefined
   return {
     courseSlug: quiz.courseSlug,
@@ -24432,6 +24435,7 @@ export function getQuizConfigurationByCourseSlug(
     title: quiz.title,
     maxQuizQuestions: quiz.maxQuizQuestions,
     quizDurationMinutes: quiz.quizDurationMinutes,
-    sections: quiz.sections,
+    // A course whose questions now come from an official bank practises the bank's topics, in the bank's order.
+    sections: OFFICIAL_BANK_SECTIONS[slug] ? [...OFFICIAL_BANK_SECTIONS[slug]] : 'sections' in quiz ? quiz.sections : [],
   }
 }

@@ -19,6 +19,7 @@ import { ResumeScreen } from './ResumeScreen'
 import { ReviewScreen } from './ReviewScreen'
 import { useReviewAccess } from './useReviewAccess'
 import { focusFirst } from './focus-return'
+import { canPractiseTopicAgain } from './instant-feedback'
 import { PRACTICE_COPY, attemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, settlePendingStart,
   writePendingStart } from './practice-storage'
@@ -294,7 +295,7 @@ export function QuizClient(props: Props): ReactElement | null {
       const next = topic === null ? -1 : props.topics.indexOf(topic) + 1
       const nextTopic = next > 0 ? props.topics[next] ?? null : null
       return <InstantResult {...identity} courseHref={topicsHref} attempt={attempt}
-        canStartNew={canStartNew && topic !== null} nextTopic={canStartNew ? nextTopic : null}
+        canStartNew={canStartNew && canPractiseTopicAgain(topic, props.topics)} nextTopic={canStartNew ? nextTopic : null}
         starting={busy} error={problem} onRetry={retry}
         onPractiseAgain={() => { if (topic !== null) startInstant(topic) }}
         onNextTopic={() => { if (nextTopic !== null) startInstant(nextTopic) }} />

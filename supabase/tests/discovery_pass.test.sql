@@ -105,7 +105,7 @@ grant execute on function pg_temp.claim(text, integer[], integer[]) to authentic
 create function pg_temp.near(p_actual timestamptz, p_offset interval) returns boolean language sql as
   $$ select p_actual between clock_timestamp() + p_offset - interval '10 minutes'
        and clock_timestamp() + p_offset + interval '1 second' $$;
--- Course fixtures: 02 has 390 CBT questions and notes, 03 is another offered course, 11 has CBT only, 08 is a free GST
+-- Course fixtures: 02 has 635 CBT questions (its official bank) and notes, 03 is another offered course, 11 has CBT only, 08 is a free GST
 -- course, 07 is now linked Financial Accounting I, and 10 remains an unlinked repository course.
 create function pg_temp.c(p_n text) returns uuid language sql immutable as
   $$ select ('40000000-0000-4000-8000-0000000000' || p_n)::uuid $$;
@@ -605,7 +605,9 @@ select is((select count(*)::integer from jsonb_object_keys((select saved_sources
     where user_id = '71000000-0000-4000-8000-000000000008'))), 64, 'the ledger never grew past capacity and never evicted');
 
 -- 4c. An exam is exactly 50 valid questions, or it does not open -------------------------------------------------------
--- Course 01 publishes exactly 50 questions. One malformed revision leaves 49 valid ones.
+-- Course 01 publishes exactly 50 questions here: its official bank import is rolled back inside this transaction,
+-- which republishes the 50 questions it was seeded with. One malformed revision leaves 49 valid ones.
+select is(private.official_bank_ent211('rollback'), 'rolled-back', 'course 01 is back on its 50 seeded questions');
 create temporary table discovery_q_fixture on commit drop as
   select r.item_id, r.revision, r.payload from public.managed_content_items i
   join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
@@ -635,6 +637,8 @@ select ok((select bool_and(private.discovery_cbt_question_valid(jsonb_build_obje
     'options', q->'options', 'correctOption', q->'correct_option'))) from private.discovery_previews p,
     jsonb_array_elements(p.content) q where p.user_id = '71000000-0000-4000-8000-000000000008'),
   'every pinned question is valid');
+
+select is(private.official_bank_ent211('apply'), 'applied', 'course 01 publishes its official bank again');
 
 -- 4d. Previews belong to actively offered courses only -------------------------------------------------------------
 set local role service_role;

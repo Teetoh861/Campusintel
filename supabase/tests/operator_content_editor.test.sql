@@ -61,19 +61,19 @@ select is((select created from public.provision_repository_content(
   '50000000-0000-4000-8000-000000000005')), false,
   'already-linked course is not silently relinked');
 select set_config('test.editor_created', (select created::text from public.provision_repository_content(
-  '50000000-0000-4000-8000-000000000001')), true);
+  '50000000-0000-4000-8000-000000000008')), true);
 select is(current_setting('test.editor_created'), 'true', 'operator provisions an unlinked institutional course');
 select set_config('test.editor_course', (select repository_course_id::text from public.institutional_courses
-  where id = '50000000-0000-4000-8000-000000000001'), true);
+  where id = '50000000-0000-4000-8000-000000000008'), true);
 select ok(current_setting('test.editor_course')::uuid is not null,
   'new content identity is linked to the requested institutional row');
 select is((select created from public.provision_repository_content(
-  '50000000-0000-4000-8000-000000000001')), false,
+  '50000000-0000-4000-8000-000000000008')), false,
   'repeated provisioning reuses the existing identity');
 select is((select repository_course_id::text from public.provision_repository_content(
-  '50000000-0000-4000-8000-000000000001')), current_setting('test.editor_course'),
+  '50000000-0000-4000-8000-000000000008')), current_setting('test.editor_course'),
   'repeated provisioning returns the same repository UUID');
-select is((select count(*)::int from public.courses), 16,
+select is((select count(*)::int from public.courses), 35,
   'one new repository identity was created and existing identities remain');
 select is((select content_key from public.courses where id = current_setting('test.editor_course')::uuid),
   'managed-' || replace(current_setting('test.editor_course'), '-', ''),

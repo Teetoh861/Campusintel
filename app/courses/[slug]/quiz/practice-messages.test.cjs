@@ -408,3 +408,22 @@ test('a late opening response cannot replace a new attempt', async () => {
     assert.equal(f.render().type.name, 'ActiveAttempt')
   })
 })
+
+test('a past topic run whose topic the course no longer has offers no Practise again; a live topic still does', async () => {
+  const run = topic => ({ ...openAttempt(ATTEMPT, 'instant'), topic, status: 'submitted', reviewAvailable: true, canStartNew: true,
+    result: { score: 1, total: 1, timedOut: false, finishedAt: DEADLINE },
+    questions: [{ questionId: 'q-1', prompt: 'Prompt', options: ['A', 'B'], section: topic,
+      feedback: { selected: 1, correctOption: 1, explanation: null } }] })
+  await flow({ kind: 'graded', attempt: run('Leadership Overview'), latest: false }, async f => {
+    const result = f.render()
+    assert.equal(result.type.name, 'InstantResult')
+    assert.equal(result.props.canStartNew, false, 'a retired topic: the button is hidden, not an error after the tap')
+    assert.equal(result.props.nextTopic, null, 'and no Next topic is guessed for it')
+    assert.equal(f.requests.length, 0, 'nothing is sent')
+  })
+  await flow({ kind: 'graded', attempt: run('Capital Budgeting'), latest: false }, async f => {
+    const result = f.render()
+    assert.equal(result.props.canStartNew, true, 'a topic the course still has keeps Practise again')
+    assert.equal(result.props.nextTopic, 'Working Capital')
+  })
+})
