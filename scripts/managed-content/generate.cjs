@@ -7,6 +7,7 @@ const { CORRECTIONS } = require('./corrections.cjs')
 const { absentBankOutputs, bankOutputs, buildImports, publishedCbt } = require('./official-banks.cjs')
 const { OVERVIEW_MIGRATION, overviewMigrationSql, overviewRevisions } = require('./overview-revisions.cjs')
 const { checkManifest, guideOutputs, guidePlans, guidePublished } = require('./study-guides.cjs')
+const { NOTE_ORDER_MIGRATION, noteOrderSql } = require('./seeded-note-order.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const SEED_PATH = path.join(ROOT, 'supabase/migrations/20261002130000_repository_content_seed.sql')
@@ -318,7 +319,8 @@ const outputs = [[SEED_PATH, seedSql(seededManifest(manifest))], [TEST_PATH, tes
     .map(migration => [path.join(MIGRATIONS, migration), correctionSql(manifest, migration)]),
   ...bankOutputs(manifest, plans),
   [path.join(MIGRATIONS, OVERVIEW_MIGRATION), overviewMigrationSql(manifest.actor, revisions)],
-  ...guideOutputs(guides)]
+  ...guideOutputs(guides),
+  [path.join(MIGRATIONS, NOTE_ORDER_MIGRATION), noteOrderSql(manifest)]]
 if (process.argv[2] === '--check') {
   for (const [filename, generated] of outputs) {
     assert.ok(fs.existsSync(filename), `${path.relative(ROOT, filename)} is missing; regenerate from source`)
