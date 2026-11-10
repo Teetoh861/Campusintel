@@ -330,11 +330,13 @@
 .student-detail-points > li + li { margin-top: 6px; }
 .student-detail-aside { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--student-brand-surface); }
 .student-detail-aside > p + p { margin-top: 4px; white-space: pre-line; overflow-wrap: anywhere; color: var(--student-text-primary); font-size: 14px; line-height: 1.5; }
-/* Long formulas wrap at their spaces, never inside a word or number; continuation lines are indented. The scroll is
- * only a fallback for a single word wider than the box. */
+/* Long formulas wrap only between their units (formulaUnits): never inside a word, a number, a short bracketed group or
+ * before a short closing term. Continuation lines are indented; the scroll is only a fallback for a unit wider than the box. */
 .student-formula-rail { margin-top: 10px; overflow-x: auto; padding: 12px 14px; border: 1px solid var(--student-border); border-radius: 10px; background: var(--student-brand-surface); }
 .student-formula-rail > code { display: block; padding-left: 1.5em; text-indent: -1.5em; white-space: normal; overflow-wrap: normal; word-break: normal; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; font-weight: 600; line-height: 1.5; color: var(--student-primary); }
 .student-formula-word { white-space: nowrap; }
+/* The formula sheet keeps two columns on desktop, so a formula box holds about as much as on a phone. */
+@media (min-width: 1200px) { .student-grid.student-formula-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .student-detail-numbered { display: grid; gap: 14px; list-style: none; margin: 0; }
 .student-detail-numbered > li { display: flex; gap: 12px; min-width: 0; }
 .student-detail-numbered > li > span:first-child { flex: none; min-width: 36px; padding-top: 2px; color: var(--student-link); font-size: 13px; font-weight: 700; line-height: 1.4; }

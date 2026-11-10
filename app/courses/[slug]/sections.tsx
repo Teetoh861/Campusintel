@@ -1,5 +1,6 @@
 // app/courses/[slug]/sections.tsx — Study-hub renderers for central Course Detail payloads; no truth derivation here.
 import Link from 'next/link'
+import { Fragment } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
@@ -77,12 +78,62 @@ export function ApplicabilityList({ applicability }: {
   </ul>
 }
 
-/** The formula rail: the text is never rewritten. Long formulas wrap at their spaces; a hyphenated word such as
- * "Break-Even" is kept whole so a line never breaks inside it. */
+const FORMULA_OPENERS = '([{', FORMULA_CLOSERS = ')]}'
+/** A bracketed group this long or shorter, such as "(P − v)" or "(FC + Target Profit)", never breaks inside. Lengths
+ *  are visible characters: "x̄" is one. Every formula box holds about 28 on a line (375 px, and the two-column desktop
+ *  formula sheet). */
+const SHORT_GROUP = 20
+/** A closing term shorter than this joins the term before it, so "× 100" never sits alone on a line. */
+const SHORT_TAIL = 8
+/** No joined unit is longer than this, so each still fits a formula box's continuation line. */
+const LONGEST_UNIT = 24
+const FORMULA_OPERATOR = /^[=+−\-×÷/±]$/
+
+/** The formula as units that never break inside, each with the separator before it: a space (a line may break there)
+ *  or nothing (a line may break between two adjacent groups, as in "x̄)(y"). Joined, the units are the formula. */
+export function formulaUnits(formula: string): Array<{ before: ' ' | ''; text: string }> {
+  const width = (text: string) => text.replace(/\p{M}/gu, '').length
+  const groups: Array<[number, number]> = []
+  const open: number[] = []
+  for (let index = 0; index < formula.length; index++) {
+    if (FORMULA_OPENERS.includes(formula[index])) open.push(index)
+    else if (FORMULA_CLOSERS.includes(formula[index]) && open.length > 0) groups.push([open.pop()!, index])
+  }
+  const short = groups.filter(([start, end]) => width(formula.slice(start, end + 1)) <= SHORT_GROUP)
+  const units: Array<{ before: ' ' | ''; text: string }> = []
+  let start = 0, before: ' ' | '' = ''
+  for (let index = 0; index <= formula.length; index++) {
+    const space = formula[index] === ' ' && !short.some(([from, to]) => from < index && index < to)
+    const between = index > 0 && FORMULA_CLOSERS.includes(formula[index - 1]) && FORMULA_OPENERS.includes(formula[index] ?? '')
+      && !short.some(([from, to]) => from <= index - 1 && index <= to)
+    if (index === formula.length || space || between) {
+      units.push({ before, text: formula.slice(start, index) })
+      before = space ? ' ' : ''
+      start = space ? index + 1 : index
+    }
+  }
+  const join = (index: number) => units.splice(index, 2,
+    { before: units[index].before, text: units[index].text + units[index + 1].before + units[index + 1].text })
+  // A second space in a row keeps its text, joined to the unit after it.
+  for (let index = units.length - 2; index >= 0; index--) if (units[index].text === '') join(index)
+  const fits = (index: number) => width(units[index].text) + width(units[index + 1].text) + 1 <= LONGEST_UNIT
+  while (units.length > 1 && width(units[units.length - 1].text) < SHORT_TAIL && fits(units.length - 2)) join(units.length - 2)
+  // An operator starts the line it is on, with the term after it, never ending the line before.
+  for (let index = units.length - 2; index >= 0; index--) {
+    if (FORMULA_OPERATOR.test(units[index].text) && units[index + 1].before === ' ' && fits(index)) join(index)
+  }
+  // An opening bracket stays with the term inside it.
+  for (let index = units.length - 2; index >= 0; index--) {
+    if (FORMULA_OPENERS.includes(units[index].text.at(-1) ?? '') && units[index + 1].before === ' ' && fits(index)) join(index)
+  }
+  return units
+}
+
+/** The formula rail: the text is never rewritten. A long formula wraps only between its units (see formulaUnits). */
 export function FormulaRail({ formula }: { formula: string }): ReactElement {
-  const parts = formula.split(/(\S*\S-\S\S*)/)
-  return <div className="student-formula-rail"><code>{parts.length === 1 ? formula : parts.map((part, index) =>
-    index % 2 === 1 ? <span key={index} className="student-formula-word">{part}</span> : part)}</code></div>
+  return <div className="student-formula-rail"><code>{formulaUnits(formula).map((unit, index) => <Fragment key={index}>
+    {unit.before === ' ' ? ' ' : index > 0 && <wbr />}<span className="student-formula-word">{unit.text}</span>
+  </Fragment>)}</code></div>
 }
 
 function Aside({ kicker, children }: { kicker: string; children: ReactNode }): ReactElement {
@@ -223,7 +274,7 @@ export function OverviewSection({ overview, bankTopics, number }: {
     </div>}
     {formulaSheet.length > 0 && <div className="student-detail-group">
       <h3>Formula sheet</h3>
-      <div className="student-grid">
+      <div className="student-grid student-formula-grid">
         {formulaSheet.map((entry, index) => <div key={index} className="student-surface student-detail-item">
           <h4>{entry.name}</h4>
           <FormulaRail formula={entry.formula} />
