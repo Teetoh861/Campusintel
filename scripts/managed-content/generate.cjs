@@ -5,6 +5,7 @@ const path = require('node:path')
 const { buildManifest } = require('./source-manifest.cjs')
 const { CORRECTIONS } = require('./corrections.cjs')
 const { absentBankOutputs, bankOutputs, buildImports, publishedCbt } = require('./official-banks.cjs')
+const { OVERVIEW_MIGRATION, overviewMigrationSql, overviewRevisions } = require('./overview-revisions.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const SEED_PATH = path.join(ROOT, 'supabase/migrations/20261002130000_repository_content_seed.sql')
@@ -128,9 +129,13 @@ function snapshot(item) {
   }
 }
 
-/** The parity test compares what is published after every migration: an imported course publishes its bank. */
-function testSql(manifest, plans) {
+/** The parity test compares what is published after every migration: an imported course publishes its bank, and a
+ *  revised overview publishes its revision two. */
+function testSql(manifest, plans, revisions) {
   const imported = new Map(plans.map(plan => [plan.courseId, plan]))
+  const revised = new Map(revisions.map(row => [row.itemId, row]))
+  const published = item => revised.has(item.itemId)
+    ? { ...snapshot(item), revision: 2, payload: revised.get(item.itemId).after } : snapshot(item)
   // Repository courses, then the courses created for their official bank.
   const registry = [...manifest.courses, ...plans.filter(plan => plan.shell)
     .map(plan => ({ contentKey: plan.slug, slug: plan.slug, courseId: plan.courseId, created: plan }))]
@@ -168,7 +173,7 @@ function testSql(manifest, plans) {
     for (const family of FAMILIES) {
       const bank = family === 'cbt_question' ? imported.get(course.courseId) : undefined
       const expected = (bank ? publishedCbt(bank)
-        : manifest.items.filter(item => item.courseId === course.courseId && item.kind === family).map(snapshot))
+        : manifest.items.filter(item => item.courseId === course.courseId && item.kind === family).map(published))
         .sort((left, right) => left.sourceKey < right.sourceKey ? -1 : left.sourceKey > right.sourceKey ? 1 : 0)
       // CBT questions never reach a student through the content read (20261025100000_server_run_practice.sql): the
       // student read is checked to withhold them, and their published rows are compared as the owner reads them.
@@ -202,12 +207,13 @@ function testSql(manifest, plans) {
   lines.push(`  ${manifest.items.length}, 'all source items carry migration provenance');`)
   lines.push(`select is((select count(*)::int from public.managed_content_items where created_by = '${manifest.actor}'`)
   lines.push('  and (current_revision <> 1 or approved_revision <> 1 or published_revision <> 1)')
+  lines.push(`  and not (kind = 'course_overview' and id = any (array[${revisions.map(row => `'${row.itemId}'`).join(', ')}]::uuid[]))`)
   if (plans.length) {
     lines.push(`  and not (kind = 'cbt_question' and course_id = any (array[${plans.map(plan => `'${plan.courseId}'`).join(', ')}]::uuid[]))),`)
-    lines.push("  0, 'all live repository items outside the imported banks are approved and published at revision one');")
+    lines.push("  0, 'all live repository items outside the imported banks and revised overviews are approved and published at revision one');")
   } else {
     lines[lines.length - 1] += '),'
-    lines.push("  0, 'all live repository items are approved and published at revision one');")
+    lines.push("  0, 'all live repository items outside the revised overviews are approved and published at revision one');")
   }
   lines.push(`select is((select count(*)::int from public.managed_content_reviews where reviewed_by = '${manifest.actor}'`)
   lines.push("  and decision = 'rejected'), 0, 'migration never publishes a rejected revision');")
@@ -296,10 +302,12 @@ function correctionSql(manifest, migration) {
 
 const manifest = buildManifest()
 const { plans } = buildImports(manifest)
-const outputs = [[SEED_PATH, seedSql(seededManifest(manifest))], [TEST_PATH, testSql(manifest, plans)],
+const revisions = overviewRevisions(manifest)
+const outputs = [[SEED_PATH, seedSql(seededManifest(manifest))], [TEST_PATH, testSql(manifest, plans, revisions)],
   ...[...new Set(CORRECTIONS.map(correction => correction.migration))]
     .map(migration => [path.join(MIGRATIONS, migration), correctionSql(manifest, migration)]),
-  ...bankOutputs(manifest, plans)]
+  ...bankOutputs(manifest, plans),
+  [path.join(MIGRATIONS, OVERVIEW_MIGRATION), overviewMigrationSql(manifest.actor, revisions)]]
 if (process.argv[2] === '--check') {
   for (const [filename, generated] of outputs) {
     assert.ok(fs.existsSync(filename), `${path.relative(ROOT, filename)} is missing; regenerate from source`)
