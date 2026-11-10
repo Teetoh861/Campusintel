@@ -17,12 +17,45 @@ export const courseOverviewContent = textContent.extend({
   keyTakeaways: z.array(z.object({ title: studyText, description: studyText }).strict()).max(200).optional(),
   formulaSheet: z.array(z.object({ name: studyText, formula: studyText,
     explanation: studyText, example: studyText.optional() }).strict()).max(200).optional(),
+  outcomes: z.array(studyText).max(200).optional(),
+  assessment: z.array(studyText).max(200).optional(),
 }).strict()
 const topicNoteContent = textContent.extend({ noteType: z.literal('topic_note'),
   keyPoints: z.array(studyText).min(1).max(200), examTip: studyText.optional() }).strict()
 const calculatorTrickContent = textContent.extend({ noteType: z.literal('calculator_trick'),
   example: studyText, formula: studyText.optional() }).strict()
-export const noteContent = z.union([textContent, topicNoteContent, calculatorTrickContent])
+// A study guide topic (20261111090000_study_guide_notes.sql, private.valid_guide_topic): plain text spans with bold and
+// italic flags inside paragraphs, lists, tables and preformatted text. Nothing in it is ever HTML.
+const guideSpan = z.object({ text: z.string().min(1).max(20000), bold: z.literal(true).optional(),
+  italic: z.literal(true).optional() }).strict()
+const guideInline = z.array(guideSpan).min(1).max(500)
+const guideCell = z.array(guideSpan).max(500)
+export type GuideSpan = z.infer<typeof guideSpan>
+export type GuideBlock =
+  | { type: 'paragraph'; text: GuideSpan[] }
+  | { type: 'preformatted'; text: string }
+  | { type: 'list'; ordered: boolean; start?: number; items: Array<{ text: GuideSpan[]; blocks?: GuideBlock[] }> }
+  | { type: 'table'; header: GuideSpan[][]; rows: GuideSpan[][][] }
+const guideBlocks = (depth: number): z.ZodType<GuideBlock[]> => z.array(z.union([
+  z.object({ type: z.literal('paragraph'), text: guideInline }).strict(),
+  z.object({ type: z.literal('preformatted'), text: z.string().min(1).max(20000) }).strict(),
+  z.object({ type: z.literal('list'), ordered: z.boolean(), start: z.number().int().min(1).max(9999).optional(),
+    items: z.array(z.object({ text: guideInline, blocks: depth < 6 ? z.lazy(() => guideBlocks(depth + 1)).optional()
+      : z.never().optional() }).strict()).min(1).max(500) }).strict()
+    .refine(list => list.ordered === (list.start !== undefined)),
+  z.object({ type: z.literal('table'), header: z.array(guideCell).min(1).max(20), rows: z.array(z.array(guideCell)).max(500) })
+    .strict().refine(table => table.rows.every(row => row.length === table.header.length)),
+])).min(1).max(2000)
+const guideTopicContent = textContent.extend({ noteType: z.literal('guide_topic'),
+  number: z.number().int().min(1).max(99), mustKnow: guideInline, introMore: guideBlocks(0).optional(),
+  lessons: z.array(z.object({ number: z.string().regex(/^[1-9]\d?\.[1-9]\d?$/), title: requiredText(240),
+    mustKnow: guideBlocks(0), explainMore: guideBlocks(0).optional() }).strict()).min(1).max(50),
+  recap: guideBlocks(0),
+  theory: z.object({ itemId: uuid, question: guideBlocks(0) }).strict().optional(),
+  practice: z.array(z.object({ topic: requiredText(240), named: z.boolean() }).strict()).min(1).max(10).optional(),
+}).strict()
+export type GuideTopicPayload = z.infer<typeof guideTopicContent>
+export const noteContent = z.union([textContent, topicNoteContent, calculatorTrickContent, guideTopicContent])
 export type CourseOverviewPayload = z.infer<typeof courseOverviewContent>
 export type NotePayload = z.infer<typeof noteContent>
 const cbtContent = z.object({

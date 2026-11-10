@@ -23,14 +23,21 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Theory practice | CampusIntell', robots: { index: false, follow: false } }
 
 /** Gate the complete theory workspace before resolving any published content. */
-export default async function TheoryPage({ params }: { params: Promise<{ slug: string }> }): Promise<ReactElement> {
+export default async function TheoryPage({ params, searchParams }: {
+  params: Promise<{ slug: string }>; searchParams?: Promise<{ question?: string | string[] }>
+}): Promise<ReactElement> {
   const { slug } = await params
+  // A study guide topic links to its own question, which opens instead of the first.
+  const requested = (await searchParams)?.question
+  const question = typeof requested === 'string' ? requested : undefined
   return <StudentAccessGate returnPath={`/courses/${slug}/theory`}>
-    {continuityToken => <Theory slug={slug} continuityToken={continuityToken} />}
+    {continuityToken => <Theory slug={slug} continuityToken={continuityToken} question={question} />}
   </StudentAccessGate>
 }
 
-async function Theory({ slug, continuityToken }: { slug: string; continuityToken: string }): Promise<ReactElement> {
+async function Theory({ slug, continuityToken, question: requested }: {
+  slug: string; continuityToken: string; question?: string
+}): Promise<ReactElement> {
   let result: TheoryPracticeResult
   try {
     const client = await createClient()
@@ -56,6 +63,7 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   const labels = theoryDisplayNumbers(materials.map(material => material.question))
   const questions = materials.flatMap((material, index) =>
     !material.feedbackAvailable ? [] : [{ question: material.question, label: labels[index] }])
+  const opened = questions.some(({ question }) => question.itemId === requested) ? requested : questions[0]?.question.itemId
   return <StudentPage band={<PageBand title="Theory practice"
     context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>
@@ -63,8 +71,8 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
       {questions.length === 0 ? <Notice tone="info" title="Theory practice isn’t available for this course">
         Check the course page for theory questions to revise and other study materials.
       </Notice> : <div className="student-stack">
-        {questions.map(({ question, label }, index) => <details key={`${question.itemId}:${question.publishedRevision}:${continuityToken}`} name="theory-practice"
-          open={index === 0} className="student-surface min-w-0">
+        {questions.map(({ question, label }) => <details key={`${question.itemId}:${question.publishedRevision}:${continuityToken}`} name="theory-practice"
+          id={`question-${question.itemId}`} open={question.itemId === opened} className="student-surface min-w-0 student-anchor">
           <summary className="min-h-11 cursor-pointer rounded-ci-btn-sm py-3 font-semibold text-student-primary [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-student-focus">
             Q{label} · {question.prompt}
           </summary>
