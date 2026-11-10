@@ -400,14 +400,14 @@ declare
   v_all_published boolean := true;
   v_overview text := 'none';
 begin
-  select coalesce(array_agg((value->>'itemId')::uuid), array[]::uuid[]) into v_ours from private.study_guide_items(p_doc);
+  select coalesce(array_agg((value->>'itemId')::uuid), array[]::uuid[]) into v_ours from private.study_guide_items(p_doc) as items(value);
   select coalesce(jsonb_object_agg(id::text, published_revision), '{}') into v_others
     from public.managed_content_items
     where course_id = v_course and kind in ('note', 'theory_question', 'model_answer', 'rubric')
       and published_revision is not null and id <> all (v_ours);
   select coalesce(jsonb_object_agg(value->>'itemId', (value->>'revision')::integer), '{}') into v_retire
     from jsonb_array_elements(p_doc->'retire');
-  for v_row in select value from private.study_guide_items(p_doc) loop
+  for v_row in select value from private.study_guide_items(p_doc) as items(value) loop
     select * into v_item from public.managed_content_items where id = (v_row->>'itemId')::uuid;
     if v_item.id is null then
       v_all_published := false;
@@ -618,3 +618,55 @@ $$;
 revoke all on function private.study_guide_source(text), private.study_guide_items(jsonb), private.study_guide_state(jsonb),
   private.study_guide_publish(jsonb, uuid, uuid, uuid), private.study_guide_unpublish(uuid, uuid),
   private.study_guide(text, text) from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------------------------------------------
+-- The overview correction (20261110090000) and a rolled-back guide. Rolling back a guide republishes the overview
+-- revision it replaced and leaves the guide's revision in the history as the current one, as every rollback here does.
+-- That revision is not an operator's draft, so the correction still sees the overview it wrote, and can apply again
+-- after its own rollback; any other unpublished revision stays 'other' and is still refused. Otherwise as
+-- 20261110090000 wrote them.
+-- ---------------------------------------------------------------------------------------------------------------
+create or replace function private.course_overview_revision_state(p_item uuid, p_before jsonb, p_after jsonb, p_actor uuid,
+  p_seed_actor uuid)
+returns text language sql stable security invoker set search_path = '' as $state$
+  select case
+    when i.id is null or i.kind <> 'course_overview' or i.created_by is distinct from p_seed_actor then 'other'
+    when i.current_revision <> i.published_revision and not exists (select 1 from public.managed_content_revisions c
+      where c.item_id = i.id and c.revision = i.current_revision and c.authored_by = p_actor and c.payload = p_after)
+      and not (i.approved_revision = i.published_revision and exists (select 1 from public.managed_content_revisions c
+        where c.item_id = i.id and c.revision = i.current_revision
+          and c.authored_by = '00000000-0000-4000-8000-000000000045'))
+      then 'other'
+    when p.payload = p_before then 'before'
+    when p.payload = p_after and p.authored_by = p_actor
+      and (i.current_revision = i.published_revision or i.approved_revision = i.published_revision and exists (
+        select 1 from public.managed_content_revisions c where c.item_id = i.id and c.revision = i.current_revision
+          and c.authored_by = '00000000-0000-4000-8000-000000000045')) then 'after'
+    else 'other' end
+  from (select p_item id) wanted
+  left join public.managed_content_items i on i.id = wanted.id
+  left join public.managed_content_revisions p on p.item_id = i.id and p.revision = i.published_revision
+$state$;
+
+revoke all on function private.course_overview_revision_state(uuid, jsonb, jsonb, uuid, uuid)
+  from public, anon, authenticated, service_role;
+
+-- The correction's apply refuses while another revision is pending. Its definition carries the correction's text, so
+-- only that one check is changed here, and the change must match exactly once.
+do $patch$
+declare
+  v_def text := pg_get_functiondef('private.course_overview_revisions(text)'::regprocedure);
+  v_old text := 'if v_item.current_revision <> v_revision then';
+  v_new text := 'if v_item.current_revision <> v_revision and not (v_item.current_revision > v_revision'
+    || ' and v_item.approved_revision = v_item.published_revision and exists (select 1'
+    || ' from public.managed_content_revisions g where g.item_id = v_item.id and g.revision = v_item.current_revision'
+    || ' and g.authored_by = ''00000000-0000-4000-8000-000000000045'')) then';
+begin
+  if (length(v_def) - length(replace(v_def, v_old, ''))) / length(v_old) <> 1 then
+    raise exception 'Course overviews: the pending-revision check is not the one 20261110090000 wrote';
+  end if;
+  execute replace(v_def, v_old, v_new);
+end;
+$patch$;
+
+revoke all on function private.course_overview_revisions(text) from public, anon, authenticated, service_role;
