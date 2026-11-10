@@ -28,7 +28,8 @@ insert into public.managed_content_revisions (
 insert into public.managed_content_revisions (
   item_id, revision, payload, authored_by
 )
-select id, 2, jsonb_set(
+-- An operator draft on top of the overview's latest revision (revision two is the approved 20261110090000 text).
+select id, current_revision + 1, jsonb_set(
   (select payload from public.managed_content_revisions
    where item_id = i.id and revision = 1),
   '{body}', '"Operator revised overview"'::jsonb
@@ -37,7 +38,7 @@ from public.managed_content_items i
 where i.course_id = '40000000-0000-4000-8000-000000000001'
   and i.kind = 'course_overview';
 update public.managed_content_items
-set current_revision = 2, lock_version = 4
+set current_revision = current_revision + 1, lock_version = lock_version + 1
 where course_id = '40000000-0000-4000-8000-000000000001'
   and kind = 'course_overview';
 
@@ -85,12 +86,12 @@ select is((select count(*)::int from public.managed_content_revisions
   'replaying the seed twice creates no duplicate source revisions');
 select is((select current_revision from public.managed_content_items
   where course_id = '40000000-0000-4000-8000-000000000001'
-    and kind = 'course_overview'), 2,
+    and kind = 'course_overview'), 3,
   'replaying the seed does not overwrite a later operator revision');
 select is((select payload->>'body' from public.managed_content_revisions r
   join public.managed_content_items i on i.id = r.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000001'
-    and i.kind = 'course_overview' and r.revision = 2),
+    and i.kind = 'course_overview' and r.revision = 3),
   'Operator revised overview', 'the operator wording remains intact');
 select is((select count(*)::int from public.managed_content_items
   where id = '90000000-0000-4000-8000-000000000042'

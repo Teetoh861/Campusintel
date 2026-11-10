@@ -181,8 +181,9 @@ test('notes render plain, topic and calculator payloads with formulas and exampl
   const html = await f.html()
   for (const expected of ['Plain note', 'Plain body', 'Topic note', 'Topic body', 'Point A', 'Point B', 'Tip text', 'Trick note', 'Trick body',
     'Calculator trick', 'Exam tip', 'Example']) assert.ok(html.includes(expected), expected)
-  assert.ok(html.includes(`<code>${TRICK}</code>`), 'calculator formula inside the formula rail')
-  assert.ok(html.includes(`<code>${FORMULA}</code>`), 'overview formula inside the formula rail')
+  const rails = [...html.matchAll(/<code>(.*?)<\/code>/g)].map(match => match[1].replace(/<[^>]*>/g, ''))
+  assert.ok(rails.includes(TRICK), 'calculator formula inside the formula rail')
+  assert.ok(rails.includes(FORMULA), 'overview formula inside the formula rail')
   assert.ok(html.includes(EXAMPLE.replace(/₦/g, '₦')), 'example text untouched')
   assert.match(html, /x² \+ y²/)
   assert.doesNotMatch(html, /\\\(|\\frac|katex/)

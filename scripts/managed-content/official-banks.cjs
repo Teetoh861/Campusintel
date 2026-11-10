@@ -9,6 +9,7 @@ const path = require('node:path')
 const { uuidV5 } = require('./source-manifest.cjs')
 const { IMPORTS } = require('./official-banks/imports.cjs')
 const { APPROVED_ANSWER_KEY_CHANGES, EXAM_MINUTES, EXAM_QUESTIONS, OFFICIAL_COURSES } = require('./official-banks/decisions.cjs')
+const { OVERVIEW_MIGRATION } = require('./overview-revisions.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const BANK_DIR = path.join(__dirname, 'official-banks')
@@ -202,7 +203,9 @@ function buildImports(manifest) {
   const plans = IMPORTS.map(entry => planImport(entry, manifest, banks, identity))
   const migrations = new Set(plans.map(plan => plan.migration))
   assert.equal(migrations.size, plans.length, 'one migration per course')
-  const later = fs.readdirSync(path.join(ROOT, 'supabase/migrations')).filter(name => !migrations.has(name))
+  // The overview revisions run after the banks; they publish overview text only, never a CBT question.
+  const later = fs.readdirSync(path.join(ROOT, 'supabase/migrations'))
+    .filter(name => !migrations.has(name) && name !== OVERVIEW_MIGRATION)
   for (const plan of plans) {
     assert.match(plan.migration, /^\d{14}_official_bank_[a-z0-9_]+\.sql$/)
     assert.ok(later.every(name => name < plan.migration), `${plan.migration} must sort after every other migration`)
