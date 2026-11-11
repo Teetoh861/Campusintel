@@ -5,8 +5,8 @@ const path = require('node:path')
 const { buildManifest } = require('./source-manifest.cjs')
 const { CORRECTIONS } = require('./corrections.cjs')
 const { absentBankOutputs, bankOutputs, buildImports, publishedCbt } = require('./official-banks.cjs')
-const { OVERVIEW_MIGRATION, overviewMigrationSql, overviewRevisions } = require('./overview-revisions.cjs')
-const { checkManifest, guideOutputs, guidePlans, guidePublished } = require('./study-guides.cjs')
+const { OVERVIEW_MIGRATION, overviewFunctionsSql, overviewMigrationSql, overviewRevisions } = require('./overview-revisions.cjs')
+const { GUIDE_ACTOR, checkManifest, guideOutputs, guidePlans, guidePublished, systemMigrationOutput } = require('./study-guides.cjs')
 const { NOTE_ORDER_MIGRATION, noteOrderSql } = require('./seeded-note-order.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
@@ -319,6 +319,7 @@ const outputs = [[SEED_PATH, seedSql(seededManifest(manifest))], [TEST_PATH, tes
     .map(migration => [path.join(MIGRATIONS, migration), correctionSql(manifest, migration)]),
   ...bankOutputs(manifest, plans),
   [path.join(MIGRATIONS, OVERVIEW_MIGRATION), overviewMigrationSql(manifest.actor, revisions)],
+  systemMigrationOutput(overviewFunctionsSql(manifest.actor, revisions, GUIDE_ACTOR)),
   ...guideOutputs(guides),
   [path.join(MIGRATIONS, NOTE_ORDER_MIGRATION), noteOrderSql(manifest)]]
 if (process.argv[2] === '--check') {
