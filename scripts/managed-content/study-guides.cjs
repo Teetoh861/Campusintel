@@ -58,6 +58,9 @@ function readGuide(code) {
 function assessmentLines(code, items) {
   return items.map(plainInline).flatMap(line => {
     if (/^Every topic in this guide is examinable\. Read all [a-z]+\.$/.test(line)) return ['Every topic is examinable.']
+    if (/^Every topic in this guide is examinable\. Read all [a-z]+, and work through every worked example with a calculator\.$/.test(line)) {
+      return ['Every topic is examinable. Work through every worked example with a calculator.']
+    }
     if (code === 'FIN-CM209' && line.startsWith('Banking rules and figures change. This guide gives the current position')) {
       return []
     }
@@ -70,11 +73,20 @@ function assessmentLines(code, items) {
 const jsonbBytes = value => Buffer.byteLength(JSON.stringify(value).replace(/("(?:[^"\\]|\\.)*")|([:,])/g,
   (match, string, punctuation) => string ?? `${punctuation} `))
 
+/** "What you must know" as a sentence: the guides write it to follow a colon, so its first letter is capitalised.
+ *  Nothing else in the text changes. */
+function capitalised(spans) {
+  const [first, ...rest] = spans
+  const letter = Array.from(first.text)[0]
+  return [{ ...first, text: letter.toUpperCase() + first.text.slice(letter.length) }, ...rest]
+}
+
 /** A parsed topic as a guide_topic note payload; its theory question is the given item, its buttons the given
  *  practice topics. */
 function guideTopicPayload(topic, questionId, practice) {
-  return { title: topic.title, body: plainInline(topic.mustKnow), noteType: 'guide_topic', number: topic.number,
-    mustKnow: topic.mustKnow, ...(topic.introMore ? { introMore: topic.introMore } : {}), lessons: topic.lessons,
+  const mustKnow = capitalised(topic.mustKnow)
+  return { title: topic.title, body: plainInline(mustKnow), noteType: 'guide_topic', number: topic.number,
+    mustKnow, ...(topic.introMore ? { introMore: topic.introMore } : {}), lessons: topic.lessons,
     recap: topic.recap, theory: { itemId: questionId, question: topic.theory.question },
     ...(practice.length ? { practice } : {}) }
 }
@@ -185,5 +197,5 @@ function guidePublished(plans) {
   return { items, overviews }
 }
 
-module.exports = { GUIDE_ACTOR, guideTopicPayload, MANIFEST_PATH, SOURCE_DIR, SYSTEM_MIGRATION, assessmentLines, checkManifest,
+module.exports = { GUIDE_ACTOR, capitalised, guideTopicPayload, MANIFEST_PATH, SOURCE_DIR, SYSTEM_MIGRATION, assessmentLines, checkManifest,
   guideDocument, guideOutputs, guidePlans, guidePublished, jsonbBytes, migrationSql, readGuide, sourceDigests }

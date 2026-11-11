@@ -114,7 +114,7 @@ test('a topic page shows the whole topic, its practice and theory links, and pre
   assert.match(text(html), /GST111 · Topic 1 of 3/)
   // The tracker counts this topic as opened after 30 seconds on screen.
   assert.equal((html.match(/<div id="notes"[^>]*><article[^>]*data-note-item="g1"/g) ?? []).length, 1)
-  assert.match(text(html), /What you must know what listening is and why it matters in lectures/)
+  assert.match(text(html), /What you must know What listening is and why it matters in lectures/)
   assert.equal((html.match(/<h2 class="student-guide-heading">Lesson 1\.\d+:/g) ?? []).length, 5)
   // Explain more is folded until the student opens it.
   assert.equal((html.match(/<details class="student-guide-more">/g) ?? []).length, 5)
