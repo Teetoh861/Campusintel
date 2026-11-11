@@ -11,7 +11,7 @@ export type NotesResult =
   | { status: 'ready'; course: NotesCourse; notes: ManagedNote[]
       // This course's practice, when the student can open it; guide topics link their practice topics to it.
       practiceHref: string | null
-      // Theory questions the theory page can practise, by item id.
+      // Theory questions the theory page offers for practice, by item id.
       theoryItems: ReadonlySet<string> }
   | { status: 'locked'; outsideList?: boolean; reason?: CourseLockReason }
   | { status: 'unavailable'; notAvailable?: true }
@@ -35,7 +35,7 @@ export async function getNotesForVerifiedStudent(client: Awaited<ReturnType<type
       title: result.status === 'ok' ? result.course.title : route.course.title },
     notes: learning.notes,
     practiceHref: content.study.cbtPractice && result.practice !== null ? result.practice.href : null,
-    theoryItems: new Set(learning.theoryPractice ? learning.theoryQuestions.map(question => question.itemId) : []) }
+    theoryItems: new Set(learning.theoryPracticeItems) }
 }
 
 /** Where a guide topic's theory question is practised: the theory page, opened at that question. */

@@ -35,7 +35,9 @@ const course = content => ({ institutionalCourseId: 'inst', code: 'GST111', titl
   content })
 const ready = { state: 'ready', study: { notes: true, cbtPractice: true, theory: true, overview: true } }
 const full = () => ({ status: 'ok', course: course(ready),
-  learning: { overview: null, notes: [listening, inventories, plain], theoryPractice: true,
+  // As a student reads it: model answers stay on the server, so theoryPractice is false, and the theory page offers
+  // the questions whose answers are published.
+  learning: { overview: null, notes: [listening, inventories, plain], theoryPractice: false, theoryPracticeItems: [QUESTION],
     theoryQuestions: [{ itemId: QUESTION, prompt: 'A question' }] },
   practice: { href: '/courses/use-of-english/quiz', bankSize: 650, attemptSize: 50, timerSeconds: 1800 } })
 

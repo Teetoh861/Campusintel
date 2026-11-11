@@ -95,8 +95,10 @@ export type StudentCourseDetailLearning = {
   overview: ManagedOverview | null
   notes: ManagedNote[]
   theoryQuestions: ManagedTheoryQuestion[]
-  // At least one theory question has a usable published model answer for self-assessed practice.
+  // The theory page offers at least one question for practice; the course page links to it.
   theoryPractice: boolean
+  // The theory questions the theory page offers for practice (each has a published model answer), by item id.
+  theoryPracticeItems: string[]
 }
 
 /** Course Detail practice summary from the same usable-quiz result that set `cbtPractice`. The bank size is the
@@ -363,8 +365,12 @@ async function resolveAllowedPublication(
   // Overview is context only; it never makes a course ready to study.
   const content: LinkedContent = study.notes || study.cbtPractice || study.theory
     ? { state: 'ready', study } : { state: 'no-published-learning', study }
-  const theoryPractice = projectTheoryPractice(published.content)?.some(material => material.feedback !== null) ?? false
-  return { content, learning: { overview, notes, theoryQuestions, theoryPractice }, practice }
+  // The theory page offers the questions the published read marks as having a published model answer. A student's read
+  // never carries the answers themselves, so whether one is published is the read's flag, not the answer rows.
+  const theoryPracticeItems = projectTheoryPractice(published.content)
+    ?.filter(material => material.feedbackAvailable).map(material => material.question.itemId) ?? []
+  const theoryPractice = theoryPracticeItems.length > 0
+  return { content, learning: { overview, notes, theoryQuestions, theoryPractice, theoryPracticeItems }, practice }
 }
 
 type ResolvedContent = { content: StudentCourseContent; practiceBankSize: number | null }
