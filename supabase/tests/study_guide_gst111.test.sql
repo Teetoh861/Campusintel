@@ -29,6 +29,12 @@ select is(pg_temp.published('theory_question'), 15, 'with 15 theory questions');
 select is(pg_temp.published('model_answer'), 15, 'and their 15 answers');
 select is((select array_agg(position order by position) from public.managed_content_items
     where course_id = pg_temp.course() and kind = 'note'), array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], 'topics in order');
+select is((select array_agg(substring(source_key from 'guide-theory:(\d+)')::integer order by position)
+    from public.managed_content_items where course_id = pg_temp.course() and kind = 'theory_question'),
+  array[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], 'theory questions in topic order');
+select is((select count(*)::integer from public.managed_content_items where course_id = pg_temp.course()
+    and kind = 'theory_question' and position = substring(source_key from 'guide-theory:(\d+)')::integer), 15,
+  'each question at its topic''s position');
 select is((select r.payload->>'title' from public.managed_content_items i join public.managed_content_revisions r
     on r.item_id = i.id and r.revision = i.published_revision where i.id = pg_temp.item('guide-topic:1')), 'Listening Skills', 'topic 1');
 select is((select count(*)::integer from public.managed_content_items i join public.managed_content_revisions r

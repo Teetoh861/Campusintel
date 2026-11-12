@@ -121,7 +121,8 @@ function guidePlan(entry, manifest, banks, overviewRevisions) {
     assert.ok(jsonbBytes(payload) <= 262144, `${entry.code} topic ${topic.number}: payload too large`)
     notes.push({ kind: 'note', itemId: uuidV5(`${courseId}|note|guide-topic:${topic.number}`),
       sourceKey: `guide-topic:${topic.number}`, position: topic.number, payload })
-    theory.push({ kind: 'theory_question', itemId: questionId, sourceKey: `guide-theory:${topic.number}`,
+    // Each topic's question sits in topic order on the theory page, as its note does in the notes.
+    theory.push({ kind: 'theory_question', itemId: questionId, sourceKey: `guide-theory:${topic.number}`, position: topic.number,
       payload: { prompt: blocksToPlain(topic.theory.question).join('\n') },
       answer: { kind: 'model_answer', itemId: uuidV5(`${courseId}|model_answer|guide-answer:${topic.number}`),
         sourceKey: `guide-answer:${topic.number}`, payload: { body: blocksToPlain(topic.theory.answer).join('\n') } } })
