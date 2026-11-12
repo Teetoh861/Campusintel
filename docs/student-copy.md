@@ -10,5 +10,6 @@ Read this before writing any text a student will see in CampusIntell.
 6. Campus Bot sets made from a student's own notes carry one label: "Made by Campus Bot from your notes."
 7. Never tell students how to use a screen; the layout should make it obvious.
 8. Headings must read naturally. Never drop words to save space.
+9. A message belongs on the screen where its action happened, and goes away once the student does something else.
 
 `lib/student-copy/student-copy.test.cjs` fails when text students see contains a word or phrase from rule 2.

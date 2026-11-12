@@ -111,6 +111,12 @@ select throws_ok($$ insert into auth.sessions(id,user_id) values(gen_random_uuid
   '42501', null, 'provider session creation denied at expiry');
 select throws_ok($$ update auth.users set encrypted_password = 'expired-fixture' where id = 'a1000000-0000-4000-8000-000000000001' $$,
   '42501', null, 'password replacement denied at expiry');
+-- A reset request cannot hold the pre-expiry grant either; the fixture row then goes back for the consume check below.
+select is((select count(*) from public.claim_recovery_grant(repeat('3',64),repeat('4',64))), 0::bigint,
+  'pre-expiry grant cannot be claimed after deadline');
+select is((select count(*)::integer from public.auth_recovery_grants where user_id = 'a1000000-0000-4000-8000-000000000001'), 0,
+  'and the refused claim spends it');
+insert into public.auth_recovery_grants values (repeat('3',64),'a1000000-0000-4000-8000-000000000001',repeat('4',64),now(),now()+interval '10 minutes');
 set local role service_role;
 select throws_ok($$ select public.issue_recovery_grant(repeat('5',64),'a1000000-0000-4000-8000-000000000001',repeat('6',64)) $$,
   '42501', null, 'recovery issuance denied at expiry');
