@@ -195,3 +195,13 @@ test('plain, topic and calculator notes render as before, with formulas and exam
   assert.ok(html.includes(EXAMPLE), 'example text untouched')
   assert.equal((html.match(/<article class="student-surface student-detail-note" data-note-item="[ptc]1">/g) ?? []).length, 3)
 }))
+
+test('a topic shows its note type only when the course mixes types', async () => pages(async ({ list, state }) => {
+  const rows = async () => anchors(await list()).filter(link => link.includes('student-topic-row')).map(link => text(link).trim())
+  const second = { ...topicNote, itemId: 't2', title: 'Second topic' }
+  const first = { ...topicNote, title: 'First topic' }
+  state.result = { ...full(), learning: { ...full().learning, notes: [first, second] } }
+  assert.deepEqual(await rows(), ['1 First topic', '2 Second topic'], 'one type: no repeated type line')
+  state.result = { ...full(), learning: { ...full().learning, notes: [first, calculator] } }
+  assert.deepEqual(await rows(), ['1 First topic Topic note', '2 Trick note Calculator trick'], 'mixed types are named')
+}))

@@ -19,10 +19,15 @@ import type { ManagedNote } from '@/lib/managed-content/student-projection'
 import type { ReactElement } from 'react'
 
 /** The line under a topic's title: its lessons, or the kind of note. */
-export function topicLine(note: ManagedNote): string | null {
+export function topicLine(note: ManagedNote, showType: boolean): string | null {
   if (!('noteType' in note)) return null
   if (note.noteType === 'guide_topic') return note.lessons.length === 1 ? '1 lesson' : `${note.lessons.length} lessons`
-  return NOTE_KICKER[note.noteType]
+  return showType ? NOTE_KICKER[note.noteType] : null
+}
+
+/** A note's type tells topics apart only when a course has more than one type (topic notes and calculator tricks). */
+export function mixesNoteTypes(notes: ReadonlyArray<ManagedNote>): boolean {
+  return new Set(notes.map(note => ('noteType' in note ? note.noteType : 'text'))).size > 1
 }
 
 export async function resolve(slug: string): Promise<NotesResult> {

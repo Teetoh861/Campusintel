@@ -7,7 +7,7 @@ import { btnGhost } from '@/components/chrome/ui'
 import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction } from '@/components/student/ui'
-import { notesBlocked, resolve, topicLine } from './shared'
+import { mixesNoteTypes, notesBlocked, resolve, topicLine } from './shared'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -26,11 +26,12 @@ async function Notes({ slug }: { slug: string }): Promise<ReactElement> {
   if (blocked) return blocked
   if (result.status !== 'ready') return notFound()
   const { course, notes } = result
+  const showType = mixesNoteTypes(notes)
   return <StudentPage band={<PageBand title="Notes" context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>
     <ol className="student-topic-list" aria-label="Topics">
       {notes.map((note, index) => {
-        const line = topicLine(note)
+        const line = topicLine(note, showType)
         return <li key={note.itemId}>
           <Link href={`${course.href}/notes/${index + 1}`} prefetch={false} className="student-topic-row student-focus-control">
             <span className="student-topic-number" aria-hidden="true">{index + 1}</span>
