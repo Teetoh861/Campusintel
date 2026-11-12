@@ -1,32 +1,10 @@
-// components/landing/Features.tsx — What students get, on the navy band.
-import Image from 'next/image'
+// components/landing/Features.tsx — What students get, in four cards on the navy band.
 import { landingContent } from '@/lib/landing/content'
 import { LandingIcon } from './icons'
 import styles from './landing.module.css'
-import type { Feature } from '@/lib/landing/content'
 import type { ReactElement } from 'react'
 
-const { features, images } = landingContent
-
-function FeatureCard({ item }: { item: Feature }): ReactElement {
-  const classes = [styles.fcard, item.highlight && styles.fcardHi, item.campusBot && styles.fcardUp].filter(Boolean).join(' ')
-  return (
-    <li className={classes}>
-      {item.badge && <span className={styles.soon}>{item.badge}</span>}
-      {item.campusBot && (
-        <div className={styles.dangle} aria-hidden="true">
-          <div className={styles.dbot}>
-            <Image src={images.campusBot.src} width={images.campusBot.width} height={images.campusBot.height} alt=""
-              sizes="92px" className={styles.botImg} />
-          </div>
-        </div>
-      )}
-      <div className={styles.fcardIcon}><LandingIcon name={item.icon} size={24} /></div>
-      <h3>{item.title}</h3>
-      <p>{item.text}</p>
-    </li>
-  )
-}
+const { features } = landingContent
 
 export function Features(): ReactElement {
   return (
@@ -35,10 +13,15 @@ export function Features(): ReactElement {
         <div className={styles.secHead}>
           <span className={styles.eyebrow}>{features.eyebrow}</span>
           <h2 id="features-title">{features.title}</h2>
-          <p>{features.text}</p>
         </div>
-        <ul className={styles.grid6}>
-          {features.items.map(item => <FeatureCard key={item.title} item={item} />)}
+        <ul className={styles.cards}>
+          {features.items.map(item => (
+            <li key={item.title} className={`${styles.fcard} ${item.highlight ? styles.fcardHi : ''}`}>
+              <div className={styles.fcardIcon}><LandingIcon name={item.icon} size={24} /></div>
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+            </li>
+          ))}
         </ul>
       </div>
     </section>

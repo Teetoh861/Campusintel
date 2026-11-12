@@ -1,42 +1,37 @@
-// components/landing/Showcase.tsx — Notes upload and theory practice, each beside real app screens.
+// components/landing/Showcase.tsx — Campus Bot practice from notes and theory practice, each beside real app screens.
 import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { landingContent } from '@/lib/landing/content'
-import { LandingIcon } from './icons'
 import styles from './landing.module.css'
 import type { ShowcaseRow } from '@/lib/landing/content'
 import type { ReactElement } from 'react'
 
-const PHONE_SIZES = '(min-width: 521px) 232px, 44vw'
+// A screen is shown at its own 350 CSS px, or the phone's width when that is narrower.
+const SHOT_SIZES = '(min-width: 600px) 350px, calc(100vw - 32px)'
 
 function Row({ row }: { row: ShowcaseRow }): ReactElement {
+  const pair = row.shots.length > 1
   return (
-    <div className={`${styles.row} ${row.flip ? styles.flip : ''} ${row.phones.length === 0 ? styles.rowText : ''}`}>
+    <div className={`${styles.row} ${pair ? styles.rowPair : styles.rowSingle} ${row.flip ? styles.flip : ''}`}>
       <div className={styles.copy}>
         <span className={styles.eyebrow}>{row.eyebrow}</span>
         <h2>{row.title}</h2>
         <p className={styles.copyText}>{row.text}</p>
-        <ul className={styles.ticks}>
-          {row.ticks.map(tick => (
-            <li key={tick}><span className={styles.tick}><Check aria-hidden="true" size={14} strokeWidth={3} /></span>{tick}</li>
-          ))}
-        </ul>
-      </div>
-      {row.phones.length > 0 && <div className={styles.stage}>
-        <div className={styles.blob} />
-        {row.phones.map((phone, phoneIndex) => (
-          <Image key={phone.src} src={phone.src} width={phone.width} height={phone.height} alt={phone.alt} sizes={PHONE_SIZES}
-            className={`${styles.screen} ${row.phones.length === 1 ? '' : phoneIndex === 0 ? styles.screenBack : styles.screenFront}`} />
-        ))}
-        {row.chip && (
-          <div className={`${styles.float} ${styles.s1}`} aria-hidden="true">
-            <div className={styles.chip}>
-              <span className={`${styles.chipIcon} ${styles.chipBlue}`}><LandingIcon name={row.chip.icon} size={18} /></span>
-              {row.chip.label}
-            </div>
-          </div>
+        {row.ticks.length > 0 && (
+          <ul className={styles.ticks}>
+            {row.ticks.map(tick => (
+              <li key={tick}><span className={styles.tick}><Check aria-hidden="true" size={14} strokeWidth={3} /></span>{tick}</li>
+            ))}
+          </ul>
         )}
-      </div>}
+      </div>
+      <div className={`${styles.shots} ${pair ? styles.shotsPair : ''}`}>
+        {/* Each picture is its own frame: the screenshot's shape, with no added border or rounding. */}
+        {row.shots.map(shot => (
+          <Image key={shot.src} src={shot.src} width={shot.width} height={shot.height} alt={shot.alt} sizes={SHOT_SIZES}
+            className={styles.shot} />
+        ))}
+      </div>
     </div>
   )
 }

@@ -52,6 +52,12 @@ when one is unset (or not https), its button does not render:
 - NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: the pre-launch Early Access form
   ("Before launch: join Early Access for a free month").
 
+The landing page's figures (courses ready to practise, questions and
+departments) are counted from the repository by
+scripts/landing/figures.cjs, which pnpm build runs first. After changing
+course content, run node scripts/landing/figures.cjs and commit
+lib/landing/figures.ts.
+
 ## Project structure
 
     app/                    App Router routes
