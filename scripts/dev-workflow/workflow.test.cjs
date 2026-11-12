@@ -491,6 +491,42 @@ test('verification reports a build environment block without claiming a build pa
   assert.equal(report.exitCode, 1)
 })
 
+test('verification asks a finished build whether the landing page is static, and never a build that failed', t => {
+  const f = fixture(t)
+  const LANDING = 'scripts/landing/static-check.cjs'
+  const order = []
+  const verify = (landing, build = 0) => runVerification(repository(f.root), { execute: mockExecute((program, args) => {
+    if (args.includes('build')) order.push('build')
+    if (args.includes(LANDING)) { order.push('landing'); assert.equal(program, process.execPath); return landing }
+    return { status: args.includes('build') ? build : 0, stdout: '', stderr: '' }
+  }) })
+  const row = report => report.rows.find(entry => entry.name === 'Landing page build')
+
+  const passed = verify({ status: 0, stdout: 'The landing page (/) is a static page: built once, never re-rendered.\n', stderr: '' })
+  assert.deepEqual(order, ['build', 'landing'], 'the check reads the build that has just finished')
+  assert.deepEqual(row(passed), { name: 'Landing page build', status: 'PASS',
+    detail: 'The landing page (/) is a static page: built once, never re-rendered.' })
+  assert.equal(passed.exitCode, 0)
+  assert.match(passed.output, /^PASS {4}Landing page build — The landing page \(\/\) is a static page/m)
+
+  const failed = verify({ status: 1, stdout: '',
+    stderr: 'The landing page (/) is not a static page: the build renders it again for every request.\n' })
+  assert.deepEqual(row(failed), { name: 'Landing page build', status: 'FAIL',
+    detail: 'The landing page (/) is not a static page: the build renders it again for every request.' })
+  assert.equal(failed.exitCode, 1)
+  assert.match(failed.output, /Result: FAIL/)
+
+  // A check that says nothing still reports plainly.
+  assert.equal(row(verify({ status: 0, stdout: '', stderr: '' })).detail, 'the build lists / as a static page')
+  assert.equal(row(verify({ status: 3, stdout: '', stderr: '' })).detail, 'exit 3')
+
+  order.length = 0
+  const unbuilt = verify({ status: 0, stdout: 'stale answer\n', stderr: '' }, 1)
+  assert.deepEqual(order, ['build'], 'a failed build is never asked: its folder holds an older build')
+  assert.deepEqual(row(unbuilt), { name: 'Landing page build', status: 'SKIP', detail: 'the production build did not finish' })
+  assert.equal(unbuilt.exitCode, 1)
+})
+
 test('verification checks whitespace in untracked files without treating a normal diff as failure', t => {
   const f = fixture(t)
   const file = path.join(f.root, 'new.ts')

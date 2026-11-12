@@ -1,4 +1,5 @@
-// components/landing/landing.test.cjs — Public landing page: sections, copy, destinations, optional settings, images, motion.
+// components/landing/landing.test.cjs — Public landing page: sections, copy, destinations, optional settings, images, motion,
+// and that it is one page built once for every visitor. The signed-in redirect is the proxy's: lib/account/proxy.test.cjs.
 // Run with lib/auth/test-loader.cjs preloaded.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -17,7 +18,7 @@ const CONFIGURED = { NEXT_PUBLIC_WHATSAPP_NUMBER: '2348000000000',
   NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: 'https://chat.whatsapp.com/fixture-community',
   NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: 'https://forms.example.com/early-access' }
 const FORBIDDEN_COPY = ['→', 'photos', '2 practice quizzes', '3.5']
-const CLIENT_FILES = ['FaqList.tsx', 'TryQuestionQuiz.tsx']
+const CLIENT_FILES = ['FaqList.tsx', 'SignedInHome.tsx', 'TryQuestionQuiz.tsx']
 const REMOVED_FILES = ['CourseStrip.tsx', 'HowItWorks.tsx', 'MobileMenu.tsx', 'OtherFaculties.tsx', 'WhyCampusIntell.tsx']
 
 /** assert.match and assert.doesNotMatch print their whole input when they fail, and here that is a rendered page.
@@ -32,6 +33,12 @@ function noMatch(text, pattern, message) {
 
 const cssModule = new Proxy({}, { get: (_target, key) => (key === '__esModule' ? false : String(key)) })
 
+/** Modules through which server code reads one visitor's request or session. The landing page is built once, so loading
+ *  any of them fails the render. */
+const PER_VISITOR_MODULES = ['next/headers', '@/lib/auth/render-session', '@/lib/auth/server-chrome', '@/lib/auth/student-state',
+  '@/lib/supabase/server']
+const FORBIDDEN = Symbol('forbidden module')
+
 /** Load modules fresh with Next.js runtime pieces replaced; `react` may be swapped for a hook harness. */
 function withModules(env, overrides, run) {
   const originalLoad = Module._load
@@ -41,6 +48,7 @@ function withModules(env, overrides, run) {
   for (const key of SETTINGS) if (key in env) process.env[key] = env[key]; else delete process.env[key]
   Module._extensions['.tsx'] = compile
   Module._load = function(name, ...args) {
+    if (overrides[name] === FORBIDDEN) throw new Error(`the landing page must not load ${name}`)
     if (name in overrides) return overrides[name]
     if (name.endsWith('.module.css')) return cssModule
     // The landing asks for one typeface only; any other request fails the render.
@@ -61,19 +69,10 @@ function withModules(env, overrides, run) {
   return Promise.resolve().then(run).finally(restore)
 }
 
-/** Render "/" through the real PublicHomeBoundary with a fixture session. */
-async function renderHome({ env = {}, signedIn = false, lookupFails = false } = {}) {
-  return withModules(env, {
-    'next/navigation': { redirect: to => { throw new Error(`redirect:${to}`) } },
-    '@/lib/auth/config': { isStudentAuthEnabled: () => true },
-    '@/lib/auth/student-state': { getStudentSessionContext: async () => {
-      if (lookupFails) throw new Error('Session validation failed')
-      return signedIn ? { user: { id: 'student' }, sessionId: 'fixture-session' } : null
-    } },
-  }, async () => {
-    const page = require(path.join(root, 'app/page.tsx')).default()
-    return renderToStaticMarkup(await page.type(page.props))
-  })
+/** Render "/" as the build does: no request, no session, and nothing that could read one. */
+async function renderHome({ env = {} } = {}) {
+  return withModules(env, Object.fromEntries(PER_VISITOR_MODULES.map(name => [name, FORBIDDEN])),
+    () => renderToStaticMarkup(require(path.join(root, 'app/page.tsx')).default()))
 }
 
 const anchors = html => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attributes, inner]) => ({
@@ -235,10 +234,54 @@ test('calls to action go to login and register; nothing links to the course libr
   for (const link of anchors(html).filter(link => /^[#/]/.test(link.href ?? ''))) match(link.attributes, /data-prefetch="off"/, link.text)
 })
 
-test('a signed-in visit to / redirects home; signed-out and failed lookups see the landing page', async () => {
-  await assert.rejects(renderHome({ signedIn: true }), /redirect:\/dashboard/)
+test('the page is built once for every visitor: static, synchronous and blind to the session on the server', async () => {
+  const file = path.join(root, 'app/page.tsx')
+  const source = fs.readFileSync(file, 'utf8')
+  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+  match(code, /^export const dynamic = 'force-static'$/m, 'the page asks to be prerendered')
+  for (const pattern of [/force-dynamic/, /revalidate/, /\basync\b/, /\bawait\b/, /searchParams/, /redirect/, /Boundary/,
+    /from '(next\/(headers|navigation|server)|@\/lib\/(auth|supabase|account)[^']*|@\/components\/auth[^']*)'/]) noMatch(code, pattern)
+  assert.equal(fs.existsSync(path.join(root, 'components/auth/PublicHomeBoundary.tsx')), false, 'the per-request boundary is gone')
+  // The fixture forbids every module that reads a request, so a render that finishes read none of them.
+  const page = await withModules({}, Object.fromEntries(PER_VISITOR_MODULES.map(name => [name, FORBIDDEN])), () => {
+    const loaded = require(file)
+    assert.equal(loaded.dynamic, 'force-static')
+    const element = loaded.default()
+    assert.equal(typeof element?.then, 'undefined', 'the page renders without waiting for anything')
+    return renderToStaticMarkup(element)
+  })
+  match(page, /Walk into every exam already/)
+  await assert.rejects(withModules({}, { '@/components/landing/Faq': FORBIDDEN }, () => require(file)),
+    /must not load @\/components\/landing\/Faq/, 'the fixture really refuses a forbidden module')
+})
+
+test('a kept copy of the page sends a signed-in student home; every other session answer leaves it alone', async () => {
+  // The browser can show the landing page again without asking the server (the Back button), so the page itself reacts to
+  // the shared session check's verified answer. Effects run here as they do in a browser, after the render.
+  const visit = async session => {
+    const went = []
+    const savedWindow = global.window
+    global.window = { location: { replace: to => went.push(to) } }
+    try {
+      const effects = []
+      const rendered = await withModules({}, {
+        react: { ...React, useEffect: (effect, dependencies) => { effects.push({ effect, dependencies }) } },
+        '@/components/auth/NavigationSession': { useNavigationSession: () => session },
+      }, () => require(path.join(__dirname, 'SignedInHome.tsx')).SignedInHome())
+      assert.equal(rendered, null, 'it draws nothing')
+      assert.equal(effects.length, 1)
+      assert.deepEqual(effects[0].dependencies, [session.signedIn], 'it reacts when the answer changes')
+      effects[0].effect()
+      return went
+    } finally { if (savedWindow === undefined) delete global.window; else global.window = savedWindow }
+  }
+  assert.deepEqual(await visit({ status: 'signed-in', signedIn: true, version: 1, continuityToken: 'token' }), ['/dashboard'])
+  assert.deepEqual(await visit({ status: 'signed-out', signedIn: false, version: 1, continuityToken: null }), [])
+  assert.deepEqual(await visit({ status: 'unknown', signedIn: false, version: 0, continuityToken: null }), [], 'no answer is not an answer')
+  // It is on the page, and the page still renders with no session at all.
+  const source = fs.readFileSync(path.join(root, 'app/page.tsx'), 'utf8')
+  assert.equal(count(source, /<SignedInHome \/>/g), 1)
   match(await renderHome(), /Walk into every exam already/)
-  match(await renderHome({ lookupFails: true }), /Walk into every exam already/)
 })
 
 test('the courses line shows the figures counted from the repository', async () => {
@@ -732,4 +775,13 @@ test('the footer has no newsletter line, form or email field', async () => {
     noMatch(footer, /[Nn]ewsletter|coming soon|<form|<input|type="email"/)
   }
   assert.equal('newsletter' in (await content()).footer, false)
+})
+
+test('the copyright year is the year the page was built', async () => {
+  const RealDate = Date
+  try {
+    global.Date = class extends RealDate { getFullYear() { return 2031 } }
+    match(footerOf(await renderHome()), /© 2031 CampusIntell/)
+  } finally { global.Date = RealDate }
+  match(footerOf(await renderHome()), new RegExp(`© ${new Date().getFullYear()} CampusIntell`))
 })

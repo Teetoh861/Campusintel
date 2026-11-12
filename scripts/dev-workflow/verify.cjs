@@ -6,6 +6,8 @@ const { base, branch, changed, git, lines0, sha } = require('./repo.cjs')
 const TEST_RUNNER = path.join(__dirname, 'run-tests.cjs')
 const APPLICATION_TEST_LOADER = './lib/auth/test-loader.cjs'
 const TEST_ERROR_LINE_LIMIT = 4
+// Reads what `pnpm build` wrote, so it runs only after a build that finished.
+const LANDING_BUILD_CHECK = 'scripts/landing/static-check.cjs'
 
 /** Build the one node:test invocation shape: literal file paths through the runner, never CLI globs. */
 function testCommand(files, { loader } = {}) {
@@ -84,7 +86,7 @@ function runVerification(repo, options = {}) {
   const environment = { ...process.env, DO_NOT_TRACK: '1' }
   const pnpm = pnpmCommand()
 
-  function check(name, program, args, detail, { expectTests = false } = {}) {
+  function check(name, program, args, detail, { expectTests = false, explain = false } = {}) {
     const result = execute(program, args, {
       cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: environment,
     })
@@ -105,10 +107,12 @@ function runVerification(repo, options = {}) {
     const status = result.error || result.status !== 0 || nothingRan
       ? blockedBuild || blockedDb ? 'BLOCKED' : 'FAIL'
       : 'PASS'
+    // A check that explains itself prints one closing line; that line is the detail, pass or fail.
+    const explained = explain ? output.trim().split('\n').at(-1).trim() : ''
     rows.push({ name, status, detail: result.error ? 'command unavailable'
       : blockedBuild ? 'Turbopack could not bind a local port; build did not complete'
         : blockedDb ? 'local database service failed during test run'
-          : testSummary || (result.status === 0 ? detail : `exit ${result.status}`) })
+          : testSummary || explained || (result.status === 0 ? detail : `exit ${result.status}`) })
     if (expectTests && status === 'FAIL') {
       // A stuck test is named by the runner's watchdog, since its file never reports it.
       const stuck = output.match(/^run-tests: .* the batch was stopped$/gm) ?? []
@@ -132,6 +136,12 @@ function runVerification(repo, options = {}) {
   }
   check('TypeScript', pnpm.program, [...pnpm.prefix, 'exec', 'tsc', '--noEmit'], 'pnpm exec tsc --noEmit')
   check('Production build', pnpm.program, [...pnpm.prefix, 'build'], 'pnpm build')
+  // Only the build just finished can say what it prerendered; an older build folder proves nothing about this code.
+  if (rows.at(-1).status === 'PASS') {
+    check('Landing page build', process.execPath, [LANDING_BUILD_CHECK], 'the build lists / as a static page', { explain: true })
+  } else {
+    rows.push({ name: 'Landing page build', status: 'SKIP', detail: 'the production build did not finish' })
+  }
 
   const trackedWhitespace = execute('git', ['diff', '--check', fork, '--'], {
     cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
