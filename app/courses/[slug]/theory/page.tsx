@@ -15,6 +15,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
 import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
 import { getTheoryPracticeForVerifiedStudent } from '@/lib/theory-practice/published'
+import { ScrollToQuestion } from './ScrollToQuestion'
 import { TheoryAttempt } from './TheoryAttempt'
 import type { TheoryPracticeResult } from '@/lib/theory-practice/published'
 import type { ReactElement } from 'react'
@@ -78,6 +79,7 @@ async function Theory({ slug, continuityToken, question: requested }: {
           </summary>
           <TheoryAttempt question={question} courseSlug={course.slug} continuityToken={continuityToken} />
         </details>)}
+        {requested !== undefined && opened === requested && <ScrollToQuestion id={`question-${requested}`} />}
         {materials.length > questions.length && <p className="student-meta">
           More theory questions are on the course page.
         </p>}
