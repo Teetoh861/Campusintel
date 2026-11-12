@@ -82,7 +82,7 @@ export const PLAN_COPY = {
     plus: 'Everything in Standard, with twice the Campus Bot use.',
   } satisfies Record<PlanTier, string>,
   perPeriod: { semester: 'a semester', session: 'a session' } satisfies Record<PlanPeriod, string>,
-  payment: 'You’ll pay securely by card or bank transfer on our payment partner’s page.',
+  payment: 'Pay by card or bank transfer.',
   refund: 'Full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan.',
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
@@ -152,12 +152,13 @@ export const CHECKOUT_PROBLEM: Record<string, string> = {
 
 export const RETURN_COPY = {
   confirmingTitle: 'Confirming your payment',
-  confirmingBody: 'This usually takes a few seconds. You can leave this page. Your plan appears on Plan & Access once it’s confirmed.',
+  confirmingBody: 'This usually takes a few seconds.',
   stillTitle: 'We’re still confirming your payment',
-  stillBody: 'Bank transfers can take a few minutes. We’ll add your plan as soon as your payment is confirmed. You won’t be charged twice for this checkout.',
+  stillBody: 'Bank transfers can take a few minutes.',
   stillWaiting: 'Paid but still waiting?',
   checkAgain: 'Check again',
   checking: 'Checking…',
+  checkFailed: 'Couldn’t check. Try again.',
   subscribedTitle: 'You’re subscribed',
   failedTitle: 'Your payment didn’t go through',
   failedBody: 'No plan was added. If money left your account, message us with the time you paid and we’ll sort it out.',
@@ -169,6 +170,8 @@ export const RETURN_COPY = {
   refundedTitle: 'Your payment was refunded',
   notFoundTitle: 'We couldn’t find that payment',
   notFoundBody: 'Check Plan & Access for your current plan.',
+  // Our order couldn't be read. Never worded as a missing payment: nothing is known about it yet.
+  unavailableTitle: 'We couldn’t check your payment right now',
   mismatchTitle: 'Payment didn’t match the plan price',
   mismatchBody: 'We’ll refund the full amount. You can then pay for your plan again.',
   nowOpen: (count: number) => count > 0 ? `Now open in your ${count} ${count === 1 ? 'course' : 'courses'}` : 'Now open in your courses',

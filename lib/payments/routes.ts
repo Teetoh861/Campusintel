@@ -79,8 +79,12 @@ export async function handleCheckout(request: Request, deps: RouteDeps): Promise
     return privateJson({ status: 'forbidden' }, 403)
   }
   const form = await readForm(request)
-  const parsed = form === null ? null : checkoutForm.safeParse(Object.fromEntries(form))
-  if (!parsed?.success) return seeOther(confirmScreen(deps.origin, 'invalid-request'))
+  const fields = form === null ? null : Object.fromEntries(form)
+  const parsed = fields === null ? null : checkoutForm.safeParse(fields)
+  // A refused form still goes back to its own plan's confirm screen, the only place the reason can be shown.
+  if (!parsed?.success) {
+    return seeOther(confirmScreen(deps.origin, 'invalid-request', PLAN_KEYS.find(key => key === fields?.plan)))
+  }
   const input = parsed.data
   const carrier = NextResponse.json({})
   try {

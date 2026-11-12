@@ -126,6 +126,8 @@ test('each reason the checkout sent back shows its one line above the form; none
     const { html } = await confirm('standard_semester', {}, status)
     assert.ok(text(html).includes(line), status)
     assert.match(html, /<checkout-form/, `${status}: the student can try again from here`)
+    assert.ok(html.indexOf(line) < html.indexOf('Business Administration') &&
+      html.indexOf('Business Administration') < html.indexOf('<checkout-form'), `${status}: reason, courses, then the form`)
     assert.doesNotMatch(html, /charged/i)
   }
 })

@@ -122,11 +122,12 @@ test('outside a First Semester only Semester plans are sold: no switch and no pr
 })
 
 test('Confirm and pay posts the plan, revision, request id and token only, and is disabled while submitting', async () => {
-  const listeners = new Map()
+  const listeners = new Map(), starts = []
   global.window = { addEventListener: (event, fn) => listeners.set(event, fn), removeEventListener: event => listeners.delete(event) }
   try {
     await drive('./checkout/CheckoutForm.tsx', 'CheckoutForm', { plan: 'plus_session', priceKobo: 1100000,
-      expectedRevision: 7, requestId: 'b7c6d5e4-0000-4000-8000-000000000001', continuityToken: 'page-token' },
+      expectedRevision: 7, requestId: 'b7c6d5e4-0000-4000-8000-000000000001', continuityToken: 'page-token',
+      onSubmitStart: () => starts.push(1) },
     async ({ render, html }) => {
       const markup = html()
       assert.match(markup, /<form [^>]*action="\/api\/payments\/checkout" method="post"/)
@@ -138,16 +139,67 @@ test('Confirm and pay posts the plan, revision, request id and token only, and i
       const prevented = []
       const form = () => find(render(), node => node.type === 'form')
       form().props.onSubmit({ preventDefault: () => prevented.push('first') })
+      assert.equal(starts.length, 1, 'the confirm screen hears the attempt start')
       const busy = html()
       assert.match(busy, /<button type="submit" disabled="" aria-busy="true"/)
       assert.match(text(busy), /Opening payment…/)
       assert.match(busy, /role="status"[^>]*>Opening payment…/)
       form().props.onSubmit({ preventDefault: () => prevented.push('second') })
       assert.deepEqual(prevented, ['second'], 'a double tap sends one request')
+      assert.equal(starts.length, 1, 'and starts one attempt')
       listeners.get('pageshow')({ persisted: true })
       assert.match(html(), /<button type="submit" aria-busy="false"/, 'Back from the payment page lets the student pay again')
     })
   } finally { delete global.window }
+})
+
+test('the checkout reason shows once: it leaves the address on load, and goes when the student pays again or comes Back', async () => {
+  const line = 'We couldn’t open the payment page. Try again in a moment.'
+  const CheckoutForm = props => React.createElement('checkout-form', { 'data-plan': props.plan, 'data-price': String(props.priceKobo),
+    'data-revision': String(props.expectedRevision), 'data-request': props.requestId, 'data-token': props.continuityToken })
+  async function screen(search, problem, run) {
+    const listeners = new Map(), replaced = []
+    global.window = { location: { href: `https://campusintell.test/access/checkout${search}` },
+      history: { replaceState: (state, unused, url) => replaced.push([state, url]) },
+      addEventListener: (event, fn) => listeners.set(event, fn), removeEventListener: event => listeners.delete(event) }
+    try {
+      await drive('./checkout/ConfirmAndPay.tsx', 'ConfirmAndPay', { problem, plan: 'plus_session', priceKobo: 1100000,
+        expectedRevision: 7, requestId: 'b7c6d5e4-0000-4000-8000-000000000001', continuityToken: 'page-token',
+        children: React.createElement('course-list') },
+      ({ render, html }) => run({ render, html, listeners, replaced }), { './CheckoutForm': { CheckoutForm } })
+    } finally { delete global.window }
+  }
+  await screen('?plan=plus_session&status=unavailable', line, async ({ render, html, replaced }) => {
+    const first = html()
+    assert.match(first, /role="alert"/)
+    assert.ok(first.indexOf(line) !== -1 && first.indexOf(line) < first.indexOf('<course-list'), 'the reason, above the courses')
+    assert.ok(first.indexOf('<course-list') < first.indexOf('<checkout-form'), 'the form last')
+    assert.match(first, /<checkout-form data-plan="plus_session" data-price="1100000" data-revision="7" data-request="b7c6d5e4-0000-4000-8000-000000000001" data-token="page-token"/)
+    assert.deepEqual(replaced, [[null, '/access/checkout?plan=plus_session']], 'status leaves the address; the plan stays')
+    html()
+    assert.equal(replaced.length, 1, 'once')
+    find(render(), node => node.type === CheckoutForm).props.onSubmitStart()
+    const paying = html()
+    assert.ok(!paying.includes(line), 'paying again hides the last attempt\'s reason')
+    assert.doesNotMatch(paying, /role="alert"/)
+    assert.match(paying, /<course-list><\/course-list><checkout-form /)
+  })
+  await screen('?plan=plus_session&status=unavailable', line, async ({ html, listeners }) => {
+    html()
+    listeners.get('pageshow')({ persisted: false })
+    assert.ok(html().includes(line), 'an ordinary load keeps it')
+    listeners.get('pageshow')({ persisted: true })
+    assert.ok(!html().includes(line), 'Back restores the page without the old reason')
+  })
+  // A status with no line of its own (already-paid) still leaves the address; a clean address is left alone.
+  await screen('?plan=plus_session&status=already-paid', null, async ({ html, replaced }) => {
+    assert.doesNotMatch(html(), /role="alert"/)
+    assert.deepEqual(replaced, [[null, '/access/checkout?plan=plus_session']])
+  })
+  await screen('?plan=plus_session', null, async ({ html, replaced }) => {
+    assert.match(html(), /<checkout-form /)
+    assert.deepEqual(replaced, [])
+  })
 })
 
 test('the free pass: Start opens the modal with what it gives and its terms (only there)', async () => {
@@ -205,7 +257,7 @@ test('confirming: role="status", polls our order every 3 seconds with no-store, 
     const first = html()
     assert.match(first, /data-return-state="confirming"/)
     assert.match(first, /role="status" aria-live="polite"/)
-    assert.match(text(first), /Confirming your payment This usually takes a few seconds\./)
+    assert.match(text(first), /Confirming your payment This usually takes a few seconds\. Plan /, 'one line, nothing about the page')
     assert.match(text(first), /Plan Standard · Semester Amount ₦4,000 Payment reference 3F2C9A1B7D/)
     assert.doesNotMatch(first, /subscribed/i)
     assert.equal(intervals[0].ms, 3000)
@@ -255,7 +307,8 @@ test('after two minutes: still confirming with Check again; Check again asks onc
     for (let n = 0; n < 39; n++) { answers.push({ status: 200, body: order('confirming') }); await tick(3000); html() }
     await tick(3000)
     const still = html()
-    assert.match(text(still), /We’re still confirming your payment Bank transfers can take a few minutes\./)
+    assert.match(text(still), /We’re still confirming your payment Bank transfers can take a few minutes\. Plan /)
+    assert.doesNotMatch(text(still), /charged|leave this page/i)
     assert.match(still, /role="status"/)
     assert.doesNotMatch(text(still), /Paid but still waiting/, 'the support line waits 30 minutes')
     assert.equal(intervals.filter(interval => interval.live).length, 0, 'no polling after two minutes')
@@ -334,12 +387,96 @@ test('each settled state has its own screen; failed never promises no charge', a
 })
 
 test('another student\'s order or an unknown id: "We couldn\'t find that payment", no plan details', async () => {
-  for (const initial of [{ kind: 'not-found' }, { kind: 'unavailable' }]) {
-    await returnPage(initial, async ({ html, intervals }) => {
-      const markup = html()
-      assert.match(text(markup), /We couldn’t find that payment Check Plan &amp; Access for your current plan\./)
-      assert.doesNotMatch(markup, /₦|Payment reference|subscribed/i)
-      assert.equal(intervals.length, 0)
-    })
-  }
+  await returnPage({ kind: 'not-found' }, async ({ html, intervals }) => {
+    const markup = html()
+    assert.match(markup, /data-return-state="not-found"/)
+    assert.match(text(markup), /We couldn’t find that payment Check Plan &amp; Access for your current plan\./)
+    assert.doesNotMatch(markup, /₦|Payment reference|subscribed|Check again/i)
+    assert.equal(intervals.length, 0, 'nothing to ask again')
+  })
+})
+
+test('an order that couldn\'t be read is never called missing: "We couldn\'t check your payment right now", and it keeps checking', async () => {
+  await returnPage({ kind: 'unavailable' }, async ({ html, tick, answers, intervals, fetches }) => {
+    const first = html()
+    assert.match(first, /data-return-state="unavailable"/)
+    assert.match(first, /role="status" aria-live="polite"/)
+    assert.equal(text(first), 'We couldn’t check your payment right now Check again Back to Plan &amp; Access')
+    assert.doesNotMatch(first, /couldn’t find|₦|Payment reference|subscribed/i)
+    assert.match(first, /href="\/access"[^>]*>Back to Plan &amp; Access<\/a>/)
+    assert.match(first, /animate-spin/, 'still asking on its own')
+    assert.equal(intervals[0].ms, 3000)
+    answers.push({ status: 503, body: null })
+    await tick(3000)
+    assert.match(html(), /data-return-state="unavailable"/, 'still no answer: still not called missing')
+    assert.deepEqual(fetches, [[`/api/payments/orders/${ORDER}`, 'no-store']])
+    answers.push({ status: 200, body: order('confirming') })
+    await tick(3000)
+    const confirming = html()
+    assert.match(confirming, /data-return-state="confirming"/)
+    assert.match(text(confirming), /Confirming your payment This usually takes a few seconds\./)
+    answers.push({ status: 200, body: order('paid') })
+    await tick(3000)
+    assert.match(html(), /data-return-state="paid"/)
+    assert.equal(intervals.filter(interval => interval.live).length, 0, 'polling stops once paid')
+  })
+  // Only our database's own not-found answer says the payment doesn't exist.
+  await returnPage({ kind: 'unavailable' }, async ({ html, tick, answers, intervals }) => {
+    html()
+    answers.push({ status: 404, body: { state: 'not-found' } })
+    await tick(3000)
+    assert.match(text(html()), /We couldn’t find that payment/)
+    assert.equal(intervals.filter(interval => interval.live).length, 0)
+  })
+})
+
+test('Check again that gets no answer says "Couldn\'t check. Try again." and clears on the next try', async () => {
+  const isCheck = node => node.type === 'button' && /^(Check again|Checking…)$/.test(label(node))
+  // After two minutes without an answer the page stops asking on its own; only Check again asks.
+  await returnPage({ kind: 'unavailable' }, async ({ render, html, tick, settle, answers, intervals, fetches }) => {
+    html()
+    for (let n = 0; n < 39; n++) { answers.push({ status: 503, body: null }); await tick(3000); html() }
+    await tick(3000)
+    const stopped = html()
+    assert.match(stopped, /data-return-state="unavailable"/)
+    assert.equal(intervals.filter(interval => interval.live).length, 0, 'no polling after two minutes')
+    assert.doesNotMatch(stopped, /animate-spin/)
+    assert.doesNotMatch(text(stopped), /Couldn’t check/, 'the page\'s own checks fail quietly')
+    const polled = fetches.length
+    answers.push({ status: 503, body: null })
+    find(render(), isCheck).props.onClick()
+    await settle()
+    const failed = html()
+    assert.equal(fetches.length, polled + 1)
+    assert.match(failed, /role="alert"[^>]*>Couldn’t check\. Try again\.</)
+    assert.equal(text(failed), 'We couldn’t check your payment right now Couldn’t check. Try again. Check again Back to Plan &amp; Access')
+    // The next try clears the line while it is in flight, and an answer shows its own screen.
+    let release
+    global.fetch = () => new Promise(resolve => { release = () => resolve({ status: 200, json: async () => order('paid') }) })
+    find(render(), isCheck).props.onClick()
+    const during = html()
+    assert.match(during, /<button type="button" disabled="" aria-busy="true"[^>]*>Checking…<\/button>/)
+    assert.doesNotMatch(text(during), /Couldn’t check/)
+    release()
+    await settle()
+    assert.match(html(), /data-return-state="paid"/)
+  })
+  // The same line under "still confirming"; a signed-out answer goes to sign-in and comes back to this order.
+  await returnPage({ kind: 'order', order: order('confirming') }, async ({ render, html, tick, settle, answers, assigned }) => {
+    html()
+    for (let n = 0; n < 39; n++) { answers.push({ status: 200, body: order('confirming') }); await tick(3000); html() }
+    await tick(3000)
+    html()
+    answers.push({ status: 503, body: null })
+    find(render(), isCheck).props.onClick()
+    await settle()
+    const failed = html()
+    assert.match(failed, /data-return-state="confirming"/, 'the last answer stays')
+    assert.match(failed, /role="alert"[^>]*>Couldn’t check\. Try again\.</)
+    answers.push({ status: 401, body: null })
+    find(render(), isCheck).props.onClick()
+    await settle()
+    assert.deepEqual(assigned, [`/login?next=${encodeURIComponent(`/access/checkout/return?order=${ORDER}`)}`])
+    assert.doesNotMatch(text(html()), /Couldn’t check/)
+  })
 })

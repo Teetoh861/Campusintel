@@ -2,6 +2,7 @@
 // app/access/checkout/return/ReturnStatus.tsx — The return page's states. While our order is confirming it polls
 // GET /api/payments/orders/[id] (no-store) for two minutes, then shows "still confirming" with Check again. "You're
 // subscribed" appears only when the order says paid; nothing is inferred from the redirect, a timer or a cache.
+// An order that couldn't be read is never called missing: the page says it couldn't check, and keeps asking the same way.
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -32,6 +33,11 @@ async function fetchOrder(orderId: string, signal?: AbortSignal): Promise<OrderR
   }
 }
 
+/** A signed-out answer: sign in, then come back to this order. */
+function signInAndReturn(): void {
+  window.location.assign(`${LOGIN_PATH}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+}
+
 export function ReturnStatus({ orderId, initial, courseCount, features }: { orderId: string | null; initial: OrderRead
   courseCount: number
   // What the student's own courses offer; null while the server read them locked (the payment was still confirming).
@@ -41,24 +47,27 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
   const [read, setRead] = useState<OrderRead>(initial)
   const [stopped, setStopped] = useState(false)
   const [checking, setChecking] = useState(false)
+  // The last Check again got no answer; cleared by the next check, or by any answer.
+  const [checkFailed, setCheckFailed] = useState(false)
   const started = useRef(Date.now())
   const confirming = read.kind === 'order' && read.order.state === 'confirming'
+  // Our order couldn't be read, so nothing is known about the payment yet. Only a not-found answer means not found.
+  const unread = read.kind !== 'order' && read.kind !== 'not-found'
 
   useEffect(() => {
-    if (orderId === null || !confirming || stopped) return
+    if (orderId === null || !(confirming || unread) || stopped) return
     const controller = new AbortController()
     const timer = window.setInterval(() => {
       if (Date.now() - started.current >= POLL_FOR_MS) { setStopped(true); return }
       void fetchOrder(orderId, controller.signal).then(next => {
         if (controller.signal.aborted) return
         // A failed check keeps the last answer; the next tick (or Check again) asks again.
-        if (next.kind === 'signed-out') window.location.assign(`${LOGIN_PATH}?next=${encodeURIComponent(window.location.pathname
-          + window.location.search)}`)
-        else if (next.kind !== 'unavailable') setRead(next)
+        if (next.kind === 'signed-out') signInAndReturn()
+        else if (next.kind !== 'unavailable') { setRead(next); setCheckFailed(false) }
       })
     }, POLL_INTERVAL_MS)
     return () => { controller.abort(); window.clearInterval(timer) }
-  }, [orderId, confirming, stopped])
+  }, [orderId, confirming, unread, stopped])
 
   // Haptic: done, once, when the payment is confirmed (where the device supports it).
   const confirmed = read.kind === 'order' && read.order.state === 'paid'
@@ -73,17 +82,30 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
   const checkAgain = useCallback(async () => {
     if (orderId === null) return
     setChecking(true)
+    setCheckFailed(false)
     const next = await fetchOrder(orderId)
     setChecking(false)
-    if (next.kind === 'order' || next.kind === 'not-found') setRead(next)
+    if (next.kind === 'signed-out') signInAndReturn()
+    else if (next.kind === 'unavailable') setCheckFailed(true)
+    else setRead(next)
   }, [orderId])
 
-  if (read.kind !== 'order') return <Outcome icon="alert" title={RETURN_COPY.notFoundTitle} body={RETURN_COPY.notFoundBody}
-    actions={<Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
-      className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.accessLink}</Link>} />
-  const order = read.order
   const back = <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
     className={studentAction(btnGhost, 'bg-student-surface')}>{RETURN_COPY.backToAccess}</Link>
+  const check = <button type="button" onClick={() => void checkAgain()} disabled={checking} aria-busy={checking}
+    className={studentAction(btnNavy, studentFocusDark)}>{checking ? RETURN_COPY.checking : RETURN_COPY.checkAgain}</button>
+  const failedCheck = checkFailed
+    ? <p role="alert" className="text-sm font-semibold text-student-error">{RETURN_COPY.checkFailed}</p> : null
+
+  // No order id in the address is the same answer: there is no payment of ours to look for.
+  if (read.kind === 'not-found' || orderId === null) return <Outcome icon="alert" title={RETURN_COPY.notFoundTitle}
+    body={RETURN_COPY.notFoundBody}
+    actions={<Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
+      className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.accessLink}</Link>} />
+  // The spinner runs while the page is still asking on its own; after two minutes only Check again asks.
+  if (read.kind !== 'order') return <Outcome state="unavailable" icon={stopped ? 'alert' : 'busy'}
+    title={RETURN_COPY.unavailableTitle} status actions={<>{check}{back}</>} after={failedCheck} />
+  const order = read.order
   const support = (label: string = RETURN_COPY.messageUs) => <a href={buildWhatsAppUrl(paymentSupportMessage(order.order_id))}
     target="_blank" rel="noopener noreferrer" className={studentAction(btnGhost, 'bg-student-surface')}>{label}</a>
   const courses = <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
@@ -95,14 +117,13 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
       const waitedLong = Date.now() - Date.parse(order.created_at) >= SUPPORT_AFTER_MS
       return <Outcome icon="busy" title={still ? RETURN_COPY.stillTitle : RETURN_COPY.confirmingTitle}
         body={still ? RETURN_COPY.stillBody : RETURN_COPY.confirmingBody} status order={order}
-        actions={<>
-          {still && <button type="button" onClick={() => void checkAgain()} disabled={checking} aria-busy={checking}
-            className={studentAction(btnNavy, studentFocusDark)}>{checking ? RETURN_COPY.checking : RETURN_COPY.checkAgain}</button>}
-          {back}
-        </>}
-        after={still && waitedLong ? <p className="text-sm text-student-text-secondary">{RETURN_COPY.stillWaiting}{' '}
-          <a href={buildWhatsAppUrl(paymentSupportMessage(order.order_id))} target="_blank" rel="noopener noreferrer"
-            className="font-semibold text-student-primary underline underline-offset-2">{RETURN_COPY.messageUs}</a></p> : null} />
+        actions={<>{still && check}{back}</>}
+        after={<>
+          {still && failedCheck}
+          {still && waitedLong ? <p className="text-sm text-student-text-secondary">{RETURN_COPY.stillWaiting}{' '}
+            <a href={buildWhatsAppUrl(paymentSupportMessage(order.order_id))} target="_blank" rel="noopener noreferrer"
+              className="font-semibold text-student-primary underline underline-offset-2">{RETURN_COPY.messageUs}</a></p> : null}
+        </>} />
     }
     case 'paid': return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state="paid">
       <div className="grid gap-3">
@@ -146,20 +167,23 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
   }
 }
 
-function Outcome({ icon, title, body, actions, order, status = false, alert = false, after = null, amount }: {
-  icon: 'busy' | 'alert' | 'check'; title: string; body: string; actions: ReactNode; order?: OrderView; status?: boolean
+function Outcome({ icon, title, body, actions, order, state = 'not-found', status = false, alert = false, after = null,
+  amount }: {
+  icon: 'busy' | 'alert' | 'check'; title: string; body?: string; actions: ReactNode; order?: OrderView
+  // What the page reports when there is no order to name its state.
+  state?: 'not-found' | 'unavailable'; status?: boolean
   alert?: boolean; after?: ReactNode
   // The amount row: the plan price by default; null leaves the row out.
   amount?: { label: string; kobo: number } | null
 }): ReactElement {
   const shown = amount === undefined ? (order ? { label: RETURN_COPY.amount, kobo: order.amount_kobo } : null) : amount
   const Icon = icon === 'busy' ? LoaderCircle : icon === 'alert' ? CircleAlert : CircleCheck
-  return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state={order?.state ?? 'not-found'}>
+  return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state={order?.state ?? state}>
     <div className="grid gap-3" role={status ? 'status' : alert ? 'alert' : undefined} aria-live={status ? 'polite' : undefined}>
       <Icon aria-hidden="true" size={24} className={icon === 'busy' ? 'animate-spin text-student-primary motion-reduce:animate-none'
         : icon === 'alert' ? 'text-student-error' : 'text-student-success'} />
       <h1 className="student-page-band-title">{title}</h1>
-      <p className="text-student-text-secondary">{body}</p>
+      {body !== undefined && <p className="text-student-text-secondary">{body}</p>}
     </div>
     {order && <dl className="student-surface grid py-1 text-sm">
       <div className="flex justify-between gap-3 border-b border-student-border py-3">

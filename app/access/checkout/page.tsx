@@ -1,6 +1,7 @@
 // app/access/checkout/page.tsx — Confirm your courses: every Pay comes here first. The plan and its catalogue price, the
 // student's study context and course list, then one form that posts to /api/payments/checkout. No amount ever comes
-// from the browser; the server copies the price onto the order.
+// from the browser; the server copies the price onto the order. A reason the checkout route sent back shows once
+// (ConfirmAndPay takes it out of the address).
 import { randomUUID } from 'node:crypto'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -22,7 +23,7 @@ import { profileSelectionHref } from '@/lib/profile/paths'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
-import { CheckoutForm } from './CheckoutForm'
+import { ConfirmAndPay } from './ConfirmAndPay'
 import type { PlanKey } from '@/lib/entitlements/contract'
 import type { ReactElement } from 'react'
 
@@ -99,31 +100,31 @@ async function ConfirmCourses({ plan, status, continuityToken, here }: { plan: P
   const problem = status === null || status === 'already-paid' ? null : CHECKOUT_PROBLEM[status] ?? CHECKOUT_PROBLEM.unavailable!
   return <StudentPage band={band(lede)}>
     <div className="mx-auto grid w-full max-w-[680px] gap-6">
-      {problem !== null && <Notice tone="error" title={problem}>{null}</Notice>}
-      <div className="student-surface flex items-center justify-between gap-3 bg-student-brand-surface py-2">
-        <p className="min-w-0 font-semibold text-student-text-primary">{studyContext}</p>
-        {selection.state === 'open' && <Link href={profileSelectionHref(here)} prefetch={false}
-          className={studentAction(btnGhost, 'bg-student-surface')}>{CONFIRM_COPY.change}</Link>}
-      </div>
-      <section aria-labelledby="courses-heading">
-        <h2 id="courses-heading" className="student-section-title">{CONFIRM_COPY.coursesHeading(courses.length)}</h2>
-        <ul className="mt-3 overflow-hidden rounded-lg border border-student-border bg-student-surface">
-          {courses.map(course => <li key={course.institutionalCourseId}
-            className="flex min-h-[60px] items-center justify-between gap-3 border-b border-student-border px-4 py-3 last:border-b-0">
-            <span className="min-w-0">
-              <span className="block font-semibold text-student-text-primary">{course.title}</span>
-              <span className="block text-sm text-student-text-secondary">{course.code}</span>
-            </span>
-            {course.isFree && <span className="shrink-0 text-sm font-semibold text-student-text-secondary">{CONFIRM_COPY.free}</span>}
-          </li>)}
-        </ul>
-      </section>
-      <Notice tone="info" title={CONFIRM_COPY.setAfterPaying}>
-        {early !== null ? `Your Early Access month continues until ${formatAccessDay(early)}. Your plan then keeps your courses ` +
-          `open${term === null ? '' : ` until ${formatAccessLastDay(term.ends_at)}`}.` : null}
-      </Notice>
-      <CheckoutForm plan={plan} priceKobo={onSale.price_kobo} expectedRevision={revision} requestId={randomUUID()}
-        continuityToken={continuityToken} />
+      <ConfirmAndPay problem={problem} plan={plan} priceKobo={onSale.price_kobo} expectedRevision={revision}
+        requestId={randomUUID()} continuityToken={continuityToken}>
+        <div className="student-surface flex items-center justify-between gap-3 bg-student-brand-surface py-2">
+          <p className="min-w-0 font-semibold text-student-text-primary">{studyContext}</p>
+          {selection.state === 'open' && <Link href={profileSelectionHref(here)} prefetch={false}
+            className={studentAction(btnGhost, 'bg-student-surface')}>{CONFIRM_COPY.change}</Link>}
+        </div>
+        <section aria-labelledby="courses-heading">
+          <h2 id="courses-heading" className="student-section-title">{CONFIRM_COPY.coursesHeading(courses.length)}</h2>
+          <ul className="mt-3 overflow-hidden rounded-lg border border-student-border bg-student-surface">
+            {courses.map(course => <li key={course.institutionalCourseId}
+              className="flex min-h-[60px] items-center justify-between gap-3 border-b border-student-border px-4 py-3 last:border-b-0">
+              <span className="min-w-0">
+                <span className="block font-semibold text-student-text-primary">{course.title}</span>
+                <span className="block text-sm text-student-text-secondary">{course.code}</span>
+              </span>
+              {course.isFree && <span className="shrink-0 text-sm font-semibold text-student-text-secondary">{CONFIRM_COPY.free}</span>}
+            </li>)}
+          </ul>
+        </section>
+        <Notice tone="info" title={CONFIRM_COPY.setAfterPaying}>
+          {early !== null ? `Your Early Access month continues until ${formatAccessDay(early)}. Your plan then keeps your ` +
+            `courses open${term === null ? '' : ` until ${formatAccessLastDay(term.ends_at)}`}.` : null}
+        </Notice>
+      </ConfirmAndPay>
     </div>
   </StudentPage>
 }
