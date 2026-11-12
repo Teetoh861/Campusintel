@@ -34,6 +34,8 @@ export const PASSWORD_RESET_DESTINATION = AUTH_PATHS.login
 export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart: 'RECOVERY_RESTART_REQUIRED',
   password: 'RECOVERY_PASSWORD_REJECTED' } as const
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'
+// The provider's password rule refused a new password: one line for Create account and Change password.
+const STRONGER_PASSWORD = 'Choose a stronger password.'
 export const AUTH_MESSAGES = {
   unavailable: 'Something went wrong. Please try again.',
   sessionChanged: 'Your sign-in has changed. Reload this page before continuing.',
@@ -42,9 +44,9 @@ export const AUTH_MESSAGES = {
   comingSoon: 'Student accounts are currently unavailable. Please try again later.',
   confirmationRequired: 'Email confirmation is required before signing in.',
   confirmationSignIn: 'Your email is confirmed. Sign in to continue.',
-  signupPassword: 'Choose a stronger password and try again.',
+  signupPassword: STRONGER_PASSWORD,
   samePassword: 'Choose a different password.',
-  weakPassword: 'Choose a stronger password.',
+  weakPassword: STRONGER_PASSWORD,
   invalid: 'Check the information entered and try again.',
   credentials: 'Incorrect email or password.',
   code: 'Invalid or expired code.',

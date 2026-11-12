@@ -11,27 +11,36 @@ import { PasswordField } from '@/components/auth/PasswordField'
 import { AuthFormLayout, authSecondaryNav, type AuthFormFeedback } from '@/components/auth/AuthFormLayout'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
 import { AUTH_API, AUTH_PATHS, EMAIL_CONFIRMATION_REQUIRED, EMAIL_MAX_LENGTH } from '@/lib/auth/constants'
+import { ACCOUNT_DELETION_SCHEDULED_STATE, ACCOUNT_MESSAGES } from '@/lib/account/constants'
 import { loginSchema } from '@/lib/auth/schemas'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 
 // The address parameter a notice from another screen arrives in (an account scheduled for deletion).
 const NOTICE_PARAM = 'state'
 
-/** Navigate only to the validated application destination after server login. A notice the page was opened with
- * shows once: it leaves the address as the page loads, and it goes on the first submit attempt, valid or not.
+/** Navigate only to the validated application destination after server login. The one notice this page can be opened
+ * with is read here, in the browser, never rendered by the server: so the router's cached copy of the page has none,
+ * and Back or reload never brings it back. It shows once, and goes on the first submit attempt, valid or not.
  */
-export function LoginForm({ next, initialFeedback }: { next: string; initialFeedback?: AuthFormFeedback }) {
+export function LoginForm({ next }: { next: string }) {
   const { register, handleSubmit, resetField, reset, formState: { errors } } = useForm<{ email: string; password: string }>({ resolver: zodResolver(loginSchema) })
   const { submit, pending, error, clearError } = useAuthSubmit()
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null)
-  const [notice, setNotice] = useState(initialFeedback)
+  const [notice, setNotice] = useState<AuthFormFeedback>()
   const [navigating, setNavigating] = useState(false)
   const busy = pending || navigating
   useEffect(() => {
     const url = new URL(window.location.href)
     if (!url.searchParams.has(NOTICE_PARAM)) return
+    if (url.searchParams.get(NOTICE_PARAM) === ACCOUNT_DELETION_SCHEDULED_STATE) {
+      setNotice({ message: ACCOUNT_MESSAGES.scheduled, tone: 'warning' })
+    }
     url.searchParams.delete(NOTICE_PARAM)
-    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+    // On a fresh page load this effect runs before Next's router takes over the browser history (the router's own
+    // effect runs after its children's). A replace before then wipes the router's record of this entry, and Back to
+    // it would show the wrong page, so the notice leaves the address on the next task, through the router.
+    const later = setTimeout(() => window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`))
+    return () => clearTimeout(later)
   }, [])
   const startOver = () => { reset({ email: '', password: '' }); setConfirmationEmail(null) }
   if (confirmationEmail !== null) return <ConfirmEmailForm email={confirmationEmail} next={next} onStartOver={startOver} />

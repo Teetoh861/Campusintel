@@ -36,7 +36,7 @@ export function ConfirmEmailForm({ email, next, onStartOver }: { email: string; 
     <FormField id="code" label="Code" inputMode="numeric" autoComplete="one-time-code" maxLength={OTP_MAX_LENGTH}
       {...register('code')} error={errors.code?.message} disabled={busy} />
       </>}
-      feedback={{ message: error || message, tone: error ? 'error' : 'success' }}
+      feedback={{ message: error || message, tone: error ? 'error' : 'info' }}
       primaryAction={<button disabled={busy} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{busy ? 'Confirming…' : 'Confirm email'}</button>}
       secondaryActions={<>
         <button type="button" disabled={busy} className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'disabled:pointer-events-none disabled:opacity-60')} onClick={async () => {

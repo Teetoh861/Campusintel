@@ -53,8 +53,9 @@ export function classifyEmailSend(error: unknown): EmailSendOutcome {
 }
 
 /** Hide recipient-dependent cooldowns and delivery failures behind the same neutral acknowledgment as a no-op.
- * Only recipient-independent quotas and signup password policy remain outward failures. An acknowledgment
- * promises neither a new code nor delivery; verification alone decides whether a code is usable. */
+ * Only recipient-independent quotas and signup password policy remain outward failures. The acknowledgment is the
+ * same for every address, and the screens word it as "We sent a new code to {email}." whether or not a code went
+ * out; verification alone decides whether a code is usable. */
 export function classifyEmailInitiation(error: unknown, action: EmailInitiationAction): EmailInitiationFailure | null {
   const outcome = classifyEmailSend(error)
   if (outcome === 'limited') return { status: 429, error: AUTH_MESSAGES.limited }

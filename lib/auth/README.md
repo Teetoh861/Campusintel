@@ -84,7 +84,9 @@ Verification immediately revokes the temporary Supabase session with local-scope
 admin sign-out before issuing a grant. Failure to revoke prevents grant issuance.
 The password endpoint atomically holds the grant: one UPDATE ... RETURNING re-keys
 its row to a value only that request can rebuild, so the credential alone no longer
-finds it. It checks expiry and email binding, then calls server-only admin
+finds it, and counts the attempt in the same statement (password_attempts), so two
+tabs or a double submit never get an uncounted try. It checks expiry and email binding,
+then calls server-only admin
 updateUserById. Unless the grant goes back (below), the same request then deletes it.
 Supabase Auth's password-update transaction globally revokes that user's refresh
 sessions. This behavior is verified against local GoTrue v2.192.0; repeat the real
@@ -96,10 +98,13 @@ OTP verification retains the existing PASSWORD_RESET_SUBMIT account/origin limit
 Each grant permits one password change. A new password the provider itself refuses
 (weak or reused) changes nothing, so the same request puts the grant back and the
 student stays on Change password: the same credential, so the same browser only, and
-the expiry it always had (restoring never writes the row's timestamps, and the cookie
-is left untouched). The password's length is checked before the grant is held. Any
-other provider failure never restores the grant.
-Issuing a newer grant replaces the prior grant for that user, held or not.
+the expiry it always had (restoring never writes the row's timestamps or its count,
+and the cookie is left untouched). One code allows five refused passwords: the fifth is
+not restored, the grant is used up and the student starts again with a new code. The
+password's length is checked before the grant is held, so it never counts. Any other
+provider failure never restores the grant.
+Issuing a newer grant replaces the prior grant for that user, held or not, and starts
+its count at zero.
 Email change, resend and logout discard the cookie-backed grant. A grant that cannot
 be held, and every password-update failure other than a refused password, clears the
 cookie and requires a new code.

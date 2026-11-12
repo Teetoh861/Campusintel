@@ -62,8 +62,9 @@ const heldGrant = z.array(z.object({ holder: z.string().uuid(), claim: z.string(
 
 export type HeldRecoveryGrant = {
   userId: string
-  /** Put the same grant back, for the same credential and with the expiry it always had. For one case only: the
-   * provider refused the new password, so nothing changed. False when it could not go back (it expired meanwhile). */
+  /** Put the same grant back, for the same credential and with the expiry and attempt count it already had. For one
+   * case only: the provider refused the new password, so nothing changed. False when it could not go back: it expired
+   * meanwhile, or this was the fifth refused password for its code. */
   restore(): Promise<boolean>
   /** Delete the grant: the password was accepted, or the attempt failed in a way that ends this recovery. */
   finish(): Promise<void>

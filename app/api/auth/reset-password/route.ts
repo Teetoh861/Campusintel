@@ -17,7 +17,8 @@ async function finish(grant: HeldRecoveryGrant): Promise<void> {
 
 /** Only a verified recovery grant authorizes replacement, never an existing login. The grant is held before the
  * provider is asked, so no other request can use it, and it goes back only when the provider refuses the password
- * itself (weak or reused): nothing changed, so the student may try another on the same grant.
+ * itself (weak or reused): nothing changed, so the student may try another on the same grant, up to five refused
+ * passwords for one code.
  */
 export async function POST(request: Request) {
   let grantAttempted = false
@@ -41,7 +42,8 @@ export async function POST(request: Request) {
       if (await grant.restore().catch(() => false)) {
         return authJson({ error: failure.error, code: RECOVERY_FAILURE.password }, failure.status)
       }
-      // It expired while the provider answered (or could not be put back): recovery starts again.
+      // It expired while the provider answered, this was the code's fifth refused password, or it could not be put
+      // back: the grant is used up and recovery starts again with a new code.
       await finish(grant)
       const expired = authJson({ error: AUTH_MESSAGES.recoveryRestart, code: RECOVERY_FAILURE.restart }, 400)
       clearRecoveryCookie(expired)

@@ -199,7 +199,7 @@ Except for explicit login/confirmation success, no row creates a student session
 
 | Server/provider condition | HTTP/result | UI | Signed in | Email/code expectation | Outward message | Existence inference | Retry/resend |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Recovery request accepted (eligible recipient) | 200 | Recovery code screen | No | Provider sends; delivery not claimed (conditional copy) | `recovery` | Identical to the two rows below | Yes |
+| Recovery request accepted (eligible recipient) | 200 | Recovery code screen | No | Provider sends; the code screen reads the same for every address | `recovery` | Identical to the two rows below | Yes |
 | Nonexistent recipient (provider silent no-op, `{}`) | 200 | Recovery code screen | No | None; not claimed | `recovery` | Identical to accepted | Yes |
 | Existing recipient inside provider cooldown (~30 s hosted, `over_email_send_rate_limit` "For security purposes…") | 200 | Recovery code screen | No | No new code; a prior code may be consumed, which only verification decides | `recovery` | Identical to accepted (normalized 2026-09-17 after a hosted oracle) | Resend after cooldown |
 | Application rate limit | 429 | Stay on request screen | No | None; no provider call | `limited` | Attempt history only, not existence | After limit |
@@ -208,25 +208,26 @@ Except for explicit login/confirmation success, no row creates a student session
 | Malformed success envelope | 503 | Stay | No | Unknown | `unavailable` | No account detail | Retry/support |
 | Unexpected provider failure / transport exception | 503 | Stay | No | Unknown | `unavailable` | No account detail | Retry |
 | Application limit / invalid request / internal failure | 429 / 400 / 503 | Stay | No | None/unknown | `limited` / `invalid` / `unavailable` | No recipient detail | Correct/retry later |
-| Recipient chooses code entry | Local action | Recovery verifier | No | Supply received recovery OTP | Conditional instructions | None | Verify or change email |
+| Code screen after any accepted request | Local | Recovery verifier | No | Supply received recovery OTP | “Enter the code you received at {email}.” | Same for every address | Verify, resend or change email |
 | Wrong / expired / consumed recovery OTP | 400 | Stay at code | No | No grant | `recoveryCode` | Generic | Retry/resend |
 | Signup OTP submitted to recovery | Provider rejection, 400 | Stay at code | No | No grant | `recoveryCode` | Generic | Use correct flow |
 | Verification rate limit | 429 | Stay at code | No | No grant | `limited` | No account detail | Later |
 | Verification provider/store failure before successful verification | 503 | Stay; no password screen | No | No grant published | `unavailable` | No account detail | Retry/resend |
-| Verified recovery OTP + matching identity + temporary revocation + grant write | 200 `verified:true` | Password fields | No | Code consumed; opaque HttpOnly grant issued | Password form | Valid OTP holder only | One password attempt |
+| Verified recovery OTP + matching identity + temporary revocation + grant write | 200 `verified:true` | Password fields | No | Code consumed; opaque HttpOnly grant issued | Password form | Valid OTP holder only | One change; up to five refused passwords |
 | OTP accepted but session/identity missing or invalid | 503 + restart | Return to request | No | No grant; code may be consumed | `unavailable`, restart guidance | No new recipient detail | Request new code |
 | Temporary-session revocation fails | 503 + restart | Return to request | No | No grant | `unavailable`, restart guidance | Valid OTP holder only | New code |
 | Grant issuance fails | 503 + restart | Return to request | No | No grant cookie published | `unavailable`, restart guidance | Valid OTP holder only | New code |
-| Valid grant + password replacement transaction succeeds | 200 reset destination | Sign-in with reset notice | No | Consumed grant; global refresh-session revocation | `resetSuccess` | Authorized grant holder | Login with new password |
+| Valid grant + password replacement transaction succeeds | 200 `next: /login` | “Password changed” with Sign in; Sign in itself shows no notice | No | Grant used up (row deleted, cookie cleared); global refresh-session revocation | Title only | Authorized grant holder | Sign in with the new password |
 | Missing / expired / replayed / wrong-email / tampered grant | 400 + restart | Request stage | No | No password change | `recoveryRestart` | No account detail | New code |
-| Invalid password before grant consumption | 400 | Stay at password | No | Grant not consumed | `invalid` or field validation | Input only | Correct password |
-| Same/weak password provider rejection after grant consumption | 400 + restart | Request stage | No | Grant consumed; no restored authority | `samePassword` / `weakPassword` | Authorized grant holder | New code |
-| Provider rate limit after grant consumption | 429 + restart | Request stage | No | Grant consumed | `limited` + restart | Authorized grant holder | Later/new code |
-| Store/update/revocation transaction failure after consumption begins | 503 + restart | Request stage | No | Grant never restored; update may be uncertain | `unavailable` + restart | No raw details | New code |
-| Recovery resend acknowledged | 200 receipt | Stay at code; neutral message | No | Prior grant discarded; no delivery promise | `recovery` | Same eligible/absent response | Yes |
+| Invalid password (under 8 characters, over 72 bytes) before the grant is held | 400 | Stay at password | No | Grant untouched | Field validation, or `invalid` | Input only | Correct password |
+| Same/weak password refused by the provider, first to fourth time for this code | 400 `RECOVERY_PASSWORD_REJECTED` | Stay at password; reason under New password, focus on it | No | Grant restored: same cookie, same expiry, its attempt count kept | `samePassword` / `weakPassword` | Authorized grant holder | Another password |
+| Fifth refused password for one code, or the grant expired while the provider answered | 400 + restart | Request stage | No | Grant used up; cookie cleared | `recoveryRestart` | Authorized grant holder | New code |
+| Provider rate limit after the grant is held | 429 + restart | Request stage | No | Grant used up | `limited` + restart | Authorized grant holder | Later/new code |
+| Store/update/revocation transaction failure after the grant is held | 503 + restart | Request stage | No | Grant used up, never restored; update may be uncertain | `unavailable` + restart | No raw details | New code |
+| Recovery resend acknowledged | 200 receipt | Stay at code; “We sent a new code to {email}.” | No | Prior grant discarded; the same line for every address | `recovery`, worded with the typed address | Same eligible/absent response | Yes |
 | Change email: grant cancellation succeeds | 200 `success:true` | Clear inputs, request stage | No | Grant discarded, cookie cleared | None | None | New request |
 | Change email: cancellation fails | 503 | Stay; do not pretend cancellation | No new session | Grant state uncertain | `unavailable` | No details | Retry |
-| Direct reset/confirmation page visit without in-memory context | Page guidance | Entry links, no authorized password form | No | None; GET verifies nothing | Start from relevant entry flow | None | Start flow |
+| Direct reset/confirmation page visit without in-memory context | Redirect | /reset-password goes to Forgot password, /confirm-email to Sign in | No | None; GET verifies nothing | None | None | Start flow |
 
 ### Session, shared boundaries and logout
 

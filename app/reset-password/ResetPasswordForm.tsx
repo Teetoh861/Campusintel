@@ -1,6 +1,6 @@
 // app/reset-password/ResetPasswordForm.tsx — Password-only form, authorized by the server-controlled recovery grant.
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -23,11 +23,14 @@ const formSchema = resetSchema.pick({ password: true }).extend({ confirmation: z
 export function ResetPasswordForm({ email, onFailure, onChanged }: {
   email: string; onFailure: (failure: AuthSubmitFailure) => void; onChanged: () => void
 }) {
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<z.infer<typeof formSchema>>({ resolver: zodResolver(formSchema), defaultValues: { password: '', confirmation: '' } })
+  const { register, handleSubmit, reset, setFocus, formState: { errors } } = useForm<z.infer<typeof formSchema>>({ resolver: zodResolver(formSchema), defaultValues: { password: '', confirmation: '' } })
   const { submit, pending, error, clearError } = useAuthSubmit()
   // Why the provider refused the last password. It belongs under the field, not in the form's message.
   const [rejected, setRejected] = useState('')
   const forget = () => { setRejected(''); clearError() }
+  // The reason is the field's description (FormField ties it with aria-describedby), so once the field is enabled
+  // again, focus goes back to it: a screen reader then announces New password, invalid, and why.
+  useEffect(() => { if (rejected && !pending) setFocus('password') }, [rejected, pending, setFocus])
   const change = handleSubmit(async values => {
     const { password } = values
     const result = await submit(AUTH_API.reset, { email, password }, failure => {
