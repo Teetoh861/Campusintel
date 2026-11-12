@@ -205,3 +205,12 @@ test('a topic shows its note type only when the course mixes types', async () =>
   state.result = { ...full(), learning: { ...full().learning, notes: [first, calculator] } }
   assert.deepEqual(await rows(), ['1 First topic Topic note', '2 Trick note Calculator trick'], 'mixed types are named')
 }))
+
+test('a wide table keeps its first column in view, with its row lines, while the rest scrolls', () => {
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../../../styles/student-app.css'), 'utf8')
+  const rule = selector => css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\>]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+  assert.match(rule('.student-guide-table tr > :first-child'), /position: sticky; left: 0;/)
+  assert.match(rule('.student-guide-table tr > :first-child'), /background: var\(--student-surface\)/, 'opaque, so scrolled cells pass under it')
+  assert.match(rule('.student-guide-table tbody tr > :first-child'), /linear-gradient\(var\(--student-border\), var\(--student-border\)\) top \/ 100% 1px/)
+  assert.match(rule('.student-guide-table table'), /border-collapse: separate; border-spacing: 0;/)
+})

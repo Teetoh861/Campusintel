@@ -577,8 +577,19 @@ ol.student-guide-list { list-style: decimal; }
     radial-gradient(farthest-side at 100% 50%, rgb(15 23 42 / 22%), transparent) right / 14px 100% no-repeat scroll,
     var(--student-surface); }
 .student-guide-table:focus-visible { outline: 2px solid var(--student-focus, var(--student-link)); outline-offset: 2px; }
-.student-guide-table table { min-width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.45; }
+/* Separate borders: each cell carries its own line, so the pinned first column keeps its row lines as it moves. */
+.student-guide-table table { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 15px; line-height: 1.45; }
 .student-guide-table th, .student-guide-table td { min-width: 7.5rem; max-width: 22rem; padding: 8px 12px; border-bottom: 1px solid var(--student-border);
   text-align: left; vertical-align: top; overflow-wrap: break-word; }
 .student-guide-table th { color: var(--student-primary); font-weight: 700; }
 .student-guide-table tr:last-child td { border-bottom: 0; }
+/* The first column (each row's name) stays in view while the rest of a wide table scrolls under it. Each pinned cell
+   draws its row line at its own top edge: a bottom border can be painted over by the next pinned cell when rows end
+   on a fraction of a pixel. */
+.student-guide-table tr > :first-child { position: sticky; left: 0; z-index: 1; border-bottom: 0;
+  background: var(--student-surface); box-shadow: inset -1px 0 0 var(--student-border); }
+.student-guide-table tbody tr > :first-child {
+  background: linear-gradient(var(--student-border), var(--student-border)) top / 100% 1px no-repeat, var(--student-surface); }
+@media (max-width: 599px) {
+  .student-guide-table tr > :first-child { min-width: 6rem; max-width: 8.5rem; }
+}
