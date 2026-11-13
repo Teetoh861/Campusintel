@@ -1,7 +1,6 @@
 // app/courses/[slug]/notes/page.tsx — A course's notes as a list of topics; each topic opens on its own page.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronRight } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost } from '@/components/chrome/ui'
 import { PageBand } from '@/components/student/PageBand'
@@ -36,7 +35,6 @@ async function Notes({ slug }: { slug: string }): Promise<ReactElement> {
           <Link href={`${course.href}/notes/${index + 1}`} prefetch={false} className="student-topic-row student-focus-control">
             <span className="student-topic-number" aria-hidden="true">{index + 1}</span>
             <span className="student-topic-text"><b>{note.title}</b>{line && <span>{line}</span>}</span>
-            <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
           </Link>
         </li>
       })}

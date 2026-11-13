@@ -2,7 +2,6 @@
 // Reading it for 30 seconds counts as opening the topic (NoteUseTracker), as on the course page before.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost } from '@/components/chrome/ui'
 import { PageBand } from '@/components/student/PageBand'
@@ -50,12 +49,10 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
       </article>
       <nav aria-label="Topics" className="student-guide-pager">
         {previous ? <Link href={`${course.href}/notes/${index}`} prefetch={false} className="student-topic-row student-focus-control">
-          <ChevronLeft aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
           <span className="student-topic-text"><span>Previous topic</span><b>{previous.title}</b></span>
         </Link> : <span />}
         {next && <Link href={`${course.href}/notes/${index + 2}`} prefetch={false} className="student-topic-row student-focus-control">
           <span className="student-topic-text"><span>Next topic</span><b>{next.title}</b></span>
-          <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
         </Link>}
       </nav>
     </div>
