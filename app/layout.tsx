@@ -23,19 +23,19 @@ const hanken = Hanken_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: 'CampusIntel · The inside track on every paper',
+  title: 'CampusIntell',
   description:
     'Academic intelligence for the University of Lagos. Past questions, decoded exam patterns and the materials that actually move your grade.',
   openGraph: {
-    title: 'CampusIntel · Academic Intelligence',
+    title: 'CampusIntell',
     description: 'The inside track on every paper.',
     type: 'website',
     locale: 'en_NG',
-    siteName: 'CampusIntel',
+    siteName: 'CampusIntell',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CampusIntel · Academic Intelligence',
+    title: 'CampusIntell',
     description: 'The inside track on every paper.',
   },
 }
