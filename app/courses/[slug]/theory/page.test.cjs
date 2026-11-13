@@ -14,6 +14,7 @@ async function fixture(run) {
       code: 'INST201', title: 'Institutional theory title' }, materials: [{ question, feedbackAvailable: true, feedback: null }] } }
     function StudentAccessGate() { return null }
     function TheoryAttempt(props) { return React.createElement('div', { 'data-attempt-id': props.question.itemId }) }
+    function ScrollToQuestion(props) { return React.createElement('i', { 'data-scroll-to': props.id }) }
     try {
       Module._load = function(name, ...args) {
         if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate }
@@ -27,17 +28,18 @@ async function fixture(run) {
           assert.equal(supplied, client); assert.equal(requested, slug); calls.push('published'); return state.result
         } }
         if (name === './TheoryAttempt') return { TheoryAttempt }
+        if (name === './ScrollToQuestion') return { ScrollToQuestion }
         return original.call(this, name, ...args)
       }
       const page = require('./page.tsx').default
-      const workspace = async () => {
-        const gated = await page({ params: Promise.resolve({ slug }) })
+      const workspace = async searchParams => {
+        const gated = await page({ params: Promise.resolve({ slug }), ...(searchParams ? { searchParams: Promise.resolve(searchParams) } : {}) })
         assert.equal(gated.type, StudentAccessGate)
         assert.equal(gated.props.returnPath, `/courses/${slug}/theory`)
         const child = gated.props.children('page-token')
         return child.type(child.props)
       }
-      await run({ state, calls, workspace, html: async () => renderToStaticMarkup(await workspace()),
+      await run({ state, calls, workspace, html: async searchParams => renderToStaticMarkup(await workspace(searchParams)),
         loading: require('./loading.tsx').default })
     } finally { Module._load = original }
   })
@@ -149,4 +151,17 @@ test('unavailable repository theory has the existing unavailable copy with no ad
   assert.match(html, /Study materials are not available./)
   assert.doesNotMatch(html, /Message us|Included with full access|See how to unlock|data-attempt-id|textarea/)
   assert.ok(!html.includes('href="/access"'))
+}))
+
+test('a question a guide topic links to opens and is brought into view; any other address opens the first', async () => fixture(async f => {
+  const second = { ...question, itemId: modelAnswer.itemId, prompt: 'The linked question' }
+  f.state.result.materials = [{ question, feedbackAvailable: true, feedback: null }, { question: second, feedbackAvailable: true, feedback: null }]
+  const linked = await f.html({ question: second.itemId })
+  assert.match(linked, new RegExp(`<details[^>]*id="question-${second.itemId}"[^>]*open=""`))
+  assert.doesNotMatch(linked, new RegExp(`<details[^>]*id="question-${question.itemId}"[^>]*open=""`))
+  assert.deepEqual([...linked.matchAll(/data-scroll-to="([^"]+)"/g)].map(match => match[1]), [`question-${second.itemId}`])
+  const plain = await f.html()
+  assert.match(plain, new RegExp(`<details[^>]*id="question-${question.itemId}"[^>]*open=""`))
+  assert.doesNotMatch(plain, /data-scroll-to/, 'no scrolling without a linked question')
+  assert.doesNotMatch(await f.html({ question: 'not-a-question' }), /data-scroll-to/, 'nor for an unknown one')
 }))

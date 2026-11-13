@@ -6,6 +6,8 @@ import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
 import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
+import { GuideTopicBody } from './guide'
+import type { GuideLinks } from './guide'
 import type { StudyFamilyId } from '@/components/student/study-families'
 import type { StudentCoursePractice, StudentCourseDetailLearning, StudyAvailability } from '@/lib/courses/read-model'
 import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion } from '@/lib/managed-content/student-projection'
@@ -129,8 +131,11 @@ function Aside({ kicker, children }: { kicker: string; children: ReactNode }): R
   </div>
 }
 
-function NoteBody({ note }: { note: ManagedNote }): ReactElement {
+/** A note's body. A guide topic renders its lessons, recap and theory question; `links` adds its theory and practice
+ * buttons, and `level` sets its heading level (2 on its own page, 4 inside a note card). */
+export function NoteBody({ note, links, level = 4 }: { note: ManagedNote; links?: GuideLinks; level?: 2 | 4 }): ReactElement {
   if (!('noteType' in note)) return <p className="student-detail-prose">{note.body}</p>
+  if (note.noteType === 'guide_topic') return <GuideTopicBody topic={note} links={links} level={level} />
   if (note.noteType === 'topic_note') return <>
     <p className="student-detail-prose">{note.body}</p>
     <ul className="student-detail-points">{note.keyPoints.map((point, index) => <li key={index}>{point}</li>)}</ul>
@@ -143,7 +148,7 @@ function NoteBody({ note }: { note: ManagedNote }): ReactElement {
   </>
 }
 
-const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator trick' } as const
+export const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator trick', guide_topic: 'Study guide' } as const
 
 /** One published note, rendered the same wherever a student may read it. */
 export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
@@ -154,10 +159,16 @@ export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
   </article>
 }
 
-/** Validated managed notes in publication order; plain, topic and calculator notes keep their payload verbatim. */
-export function NotesSection({ notes, number }: { notes: ReadonlyArray<ManagedNote>; number: number }): ReactElement {
+/** Notes on the course page: one compact card that opens the topic list. Each topic is read on its own page. The card
+ * is as wide as a practice topic row (student-topic-card), so the two sections line up on a wide screen. */
+export function NotesCard({ notes, href, number }: {
+  notes: ReadonlyArray<ManagedNote>; href: string; number: number
+}): ReactElement {
   return <StudySection id="notes" number={number}>
-    {notes.map(note => <NoteArticle key={note.itemId} note={note} />)}
+    <Link href={href} prefetch={false} className="student-topic-row student-topic-card student-focus-control">
+      <span className="student-topic-text"><b>Open notes</b><span>{notes.length === 1 ? '1 topic' : `${notes.length} topics`}</span></span>
+      <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
+    </Link>
   </StudySection>
 }
 
@@ -228,9 +239,22 @@ export function OverviewSection({ overview, bankTopics, number }: {
   const topics = overview?.topics ?? [], examFocus = overview?.examFocus ?? []
   const bankList = topics.length > 0 ? [] : bankTopics ?? []
   const keyTakeaways = overview?.keyTakeaways ?? [], formulaSheet = overview?.formulaSheet ?? []
+  const outcomes = overview?.outcomes ?? [], assessment = overview?.assessment ?? []
   // A course with only its bank topics gets no lede: the topic list is the overview.
   return <StudySection id="overview" number={number} lede={overview ? 'Explore the topics and key ideas for this course.' : undefined}>
     {overview?.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
+    {outcomes.length > 0 && <div className="student-detail-group">
+      <h3>Course outcomes</h3>
+      <ol className="student-detail-numbered student-surface">
+        {outcomes.map((line, index) => <li key={index}><span>{pad2(index + 1)}</span><p className="student-detail-prose">{line}</p></li>)}
+      </ol>
+    </div>}
+    {assessment.length > 0 && <div className="student-detail-group">
+      <h3>How you’re assessed</h3>
+      <ul className="student-detail-points student-surface">
+        {assessment.map((line, index) => <li key={index}>{line}</li>)}
+      </ul>
+    </div>}
     {keyTakeaways.length > 0 && <div className="student-detail-group">
       <h3>Key takeaways</h3>
       <ol className="student-detail-numbered student-surface">
