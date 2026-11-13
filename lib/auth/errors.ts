@@ -1,7 +1,7 @@
 // lib/auth/errors.ts — Auth-domain translation; provider text never becomes product copy.
-import { AUTH_MESSAGES, EMAIL_CONFIRMATION_REQUIRED } from './constants'
+import { AUTH_MESSAGES, EMAIL_CONFIRMATION_REQUIRED, RECOVERY_FAILURE } from './constants'
 
-type Failure = { status: number; error: string; code?: typeof EMAIL_CONFIRMATION_REQUIRED }
+type Failure = { status: number; error: string; code?: typeof EMAIL_CONFIRMATION_REQUIRED | typeof RECOVERY_FAILURE.password }
 
 /** Translate only known provider codes in the context where they are actionable. */
 export function mapAuthFailure(error: unknown, action: 'login' | 'otp' | 'recoveryOtp' | 'reset'): Failure {
@@ -13,8 +13,13 @@ export function mapAuthFailure(error: unknown, action: 'login' | 'otp' | 'recove
   if ((action === 'otp' || action === 'recoveryOtp') && (code === 'otp_expired' || code === 'otp_disabled' || code === 'user_banned')) {
     return { status: 400, error: action === 'recoveryOtp' ? AUTH_MESSAGES.recoveryCode : AUTH_MESSAGES.code }
   }
-  if (action === 'reset' && code === 'same_password') return { status: 400, error: AUTH_MESSAGES.samePassword }
-  if (action === 'reset' && code === 'weak_password') return { status: 400, error: AUTH_MESSAGES.weakPassword }
+  // The provider refused the password itself and changed nothing; the reset route lets the student try another.
+  if (action === 'reset' && code === 'same_password') {
+    return { status: 400, error: AUTH_MESSAGES.samePassword, code: RECOVERY_FAILURE.password }
+  }
+  if (action === 'reset' && code === 'weak_password') {
+    return { status: 400, error: AUTH_MESSAGES.weakPassword, code: RECOVERY_FAILURE.password }
+  }
   if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit') return { status: 429, error: AUTH_MESSAGES.limited }
   return { status: 503, error: AUTH_MESSAGES.unavailable }
 }
@@ -48,8 +53,9 @@ export function classifyEmailSend(error: unknown): EmailSendOutcome {
 }
 
 /** Hide recipient-dependent cooldowns and delivery failures behind the same neutral acknowledgment as a no-op.
- * Only recipient-independent quotas and signup password policy remain outward failures. An acknowledgment
- * promises neither a new code nor delivery; verification alone decides whether a code is usable. */
+ * Only recipient-independent quotas and signup password policy remain outward failures. The acknowledgment is the
+ * same for every address, and the screens word it as "We sent a new code to {email}." whether or not a code went
+ * out; verification alone decides whether a code is usable. */
 export function classifyEmailInitiation(error: unknown, action: EmailInitiationAction): EmailInitiationFailure | null {
   const outcome = classifyEmailSend(error)
   if (outcome === 'limited') return { status: 429, error: AUTH_MESSAGES.limited }
