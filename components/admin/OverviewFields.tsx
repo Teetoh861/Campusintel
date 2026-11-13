@@ -25,6 +25,22 @@ export function OverviewFields({ value, onChange }: Props): ReactElement {
             onChange={event => update({ ...topic, description: event.target.value })} className={inputClass} />
         </div>
       </>} />
+    <RepeatableFields label="Course outcomes" singular="Outcome" hint="What a student can do by the end of the course."
+      items={value.outcomes ?? []} empty={() => ''}
+      onChange={outcomes => onChange({ ...value, outcomes })}
+      renderFields={(entry, index, update) => <div>
+        <label htmlFor={`overview-outcome-${index}`} className="block text-sm font-medium text-slate-800">Outcome {index + 1}</label>
+        <textarea id={`overview-outcome-${index}`} value={entry} required maxLength={10000} rows={2}
+          onChange={event => update(event.target.value)} className={inputClass} />
+      </div>} />
+    <RepeatableFields label="How you're assessed" singular="Assessment line" hint="How the course is examined, one point per line."
+      items={value.assessment ?? []} empty={() => ''}
+      onChange={assessment => onChange({ ...value, assessment })}
+      renderFields={(entry, index, update) => <div>
+        <label htmlFor={`overview-assessment-${index}`} className="block text-sm font-medium text-slate-800">Assessment line {index + 1}</label>
+        <textarea id={`overview-assessment-${index}`} value={entry} required maxLength={10000} rows={2}
+          onChange={event => update(event.target.value)} className={inputClass} />
+      </div>} />
     <RepeatableFields label="Exam focus" singular="Exam focus" hint="Areas students should prioritize for the exam."
       items={value.examFocus ?? []} empty={() => ''}
       onChange={examFocus => onChange({ ...value, examFocus })}

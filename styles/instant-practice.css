@@ -1,8 +1,10 @@
 /* styles/instant-practice.css — Practice by topic and instant feedback, on the Practice primitives of student-app.css.
    Phone first: 32px between sections, 16px inside cards; marks are never colour alone (icon + label on every mark). */
 
-/* The course page's topic list: one row per topic, the whole row taps. Full width on a phone. */
-.student-topic-list { display: grid; gap: 8px; max-width: 720px; margin: 0; padding: 0; list-style: none; }
+/* The course page's topic list: one row per topic, the whole row taps. Full width on a phone. The Notes card is a
+   single row of the same kind, so it shares the list's width and lines up with the practice rows below it. */
+.student-topic-list, .student-topic-card { max-width: 720px; }
+.student-topic-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .student-topic-row { display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 16px; border: 1px solid var(--student-border); border-radius: 16px; background: var(--student-surface); color: var(--student-primary); text-decoration: none; }
 .student-topic-row:hover { background: var(--student-surface-muted); border-color: var(--student-border-hover); }
 .student-topic-number { flex: none; min-width: 24px; color: var(--student-text-muted); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }

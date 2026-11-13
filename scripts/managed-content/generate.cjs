@@ -5,7 +5,9 @@ const path = require('node:path')
 const { buildManifest } = require('./source-manifest.cjs')
 const { CORRECTIONS } = require('./corrections.cjs')
 const { absentBankOutputs, bankOutputs, buildImports, publishedCbt } = require('./official-banks.cjs')
-const { OVERVIEW_MIGRATION, overviewMigrationSql, overviewRevisions } = require('./overview-revisions.cjs')
+const { OVERVIEW_MIGRATION, overviewFunctionsSql, overviewMigrationSql, overviewRevisions } = require('./overview-revisions.cjs')
+const { GUIDE_ACTOR, checkManifest, guideOutputs, guidePlans, guidePublished, systemMigrationOutput } = require('./study-guides.cjs')
+const { NOTE_ORDER_MIGRATION, noteOrderSql } = require('./seeded-note-order.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const SEED_PATH = path.join(ROOT, 'supabase/migrations/20261002130000_repository_content_seed.sql')
@@ -129,13 +131,16 @@ function snapshot(item) {
   }
 }
 
-/** The parity test compares what is published after every migration: an imported course publishes its bank, and a
- *  revised overview publishes its revision two. */
-function testSql(manifest, plans, revisions) {
+/** The parity test compares what is published after every migration: an imported course publishes its bank, a
+ *  revised overview publishes its revision two, and an imported study guide publishes its notes, theory items and the
+ *  overview revision after that. */
+function testSql(manifest, plans, revisions, guides) {
   const imported = new Map(plans.map(plan => [plan.courseId, plan]))
   const revised = new Map(revisions.map(row => [row.itemId, row]))
-  const published = item => revised.has(item.itemId)
-    ? { ...snapshot(item), revision: 2, payload: revised.get(item.itemId).after } : snapshot(item)
+  const guide = guidePublished(guides)
+  const published = item => guide.overviews.has(item.itemId)
+    ? { ...snapshot(item), ...guide.overviews.get(item.itemId) }
+    : revised.has(item.itemId) ? { ...snapshot(item), revision: 2, payload: revised.get(item.itemId).after } : snapshot(item)
   // Repository courses, then the courses created for their official bank.
   const registry = [...manifest.courses, ...plans.filter(plan => plan.shell)
     .map(plan => ({ contentKey: plan.slug, slug: plan.slug, courseId: plan.courseId, created: plan }))]
@@ -173,7 +178,8 @@ function testSql(manifest, plans, revisions) {
     for (const family of FAMILIES) {
       const bank = family === 'cbt_question' ? imported.get(course.courseId) : undefined
       const expected = (bank ? publishedCbt(bank)
-        : manifest.items.filter(item => item.courseId === course.courseId && item.kind === family).map(published))
+        : [...manifest.items.filter(item => item.courseId === course.courseId && item.kind === family).map(published),
+          ...guide.items.filter(item => item.courseId === course.courseId && item.kind === family)])
         .sort((left, right) => left.sourceKey < right.sourceKey ? -1 : left.sourceKey > right.sourceKey ? 1 : 0)
       // CBT questions never reach a student through the content read (20261025100000_server_run_practice.sql): the
       // student read is checked to withhold them, and their published rows are compared as the owner reads them.
@@ -300,14 +306,22 @@ function correctionSql(manifest, migration) {
   return lines.join('\n') + '\n'
 }
 
+/** Each bank's topics by course code, for the guides' practice buttons. */
+const buildBanks = plans => new Map(plans.map(plan => [plan.code, plan.bank]))
+
 const manifest = buildManifest()
 const { plans } = buildImports(manifest)
 const revisions = overviewRevisions(manifest)
-const outputs = [[SEED_PATH, seedSql(seededManifest(manifest))], [TEST_PATH, testSql(manifest, plans, revisions)],
+checkManifest()
+const guides = guidePlans(manifest, buildBanks(plans), revisions)
+const outputs = [[SEED_PATH, seedSql(seededManifest(manifest))], [TEST_PATH, testSql(manifest, plans, revisions, guides)],
   ...[...new Set(CORRECTIONS.map(correction => correction.migration))]
     .map(migration => [path.join(MIGRATIONS, migration), correctionSql(manifest, migration)]),
   ...bankOutputs(manifest, plans),
-  [path.join(MIGRATIONS, OVERVIEW_MIGRATION), overviewMigrationSql(manifest.actor, revisions)]]
+  [path.join(MIGRATIONS, OVERVIEW_MIGRATION), overviewMigrationSql(manifest.actor, revisions)],
+  systemMigrationOutput(overviewFunctionsSql(manifest.actor, revisions, GUIDE_ACTOR)),
+  ...guideOutputs(guides),
+  [path.join(MIGRATIONS, NOTE_ORDER_MIGRATION), noteOrderSql(manifest)]]
 if (process.argv[2] === '--check') {
   for (const [filename, generated] of outputs) {
     assert.ok(fs.existsSync(filename), `${path.relative(ROOT, filename)} is missing; regenerate from source`)
@@ -318,12 +332,12 @@ if (process.argv[2] === '--check') {
     assert.ok(!fs.existsSync(filename), `${path.relative(ROOT, filename)} must not exist; regenerate from source`)
   }
   process.stdout.write(`Source-derived artifacts match ${manifest.items.length} items across ${manifest.courses.length} courses`
-    + ` and ${plans.length} official bank imports.\n`)
+    + `, ${plans.length} official bank imports and ${guides.length} study guides.\n`)
 } else if (process.argv.length === 2) {
   for (const [filename, generated] of outputs) fs.writeFileSync(filename, generated)
   for (const filename of absentBankOutputs(plans)) fs.rmSync(filename, { force: true })
   process.stdout.write(`Generated ${manifest.items.length} items across ${manifest.courses.length} courses`
-    + ` and ${plans.length} official bank imports.\n`)
+    + `, ${plans.length} official bank imports and ${guides.length} study guides.\n`)
 } else {
   process.stderr.write('Usage: node scripts/managed-content/generate.cjs [--check]\n')
   process.exitCode = 2

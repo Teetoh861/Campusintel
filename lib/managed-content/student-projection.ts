@@ -12,6 +12,8 @@ const overviewShape = z.object({
   keyTakeaways: z.array(z.object({ title: text, description: text })).optional(),
   formulaSheet: z.array(z.object({ name: text, formula: text,
     explanation: text, example: text.optional() })).optional(),
+  outcomes: z.array(text).optional(),
+  assessment: z.array(text).optional(),
 })
 const theoryShape = z.object({ prompt: text, examTip: text.optional() })
 

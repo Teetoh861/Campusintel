@@ -4,6 +4,11 @@
 begin;
 select no_plan();
 
+-- The study guides imported after this correction publish later overview revisions (GST 111's revision three). They are
+-- rolled back here, inside this test's transaction, so the overviews stand as this correction left them.
+select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('%s rolled back for this test', guide))
+  from private.study_guides order by guide;
+
 create function pg_temp.overview(p_slug text) returns uuid language sql as $$
   select i.id from public.managed_content_items i join public.courses c on c.id = i.course_id
     where c.content_key = p_slug and i.kind = 'course_overview' $$;
@@ -19,6 +24,13 @@ create function pg_temp.state() returns jsonb language sql as $$
     'revisions', (select count(*) from public.managed_content_revisions),
     'reviews', (select count(*) from public.managed_content_reviews),
     'publications', (select count(*) from public.managed_content_publications)) $$;
+-- GST 111's rolled-back guide revision stays its current revision, as the history keeps it; that is not a draft.
+create function pg_temp.current(p_slug text) returns integer language sql as $$
+  select case when p_slug = 'use-of-english' then 3 else 2 end $$;
+select is((select jsonb_build_array(i.current_revision, r.authored_by) from public.managed_content_items i
+    join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.current_revision
+    where i.id = pg_temp.overview('use-of-english')), '[3, "00000000-0000-4000-8000-000000000045"]'::jsonb,
+  'GST111 keeps the rolled-back guide revision as its current one');
 create temporary table revised (slug text primary key) on commit drop;
 insert into revised values ('introduction-financial-management'), ('quantitative-analysis-management'),
   ('principles-business-administration-2'), ('use-of-english'), ('leadership-governance'), ('entrepreneurship-innovation'),
@@ -29,7 +41,7 @@ insert into revised values ('introduction-financial-management'), ('quantitative
 -- After the migrations: each revised overview publishes revision two, reviewed and published by the correction.
 -- ---------------------------------------------------------------------------
 select is((select count(*)::int from revised r join public.managed_content_items i on i.id = pg_temp.overview(r.slug)
-    where i.current_revision = 2 and i.approved_revision = 2 and i.published_revision = 2), 14,
+    where i.current_revision = pg_temp.current(r.slug) and i.approved_revision = 2 and i.published_revision = 2), 14,
   'the 14 revised overviews publish revision two');
 select is((select count(*)::int from public.managed_content_revisions where authored_by = '00000000-0000-4000-8000-000000000044'),
   14, 'one new revision each, written by the correction');
@@ -122,9 +134,9 @@ rollback to savepoint published_edit;
 
 savepoint draft_edit;
 insert into public.managed_content_revisions (item_id, revision, payload, authored_by)
-  select pg_temp.overview('use-of-english'), 3, jsonb_set(pg_temp.published('use-of-english'), '{body}', '"Draft"'),
+  select pg_temp.overview('use-of-english'), 4, jsonb_set(pg_temp.published('use-of-english'), '{body}', '"Draft"'),
     '11111111-1111-4111-8111-111111111111';
-update public.managed_content_items set current_revision = 3, lock_version = lock_version + 1
+update public.managed_content_items set current_revision = 4, lock_version = lock_version + 1
   where id = pg_temp.overview('use-of-english');
 create temporary table draft_edit on commit drop as select pg_temp.state() state;
 select throws_ok($$select private.course_overview_revisions('apply')$$, 'P0001',
@@ -142,7 +154,7 @@ select is(private.course_overview_revisions('apply'), 'applied', 'apply after ro
 select is((select count(*)::int from public.managed_content_revisions where authored_by = '00000000-0000-4000-8000-000000000044'),
   14, 'the revisions are reused');
 select is((select count(*)::int from revised r join public.managed_content_items i on i.id = pg_temp.overview(r.slug)
-    where i.current_revision = 2 and i.approved_revision = 2 and i.published_revision = 2), 14,
+    where i.current_revision = pg_temp.current(r.slug) and i.approved_revision = 2 and i.published_revision = 2), 14,
   'the 14 overviews publish revision two again');
 select is((select jsonb_object_agg(r.slug, pg_temp.published(r.slug)) from revised r),
   (select jsonb_object_agg(r.slug, v.payload) from revised r join public.managed_content_revisions v

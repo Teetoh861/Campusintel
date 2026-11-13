@@ -26,8 +26,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
-import { NoteUseTracker } from './NoteUseTracker'
-import { COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
+import { COURSE_LEDE, NotesCard, OverviewSection, PracticeSection, ReadingList,
   StudyNav, TheorySection, overviewBankTopics, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
@@ -172,10 +171,8 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
         action={<RequestMaterialLink href={materialsHref} prominent />}>
         Notes, CBT practice and theory questions are not available for this course. You can request study material below.
       </Notice>}
-      {sections.includes('notes') && learning && <>
-        <NotesSection notes={learning.notes} number={number('notes')} />
-        <NoteUseTracker courseSlug={route.slug} continuityToken={continuityToken} />
-      </>}
+      {sections.includes('notes') && learning && <NotesCard notes={learning.notes} href={`${route.href}/notes`}
+        number={number('notes')} />}
       {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} topics={topics} number={number('cbtPractice')} />}
       {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
         practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}

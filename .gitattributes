@@ -1,0 +1,3 @@
+# The owner's study guide sources are committed exactly as received (SHA-256 manifest),
+# so their trailing spaces are not whitespace errors.
+scripts/managed-content/study-guides/source/** -whitespace
