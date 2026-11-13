@@ -1,4 +1,4 @@
--- supabase/tests/study_guide_gst111.test.sql — The GST 111 study guide import (20261111100000): 15 guide topics, 15
+-- supabase/tests/study_guide_gst111.test.sql — The GST 111 study guide import (20261112120000): 15 guide topics, 15
 -- theory questions with their answers and the overview's two new lists, published through the managed-content history.
 -- A rerun changes nothing; an edited note, overview or theory item is refused with nothing changed; rollback brings back
 -- the course exactly as it was, and the guide applies again.

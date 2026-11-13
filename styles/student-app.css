@@ -567,8 +567,11 @@ ol.student-guide-list { list-style: decimal; }
   .student-guide-pager { grid-template-columns: 1fr 1fr; }
   .student-guide-pager > a:last-child:not(:first-child) { text-align: right; }
 }
-/* A wide table scrolls inside its box. The shading at an edge (scroll shadows that follow the content) shows there
-   is more to that side; it disappears once the table is scrolled to that end. */
+/* A table takes the width of its box whenever its text can fold to fit: cells have no set width, so on a phone a
+   table of three or four columns wraps its text and fits the screen, and on a wide screen every column is in view.
+   Text folds between words: a word is not split to make a table fit. Only a table whose words cannot sit side by
+   side scrolls, inside its own box. The shading at an edge (scroll shadows that follow the content) shows there is
+   more to that side; it disappears once the table is scrolled to that end. */
 .student-guide-table { max-width: 100%; overflow-x: auto; border: 1px solid var(--student-border); border-radius: 10px;
   background:
     linear-gradient(to right, var(--student-surface) 30%, transparent) left / 32px 100% no-repeat local,
@@ -579,7 +582,7 @@ ol.student-guide-list { list-style: decimal; }
 .student-guide-table:focus-visible { outline: 2px solid var(--student-focus, var(--student-link)); outline-offset: 2px; }
 /* Separate borders: each cell carries its own line, so the pinned first column keeps its row lines as it moves. */
 .student-guide-table table { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 15px; line-height: 1.45; }
-.student-guide-table th, .student-guide-table td { min-width: 7.5rem; max-width: 22rem; padding: 8px 12px; border-bottom: 1px solid var(--student-border);
+.student-guide-table th, .student-guide-table td { max-width: 22rem; padding: 8px 12px; border-bottom: 1px solid var(--student-border);
   text-align: left; vertical-align: top; overflow-wrap: break-word; }
 .student-guide-table th { color: var(--student-primary); font-weight: 700; }
 .student-guide-table tr:last-child td { border-bottom: 0; }
@@ -590,6 +593,10 @@ ol.student-guide-list { list-style: decimal; }
   background: var(--student-surface); box-shadow: inset -1px 0 0 var(--student-border); }
 .student-guide-table tbody tr > :first-child {
   background: linear-gradient(var(--student-border), var(--student-border)) top / 100% 1px no-repeat, var(--student-surface); }
+/* On a phone, table text is a size smaller and cells sit closer, so more tables fit without splitting a word, and a
+   pinned first column takes no more than about a third of the screen. */
 @media (max-width: 599px) {
-  .student-guide-table tr > :first-child { min-width: 6rem; max-width: 8.5rem; }
+  .student-guide-table table { font-size: 14px; }
+  .student-guide-table th, .student-guide-table td { padding: 8px; }
+  .student-guide-table tr > :first-child { max-width: 8.5rem; }
 }

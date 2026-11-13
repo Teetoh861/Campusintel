@@ -1,4 +1,4 @@
--- supabase/migrations/20261111090000_study_guide_notes.sql
+-- supabase/migrations/20261112110000_study_guide_notes.sql
 -- Study guide notes. A guide topic is a note of type guide_topic: a tree of plain text with bold and italic flags,
 -- paragraphs, lists, tables and preformatted text, parsed from the owner's guides when the repository is built and
 -- rendered by the site as React elements, so no HTML ever reaches a page. Each topic's theory question and answer are
@@ -159,8 +159,8 @@ end;
 $$;
 
 -- The payload check, as 20261002120000_managed_source_payloads.sql wrote it, with guide topics and the two overview
--- lists added. Every other family and note type is checked exactly as before, and the older note types refuse the
--- guide fields.
+-- lists added. Every other family and note type is checked exactly as before, the older note types refuse the
+-- guide fields, and a guide topic refuses theirs.
 create or replace function private.assert_managed_payload(p_kind text, p_payload jsonb)
 returns void language plpgsql set search_path = '' as $$
 declare
@@ -201,7 +201,9 @@ begin
       raise exception using errcode = '22023', message = 'Invalid managed content';
     end if;
     if p_payload->>'noteType' = 'guide_topic' then
-      if not private.valid_guide_topic(p_payload) then
+      -- A guide topic carries none of the older note types' fields, as the site's own check requires.
+      if not private.valid_guide_topic(p_payload) or
+         p_payload ?| array['keyPoints','examTip','example','formula'] then
         raise exception using errcode = '22023', message = 'Invalid managed content';
       end if;
     elsif p_payload->>'noteType' = 'topic_note' then

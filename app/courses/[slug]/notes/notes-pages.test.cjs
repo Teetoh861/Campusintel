@@ -214,3 +214,29 @@ test('a wide table keeps its first column in view, with its row lines, while the
   assert.match(rule('.student-guide-table tbody tr > :first-child'), /linear-gradient\(var\(--student-border\), var\(--student-border\)\) top \/ 100% 1px/)
   assert.match(rule('.student-guide-table table'), /border-collapse: separate; border-spacing: 0;/)
 })
+
+test('a table folds its text to fit its box before it scrolls, and never splits a word to fit', () => {
+  const css = require('postcss').parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '../../../../styles/student-app.css'), 'utf8'))
+  const rules = []
+  css.walkRules(rule => { if (rule.selector.includes('.student-guide-table')) rules.push(rule) })
+  const declared = (selector, media = null) => rules.filter(rule => rule.selector === selector &&
+    (media === null ? rule.parent.type === 'root' : rule.parent.type === 'atrule' && rule.parent.params === media))
+    .flatMap(rule => rule.nodes.filter(node => node.type === 'decl').map(node => `${node.prop}: ${node.value}`))
+  // No cell has a width or a least width at any screen size, so three or four columns fold to fit a phone and ten
+  // columns fit a wide screen. (A least width of 7.5rem a cell kept both from fitting.)
+  for (const rule of rules.filter(rule => /\b(th|td)\b|tr > /.test(rule.selector))) {
+    rule.walkDecls(/^(min-)?width$/, decl => assert.fail(`${rule.selector} sets ${decl.prop}`))
+  }
+  // The table is never narrower than its box, and the box scrolls only a table that is wider than it.
+  assert.ok(declared('.student-guide-table table').includes('min-width: 100%'))
+  assert.ok(declared('.student-guide-table').includes('max-width: 100%') && declared('.student-guide-table').includes('overflow-x: auto'))
+  // Text folds between words. Only a string too long for a whole column (a web address) is split.
+  assert.ok(declared('.student-guide-table th, .student-guide-table td').includes('overflow-wrap: break-word'))
+  for (const rule of rules) rule.walkDecls(/^(overflow-wrap|word-break|hyphens)$/, decl =>
+    assert.equal(`${decl.prop}: ${decl.value}`, 'overflow-wrap: break-word', rule.selector))
+  // On a phone the text is a size smaller and the cells closer, so more tables fit with their words whole.
+  const phone = '(max-width: 599px)'
+  assert.deepEqual(declared('.student-guide-table table', phone), ['font-size: 14px'])
+  assert.deepEqual(declared('.student-guide-table th, .student-guide-table td', phone), ['padding: 8px'])
+  assert.deepEqual(declared('.student-guide-table tr > :first-child', phone), ['max-width: 8.5rem'])
+})

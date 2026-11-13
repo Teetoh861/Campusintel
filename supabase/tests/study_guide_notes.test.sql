@@ -1,4 +1,4 @@
--- supabase/tests/study_guide_notes.test.sql — The study guide notes system (20261111090000): the guide topic payload
+-- supabase/tests/study_guide_notes.test.sql — The study guide notes system (20261112110000): the guide topic payload
 -- and the two overview lists are checked, notes follow their position, guide sources are refused when a chunk is
 -- missing or changed, and only migrations can reach any of it.
 begin;
@@ -42,6 +42,15 @@ select ok(pg_temp.refused(payload || jsonb_build_object(key, value)), label)
 select ok(pg_temp.refused((select payload from guide) - 'lessons'), 'lessons are required');
 select ok(pg_temp.refused(jsonb_build_object('title', 'T', 'body', 'B', 'noteType', 'topic_note', 'keyPoints',
   jsonb_build_array('a'), 'lessons', '[]'::jsonb)), 'the older note types refuse guide fields');
+-- A guide topic refuses the older note types' fields, each of them, exactly as the site's check does
+-- (lib/operator/editor-contract.ts: the guide topic shape is strict).
+select ok(pg_temp.refused(payload || jsonb_build_object(key, value)), label)
+  from guide, (values
+    ('keyPoints', '["A key point"]'::jsonb, 'a guide topic with key points is refused'),
+    ('examTip', '"An exam tip"', 'a guide topic with an exam tip is refused'),
+    ('example', '"An example"', 'a guide topic with a calculator example is refused'),
+    ('formula', '"a + b"', 'a guide topic with a formula is refused')
+  ) as foreign_field(key, value, label);
 select lives_ok($$select private.assert_managed_payload('note', '{"title":"T","body":"B","noteType":"topic_note","keyPoints":["a"]}')$$,
   'a topic note is still accepted');
 -- Nesting stops at depth 6.

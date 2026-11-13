@@ -173,12 +173,13 @@ export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
   </article>
 }
 
-/** Notes on the course page: one compact card that opens the topic list. Each topic is read on its own page. */
+/** Notes on the course page: one compact card that opens the topic list. Each topic is read on its own page. The card
+ * is as wide as a practice topic row (student-topic-card), so the two sections line up on a wide screen. */
 export function NotesCard({ notes, href, number }: {
   notes: ReadonlyArray<ManagedNote>; href: string; number: number
 }): ReactElement {
   return <StudySection id="notes" number={number}>
-    <Link href={href} prefetch={false} className="student-topic-row student-focus-control">
+    <Link href={href} prefetch={false} className="student-topic-row student-topic-card student-focus-control">
       <span className="student-topic-text"><b>Open notes</b><span>{notes.length === 1 ? '1 topic' : `${notes.length} topics`}</span></span>
       <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
     </Link>

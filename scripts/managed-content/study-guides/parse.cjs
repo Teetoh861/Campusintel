@@ -16,39 +16,79 @@ function refuseUnsafe(text, where) {
   assert.ok(!/&(#\d+|#x[0-9a-f]+|[a-z]+);/i.test(plain), `${where}: HTML entities are not allowed`)
 }
 
-/** One line of inline text as spans of plain text with bold and italic flags. */
+// CommonMark's character classes for emphasis: the start and end of a line count as whitespace, and punctuation is
+// every Unicode punctuation or symbol character.
+const isSpace = char => char === undefined || /\s/u.test(char)
+const isPunctuation = char => char !== undefined && /[\p{P}\p{S}]/u.test(char)
+
+/** One line of inline text as spans of plain text with bold and italic flags.
+ *  Asterisks follow CommonMark's emphasis rules (https://spec.commonmark.org, "Emphasis and strong emphasis"):
+ *  - a run of asterisks may open emphasis only if it is left-flanking, and close it only if it is right-flanking;
+ *  - a closer takes the nearest earlier opener, two asterisks from each for bold when both have two, otherwise one
+ *    for italic, and runs caught between them can no longer match;
+ *  - the rule of three: when either run could both open and close, they do not match if their lengths add up to a
+ *    multiple of three, unless both lengths are multiples of three;
+ *  - an asterisk that matches nothing is literal text: a truncation sign (teen*), a USSD code (*XYZ#). */
 function parseInline(text, where) {
   refuseUnsafe(text, where)
-  const tokens = []
-  let buffer = ''
-  const flush = () => { if (buffer) tokens.push({ kind: 'text', value: buffer }); buffer = '' }
-  for (let index = 0; index < text.length; index++) {
-    const char = text[index]
-    if (char === '\\' && index + 1 < text.length && ESCAPABLE.has(text[index + 1])) {
-      buffer += text[index + 1]; index++; continue
+  // The line's characters with escapes resolved; an unescaped asterisk is a delimiter.
+  const chars = []
+  const points = Array.from(text)
+  for (let index = 0; index < points.length; index++) {
+    if (points[index] === '\\' && index + 1 < points.length && ESCAPABLE.has(points[index + 1])) {
+      chars.push({ char: points[index + 1], star: false }); index++; continue
     }
-    if (char === '*') {
-      flush()
-      if (text[index + 1] === '*') { tokens.push({ kind: 'bold' }); index++ } else tokens.push({ kind: 'italic' })
-      continue
-    }
-    buffer += char
+    chars.push({ char: points[index], star: points[index] === '*' })
   }
-  flush()
-  assert.equal(tokens.filter(token => token.kind === 'bold').length % 2, 0, `${where}: unbalanced bold`)
-  // A lone asterisk with no partner (a USSD code such as *XYZ#) is literal text.
-  const italics = tokens.filter(token => token.kind === 'italic')
-  if (italics.length % 2 === 1) Object.assign(italics[italics.length - 1], { kind: 'text', value: '*' })
+  // Delimiter runs. `first` and `last` bound the asterisks a run has not yet given to a match.
+  const runs = []
+  for (let index = 0; index < chars.length; index++) {
+    if (!chars[index].star) continue
+    let last = index
+    while (last + 1 < chars.length && chars[last + 1].star) last++
+    const before = chars[index - 1]?.char, after = chars[last + 1]?.char
+    runs.push({ first: index, last, length: last - index + 1, active: true,
+      canOpen: !isSpace(after) && (!isPunctuation(after) || isSpace(before) || isPunctuation(before)),
+      canClose: !isSpace(before) && (!isPunctuation(before) || isSpace(after) || isPunctuation(after)) })
+    index = last
+  }
+  // What each matched asterisk does where it stands: start or end bold or italic. The second asterisk of a bold pair
+  // does nothing. Asterisks with no entry are literal.
+  const effects = new Map()
+  runs.forEach((closer, position) => {
+    if (!closer.active || !closer.canClose) return
+    while (closer.first <= closer.last) {
+      let at = position - 1
+      for (; at >= 0; at--) {
+        const opener = runs[at]
+        if (!opener.active || !opener.canOpen || opener.first > opener.last) continue
+        const eitherDoesBoth = (opener.canOpen && opener.canClose) || (closer.canOpen && closer.canClose)
+        if (eitherDoesBoth && (opener.length + closer.length) % 3 === 0 && !(opener.length % 3 === 0 && closer.length % 3 === 0)) continue
+        break
+      }
+      if (at < 0) return
+      const opener = runs[at]
+      const bold = opener.last - opener.first >= 1 && closer.last - closer.first >= 1
+      const flag = bold ? 'bold' : 'italic', used = bold ? 2 : 1
+      // The opener gives its innermost asterisks and the closer its first ones.
+      effects.set(opener.last - used + 1, { [flag]: 1 })
+      effects.set(closer.first, { [flag]: -1 })
+      if (bold) { effects.set(opener.last, {}); effects.set(closer.first + 1, {}) }
+      opener.last -= used
+      closer.first += used
+      for (let between = at + 1; between < position; between++) runs[between].active = false
+    }
+  })
   const spans = []
-  let bold = false, italic = false
-  for (const token of tokens) {
-    if (token.kind === 'bold') { bold = !bold; continue }
-    if (token.kind === 'italic') { italic = !italic; continue }
+  let bold = 0, italic = 0
+  chars.forEach(({ char }, index) => {
+    const effect = effects.get(index)
+    if (effect) { bold += effect.bold ?? 0; italic += effect.italic ?? 0; return }
     const last = spans[spans.length - 1]
-    if (last && Boolean(last.bold) === bold && Boolean(last.italic) === italic) { last.text += token.value; continue }
-    spans.push({ text: token.value, ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}) })
-  }
-  assert.ok(!bold && !italic, `${where}: unclosed emphasis`)
+    if (last && Boolean(last.bold) === bold > 0 && Boolean(last.italic) === italic > 0) { last.text += char; return }
+    spans.push({ text: char, ...(bold > 0 ? { bold: true } : {}), ...(italic > 0 ? { italic: true } : {}) })
+  })
+  assert.ok(bold === 0 && italic === 0, `${where}: emphasis left open`)
   return spans
 }
 

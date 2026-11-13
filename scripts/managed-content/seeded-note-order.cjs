@@ -1,10 +1,10 @@
 // scripts/managed-content/seeded-note-order.cjs — Give the seeded notes the order the seed lists them in.
-// Notes follow their position (20261111090000_study_guide_notes.sql); the seed wrote none, so its notes would follow
+// Notes follow their position (20261112110000_study_guide_notes.sql); the seed wrote none, so its notes would follow
 // their ids. This migration numbers each course's seeded notes in seed order, and only notes the seed still owns
 // without a position: an operator's order, once set, is kept.
 const assert = require('node:assert/strict')
 
-const NOTE_ORDER_MIGRATION = '20261111110000_seeded_note_order.sql'
+const NOTE_ORDER_MIGRATION = '20261112130000_seeded_note_order.sql'
 
 /** Each seeded note with its position: 1, 2, … within its course, in the order the seed lists them. */
 function seededNoteOrder(manifest) {

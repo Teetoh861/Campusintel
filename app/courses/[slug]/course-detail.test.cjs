@@ -182,6 +182,11 @@ test('notes are one compact card that opens the topic list; no note is read on t
   const cards = anchors(html).filter(link => link.includes('href="/courses/central-route/notes"'))
   assert.equal(cards.length, 1)
   assert.equal(text(cards[0]).trim(), 'Open notes 3 topics')
+  // The card is a topic row held to the width of the practice rows below it: one rule sets both widths.
+  assert.match(cards[0], /class="student-topic-row student-topic-card student-focus-control"/)
+  const rows = fs.readFileSync(path.join(__dirname, '../../../styles/instant-practice.css'), 'utf8')
+  assert.match(rows, /^\.student-topic-list, \.student-topic-card \{ max-width: 720px; \}$/m)
+  assert.doesNotMatch(rows, /^\.student-topic-(list|card|row) \{[^}]*max-width/m, 'neither sets a width of its own')
   for (const body of ['Plain body', 'Topic body', 'Point A', 'Trick body', 'Tip text']) assert.ok(!html.includes(body), body)
   assert.doesNotMatch(html, /data-note-item/, 'the plan-use tracker runs on the topic page, not here')
   const rails = [...html.matchAll(/<code>(.*?)<\/code>/g)].map(match => match[1].replace(/<[^>]*>/g, ''))

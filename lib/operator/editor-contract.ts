@@ -24,7 +24,7 @@ const topicNoteContent = textContent.extend({ noteType: z.literal('topic_note'),
   keyPoints: z.array(studyText).min(1).max(200), examTip: studyText.optional() }).strict()
 const calculatorTrickContent = textContent.extend({ noteType: z.literal('calculator_trick'),
   example: studyText, formula: studyText.optional() }).strict()
-// A study guide topic (20261111090000_study_guide_notes.sql, private.valid_guide_topic): plain text spans with bold and
+// A study guide topic (20261112110000_study_guide_notes.sql, private.valid_guide_topic): plain text spans with bold and
 // italic flags inside paragraphs, lists, tables and preformatted text. Nothing in it is ever HTML.
 const guideSpan = z.object({ text: z.string().min(1).max(20000), bold: z.literal(true).optional(),
   italic: z.literal(true).optional() }).strict()
