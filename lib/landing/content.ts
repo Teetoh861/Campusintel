@@ -1,21 +1,20 @@
 // lib/landing/content.ts — Every word on the public landing page, typed so sections stay copy-free.
+import { LANDING_FIGURES } from './figures'
 
-export type LandingAnchor = 'features' | 'try' | 'how' | 'faq'
+export type LandingAnchor = 'try' | 'features' | 'faq'
 export type TextLink = { label: string; href: string }
-export type IconName =
-  | 'past-questions' | 'notes' | 'gst-free' | 'upload' | 'theory' | 'exam' | 'tutors'
-  | 'faculty' | 'vetted' | 'organised' | 'free-trial' | 'quiz-ready'
+export type IconName = 'past-questions' | 'notes' | 'exam' | 'upload'
 
 export type LandingImage = { src: string; width: number; height: number; alt: string }
 
-export type Feature = { icon: IconName; title: string; text: string; highlight?: boolean; badge?: string; campusBot?: boolean }
+export type Feature = { icon: IconName; title: string; text: string; highlight?: boolean }
 export type ShowcaseRow = {
   eyebrow: string
   title: string
   text: string
   ticks: string[]
-  phones: LandingImage[]
-  chip?: { icon: IconName; label: string }
+  /** Real app screens, each 350 CSS px wide at 2x. */
+  shots: LandingImage[]
   flip?: boolean
 }
 export type SampleQuestion = {
@@ -29,12 +28,9 @@ export type SampleQuestion = {
 }
 export type FaqItem = { question: string; answer: string }
 
-// Catalogue figures. The faculty catalogue lives in the database, not in code, so these are the page's only source.
-const DEPARTMENT_COUNT = 8
-const LEVEL_RANGE = '100L–300L'
-
 const REGISTER = '/register'
 const LOGIN = '/login'
+const NUMBER = new Intl.NumberFormat('en-GB')
 
 export const landingContent = {
   brand: {
@@ -50,99 +46,32 @@ export const landingContent = {
   header: {
     navLabel: 'Primary',
     links: [
-      { label: 'Features', href: '#features' },
       { label: 'Try a question', href: '#try' },
-      { label: 'How it works', href: '#how' },
       { label: 'FAQ', href: '#faq' },
-      { label: 'Browse courses', href: '/courses' },
     ] satisfies TextLink[],
     login: { label: 'Log in', href: LOGIN },
     register: { label: 'Create account', href: REGISTER },
-    menuLabel: 'Menu',
-    menuOpen: 'Open menu',
-    menuClose: 'Close menu',
   },
   hero: {
-    chipStrong: 'Free',
-    chipText: 'to start · GST courses free for every faculty',
-    tagline: 'Study Hard. Study Smart...',
     titleLead: 'Walk into every exam already',
     titleEmphasis: 'prepared.',
-    lead: 'Verified past questions, notes that follow your course outline, and suggested answers for theory. Everything for your exact courses, in one place.',
+    lead: 'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.',
     primary: { label: 'Start for free', href: REGISTER },
     secondary: { label: 'Try a real question', href: '#try' },
     earlyAccess: 'Before launch: join Early Access for a free month',
-    trust: [`${DEPARTMENT_COUNT} management science departments`, '100L to 300L'],
-    chips: [
-      { icon: 'past-questions', title: 'Past questions', note: 'Verified answers' },
-      { icon: 'exam', title: 'Exam mode', note: 'Timed, like the real hall' },
-    ] satisfies Array<{ icon: IconName; title: string; note: string }>,
   },
-  strip: {
-    label: 'Courses on CampusIntell',
-    heading: "Practice for the courses you're actually taking",
-    freeSuffix: 'free',
-    courses: ['ACC 101', 'AMS 101', 'BUA 102', 'ECO 101', 'FIN 101', 'INS 102', 'SOC 101', 'GST 112', 'LAG-BUA 111',
-      'LAG-BUA 125', 'ACS 101', 'PUL 101', 'ACC-CM 201', 'ACC-CM 204', 'ACS 209', 'BUA 201', 'BUA 204', 'BUA 205',
-      'BUA 216', 'ECO 203', 'ENT 211', 'FIN-CM 209', 'FIN 216', 'TAX-CM 223', 'GST 212'],
-  },
-  features: {
-    id: 'features' satisfies LandingAnchor,
-    eyebrow: 'What you get',
-    title: 'Built from your class notes.',
-    text: 'Class notes, past questions and course outlines go in. Study guides and practice questions come out.',
-    items: [
-      { icon: 'past-questions', highlight: true, title: 'Past questions, verified',
-        text: 'Old past questions plus new questions drawn from your own course, turned into practice sets. Every answer is checked before it goes live.' },
-      { icon: 'notes', title: 'Notes that follow your outline',
-        text: 'Study guides compiled from class notes and recommended textbooks, explained topic by topic in the order your course is taught.' },
-      { icon: 'upload', campusBot: true, title: 'Upload notes, get a quiz',
-        text: 'No material for your course yet? Upload what you have and Campus Bot turns it into practice questions.' },
-      { icon: 'theory', title: 'Theory with suggested answers',
-        text: "Write your answer, then compare it with the suggested answer and note what you'd improve." },
-      { icon: 'exam', title: 'Exam mode',
-        text: "Timed practice that holds your results until the end, so exam day feels like something you've done before." },
-      { icon: 'tutors', badge: 'Coming soon', title: 'Peer Tutors',
-        text: "Book a session with alumni and senior students who've already passed your course." },
-    ] satisfies Feature[],
-  },
-  showcase: [
-    {
-      eyebrow: 'From your notes',
-      title: 'Upload your notes. Get a quiz in seconds.',
-      text: 'Upload handouts or your own notes. Campus Bot reads them and builds practice questions from exactly what you were taught.',
-      ticks: ['Works with PDF, Word and text files', 'Questions come with explanations'],
-      phones: [
-        { src: '/landing/upload.jpg', width: 432, height: 896, alt: 'CampusIntell upload screen' },
-        { src: '/landing/question.jpg', width: 432, height: 896, alt: 'A practice question generated from notes' },
-      ],
-      chip: { icon: 'quiz-ready', label: 'Quiz ready' },
-    },
-    {
-      eyebrow: 'Theory questions',
-      title: 'Write your answer. Compare and improve.',
-      text: 'Theory is where marks are won and lost. Type your answer, then compare it with the suggested answer.',
-      ticks: ['Compare your answer with a suggested answer', "Note what you'd improve", 'Rewrite and try again until it sticks'],
-      phones: [
-        { src: '/landing/theory.webp', width: 432, height: 896, alt: 'A theory answer beside the suggested answer' },
-      ],
-      flip: true,
-    },
-  ] satisfies ShowcaseRow[],
   tryQuestion: {
     id: 'try' satisfies LandingAnchor,
     eyebrow: 'Try it now',
     title: 'Answer a real question. No sign-up.',
-    text: 'These come straight from our question banks. Tap an option and see the explanation, just like inside the app.',
+    text: 'These come straight from our GST 111 question bank.',
     cardLabel: 'Live practice question',
     modeSwitch: 'Exam mode',
-    modeInstant: 'Instant feedback',
-    modeExam: 'Exam mode: timed, results at the end',
+    modeInstant: 'Each answer is explained as you go.',
+    modeExam: 'Your results come at the end.',
     labelPractice: 'Practice',
     labelExam: 'Exam mode',
     progress: 'Question {current} of {total}',
-    promptInstant: 'Pick an answer to see why it is right.',
-    promptExam: 'Exam mode: answers are revealed at the end.',
     savedExam: 'Answer saved. You will see the result at the end.',
     correct: 'Correct',
     correctAnswer: 'Correct answer',
@@ -151,11 +80,11 @@ export const landingContent = {
     next: 'Next question',
     finish: 'See your score',
     bubble: {
-      start: 'Try me. Tap an answer!',
+      start: 'Ready when you are.',
       right: 'Correct! Nice one.',
-      wrong: 'Not quite. Read why below.',
+      wrong: "Not quite. Here's why.",
       saved: 'Saved. Results at the end.',
-      perfect: 'You are exam ready!',
+      perfect: 'Nice work!',
       other: 'Practice makes perfect.',
     },
     score: '{right}/{total}',
@@ -163,7 +92,7 @@ export const landingContent = {
     endPerfect: 'Perfect score.',
     endSome: 'Good start.',
     endNone: 'Now you know why.',
-    endText: 'Practise real questions like these for your exact courses.',
+    endText: 'Practise real questions like these for your courses.',
     cta: { label: 'Get the full question bank', href: REGISTER },
     again: 'Play again',
     // GST 111 is free. Copied word for word from the official GST111 bank (GST111_Platform.json), by bank ID.
@@ -186,51 +115,52 @@ export const landingContent = {
       },
     ] satisfies SampleQuestion[],
   },
-  how: {
-    id: 'how' satisfies LandingAnchor,
-    eyebrow: 'How it works',
-    title: 'Your semester, set up in a minute.',
-    text: 'Choose your courses once. Everything is arranged around them.',
-    steps: [
-      { title: 'Pick your path',
-        text: "Department, level, semester. We show your shared courses and your department's own courses." },
-      { title: 'Practise two ways',
-        text: 'Instant feedback explains each answer as you go. Exam mode times you and saves results for the end.' },
-      { title: 'Close the gaps',
-        text: 'See the right answer and where you went wrong, so you learn the topic, not just the question.' },
-    ],
-  },
-  why: {
-    eyebrow: 'Why CampusIntell',
-    title: 'Not another generic study platform.',
-    cards: [
-      { icon: 'faculty', title: 'Made for your faculty',
-        text: "Built around the actual courses in your faculty, not a one-size-fits-all syllabus. We're starting with Management Sciences and expanding to more faculties." },
-      { icon: 'vetted', title: 'Every question vetted',
-        text: "Every question is vetted by our team before it goes up. Spot something off? Tap the flag button and we'll review it." },
-      { icon: 'organised', title: 'Nothing gets lost',
-        text: 'Notes get scattered across group chats and disappear every semester. Here they stay organised by course and topic.' },
-      { icon: 'free-trial', title: 'Try before you pay',
-        text: 'Get your free pass and try your department courses free for 3 days. GST courses are always free.' },
-    ] satisfies Array<{ icon: IconName; title: string; text: string }>,
-    figures: [
-      { value: String(DEPARTMENT_COUNT), label: 'management science departments' },
-      { value: LEVEL_RANGE, label: 'both semesters at every level' },
-      { value: 'GST free', label: 'for UNILAG students in every faculty' },
-    ],
-  },
-  otherFaculties: {
-    eyebrow: 'Other faculties',
-    title: 'Your faculty not here yet?',
-    text: "You can still sign up today. We're adding more faculties, and you'll be first to know when yours goes live.",
-    signUp: { label: 'Sign up free', href: REGISTER },
-    waitlist: 'Join the waitlist',
-    waitlistMessage: "I'd like to join the waitlist for my faculty.",
+  features: {
+    id: 'features' satisfies LandingAnchor,
+    eyebrow: 'What you get',
+    title: 'Practice built around your courses.',
     items: [
-      { icon: 'gst-free', title: 'GST courses, free', text: 'Free for every UNILAG student, in every faculty.' },
-      { icon: 'upload', title: 'Quiz yourself from your own PDFs', text: 'Upload your notes and generate practice questions.' },
-      { icon: 'campus-bot', title: 'Campus Bot, the tutor that teaches you', text: "Ask Campus Bot to explain anything you don't understand." },
-    ] satisfies Array<{ icon: IconName | 'campus-bot'; title: string; text: string }>,
+      { icon: 'past-questions', highlight: true, title: 'Verified past questions',
+        text: 'Past questions and new questions for your course, each one vetted by our team.' },
+      { icon: 'notes', title: 'Study guides by topic',
+        text: 'Notes that follow your course outline, one topic at a time.' },
+      { icon: 'exam', title: 'Exam mode',
+        text: 'Timed practice that holds your results until the end.' },
+      { icon: 'upload', title: 'Campus Bot practice from your notes',
+        text: 'When a course has no study materials yet, Campus Bot builds practice questions from your notes.' },
+    ] satisfies Feature[],
+  },
+  // The only place that explains Campus Bot practice and theory practice.
+  showcase: [
+    {
+      eyebrow: 'From your notes',
+      title: 'Practice questions from your own notes.',
+      text: 'For a course with no study materials yet, Campus Bot builds practice questions from the notes you upload.',
+      ticks: ['PDF, Word and text files', 'An explanation and a quote from your notes with each answer'],
+      shots: [
+        { src: '/landing/upload-notes.webp', width: 700, height: 696, alt: 'The card for uploading notes on the Practise from your notes screen' },
+        { src: '/landing/campus-bot-question.webp', width: 700, height: 1542, alt: 'A Campus Bot question, answered, with its explanation and a quote from the notes' },
+      ],
+    },
+    {
+      eyebrow: 'Theory questions',
+      title: 'Theory questions with suggested answers.',
+      text: 'Practise theory questions and see a suggested answer for each one.',
+      ticks: [],
+      shots: [
+        { src: '/landing/theory-answer.webp', width: 700, height: 1228, alt: 'A theory question with a typed answer and the suggested answer' },
+      ],
+      flip: true,
+    },
+  ] satisfies ShowcaseRow[],
+  // Counted from the repository's content when the site is built (scripts/landing/figures.cjs).
+  courses: {
+    label: 'Courses on CampusIntell',
+    figures: [
+      { value: NUMBER.format(LANDING_FIGURES.courses), label: 'courses ready to practise' },
+      { value: NUMBER.format(LANDING_FIGURES.questions), label: 'questions' },
+      { value: NUMBER.format(LANDING_FIGURES.departments), label: 'departments' },
+    ],
   },
   faq: {
     id: 'faq' satisfies LandingAnchor,
@@ -241,31 +171,31 @@ export const landingContent = {
     helpJoin: 'or email',
     items: [
       { question: 'Which courses are available?',
-        answer: `Every course across the ${DEPARTMENT_COUNT} departments of the Faculty of Management Sciences, from 100 to 300 level. Material is added course by course, and you can request what's missing. General Studies (GST) courses are free for students in every faculty at UNILAG.` },
+        answer: `Courses for the ${LANDING_FIGURES.departments} departments of the Faculty of Management Sciences at UNILAG, added course by course.` },
       { question: 'Where do the questions come from?',
-        answer: 'From real past papers, class tests, the course outline and class notes. We also generate new questions from your course materials. Every question is vetted by our team and can be practised in exam mode.' },
+        answer: 'From past papers, class tests, course outlines and class notes, and our team vets every question.' },
       { question: 'What if my course has no material yet?',
-        answer: "Upload your own notes and Campus Bot will generate practice from them. You can also request the course in the WhatsApp community, and if anyone has material for it, we'll share it there." },
-      { question: 'How does theory practice work?',
-        answer: "You type your answer, then compare it with the suggested answer, note what you'd improve and try again." },
+        answer: 'Campus Bot builds practice questions from the notes you upload for that course.' },
       { question: 'Can I try it before paying?',
-        answer: 'Yes. Get your free pass and try your department courses free for 3 days. GST courses are always free.' },
+        answer: 'Yes: GST courses are free for every UNILAG student, and a new account can start a free pass for its department courses.' },
     ] satisfies FaqItem[],
   },
   finalCta: {
     title: 'Your next exam is closer than you think.',
-    text: "Set up your semester in a minute and start practising today. It's free to start.",
+    text: 'Create your account and start practising today.',
     primary: { label: 'Start for free', href: REGISTER },
     secondary: { label: 'Log in', href: LOGIN },
     community: 'Join the WhatsApp community',
+    facultyLead: 'Faculty not listed?',
+    waitlist: 'Join the waitlist on WhatsApp',
+    waitlistMessage: "I'd like to join the waitlist for my faculty.",
   },
   footer: {
-    text: 'Structured notes, verified past questions and timed practice for your exact courses.',
+    text: 'Verified past questions, study guides and timed exam practice for UNILAG students.',
     productHeading: 'Product',
     product: [
-      { label: 'Features', href: '#features' },
       { label: 'Try a question', href: '#try' },
-      { label: 'How it works', href: '#how' },
+      { label: 'What you get', href: '#features' },
       { label: 'FAQ', href: '#faq' },
     ] satisfies TextLink[],
     contactHeading: 'Contact',
@@ -274,7 +204,6 @@ export const landingContent = {
     instagram: 'Instagram',
     x: 'X (Twitter)',
     communityHeading: 'Community',
-    newsletter: 'Newsletter coming soon.',
     copyright: '© {year} CampusIntell',
   },
   newTab: '(opens in a new tab)',
