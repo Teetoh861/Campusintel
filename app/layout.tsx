@@ -22,21 +22,24 @@ const hanken = Hanken_Grotesk({
   variable: '--font-hanken',
 })
 
+const SITE_TITLE = 'CampusIntell'
+const SITE_DESCRIPTION =
+  'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.'
+
 export const metadata: Metadata = {
-  title: 'CampusIntell',
-  description:
-    'Academic intelligence for the University of Lagos. Past questions, decoded exam patterns and the materials that actually move your grade.',
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
   openGraph: {
-    title: 'CampusIntell',
-    description: 'The inside track on every paper.',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     type: 'website',
     locale: 'en_NG',
     siteName: 'CampusIntell',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CampusIntell',
-    description: 'The inside track on every paper.',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 }
 

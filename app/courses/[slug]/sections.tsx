@@ -32,7 +32,16 @@ export function studySections({ study, learning, practice, textbooks }: {
 }): StudySectionId[] {
   const families = study === null ? [] : STUDY_FAMILIES.map(family => family.id).filter(id =>
     study[id] && (id === 'cbtPractice' ? practice !== null : learning !== null))
-  return [...families, ...(learning?.overview ? ['overview' as const] : []), ...(textbooks > 0 ? ['reading' as const] : [])]
+  return [...families, ...(overviewShown(learning?.overview) ? ['overview' as const] : []),
+    ...(textbooks > 0 ? ['reading' as const] : [])]
+}
+
+/** Whether a stored overview has anything the course page shows. Its syllabus topics are not shown: a course's topics
+ * are in its Notes and its Practice. */
+export function overviewShown(overview: ManagedOverview | null | undefined): overview is ManagedOverview {
+  if (overview === null || overview === undefined) return false
+  return overview.body.trim() !== '' || [overview.outcomes, overview.assessment, overview.keyTakeaways, overview.examFocus,
+    overview.formulaSheet].some(list => (list?.length ?? 0) > 0)
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -201,13 +210,13 @@ export function TheoryCard({ questions, href, number }: { questions: number; hre
   </StudySection>
 }
 
-/** Published overview context; every block renders only when the managed payload carries it. The overview keeps a
- * course's own syllabus topics and never lists its practice topics: those are on the Practise by topic page. */
+/** Published overview context; every block renders only when the managed payload carries it. No list of topics shows
+ * here, neither the stored syllabus nor the practice topics: topics are in Notes and on the Practise by topic page. */
 export function OverviewSection({ overview, number }: { overview: ManagedOverview; number: number }): ReactElement {
-  const topics = overview.topics ?? [], examFocus = overview.examFocus ?? []
+  const examFocus = overview.examFocus ?? []
   const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
   const outcomes = overview.outcomes ?? [], assessment = overview.assessment ?? []
-  return <StudySection id="overview" number={number} lede="Explore the topics and key ideas for this course.">
+  return <StudySection id="overview" number={number}>
     {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
     {outcomes.length > 0 && <div className="student-detail-group">
       <h3>Course outcomes</h3>
@@ -228,12 +237,6 @@ export function OverviewSection({ overview, number }: { overview: ManagedOvervie
           <span>{pad2(index + 1)}</span>
           <div><p className="student-detail-strong">{item.title}</p><p className="student-detail-prose">{item.description}</p></div>
         </li>)}
-      </ol>
-    </div>}
-    {topics.length > 0 && <div className="student-detail-group">
-      <h3>Syllabus topics</h3>
-      <ol className="student-detail-numbered student-surface">
-        {topics.map((topic, index) => <li key={index}><span>CH {topic.chapter}</span><p className="student-detail-prose">{topic.description}</p></li>)}
       </ol>
     </div>}
     {examFocus.length > 0 && <div className="student-detail-group">

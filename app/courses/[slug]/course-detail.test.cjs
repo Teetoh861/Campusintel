@@ -203,9 +203,10 @@ test('the three study cards share one width, and the course page lists no topic 
   assert.deepEqual(anchors(cards).map(link => text(link).trim()), ['Open notes 3 topics', 'Practise by topic 2 topics',
     'Exam mode 50 questions · 30 min', 'Start theory practice 2 questions'])
   assert.doesNotMatch(cards, /<ol|<ul|<li|student-detail-numbered|student-meta/, 'no list and no extra line between the cards')
-  // The overview keeps the course's own syllabus and never gains the practice topics.
-  assert.equal((html.match(/Syllabus topics/g) || []).length, 1)
-  assert.match(text(html), /Syllabus topics CH 1 Chapter one/)
+  // The overview lists no topics either: not the stored syllabus, not the practice topics. The rest of it stays.
+  assert.doesNotMatch(html, /Syllabus topics|Chapter one|>CH 1</)
+  assert.match(text(html), /Course overview Published overview body\. Second paragraph\. Key takeaways 01 Takeaway Remember this Exam focus 01 Focus area Formula sheet Break-even/)
+  assert.doesNotMatch(html, /Explore the topics/, 'no line about topics the overview no longer has')
   for (const file of ['page.tsx', 'sections.tsx']) {
     assert.doesNotMatch(fs.readFileSync(path.join(__dirname, file), 'utf8'), /OFFICIAL_BANK_SECTIONS|overviewBankTopics|bankTopics/, file)
   }
@@ -228,7 +229,8 @@ test('notes are one compact card that opens the topic list; no note is read on t
   assert.match(html, /x² \+ y²/)
   assert.doesNotMatch(html, /\\\(|\\frac|katex/)
   assert.match(html, /Published overview body\.\nSecond paragraph\./)
-  assert.match(html, /Chapter one|Focus area|Remember this/)
+  assert.match(html, /Focus area/)
+  assert.match(html, /Remember this/)
   assert.doesNotMatch(html, /<form\b|<input\b|<textarea\b|model answer|rubric|score/i)
 }))
 
