@@ -6,6 +6,12 @@ export const PRACTICE_COPY = {
   title: 'Practice',
   lede: 'Test your knowledge with timed multiple-choice questions.',
   backToCourse: 'Back to course',
+  // The course page's Practice card: its two ways in. Practise by topic is also the title of the page it opens, and
+  // All topics is the way back to that page from a topic's practice.
+  byTopic: 'Practise by topic',
+  examMode: 'Exam mode',
+  allTopics: 'All topics',
+  topicsFailedTitle: 'We couldn’t load the topics.',
   notBuiltTitle: 'CBT practice isn’t available for this course.',
   notBuiltBody: 'Check the course page for other study materials, or request the material you need.',
   loadFailedTitle: 'We couldn’t load the practice questions.',

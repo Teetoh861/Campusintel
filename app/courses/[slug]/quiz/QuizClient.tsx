@@ -45,12 +45,12 @@ const PROBLEMS: Record<string, Problem> = {
   'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
   'locked': { title: 'You can’t start a new practice right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
   // An instant start whose topic the course no longer has.
-  'topic-missing': { title: 'This topic isn’t available.', body: 'Choose another topic from the course page.' },
+  'topic-missing': { title: 'This topic isn’t available.', body: 'Choose another topic.' },
 }
 
 export type QuizInitial =
   | { kind: 'intro' }
-  // Instant feedback on this topic, started as soon as the page opens (from the course's topic list).
+  // Instant feedback on this topic, started as soon as the page opens (from the Practise by topic page).
   | { kind: 'topic'; topic: string }
   | { kind: 'resume'; attemptId: string; answered: number; total: number; minutesLeft: number }
   | { kind: 'open'; attempt: OpenAttempt; now: string }
@@ -99,7 +99,7 @@ function initialView(initial: QuizInitial): View {
 /** A problem whose way on is a page: sign in and come back, or load this page again for the current sign-in. A start
  * returns to where it began (the exam's brief, or the course's topics); an attempt returns to that attempt. */
 function problemFor(status: string, courseHref: string, attemptId: string | null, topic: boolean): Problem | undefined {
-  const page = attemptId !== null ? attemptHref(courseHref, attemptId) : topic ? courseHref : `${courseHref}/quiz`
+  const page = attemptId !== null ? attemptHref(courseHref, attemptId) : `${courseHref}/${topic ? 'practice' : 'quiz'}`
   if (status === 'signed-out') return { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody,
     action: { label: PRACTICE_COPY.signIn, href: attemptId !== null ? signInToAttemptHref(courseHref, attemptId)
       : `${AUTH_PATHS.login}?next=${encodeURIComponent(page)}` } }
@@ -222,7 +222,7 @@ export function QuizClient(props: Props): ReactElement | null {
       : { attemptId: crypto.randomUUID(), mode: 'instant', topic })
   }, [courseSlug, begin])
 
-  // A topic chosen on the course page starts straight away, once per mount.
+  // A chosen topic starts straight away, once per mount.
   const autoStarted = useRef(false)
   useEffect(() => {
     if (initial.kind !== 'topic' || autoStarted.current) return
@@ -260,12 +260,12 @@ export function QuizClient(props: Props): ReactElement | null {
   }, [])
 
   const identity = { courseCode: props.courseCode, courseTitle: props.courseTitle, repositoryOnly: props.repositoryOnly }
-  // Instant feedback leaves to the course's topic list.
-  const topicsHref = `${props.courseHref}#cbtPractice`
+  // Instant feedback leaves to the course's topic list: the Practise by topic page.
+  const topicsHref = `${props.courseHref}/practice`
 
   if (view.screen === 'active' && view.attempt.mode === 'instant') {
     return <InstantAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken}
-      courseHref={topicsHref} coursePageHref={props.courseHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)} />
+      topicsHref={topicsHref} coursePageHref={props.courseHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)} />
   }
   if (view.screen === 'active') {
     return <ActiveAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken} courseHref={props.courseHref}
@@ -307,7 +307,7 @@ export function QuizClient(props: Props): ReactElement | null {
       const { topic } = attempt
       const next = topic === null ? -1 : props.topics.indexOf(topic) + 1
       const nextTopic = next > 0 ? props.topics[next] ?? null : null
-      return <InstantResult {...identity} courseHref={topicsHref} attempt={attempt}
+      return <InstantResult {...identity} topicsHref={topicsHref} attempt={attempt}
         canStartNew={canStartNew && canPractiseTopicAgain(topic, props.topics)} nextTopic={canStartNew ? nextTopic : null}
         starting={busy} error={problem} onRetry={retry}
         onPractiseAgain={() => { if (topic !== null) startInstant(topic) }}
@@ -325,7 +325,7 @@ export function QuizClient(props: Props): ReactElement | null {
   // The page renders a start only when a fresh attempt may start, so a missing brief renders nothing here.
   if (brief === null) return null
   if (view.screen === 'starting') {
-    return <InstantStarting {...identity} courseHref={topicsHref} topic={view.topic} error={problem} busy={busy}
+    return <InstantStarting {...identity} topicsHref={topicsHref} topic={view.topic} error={problem} busy={busy}
       onRetry={retry} />
   }
   return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief} wholeBank={bankSize <= brief.questionCount}

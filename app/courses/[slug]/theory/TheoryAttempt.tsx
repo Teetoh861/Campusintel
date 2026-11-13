@@ -9,14 +9,15 @@ import { AUTH_PATHS } from '@/lib/auth/constants'
 import { profileSelectionHref } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { SelfAssessment } from './SelfAssessment'
-import { theoryTextarea } from './presentation'
+import { theoryQuestionHref, theoryTextarea } from './presentation'
 import type { FormEvent } from 'react'
 import type { TheoryFeedback, TheoryQuestion, TheorySubmitResult } from '@/lib/theory-practice/contract'
 
 type Refusal = { text: string; action?: { label: string; href: string } }
 
-/** Why the suggested answer can't be shown, with the one way on. The draft lives only on this page, so a way on that
- * leaves it says to copy the answer first. Show answer itself is the retry for anything else. */
+/** Why the suggested answer can't be shown, with the one way on: back to this question (`page`). The draft lives only
+ * on this page, so a way on that leaves it says to copy the answer first. Show answer itself is the retry for anything
+ * else. */
 function refusalFor(status: Exclude<TheorySubmitResult['status'], 'ready'>, page: string): Refusal {
   if (status === 'signed-out') return { text: 'You’ve been signed out. Copy your answer before you sign in.',
     action: { label: 'Sign in', href: `${AUTH_PATHS.login}?next=${encodeURIComponent(page)}` } }
@@ -32,7 +33,8 @@ function refusalFor(status: Exclude<TheorySubmitResult['status'], 'ready'>, page
   return { text: 'We couldn’t load the suggested answer.' }
 }
 
-/** Keep each question's draft in page memory only and reveal no feedback until submission succeeds. */
+/** One question's answer box and reveal. Keep its draft in page memory only and reveal no feedback until submission
+ * succeeds. */
 export function TheoryAttempt({ question, courseSlug, continuityToken }: {
   question: TheoryQuestion; courseSlug: string; continuityToken: string
 }) {
@@ -41,7 +43,7 @@ export function TheoryAttempt({ question, courseSlug, continuityToken }: {
   const [feedback, setFeedback] = useState<TheoryFeedback | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Refusal | null>(null)
-  const page = `/courses/${courseSlug}/theory`
+  const page = theoryQuestionHref(`/courses/${courseSlug}`, question.itemId)
   const pending = useRef<AbortController | null>(null)
   const pageToken = useRef(continuityToken).current
   const answerField = useRef<HTMLTextAreaElement>(null)
@@ -72,8 +74,7 @@ export function TheoryAttempt({ question, courseSlug, continuityToken }: {
     requestAnimationFrame(() => answerField.current?.focus())
   }
 
-  return <div className="student-stack mt-4 min-w-0">
-    {question.examTip && <p className="student-meta whitespace-pre-wrap [overflow-wrap:anywhere]"><b>Exam tip:</b> {question.examTip}</p>}
+  return <div className="student-stack min-w-0">
     {feedback === null ? <form onSubmit={submit} className="student-stack" aria-busy={busy}>
       <div>
         <label htmlFor={`${id}-answer`} className="mb-2 block font-semibold text-student-text-primary">Your answer</label>

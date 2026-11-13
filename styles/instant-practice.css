@@ -1,10 +1,17 @@
 /* styles/instant-practice.css — Practice by topic and instant feedback, on the Practice primitives of student-app.css.
    Phone first: 32px between sections, 16px inside cards; marks are never colour alone (icon + label on every mark). */
 
-/* The course page's topic list: one row per topic, the whole row taps. Full width on a phone. The Notes card is a
-   single row of the same kind, so it shares the list's width and lines up with the practice rows below it. */
+/* Topic rows: one row per topic on the Practise by topic and Notes pages, the whole row taps. Full width on a phone.
+   The course page's study cards are rows of the same kind, so every card shares the lists' width and they line up. */
 .student-topic-list, .student-topic-card { max-width: 720px; }
 .student-topic-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+/* A card with two choices (Practise by topic, Exam mode): one card, a line between its rows. */
+.student-topic-choices { border: 1px solid var(--student-border); border-radius: 16px; background: var(--student-surface); }
+.student-topic-choices > .student-topic-row { border: 0; background: transparent; }
+.student-topic-choices > .student-topic-row:hover { background: var(--student-surface-muted); }
+.student-topic-choices > .student-topic-row:first-child { border-radius: 15px 15px 0 0; }
+.student-topic-choices > .student-topic-row:last-child { border-radius: 0 0 15px 15px; }
+.student-topic-choices > .student-topic-row + .student-topic-row { border-top: 1px solid var(--student-border); }
 .student-topic-row { display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 16px; border: 1px solid var(--student-border); border-radius: 16px; background: var(--student-surface); color: var(--student-primary); text-decoration: none; }
 .student-topic-row:hover { background: var(--student-surface-muted); border-color: var(--student-border-hover); }
 .student-topic-number { flex: none; min-width: 24px; color: var(--student-text-muted); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -12,7 +19,6 @@
 .student-topic-text > b { font-size: 16px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
 .student-topic-text > span { color: var(--student-text-muted); font-size: 14px; line-height: 1.4; }
 .student-topic-go { flex: none; color: var(--student-text-muted); }
-.student-practice-exam { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 
 /* The attempt: Exit, the topic and position in the bar, the question, Next pinned to the bottom of the screen. */
 .student-instant { display: flex; flex-direction: column; min-height: 100dvh; }

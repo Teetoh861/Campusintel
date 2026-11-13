@@ -37,7 +37,3 @@ export async function getNotesForVerifiedStudent(client: Awaited<ReturnType<type
     practiceHref: content.study.cbtPractice && result.practice !== null ? result.practice.href : null,
     theoryItems: new Set(learning.theoryPracticeItems) }
 }
-
-/** Where a guide topic's theory question is practised: the theory page, opened at that question. */
-export const theoryHref = (courseHref: string, itemId: string) =>
-  `${courseHref}/theory?question=${encodeURIComponent(itemId)}#question-${itemId}`

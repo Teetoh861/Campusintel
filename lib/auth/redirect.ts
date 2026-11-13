@@ -2,15 +2,16 @@
 import { AUTH_PATHS, DEFAULT_AUTH_REDIRECT, AUTH_RETURN_PATH_MAX_LENGTH, OPERATOR_HOME_PATH } from './constants'
 
 // The only return paths that keep a query string: one fixed parameter with a strictly shaped value each (a practice result,
-// Confirm courses for a plan, the payment return page). Every other query string is refused as before.
+// a theory question, Confirm courses for a plan, the payment return page). Every other query string is refused as before.
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const RETURN_PATHS_WITH_QUERY = [
   new RegExp(`^/courses/[a-z0-9]+(?:-[a-z0-9]+)*/quiz\\?attempt=${UUID_PATTERN}$`),
+  new RegExp(`^/courses/[a-z0-9]+(?:-[a-z0-9]+)*/theory\\?question=${UUID_PATTERN}$`),
   /^\/access\/checkout\?plan=(?:standard|plus)_(?:semester|session)$/,
   new RegExp(`^/access/checkout/return\\?order=${UUID_PATTERN}$`),
 ]
 
-/** Validate an internal pathname. Queries and fragments are not propagated, except the three fixed forms above. */
+/** Validate an internal pathname. Queries and fragments are not propagated, except the four fixed forms above. */
 export function getSafeReturnPath(value: unknown): string {
   if (typeof value === 'string' && RETURN_PATHS_WITH_QUERY.some(pattern => pattern.test(value))) return value
   if (typeof value !== 'string' || value.length > AUTH_RETURN_PATH_MAX_LENGTH ||

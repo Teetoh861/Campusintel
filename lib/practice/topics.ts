@@ -1,7 +1,8 @@
-// lib/practice/topics.ts — A course's practice topics for the course page and the instant-feedback end screen
-// (20261029150000_practice_by_topic.sql). The list and each topic's count come from published_cbt_topics on the
-// student's own client (the course content boundary); the student's progress per topic from practice_topic_progress,
-// keyed by the verified session. Counts and scores only: no question ever leaves the database here.
+// lib/practice/topics.ts — A course's practice topics for the course page's Practice card, the Practise by topic page
+// and the instant-feedback end screen (20261029150000_practice_by_topic.sql). The list and each topic's count come from
+// published_cbt_topics on the student's own client (the course content boundary); the student's progress per topic from
+// practice_topic_progress, keyed by the verified session. Counts and scores only: no question ever leaves the database
+// here.
 import 'server-only'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { z } from 'zod'
@@ -12,7 +13,8 @@ type AccountClient = Awaited<ReturnType<typeof createClient>>
 
 export type PracticeTopic = { topic: string; bankSize: number }
 export type TopicProgress = { practised: number; lastScore: { score: number; total: number } | null }
-export type PracticeTopicRow = PracticeTopic & { number: number; line: string }
+// `practised`: the row shows the student's progress, not the topic's count.
+export type PracticeTopicRow = PracticeTopic & { number: number; line: string; practised: boolean }
 
 const count = z.number().int().nonnegative()
 const topicRow = z.object({ ordinal: z.number().int().positive(), topic: z.string().min(1), bank_size: z.number().int().positive() })
@@ -50,17 +52,31 @@ export function topicProgressFrom(data: unknown): ReadonlyMap<string, TopicProgr
 
 const questions = (n: number) => `${n} ${n === 1 ? 'question' : 'questions'}`
 
+/** The student has practised a topic once any of its questions is recorded, in a topic run or an exam. */
+const hasPractised = (progress: TopicProgress | undefined): progress is TopicProgress =>
+  progress !== undefined && (progress.practised > 0 || progress.lastScore !== null)
+
 /** One line per topic: its size before any practice, its progress after, never both. */
 export function topicLine(bankSize: number, progress: TopicProgress | undefined): string {
-  if (progress === undefined || (progress.practised === 0 && progress.lastScore === null)) return questions(bankSize)
-  const practised = `${progress.practised} of ${questions(bankSize)} practised`
-  return progress.lastScore === null ? practised
-    : `${practised} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
+  if (!hasPractised(progress)) return questions(bankSize)
+  const done = `${progress.practised} of ${questions(bankSize)} practised`
+  return progress.lastScore === null ? done : `${done} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
 }
 
 export function topicRowsOf(topics: ReadonlyArray<PracticeTopic>, progress: ReadonlyMap<string, TopicProgress> | null):
   PracticeTopicRow[] {
-  return topics.map((topic, index) => ({ ...topic, number: index + 1, line: topicLine(topic.bankSize, progress?.get(topic.topic)) }))
+  return topics.map((topic, index) => {
+    const own = progress?.get(topic.topic)
+    return { ...topic, number: index + 1, line: topicLine(topic.bankSize, own), practised: hasPractised(own) }
+  })
+}
+
+/** The Practice card's one line: how many topics the course has, or how many of them the student has practised. Only
+ * what the topic rows already show is counted. */
+export function topicsLine(rows: ReadonlyArray<Pick<PracticeTopicRow, 'practised'>>): string {
+  const topics = `${rows.length} ${rows.length === 1 ? 'topic' : 'topics'}`
+  const done = rows.filter(row => row.practised).length
+  return done === 0 ? topics : `${done} of ${topics} practised`
 }
 
 /** The topic after this one in the course's order; null after the last (or for a topic no longer listed). */

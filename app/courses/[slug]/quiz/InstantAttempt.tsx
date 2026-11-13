@@ -22,7 +22,7 @@ type Props = {
   courseTitle: string
   repositoryOnly: boolean
   // Exit goes to the course's topics; signing in or reloading comes back to this attempt on the course's page.
-  courseHref: string
+  topicsHref: string
   coursePageHref: string
   attempt: OpenAttempt
   onGraded: (attempt: GradedAttempt) => void
@@ -151,7 +151,7 @@ export function InstantAttempt(props: Props): ReactElement {
   return <div className="student-instant">
     <div className="student-practice-bar">
       <div className="student-workspace student-instant-bar">
-        <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent px-3')}>
+        <Link href={props.topicsHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent px-3')}>
           {INSTANT_COPY.exit}
         </Link>
         <p className="student-instant-topic">{title}</p>

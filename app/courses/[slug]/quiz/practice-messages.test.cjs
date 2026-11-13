@@ -132,7 +132,7 @@ test('a start the server refused: "We couldn’t start your practice." with Try 
   assert.equal(f.render().type.name, 'ActiveAttempt')
 }))
 
-test('a topic from the course page starts its instant feedback at once, with no brief; a lost reply keeps the same attempt id', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+test('a chosen topic starts its instant feedback at once, with no brief; a lost reply keeps the same attempt id', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
   f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
   f.render()
   await f.settle()
@@ -150,7 +150,8 @@ test('a topic from the course page starts its instant feedback at once, with no 
   assert.equal(new Set(f.requests.map(request => request.attemptId)).size, 1, 'a replayed start can only find this attempt')
   const attempt = f.render()
   assert.equal(attempt.type.name, 'InstantAttempt')
-  assert.equal(attempt.props.courseHref, `/courses/${COURSE}#cbtPractice`, 'Exit returns to the topic list')
+  assert.equal(attempt.props.topicsHref, `/courses/${COURSE}/practice`, 'Exit returns to the topic list')
+  assert.equal(attempt.props.coursePageHref, `/courses/${COURSE}`)
   f.render()
   await f.settle()
   assert.equal(f.requests.length, 4, 'the topic never starts a second time')
@@ -162,7 +163,20 @@ test('a topic the course no longer has: "This topic isn’t available.", with no
   await f.settle()
   const starting = f.render()
   assert.equal(f.requests.length, 1)
-  assert.deepEqual(starting.props.error, { title: 'This topic isn’t available.', body: 'Choose another topic from the course page.' })
+  assert.deepEqual(starting.props.error, { title: 'This topic isn’t available.', body: 'Choose another topic.' })
+  assert.equal(starting.props.topicsHref, `/courses/${COURSE}/practice`, 'All topics is the way to another topic')
+}))
+
+for (const [status, error] of [
+  ['signed-out', { title: 'You’ve been signed out.', body: '', action: { label: 'Sign in', href: `/login?next=${encodeURIComponent(`/courses/${COURSE}/practice`)}` } }],
+  ['session-changed', { title: 'You signed in on another tab.', body: '', action: { label: 'Reload', href: `/courses/${COURSE}/practice` } }],
+]) test(`a topic start refused as ${status} leads back to the course's topics, where it began`, async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+  f.answers.push({ status })
+  f.render()
+  await f.settle()
+  assert.deepEqual(f.render().props.error, error)
+  const { getSafeReturnPath } = require('../../../../lib/auth/redirect.ts')
+  assert.equal(getSafeReturnPath(`/courses/${COURSE}/practice`), `/courses/${COURSE}/practice`, 'sign-in returns there')
 }))
 
 test('a topic while an exam is open: "Finish your exam first.", with Resume exam and no Try again', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
@@ -178,12 +192,13 @@ test('a topic while an exam is open: "Finish your exam first.", with Resume exam
 
 test('the exam-open notice links to the exam and offers no Try again', async () => withTsx(async () => {
   const { InstantStarting } = require('./InstantStarting.tsx')
-  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, courseHref: `/courses/${COURSE}#cbtPractice`,
+  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, topicsHref: `/courses/${COURSE}/practice`,
     topic: 'Capital Budgeting', busy: false, onRetry() {}, error: { title: 'Finish your exam first.',
       body: 'Practice opens again once your exam is submitted or its time runs out.',
       action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } } }))
-  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Practice opens again .* Resume exam Back to course$/)
+  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Practice opens again .* Resume exam All topics$/)
   assert.match(html, new RegExp(`href="/courses/${COURSE}/quiz\\?attempt=${ATTEMPT}"`))
+  assert.match(html, new RegExp(`href="/courses/${COURSE}/practice"[^>]*>All topics<`))
   assert.doesNotMatch(html, /Try again/)
 }))
 
@@ -197,7 +212,7 @@ test('the end of a topic: Practise again draws this topic again, Next topic star
     const end = f.render()
     assert.equal(end.type.name, 'InstantResult')
     assert.equal(end.props.nextTopic, 'Working Capital')
-    assert.equal(end.props.courseHref, `/courses/${COURSE}#cbtPractice`)
+    assert.equal(end.props.topicsHref, `/courses/${COURSE}/practice`)
     f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
     end.props.onPractiseAgain()
     await f.settle()

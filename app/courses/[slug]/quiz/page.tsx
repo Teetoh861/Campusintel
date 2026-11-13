@@ -1,8 +1,8 @@
 // app/courses/[slug]/quiz/page.tsx — Practice entry. The student's own attempts come first: an attempt URL, then the
 // course's open attempt, whatever the student's access or the bank is now (an attempt started may always finish, and
 // its review stays the student's). Then ?topic= starts instant feedback on that topic and ?mode=exam opens the exam
-// (its latest unseen result first, then its brief); anything else goes back to the course's topic list. Current access
-// and a live bank decide only whether a fresh attempt may start.
+// (its latest unseen result first, then its brief); anything else goes back to the course page's Practice card. Current
+// access and a live bank decide only whether a fresh attempt may start.
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
@@ -158,7 +158,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     return await quiz({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,
       total: state.attempt.questionCount, minutesLeft: Math.max(0, Math.floor(left / MS_PER_MINUTE)) })
   }
-  // Practice starts from the course's topic list, or from its Exam mode button.
+  // Practice starts from the course page's Practice card: Practise by topic, or Exam mode.
   if (entry.topic === null && !entry.exam) redirect(`${route.href}#cbtPractice`)
   if (entry.topic !== null) {
     if (brief !== null) return await quiz({ kind: 'topic', topic: entry.topic })

@@ -138,9 +138,11 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.match(html, /data-bookmark="central-key"/)
   assert.equal(anchors(html).filter(link => link.includes('/courses/central-route/quiz')).length, 1,
     'a course without topics offers Exam mode only')
-  assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/quiz?mode=exam"') && link.includes('Exam mode')))
-  assert.match(text(html), /Exam mode 50 questions · 30 min/)
-  assert.doesNotMatch(html, /Start CBT practice|Questions available|student-topic-list|Instant feedback/)
+  const exam = anchors(html).filter(link => link.includes('href="/courses/central-route/quiz?mode=exam"'))
+  assert.equal(text(exam[0]).trim(), 'Exam mode 50 questions · 30 min')
+  assert.match(exam[0], /class="student-topic-row student-topic-card student-focus-control"/, 'the card is the Exam mode row itself')
+  assert.doesNotMatch(html, /Start CBT practice|Questions available|student-topic-list|student-topic-choices|Instant feedback/)
+  assert.doesNotMatch(html, /Practise by topic|\/practice"/, 'no way to a topic list the course does not have')
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/theory"') && link.includes('Start theory practice')))
   assert.ok(anchors(html).some(link => link.includes('href="/courses/central-route/materials"') && link.includes('Request material')))
   assert.ok(html.indexOf('id="notes"') < html.indexOf('id="cbtPractice"') && html.indexOf('id="cbtPractice"') < html.indexOf('id="theory"') &&
@@ -154,29 +156,59 @@ test('the gated page reads central truth once and institutional identity wins ov
   assert.ok(html.indexOf('student-detail-rail') < html.indexOf('id="notes"'), 'the rail precedes the reading column')
 }))
 
-test('practice by topic: one row per topic in order, its count before practice and its progress after, then Exam mode', async () => fixture(async f => {
+test('practice is one card: Practise by topic with one line about the topics, then Exam mode; no topic is listed here', async () => fixture(async f => {
   f.state.topics = [{ topic: 'Configured first', bankSize: 12 }, { topic: 'Ratios & Returns', bankSize: 1 },
     { topic: 'Third', bankSize: 20 }]
+  const card = async () => {
+    const html = await f.html()
+    const section = html.slice(html.indexOf('id="cbtPractice"'), html.indexOf('id="theory"'))
+    assert.equal((section.match(/class="student-topic-card student-topic-choices"/g) || []).length, 1, 'one card')
+    assert.doesNotMatch(html, /student-topic-list|student-topic-number|\/quiz\?topic=|Configured first|Ratios|Third/,
+      'the topics are on the page the card opens, never on the course page')
+    assert.doesNotMatch(section, /student-meta|Pick a topic|marked as you go/, 'one line per choice and nothing else')
+    return anchors(section).map(link => [link.match(/href="([^"]+)"/)[1], text(link).trim(),
+      /class="student-topic-row student-focus-control"/.test(link)])
+  }
+  // Before any practice the line counts the topics.
+  assert.deepEqual(await card(), [['/courses/central-route/practice', 'Practise by topic 3 topics', true],
+    ['/courses/central-route/quiz?mode=exam', 'Exam mode 50 questions · 30 min', true]])
+  // After practice it counts the topics practised, from the progress the topic rows already show.
   f.state.progress = new Map([['Configured first', { practised: 8, lastScore: { score: 6, total: 8 } }],
-    ['Third', { practised: 3, lastScore: null }]])
-  const html = await f.html()
-  const rows = anchors(html).filter(link => link.includes('student-topic-row') && link.includes('/quiz?'))
-    .map(link => [link.match(/href="([^"]+)"/)[1].replace(/&amp;/g, '&'), text(link).trim().replace(/&amp;/g, '&')])
-  assert.deepEqual(rows, [
-    ['/courses/central-route/quiz?topic=Configured%20first', '1 Configured first 8 of 12 questions practised · Last score 6/8'],
-    ['/courses/central-route/quiz?topic=Ratios%20%26%20Returns', '2 Ratios & Returns 1 question'],
-    ['/courses/central-route/quiz?topic=Third', '3 Third 3 of 20 questions practised'],
-  ], 'number, title and one line; the count before practice, the progress after, never both')
-  assert.ok(html.indexOf('student-topic-list') < html.indexOf('?mode=exam'), 'Exam mode follows the topics')
-  assert.match(text(html), /Exam mode 50 questions · 30 min/)
-  // Progress that cannot be read leaves each topic's count; topics that cannot be read leave Exam mode only.
+    ['Third', { practised: 3, lastScore: null }], ['Ratios & Returns', { practised: 0, lastScore: null }]])
+  assert.deepEqual((await card())[0], ['/courses/central-route/practice', 'Practise by topic 2 of 3 topics practised', true])
+  // Progress that cannot be read leaves the count; topics that cannot be read leave Exam mode only.
   f.state.progress = null
-  assert.match(text(await f.html()), /1 Configured first 12 questions /)
+  assert.deepEqual((await card())[0], ['/courses/central-route/practice', 'Practise by topic 3 topics', true])
+  f.state.topics = [{ topic: 'Only', bankSize: 4 }]
+  assert.equal((await card())[0][1], 'Practise by topic 1 topic')
   f.state.topicError = true
   const fallback = await f.html()
-  assert.doesNotMatch(fallback, /student-topic-list/)
-  assert.match(fallback, /href="\/courses\/central-route\/quiz\?mode=exam"/)
+  assert.doesNotMatch(fallback, /student-topic-choices|Practise by topic|\/practice"/)
+  assert.equal(text(anchors(fallback).find(link => link.includes('?mode=exam'))).trim(), 'Exam mode 50 questions · 30 min')
   assert.match(fallback, /<h1[^>]*>Institutional title<\/h1>/, 'a failed topic read never makes the page unavailable')
+}))
+
+test('the three study cards share one width, and the course page lists no topic and no question', async () => fixture(async f => {
+  f.state.topics = [{ topic: 'Configured first', bankSize: 12 }, { topic: 'Third', bankSize: 20 }]
+  const html = await f.html()
+  // Notes, Practice and Theory: each card carries student-topic-card, the one rule that sets a card's width.
+  assert.deepEqual([...html.matchAll(/class="(student-topic-[^"]*student-topic-card[^"]*|student-topic-card[^"]*)"/g)].map(match => match[1]),
+    ['student-topic-row student-topic-card student-focus-control', 'student-topic-card student-topic-choices',
+      'student-topic-row student-topic-card student-focus-control'])
+  const rows = fs.readFileSync(path.join(__dirname, '../../../styles/instant-practice.css'), 'utf8')
+  assert.match(rows, /^\.student-topic-list, \.student-topic-card \{ max-width: 720px; \}$/m)
+  assert.doesNotMatch(rows, /^\.student-topic-(list|card|row|choices) \{[^}]*max-width/m, 'no card sets a width of its own')
+  // Every card is one line and its action: four links, in order.
+  const cards = html.slice(html.indexOf('id="notes"'), html.indexOf('id="overview"'))
+  assert.deepEqual(anchors(cards).map(link => text(link).trim()), ['Open notes 3 topics', 'Practise by topic 2 topics',
+    'Exam mode 50 questions · 30 min', 'Start theory practice 2 questions'])
+  assert.doesNotMatch(cards, /<ol|<ul|<li|student-detail-numbered|student-meta/, 'no list and no extra line between the cards')
+  // The overview keeps the course's own syllabus and never gains the practice topics.
+  assert.equal((html.match(/Syllabus topics/g) || []).length, 1)
+  assert.match(text(html), /Syllabus topics CH 1 Chapter one/)
+  for (const file of ['page.tsx', 'sections.tsx']) {
+    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, file), 'utf8'), /OFFICIAL_BANK_SECTIONS|overviewBankTopics|bankTopics/, file)
+  }
 }))
 
 test('notes are one compact card that opens the topic list; no note is read on the course page', async () => fixture(async f => {
@@ -184,7 +216,7 @@ test('notes are one compact card that opens the topic list; no note is read on t
   const cards = anchors(html).filter(link => link.includes('href="/courses/central-route/notes"'))
   assert.equal(cards.length, 1)
   assert.equal(text(cards[0]).trim(), 'Open notes 3 topics')
-  // The card is a topic row held to the width of the practice rows below it: one rule sets both widths.
+  // The card is a topic row held to the width every study card and topic list shares: one rule sets them all.
   assert.match(cards[0], /class="student-topic-row student-topic-card student-focus-control"/)
   const rows = fs.readFileSync(path.join(__dirname, '../../../styles/instant-practice.css'), 'utf8')
   assert.match(rows, /^\.student-topic-list, \.student-topic-card \{ max-width: 720px; \}$/m)
@@ -197,9 +229,6 @@ test('notes are one compact card that opens the topic list; no note is read on t
   assert.doesNotMatch(html, /\\\(|\\frac|katex/)
   assert.match(html, /Published overview body\.\nSecond paragraph\./)
   assert.match(html, /Chapter one|Focus area|Remember this/)
-  assert.match(html, /Q1<\/span>/)
-  assert.match(html, /Q2<\/span>/)
-  assert.match(html, /Explain the concept/)
   assert.doesNotMatch(html, /<form\b|<input\b|<textarea\b|model answer|rubric|score/i)
 }))
 
@@ -222,23 +251,25 @@ test('study families appear only from central flags, and Notes never comes from 
   assert.doesNotMatch(await f.html(), /id="cbtPractice"|\/quiz[?"]/, 'the page never builds practice without central metadata')
 }))
 
-test('theory practice is offered only with a usable model answer, and numbering matches Theory practice', async () => fixture(async f => {
-  const { theoryDisplayNumbers } = require('../../../lib/theory-practice/numbering.ts')
-  const theoryQuestions = [{ itemId: 't1', prompt: 'Unnumbered without answer' }, { itemId: 't2', prompt: 'Authored four', displayNumber: 4 },
+test('theory is one card: how many questions and Start theory practice; no question or exam tip shows here', async () => fixture(async f => {
+  const theoryQuestions = [{ itemId: 't1', prompt: 'Unnumbered without answer' }, { itemId: 't2', prompt: 'Authored four', displayNumber: 4, examTip: 'Define first' },
     { itemId: 't3', prompt: 'Unnumbered with answer' }]
-  f.state.result = { status: 'ok', course: institutional(ready({ theory: true })),
-    learning: { ...learning, theoryQuestions, theoryPractice: false }, practice: null }
-  const reading = await f.html()
-  assert.match(reading, /id="theory"/)
-  assert.match(reading, /Unnumbered without answer/, 'questions stay readable without practice')
-  assert.equal(anchors(reading).filter(link => link.includes('/theory"')).length, 0)
-  assert.doesNotMatch(reading, /Start theory practice/)
-  f.state.result.learning = { ...f.state.result.learning, theoryPractice: true }
-  const practicable = await f.html()
-  assert.equal(anchors(practicable).filter(link => link.includes('href="/courses/central-route/theory"')).length, 1)
-  const labels = [...practicable.matchAll(/<span>Q(\d+)<\/span>/g)].map(match => Number(match[1]))
-  assert.deepEqual(labels, [5, 4, 6])
-  assert.deepEqual(labels, theoryDisplayNumbers(theoryQuestions), 'Course Detail uses the shared numbering')
+  // The theory page shows every question, with or without a suggested answer, so the card opens it either way.
+  for (const theoryPractice of [false, true]) {
+    f.state.result = { status: 'ok', course: institutional(ready({ theory: true })),
+      learning: { ...learning, theoryQuestions, theoryPractice }, practice: null }
+    const html = await f.html()
+    const section = html.slice(html.indexOf('id="theory"'), html.indexOf('id="overview"'))
+    const links = anchors(section)
+    assert.equal(links.length, 1)
+    assert.match(links[0], /href="\/courses\/central-route\/theory"/)
+    assert.match(links[0], /class="student-topic-row student-topic-card student-focus-control"/)
+    assert.equal(text(links[0]).trim(), 'Start theory practice 3 questions')
+    assert.doesNotMatch(html, /Unnumbered|Authored four|Define first|Exam tip|>Q\d+<|student-detail-numbered"><li><span>Q/)
+    assert.doesNotMatch(section, /student-meta|Likely written questions/, 'one line and its action, nothing else')
+  }
+  f.state.result.learning = { ...learning, theoryQuestions: theoryQuestions.slice(0, 1), theoryPractice: true }
+  assert.match(text(await f.html()), /Start theory practice 1 question /)
 }))
 
 test('overview-only stays no-published-learning: identity, context and prominent Request Material, no Practice', async () => fixture(async f => {

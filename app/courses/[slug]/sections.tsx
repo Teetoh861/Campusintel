@@ -2,15 +2,16 @@
 import Link from 'next/link'
 import { Fragment } from 'react'
 import { ChevronRight } from 'lucide-react'
-import { btnGhost, btnNavy } from '@/components/chrome/ui'
-import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { btnGhost } from '@/components/chrome/ui'
+import { studentAction } from '@/components/student/ui'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
-import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
+import { topicsLine } from '@/lib/practice/topics'
 import { GuideTopicBody } from './guide'
+import { PRACTICE_COPY } from './quiz/practice-presentation'
 import type { GuideLinks } from './guide'
 import type { StudyFamilyId } from '@/components/student/study-families'
 import type { StudentCoursePractice, StudentCourseDetailLearning, StudyAvailability } from '@/lib/courses/read-model'
-import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion } from '@/lib/managed-content/student-projection'
+import type { ManagedNote, ManagedOverview } from '@/lib/managed-content/student-projection'
 import type { PracticeTopicRow } from '@/lib/practice/topics'
 import type { Textbook } from '@/lib/types'
 import type { ReactElement, ReactNode } from 'react'
@@ -23,18 +24,15 @@ const STUDY_SECTION_LABELS: Record<StudySectionId, string> = {
 }
 
 /** Sections in product order: the study families as the shared owner orders them, then context. */
-export function studySections({ study, learning, practice, textbooks, bankTopics = 0 }: {
+export function studySections({ study, learning, practice, textbooks }: {
   study: StudyAvailability | null
   learning: StudentCourseDetailLearning | null
   practice: StudentCoursePractice | null
   textbooks: number
-  // A course whose questions come from an official bank has an overview of its bank topics even with no stored one.
-  bankTopics?: number
 }): StudySectionId[] {
   const families = study === null ? [] : STUDY_FAMILIES.map(family => family.id).filter(id =>
     study[id] && (id === 'cbtPractice' ? practice !== null : learning !== null))
-  return [...families, ...(learning?.overview || bankTopics > 0 ? ['overview' as const] : []),
-    ...(textbooks > 0 ? ['reading' as const] : [])]
+  return [...families, ...(learning?.overview ? ['overview' as const] : []), ...(textbooks > 0 ? ['reading' as const] : [])]
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -159,90 +157,58 @@ export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
   </article>
 }
 
-/** Notes on the course page: one compact card that opens the topic list. Each topic is read on its own page. The card
- * is as wide as a practice topic row (student-topic-card), so the two sections line up on a wide screen. */
+const countOf = (count: number, one: string) => `${count} ${count === 1 ? one : `${one}s`}`
+
+/** One choice on a study card: what it opens and one line about it. The whole row taps. A card with one choice is the
+ * row itself (student-topic-card sets the width every card shares); a card with two holds two rows. */
+function CardRow({ href, title, line, card = false }: { href: string; title: string; line: string; card?: boolean }): ReactElement {
+  return <Link href={href} prefetch={false}
+    className={card ? 'student-topic-row student-topic-card student-focus-control' : 'student-topic-row student-focus-control'}>
+    <span className="student-topic-text"><b>{title}</b><span>{line}</span></span>
+    <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
+  </Link>
+}
+
+/** Notes on the course page: one compact card that opens the topic list. Each topic is read on its own page. */
 export function NotesCard({ notes, href, number }: {
   notes: ReadonlyArray<ManagedNote>; href: string; number: number
 }): ReactElement {
   return <StudySection id="notes" number={number}>
-    <Link href={href} prefetch={false} className="student-topic-row student-topic-card student-focus-control">
-      <span className="student-topic-text"><b>Open notes</b><span>{notes.length === 1 ? '1 topic' : `${notes.length} topics`}</span></span>
-      <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
-    </Link>
+    <CardRow card href={href} title="Open notes" line={countOf(notes.length, 'topic')} />
   </StudySection>
 }
 
-/** Practice: the course's topics in order (each starts instant feedback on its questions), then Exam mode. A course
- * without topics offers Exam mode only. */
-export function PracticeSection({ practice, topics, number }: {
-  practice: StudentCoursePractice; topics: ReadonlyArray<PracticeTopicRow>; number: number
+/** Practice on the course page: one card. With topics it offers Practise by topic, whose page lists them (the line
+ * says how many there are, or how many the student has practised), and Exam mode. A course without topics offers Exam
+ * mode only. */
+export function PracticeCard({ practice, topics, topicsHref, number }: {
+  practice: StudentCoursePractice; topics: ReadonlyArray<Pick<PracticeTopicRow, 'practised'>>; topicsHref: string; number: number
 }): ReactElement {
-  const hasTopics = topics.length > 0
-  return <StudySection id="cbtPractice" number={number}
-    lede={hasTopics ? 'Pick a topic. Each answer is marked as you go.' : 'Timed multiple-choice questions, marked at the end.'}>
-    {hasTopics && <ol className="student-topic-list" aria-label="Topics">
-      {topics.map(row => <li key={row.topic}>
-        <Link href={`${practice.href}?topic=${encodeURIComponent(row.topic)}`} prefetch={false}
-          className="student-topic-row student-focus-control">
-          <span className="student-topic-number" aria-hidden="true">{row.number}</span>
-          <span className="student-topic-text"><b>{row.topic}</b><span>{row.line}</span></span>
-          <ChevronRight aria-hidden="true" size={20} strokeWidth={2} className="student-topic-go" />
-        </Link>
-      </li>)}
-    </ol>}
-    <div className="student-practice-exam">
-      <Link href={`${practice.href}?mode=exam`} prefetch={false}
-        className={hasTopics ? studentAction(btnGhost, 'bg-student-surface') : studentAction(btnNavy, studentFocusDark)}>
-        Exam mode
-      </Link>
-      <span className="student-meta">{practice.attemptSize} questions · {practice.timerSeconds / 60} min</span>
-    </div>
+  const exam = (card: boolean) => <CardRow card={card} href={`${practice.href}?mode=exam`} title={PRACTICE_COPY.examMode}
+    line={`${practice.attemptSize} questions · ${practice.timerSeconds / 60} min`} />
+  return <StudySection id="cbtPractice" number={number}>
+    {topics.length === 0 ? exam(true) : <div className="student-topic-card student-topic-choices">
+      <CardRow href={topicsHref} title={PRACTICE_COPY.byTopic} line={topicsLine(topics)} />
+      {exam(false)}
+    </div>}
   </StudySection>
 }
 
-/** Published prompts plus the self-assessed practice entry when a usable model answer is published.
- * Numbering is shared with Theory practice and preserves authored display numbers.
- */
-export function TheorySection({ items, number, practiceHref }: {
-  items: ReadonlyArray<ManagedTheoryQuestion>; number: number; practiceHref: string | null
-}): ReactElement {
-  const labels = theoryDisplayNumbers(items)
-  return <StudySection id="theory" number={number} lede="Likely written questions to read and revise.">
-    {practiceHref !== null && <div><Link href={practiceHref} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
-      Start theory practice
-    </Link></div>}
-    <ol className="student-detail-numbered student-surface">
-      {items.map((question, index) => <li key={question.itemId}>
-        <span>Q{labels[index]}</span>
-        <div>
-          <p className="student-detail-prose">{question.prompt}</p>
-          {question.examTip !== undefined && <Aside kicker="Exam tip">{question.examTip}</Aside>}
-        </div>
-      </li>)}
-    </ol>
+/** Theory on the course page: one card that opens theory practice, where every question is read and answered. */
+export function TheoryCard({ questions, href, number }: { questions: number; href: string; number: number }): ReactElement {
+  return <StudySection id="theory" number={number}>
+    <CardRow card href={href} title="Start theory practice" line={countOf(questions, 'question')} />
   </StudySection>
 }
 
-/** The bank topic names a bank course's overview lists, so its topics show once: none when Practice lists them, and
- * none for a course with its own syllabus topics, which its overview keeps. */
-export function overviewBankTopics(bankTopics: ReadonlyArray<string> | undefined, practiceListsTopics: boolean,
-  ownTopics: number): ReadonlyArray<string> | undefined {
-  return bankTopics && bankTopics.length > 0 && !practiceListsTopics && ownTopics === 0 ? bankTopics : undefined
-}
-
-/** Published overview context; every block renders only when the managed payload carries it. A course whose questions
- * come from an official bank and that has no syllabus topics of its own lists the bank's topic names, in the bank's
- * order (see overviewBankTopics). */
-export function OverviewSection({ overview, bankTopics, number }: {
-  overview: ManagedOverview | null; bankTopics?: ReadonlyArray<string>; number: number
-}): ReactElement {
-  const topics = overview?.topics ?? [], examFocus = overview?.examFocus ?? []
-  const bankList = topics.length > 0 ? [] : bankTopics ?? []
-  const keyTakeaways = overview?.keyTakeaways ?? [], formulaSheet = overview?.formulaSheet ?? []
-  const outcomes = overview?.outcomes ?? [], assessment = overview?.assessment ?? []
-  // A course with only its bank topics gets no lede: the topic list is the overview.
-  return <StudySection id="overview" number={number} lede={overview ? 'Explore the topics and key ideas for this course.' : undefined}>
-    {overview?.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
+/** Published overview context; every block renders only when the managed payload carries it. The overview keeps a
+ * course's own syllabus topics and never lists its practice topics: those are on the Practise by topic page. */
+export function OverviewSection({ overview, number }: { overview: ManagedOverview; number: number }): ReactElement {
+  const topics = overview.topics ?? [], examFocus = overview.examFocus ?? []
+  const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
+  const outcomes = overview.outcomes ?? [], assessment = overview.assessment ?? []
+  return <StudySection id="overview" number={number} lede="Explore the topics and key ideas for this course.">
+    {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
     {outcomes.length > 0 && <div className="student-detail-group">
       <h3>Course outcomes</h3>
       <ol className="student-detail-numbered student-surface">
@@ -262,12 +228,6 @@ export function OverviewSection({ overview, bankTopics, number }: {
           <span>{pad2(index + 1)}</span>
           <div><p className="student-detail-strong">{item.title}</p><p className="student-detail-prose">{item.description}</p></div>
         </li>)}
-      </ol>
-    </div>}
-    {bankList.length > 0 && <div className="student-detail-group">
-      <h3>Syllabus topics</h3>
-      <ol className="student-detail-numbered student-surface">
-        {bankList.map((topic, index) => <li key={topic}><span>{pad2(index + 1)}</span><p className="student-detail-strong">{topic}</p></li>)}
       </ol>
     </div>}
     {topics.length > 0 && <div className="student-detail-group">
