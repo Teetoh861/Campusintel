@@ -15,8 +15,10 @@ import type { ReactElement } from 'react'
 
 export const CHECKOUT_ACTION = '/api/payments/checkout'
 
-export function CheckoutForm({ plan, priceKobo, expectedRevision, requestId, continuityToken }: {
+export function CheckoutForm({ plan, priceKobo, expectedRevision, requestId, continuityToken, onSubmitStart }: {
   plan: PlanKey; priceKobo: number; expectedRevision: number; requestId: string; continuityToken: string
+  // Called once as a payment attempt starts, so the confirm screen can clear the last attempt's reason.
+  onSubmitStart?: () => void
 }): ReactElement {
   const [submitting, setSubmitting] = useState(false)
   // Coming back with the browser's Back button restores this page from memory: let the student pay again.
@@ -26,7 +28,7 @@ export function CheckoutForm({ plan, priceKobo, expectedRevision, requestId, con
     return () => window.removeEventListener('pageshow', reset)
   }, [])
   return <form method="post" action={CHECKOUT_ACTION} className="student-pay-bar"
-    onSubmit={event => { if (submitting) event.preventDefault(); else setSubmitting(true) }}>
+    onSubmit={event => { if (submitting) event.preventDefault(); else { setSubmitting(true); onSubmitStart?.() } }}>
     <input type="hidden" name="plan" value={plan} />
     <input type="hidden" name="expected_profile_revision" value={String(expectedRevision)} />
     <input type="hidden" name="request_id" value={requestId} />
