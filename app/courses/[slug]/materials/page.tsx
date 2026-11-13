@@ -85,10 +85,6 @@ function CourseMaterials({ slug }: { slug: string }) {
                 Send materials
               </a>
             </div>
-
-            <p className="mt-4 text-[13.5px] leading-[1.5] text-ci-gray-500">
-              Opens your email app with {course.code} pre-filled.
-            </p>
           </div>
         </div>
       </section>

@@ -138,7 +138,6 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
       }
       return <section className="student-surface student-surface-raised" aria-labelledby="topics-title">
         <h2 id="topics-title" className="student-section-title">Choose one topic</h2>
-        <p className="student-meta mt-1">You can read one complete topic with your pass. The others stay locked.</p>
         <ul className="mt-4 grid gap-2">
           {result.topics.map(topic => <li key={topic.item_id}>
             <OpenPreview continuityToken={continuityToken} quiet label={topic.title}
@@ -159,23 +158,19 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         Your {TITLE[kind].toLowerCase()} is on {result.courseCode ?? 'another course'}. Your pass includes one.
       </Notice>
     case 'expired':
-      return <Notice tone="info" title={`Your ${DISCOVERY_PASS_NOUN} has ended`} action={plan}>
-        This is no longer available. GST courses stay free.
-      </Notice>
+      return <Notice tone="info" title={`Your ${DISCOVERY_PASS_NOUN} has ended`} action={plan} />
     case 'no-pass':
       if (!offered) {
-        return <Notice tone="info" title={copy.lockedTitle} action={plan}>
-          {copy.lockedBody} GST courses stay free.
-        </Notice>
+        return <Notice tone="info" title={copy.lockedTitle} action={plan} />
       }
-      return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}`} action={plan}>
-        Start your free pass from Plan & Access to try a department course.
-      </Notice>
+      // The button is the way to the pass itself, so the notice needs no line saying where to find it.
+      return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}`} action={<Link href={STUDENT_DESTINATIONS.access.href}
+        prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Get your {DISCOVERY_PASS_NOUN}</Link>} />
     case 'nothing-to-preview':
       return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'study guide topics'} />
     default:
       return <Notice title="This couldn’t be loaded" action={<a href={`${course.href}/preview/${PREVIEW_SEGMENT[kind]}`}
-        className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>}>Nothing was used. Please try again.</Notice>
+        className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>}>Nothing was used.</Notice>
   }
 }
 

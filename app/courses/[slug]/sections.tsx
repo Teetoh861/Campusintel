@@ -7,14 +7,12 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { STUDY_FAMILIES } from '@/components/student/study-families'
 import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
 import type { StudyFamilyId } from '@/components/student/study-families'
-import type { StudentCourseApplicability, StudentCoursePractice, StudentCourseDetailLearning, StudyAvailability }
-  from '@/lib/courses/read-model'
+import type { StudentCoursePractice, StudentCourseDetailLearning, StudyAvailability } from '@/lib/courses/read-model'
 import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion } from '@/lib/managed-content/student-projection'
 import type { PracticeTopicRow } from '@/lib/practice/topics'
 import type { Textbook } from '@/lib/types'
 import type { ReactElement, ReactNode } from 'react'
 
-export const COURSE_LEDE = 'Your study hub for this course.'
 
 export type StudySectionId = StudyFamilyId | 'overview' | 'reading'
 const STUDY_SECTION_LABELS: Record<StudySectionId, string> = {
@@ -64,18 +62,6 @@ export function StudyNav({ sections }: { sections: ReadonlyArray<StudySectionId>
       </li>)}
     </ol>
   </nav>
-}
-
-/** Render confirmed institutional applicability rows exactly as the catalogue states them. */
-export function ApplicabilityList({ applicability }: {
-  applicability: ReadonlyArray<StudentCourseApplicability>
-}): ReactElement {
-  if (applicability.length === 0) return <p className="student-meta">Check your course requirements. The department and semester for this material have not been confirmed.</p>
-  return <ul className="student-detail-applicability">
-    {applicability.map(row => <li key={`${row.department.id}/${row.academicLevel.id}/${row.academicPeriod.id}`}>
-      <span>{row.department.label}</span><span>{row.academicLevel.label}</span><span>{row.academicPeriod.label}</span>
-    </li>)}
-  </ul>
 }
 
 const FORMULA_OPENERS = '([{', FORMULA_CLOSERS = ')]}'

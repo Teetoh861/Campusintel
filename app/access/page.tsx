@@ -54,15 +54,12 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
     getCurrentStudentCoursesForVerifiedStudent(client, context.user).catch(() => null), readCourseSelection(client)])
   if (read.status === 'signed-out') return redirectForStudentState('signed-out', PATH)
   const onSale = read.status === 'ok' && read.entitlement.plans_on_sale
-  // A subscribed student is not told how to subscribe.
-  const subscribed = read.status === 'ok' && read.entitlement.paid !== null
-  const band = <PageBand title="Plan & Access" lede={subscribed ? undefined : accessCopy(onSale).accessLede} aside={<Link
+  // GST courses are named once, in Your access, where they are the student's own access.
+  const band = <PageBand title="Plan & Access" aside={<Link
     href={STUDENT_DESTINATIONS.account.href} prefetch={false} className={studentAction(btnGhost)}>
     {STUDENT_DESTINATIONS.account.label}</Link>} />
   if (read.status !== 'ok') return <StudentPage band={band}>
-    <Notice title="Your plan couldn’t be loaded" action={<a href={PATH} className={studentAction(btnGhost)}>Try again</a>}>
-      GST courses stay available. Please try again in a few minutes.
-    </Notice>
+    <Notice title="We couldn’t load your plan." action={<a href={PATH} className={studentAction(btnGhost)}>Try again</a>} />
   </StudentPage>
   const entitlement = read.entitlement
   const courses = current?.status === 'ok' ? current.courses : null
@@ -83,7 +80,6 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
         <div className="mt-4 grid gap-1.5 text-sm text-student-text-secondary">
           <p>{PLAN_COPY.payment}</p>
           <p>{PLAN_COPY.refund} <Link href={PAYMENT_TERMS_PATH} prefetch={false} className={LINK}>{PLAN_COPY.termsLink}</Link></p>
-          <p>{PLAN_COPY.gstFree}</p>
         </div>
       </section>}
       {entitlement.receipts.length > 0 && <Receipts receipts={entitlement.receipts} />}
@@ -150,7 +146,6 @@ function yourAccessCard(entitlement: EntitlementSummary, lockedCount: number | n
   return <div className="student-surface" data-access="free">
     {ended && <p className="mb-2 text-sm text-student-text-secondary">Your free trial has ended.</p>}
     <h3 className="font-bold text-student-text-primary">Free GST courses</h3>
-    <p className="mt-1 text-sm text-student-text-secondary">Your GST courses are open to you.</p>
     {refund && <p className="mt-2 text-sm text-student-text-secondary" data-refund={refund.status}>
       {refund.status === 'refund-pending' ? `Your refund of ${naira(refund.amount_kobo)} is being processed. Your plan has ended.`
         : 'Your payment was refunded. Your plan has ended.'}</p>}

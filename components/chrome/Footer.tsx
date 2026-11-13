@@ -22,7 +22,7 @@ export function Footer({ year }: { year: number }): ReactElement {
   if (signedIn) return <footer className="student-footer" data-screen-label="Footer" data-student-app>
     <div className="student-workspace student-footer-inner">
       <BrandMark size={24} className="h-6 w-6 shrink-0" />
-      <p>The inside track on every paper.</p>
+      <p>© {year} CampusIntell</p>
     </div>
   </footer>
   // The public landing page at / carries its own footer for signed-out visitors.
@@ -42,9 +42,6 @@ export function Footer({ year }: { year: number }): ReactElement {
               <BrandMark size={32} className="h-7 w-7" />
               <Wordmark tone="navy" />
             </Link>
-            <p className="mt-1 max-w-[32ch] text-[13.5px] leading-5 text-student-text-secondary tablet:mt-3 tablet:text-[14px]">
-              Academic intelligence for the University of Lagos.
-            </p>
           </div>
 
           <div className="min-w-0">
@@ -58,7 +55,7 @@ export function Footer({ year }: { year: number }): ReactElement {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-student-border pt-4 tablet:mt-8 tablet:pt-5">
-          <span className="text-[12px] text-student-text-muted tablet:text-[13px]">© {year} CampusIntel</span>
+          <span className="text-[12px] text-student-text-muted tablet:text-[13px]">© {year} CampusIntell</span>
           <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-semibold text-student-text-secondary tablet:text-[13px]">
             <span className="h-[6px] w-[6px] rounded-full bg-student-accent" />
             University of Lagos

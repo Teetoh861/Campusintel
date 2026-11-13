@@ -16,7 +16,7 @@ import { StudentLoadingState } from '@/components/student/StudentLoadingState'
 import { studentAction, studentFocusControl, studentFocusDark } from '@/components/student/ui'
 import { useBookmarks } from '@/lib/bookmarks/client'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
-import { BOOKMARKS_LOADING_MESSAGE, BOOKMARKS_PER_PAGE } from './presentation'
+import { BOOKMARKS_LOADING_MESSAGE, BOOKMARKS_PER_PAGE, BOOKMARKS_COPY } from './presentation'
 import type { CourseRowPresentation } from '@/components/student/CourseRow'
 import type { BookmarkCourseAlias, BookmarkSnapshot } from '@/lib/bookmarks/contract'
 import type { ReactElement } from 'react'
@@ -27,6 +27,9 @@ export type BookmarkableCourse = BookmarkCourseAlias & { row: CourseRowPresentat
 // Stable snapshot neighbors survive refills, clamping and intervening store updates.
 type FocusRequest = { kind: 'after-removal'; next: string[]; previous: string[] }
   | { kind: 'retain'; contentKey: string }
+
+// The row whose removal failed; `neighbors` place focus if a later read shows the removal landed after all.
+type Failure = { key: string; neighbors: FocusRequest }
 
 /** Snapshot order, deduplicated: account keys are content keys, legacy device keys are slugs or codes. */
 function orderBookmarks(snapshot: BookmarkSnapshot, catalog: ReadonlyArray<BookmarkableCourse>): BookmarkableCourse[] {
@@ -48,19 +51,29 @@ function orderBookmarks(snapshot: BookmarkSnapshot, catalog: ReadonlyArray<Bookm
   return ordered
 }
 
-/** Render only confirmed store state; the row stays, pressed and busy, until removal is confirmed. */
+/** Render only confirmed store state; the row stays, pressed and busy, until removal is confirmed.
+ * A failed removal shows its message on that row only: when the store must re-read the list after an
+ * uncertain write, the list confirmed when the removal started stays on screen until the read is back.
+ */
 export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<BookmarkableCourse> }): ReactElement {
   const { snapshot, remove, refresh } = useBookmarks(catalog)
   const [feedback, showFeedback] = useBookmarkFeedback()
   const [requestedPage, setPage] = useState(1)
   const [pending, setPending] = useState<string | null>(null)
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null)
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [held, setHeld] = useState<BookmarkableCourse[] | null>(null)
   const pendingKey = useRef<string | null>(null)
   const toggles = useRef(new Map<string, HTMLButtonElement>())
   const emptyHeading = useRef<HTMLHeadingElement>(null)
   const head = useRef<HTMLDivElement>(null)
 
-  const ordered = orderBookmarks(snapshot, catalog)
+  const loading = snapshot.mode === 'loading'
+  const unavailable = snapshot.mode === 'unavailable'
+  const ready = !loading && !unavailable
+  const holding = !ready && held !== null
+  const shown = ready || holding
+  const ordered = holding ? held : orderBookmarks(snapshot, catalog)
   const total = ordered.length
   const totalPages = Math.ceil(total / BOOKMARKS_PER_PAGE)
   const page = Math.min(requestedPage, Math.max(1, totalPages))
@@ -68,12 +81,20 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
   useEffect(() => { if (requestedPage !== page) setPage(page) }, [page, requestedPage])
   const start = (page - 1) * BOOKMARKS_PER_PAGE
   const visible = ordered.slice(start, start + BOOKMARKS_PER_PAGE)
-  const loading = snapshot.mode === 'loading'
-  const unavailable = snapshot.mode === 'unavailable'
-  const ready = !loading && !unavailable
+
+  // Once the store is back with nothing in flight, its own list replaces the held one.
+  useEffect(() => { if (ready && pending === null && held !== null) setHeld(null) }, [held, pending, ready])
 
   useEffect(() => {
-    if (focusRequest === null || !ready || pending !== null) return
+    if (failure === null || !ready || ordered.some(course => course.contentKey === failure.key)) return
+    // The store's list no longer has the course: the removal landed after all.
+    setFailure(null)
+    showFeedback('removed')
+    setFocusRequest(failure.neighbors)
+  }, [failure, ordered, ready, showFeedback])
+
+  useEffect(() => {
+    if (focusRequest === null || !shown || pending !== null) return
     // Logical identity chooses the page first; attached refs are only the final focus destination.
     const remaining = new Set(ordered.map(course => course.contentKey))
     const key = focusRequest.kind === 'retain' ? focusRequest.contentKey
@@ -92,7 +113,7 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
     if (!target?.isConnected || ('disabled' in target && target.disabled)) return
     target.focus()
     if (target.ownerDocument.activeElement === target) setFocusRequest(null)
-  }, [focusRequest, ordered, page, pending, ready, total])
+  }, [focusRequest, ordered, page, pending, shown, total])
 
   const removeBookmark = async (course: BookmarkableCourse) => {
     if (pendingKey.current !== null) return
@@ -109,15 +130,19 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
     }
     setPending(course.contentKey)
     setFocusRequest(null)
+    setFailure(null)
+    setHeld(ordered)
     showFeedback(null)
     let removed = false
-    try { removed = await remove(course) }
+    // After an uncertain write the store accepts nothing until it has read the list again.
+    try { removed = await (ready ? remove(course) : refresh().then(() => remove(course))) }
     catch { /* A rejected transport is the same failed mutation; confirmed state stays authoritative. */ }
     finally {
       pendingKey.current = null
       setPending(null)
     }
-    showFeedback(removed ? 'removed' : 'error')
+    if (removed) showFeedback('removed')
+    else setFailure({ key: course.contentKey, neighbors })
     setFocusRequest(removed ? neighbors : { kind: 'retain', contentKey: course.contentKey })
   }
 
@@ -126,19 +151,19 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
     void refresh()
   }
 
-  const populated = (ready && total > 0) || feedback !== null
+  const populated = (shown && total > 0) || feedback !== null
   return <div className="student-bookmarks">
     <div ref={head} tabIndex={-1} className={'student-bookmarks-head ' + studentFocusControl} data-populated={populated}>
-      {ready && populated && <h2 className="student-bookmarks-count">{total} {total === 1 ? 'course' : 'courses'}</h2>}
+      {shown && populated && <h2 className="student-bookmarks-count">{total} {total === 1 ? 'course' : 'courses'}</h2>}
       <BookmarkFeedback state={feedback} onDismiss={() => showFeedback(null)} />
     </div>
-    {loading && <StudentLoadingState message={BOOKMARKS_LOADING_MESSAGE}>
+    {loading && !holding && <StudentLoadingState message={BOOKMARKS_LOADING_MESSAGE}>
       <CourseRegisterSkeleton rows={BOOKMARKS_PER_PAGE} columns="single" />
     </StudentLoadingState>}
-    {unavailable && <Notice title="Bookmarks temporarily unavailable" action={
+    {unavailable && !holding && <Notice title={BOOKMARKS_COPY.unavailable} action={
       <button type="button" className={studentAction(btnGhost, 'bg-student-surface')} onClick={retry}>Try again</button>
-    }>We couldn’t load your bookmarks just now. Try again to see your latest bookmarks.</Notice>}
-    {ready && total === 0 && <EmptyState headingRef={emptyHeading} title="You haven’t bookmarked any courses yet."
+    } />}
+    {shown && total === 0 && <EmptyState headingRef={emptyHeading} title="You haven’t bookmarked any courses yet."
       icon={<Bookmark aria-hidden="true" size={22} strokeWidth={1.75} />} actions={<>
         <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
           Browse {STUDENT_DESTINATIONS.courses.label}
@@ -149,9 +174,12 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
       </>}>
       Bookmark a course from {STUDENT_DESTINATIONS.courses.label} or its course page and it will appear here.
     </EmptyState>}
-    {ready && total > 0 && <>
+    {shown && total > 0 && <>
       <CourseRegister label="Bookmarked courses" columns="single">
         {visible.map(course => <CourseRow key={course.contentKey} {...course.row}
+          problem={failure?.key === course.contentKey ? { text: BOOKMARKS_COPY.removeFailed, action:
+            <button type="button" className={studentAction(btnGhost, 'border-transparent px-2')}
+              disabled={pending !== null} onClick={() => { void removeBookmark(course) }}>Try again</button> } : undefined}
           trailingAction={<BookmarkToggle pressed busy={pending === course.contentKey} label={`Bookmark ${course.row.title}`}
             disabled={pending !== null && pending !== course.contentKey}
             ref={node => {

@@ -9,7 +9,7 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { useIsDesktop } from '@/components/ui/use-mobile'
 import { Navigator, NavigatorLegend } from './Navigator'
 import { focusFirst } from './focus-return'
-import { answeredLine, describeClock, formatClock, optionLetter, practiceIdentity, timerAnnouncement } from './practice-presentation'
+import { PRACTICE_COPY, answeredLine, describeClock, formatClock, optionLetter, practiceIdentity, timerAnnouncement } from './practice-presentation'
 import type { AnswersMap, MarkedMap, PracticeQuestion, SaveLine } from './types'
 import type { ReactElement } from 'react'
 
@@ -29,6 +29,8 @@ type Props = {
   canAnswer: boolean
   saveLine: SaveLine
   onRetrySave: () => void
+  // A submission on its way: the Submit buttons say so and wait.
+  submitting?: boolean
   navOpen: boolean
   answeredCount: number
   markedCount: number
@@ -64,6 +66,7 @@ export function QuestionScreen(props: Props): ReactElement {
   const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
   const progress = answeredLine(answeredCount, total, markedCount)
   const isLast = current === total - 1
+  const submitLabel = props.submitting ? PRACTICE_COPY.submitting : 'Submit practice'
   const navigator = <Navigator total={total} current={current} answersMap={answersMap} markedMap={markedMap} onJump={props.onJump} />
 
   return <Sheet open={sheetOpen} onOpenChange={open => { if (open) props.onOpenNav(); else onCloseNav() }}>
@@ -124,17 +127,21 @@ export function QuestionScreen(props: Props): ReactElement {
             {props.saveLine.text}
             {props.saveLine.retry ? <> <button type="button" className={studentAction(btnGhost, 'border-transparent px-2')}
               onClick={props.onRetrySave}>Try again</button></> : null}
+            {/* A full load, so signing in or reloading starts from the server's view of this attempt. */}
+            {props.saveLine.action ? <> <a href={props.saveLine.action.href} className={studentAction(btnGhost, 'border-transparent px-2')}>
+              {props.saveLine.action.label}</a></> : null}
           </p> : null}
           <div className="student-practice-steps">
             <button type="button" className={studentAction(btnGhost)} disabled={current === 0} onClick={props.onPrev}>Previous</button>
             <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup={isLast ? 'dialog' : undefined}
-              onClick={event => { if (isLast) props.onSubmit([event.currentTarget]); else props.onNext() }}>{isLast ? 'Submit practice' : 'Next'}</button>
+              disabled={isLast && props.submitting}
+              onClick={event => { if (isLast) props.onSubmit([event.currentTarget]); else props.onNext() }}>{isLast ? submitLabel : 'Next'}</button>
           </div>
           <div className="student-practice-after student-practice-mobile">
             <span>{progress}</span>
             <button type="button" className={studentAction(btnGhost, 'border-transparent')} aria-haspopup="dialog"
-              onClick={event => props.onSubmit([event.currentTarget])}>
-              Submit practice
+              disabled={props.submitting} onClick={event => props.onSubmit([event.currentTarget])}>
+              {submitLabel}
             </button>
           </div>
         </div>
@@ -147,8 +154,8 @@ export function QuestionScreen(props: Props): ReactElement {
             <NavigatorLegend />
             <div className="mt-5 flex flex-col">
               <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup="dialog"
-                onClick={event => props.onSubmit([event.currentTarget])}>
-                Submit practice
+                disabled={props.submitting} onClick={event => props.onSubmit([event.currentTarget])}>
+                {submitLabel}
               </button>
             </div>
           </div>
@@ -169,7 +176,7 @@ export function QuestionScreen(props: Props): ReactElement {
           <button type="button" className={studentAction(btnGhost)} onClick={onCloseNav}>Back to question {current + 1}</button>
           {/* This button leaves with the sheet, so the stable Questions trigger is the confirmation's return target. */}
           <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup="dialog"
-            onClick={() => { onCloseNav(); props.onSubmit(sheetReturnFocus()) }}>Submit practice</button>
+            disabled={props.submitting} onClick={() => { onCloseNav(); props.onSubmit(sheetReturnFocus()) }}>{submitLabel}</button>
         </div>
       </SheetContent>
   </Sheet>

@@ -98,14 +98,14 @@ test('an ineligible student sees free GST access: no offer, no button and no rea
   assert.doesNotMatch(html, /Free pass|data-activation|free pass<|72 hours/)
   assert.doesNotMatch(html, /isn’t available|not offered|email|months?\b|years?\b|already had/i)
   assert.match(html, /Free GST courses/)
-  assert.match(html, /Your GST courses are open to you\./)
+  assert.doesNotMatch(html, /Your GST courses are open to you/, 'the heading says it; no second line repeats it')
   assert.match(html, /Campus Bot practice from your own notes comes with Early Access\./)
 })
 
 test('the free card counts the student\'s other courses, in today\'s wording while plans are not on sale', async () => {
   const text = strip(await render(discoveryDatabase, false))
   assert.match(text, /Your other 3 courses: Included with full access/)
-  assert.match(text, /Department courses open fully with Early Access\./)
+  assert.doesNotMatch(text, /Department courses open/, 'no page lede repeating the card')
   assert.doesNotMatch(text, /subscribe|Choose a plan|₦/i)
   assert.match(strip(await render(discoveryDatabase, false, { current: { status: 'ok', courses: [{ isFree: false }] } })),
     /Your other 1 course: Included/)
@@ -181,8 +181,8 @@ test('plans show only while sales are open, with the payment, refund and terms l
   assert.match(html, /data-plans="plus_session:1100000,plus_semester:600000,standard_session:700000,standard_semester:400000"/)
   assert.match(html, /You’ll pay securely by card or bank transfer on our payment partner’s page\./)
   assert.match(html, /Full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan\. <a href="\/payment-terms">Payment terms<\/a>/)
-  assert.match(html, /GST courses stay free\./)
-  assert.match(strip(html), /Department courses open when you subscribe\./)
+  assert.equal((strip(html).match(/GST/g) || []).length, 1, 'GST is named once, in Your access')
+  assert.doesNotMatch(strip(html), /Department courses open when you subscribe/)
   assert.match(strip(html), /Your other 3 courses: Included when you subscribe/)
   assert.match(strip(html), /Campus Bot practice from your own notes is included when you subscribe\./)
   for (const closed of [discoveryDatabase, { ...discoveryDatabase, plans: catalogue }, { ...onSale, plans: [] }]) {

@@ -17,6 +17,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { practicePolicyFor, readPracticeAttempt, readPracticeState } from '@/lib/practice/server'
 import { readPracticeTopics } from '@/lib/practice/topics'
@@ -77,7 +78,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     {PRACTICE_COPY.backToCourse}
   </Link>
   const retry = () => <StudentPage band={band}>
-    <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
+    <Notice title={PRACTICE_COPY.loadFailedTitle} action={<>
       <a href={`${route.href}/quiz`} className={studentAction(btnNavy, studentFocusDark)}>Try again</a>{backToCourse}
     </>}>{PRACTICE_COPY.temporaryBody}</Notice>
   </StudentPage>
@@ -115,7 +116,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
       <Notice tone="info" title={PRACTICE_COPY.resultMissingTitle} action={<>
         <Link href={`${route.href}#cbtPractice`} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Go to practice</Link>
         {backToCourse}
-      </>}>Open practice from the course page to see your attempts.</Notice>
+      </>} />
     </StudentPage>
   }
 
@@ -176,7 +177,8 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
 
   if (course.content.state === 'locked') {
     return <StudentPage band={band}><LockedCourseNotice reason={course.content.reason} backHref={route.href}
-      backLabel={PRACTICE_COPY.backToCourse} plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} /></StudentPage>
+      backLabel={PRACTICE_COPY.backToCourse} plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)}
+      has={buildTimeStudy(route.slug)} /></StudentPage>
   }
   if (course.content.state === 'not-available') return <StudentPage band={band}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={backToCourse}>{null}</Notice>

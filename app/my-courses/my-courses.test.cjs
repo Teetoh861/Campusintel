@@ -143,7 +143,7 @@ test('verified student sees the PageBand, real context/counts and every course i
   assert.match(html, /class="student-page-band"/)
   assert.match(html, /<h1[^>]*>My Courses<\/h1>/)
   assert.equal((html.match(/<h1\b/g) || []).length, 1)
-  assert.match(html, /Your semester, in one place\./)
+  assert.doesNotMatch(html, /Your semester, in one place/)
   assert.match(html, /Business Administration · 200 Level · First Semester/)
   assert.match(html, /3 courses · 1 ready to study/)
   assert.ok(html.indexOf('BUA201') < html.indexOf('BUA203') && html.indexOf('BUA203') < html.indexOf('BUA205'))
@@ -237,16 +237,16 @@ test('signed-out and incomplete students follow existing login/selection routes'
 test('continuity failure stays unavailable before private course/profile reads', async () => fixture(async f => {
   f.state.tokenError = new Error('signing secret')
   const html = await f.render()
-  assert.match(html, /Courses temporarily unavailable/)
+  assert.match(html, /We couldn’t load your courses\./)
   assert.doesNotMatch(html, /signing secret|BUA201 institutional title/)
   assert.deepEqual([f.state.contextReads, f.state.domainCalls.length, f.state.profileReads], [1, 0, 0])
 }))
 
 test('domain failures retain truthful recovery and never look like an empty semester', async () => fixture(async f => {
   for (const [status, message, href] of [
-    ['missing-profile', 'profile could not be found', '/contact'],
-    ['unavailable', 'Courses temporarily unavailable', '/my-courses'],
-    ['invariant-failure', 'Course details unavailable', '/contact'],
+    ['missing-profile', 'We couldn’t find your profile\\.', '/contact'],
+    ['unavailable', 'We couldn’t load your courses\\.', '/my-courses'],
+    ['invariant-failure', 'We couldn’t show the course details\\.', '/contact'],
   ]) {
     f.state.result = { status, message: 'private Supabase provider error', courses: [ready] }
     const html = await f.render()
@@ -276,8 +276,8 @@ test('every selection mismatch fails closed before rendering mixed context/cours
 
 test('profile-label read failures cannot expose courses or bypass completion', async () => fixture(async f => {
   for (const [status, expected] of [
-    ['missing-profile', 'profile could not be found'], ['invariant-failure', 'Course details unavailable'],
-    ['unavailable', 'Courses temporarily unavailable'],
+    ['missing-profile', 'We couldn’t find your profile\\.'], ['invariant-failure', 'We couldn’t show the course details\\.'],
+    ['unavailable', 'We couldn’t load your courses\\.'],
   ]) {
     f.state.profile = { status }
     assert.match(await f.render(), new RegExp(expected))
@@ -384,7 +384,7 @@ test('unavailable and signed-out progress reads leave usable course rows with no
     assert.equal(rows(html).length, 3)
     assert.ok(anchor(html, '/courses/resolved-slug'))
     assert.doesNotMatch(html, FIGURES)
-    assert.doesNotMatch(html, /Courses temporarily unavailable|role="alert"/)
+    assert.doesNotMatch(html, /We couldn’t load your courses|role="alert"/)
   }
 }))
 
@@ -419,5 +419,5 @@ test('a rejected practice read also leaves the page usable without figures or pr
   assert.equal(rows(html).length, 3)
   assert.ok(anchor(html, '/courses/resolved-slug'))
   assert.doesNotMatch(html, FIGURES)
-  assert.doesNotMatch(html, /provider failure|Courses temporarily unavailable|role="alert"/)
+  assert.doesNotMatch(html, /provider failure|We couldn’t load your courses|role="alert"/)
 }))

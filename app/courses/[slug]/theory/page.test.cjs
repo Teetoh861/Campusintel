@@ -109,12 +109,13 @@ test('authentication, unknown courses and failures keep content closed without r
 }))
 
 test('a locked course renders the unlock notice and no question, prompt or attempt field', async () => fixture(async f => {
-  f.state.result = { status: 'locked' }
+  f.state.result = { status: 'locked', course: { slug, code: 'INST201', title: 'Institutional theory title' } }
   const html = await f.html()
-  assert.doesNotMatch(html, /INST201|Institutional theory title|Explain management|data-attempt-id|textarea/)
+  assert.match(html, /<p>INST201 · Institutional theory title<\/p>/, 'the course name, as on the ready page')
+  assert.doesNotMatch(html, /Explain management|data-attempt-id|textarea/)
   assert.match(html, /Included with full access/)
   assert.match(html, /href="\/access"/)
-  assert.match(html, /GST courses stay free/)
+  assert.doesNotMatch(html, /GST/)
 }))
 
 test('loading announces once and contains no answer fields or unverified course identity', async () => fixture(async f => {
@@ -130,7 +131,7 @@ test('theory selection recovery renders the matching single action without a pla
     ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
     ['selection-locked', 'Your courses are set for another semester.', 'Message us'],
   ]) {
-    f.state.result = { status: 'locked', reason }
+    f.state.result = { status: 'locked', reason, course: { slug, code: 'INST201', title: 'Institutional theory title' } }
     const tree = await f.workspace()
     assert.equal(elementNodes(tree).find(node => node.type?.name === 'LockedCourseNotice').props.reason, reason)
     const html = renderToStaticMarkup(tree)

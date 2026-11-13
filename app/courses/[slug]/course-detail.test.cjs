@@ -49,7 +49,7 @@ async function fixture(run) {
   const calls = [], client = { name: 'verified detail client' }
   // topics: the course's topic list as published_cbt_topics returns it (null: unreadable); progress per topic.
   const state = { result: full(), signedOut: false, sessionError: false, clientError: false, topics: [], progress: null,
-    topicError: false }
+    topicError: false, buildTime: { notes: true, cbtPractice: true, theory: false } }
   function StudentAccessGate() { return null }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -77,6 +77,8 @@ async function fixture(run) {
           calls.push(['lookup', slug]); assert.equal(supplied, client); return state.result
         },
       }
+      // What a locked course publishes, from build-time data (lib/courses/build-time-study.test.cjs covers the real sources).
+      if (name === '@/lib/courses/build-time-study') return { buildTimeStudy: () => state.buildTime }
       if (name === '@/lib/practice/server') return { practicePolicyFor: slug => {
         assert.equal(slug, 'central-route'); return { size: 50, seconds: 1800, sections: ['Configured first'] }
       } }
@@ -272,12 +274,19 @@ test('a locked course keeps its identity, renders no study content or reading li
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
-  assert.match(html, /Included with full access/)
-  assert.match(html, /GST courses stay free/)
+  assert.match(text(html), /Included with full access Notes · CBT practice See how to unlock/)
+  assert.doesNotMatch(html, /GST|open fully|open when you subscribe/, 'one line: what the course has, no repetition, no GST')
+  assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
   assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|id="theory"|id="overview"|id="reading"|Core reading|\/quiz[?"]|\/theory"|\/materials"/)
   assert.doesNotMatch(html, /student-detail-rail|role="alert"/)
   assert.equal((html.match(/Bookmark control/g) || []).length, 1, 'a locked course can still be bookmarked')
+  // Nothing published: nothing to subscribe to, so no unlock action, and the page says so.
+  f.state.buildTime = { notes: false, cbtPractice: false, theory: false }
+  const empty = await f.html()
+  assert.match(text(empty), /Study materials are not available\./)
+  assert.doesNotMatch(empty, /href="\/access"|See how to unlock|Subscribe|Included with full access|Free pass/)
+  assert.equal((empty.match(/class="student-notice"/g) || []).length, 1)
 }))
 
 test('repository-only renders repository identity and content without any fabricated institutional ownership', async () => fixture(async f => {
@@ -285,7 +294,8 @@ test('repository-only renders repository identity and content without any fabric
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Static repository title<\/h1>/)
   assert.match(html, /Additional study material · STATIC 999/)
-  assert.match(html, /Check that these materials match your course and syllabus/)
+  assert.match(html, /Check it against your course outline\./)
+  assert.doesNotMatch(html, /have not been confirmed/)
   assert.doesNotMatch(html, /INST101|Institutional title|Confirmed for|Business Administration|Insurance|200 Level|Semester|Free/)
   assert.match(html, /id="notes"/)
   assert.equal(anchors(html).filter(link => link.includes('href="/courses/central-route/quiz?mode=exam"')).length, 1)
@@ -313,8 +323,8 @@ test('signed-out, not-found, unavailable and invariant failures never fall back 
   f.state.result = { status: 'not-found' }
   await assert.rejects(f.granted('not-a-course'), /notFound/)
   for (const [status, expectedTitle, href] of [
-    ['unavailable', 'Course temporarily unavailable', '/courses/central-route'],
-    ['invariant-failure', 'Course details unavailable', '/contact'],
+    ['unavailable', 'We couldn’t load this course.', '/courses/central-route'],
+    ['invariant-failure', 'We couldn’t show the course details.', '/contact'],
   ]) {
     f.state.result = { status }
     const html = await f.html()
@@ -327,11 +337,11 @@ test('signed-out, not-found, unavailable and invariant failures never fall back 
   f.state.result = { status: 'unavailable' }
   assert.ok(anchors(await f.html()).some(link => link.includes('href="/materials"')), 'global Request Material without a confirmed course')
   f.state.clientError = true
-  assert.match(await f.html(), /Course temporarily unavailable/)
+  assert.match(await f.html(), /We couldn’t load this course\./)
   f.state.clientError = false
   f.state.sessionError = true
   const html = await f.html()
-  assert.match(html, /Course temporarily unavailable/)
+  assert.match(html, /We couldn’t load this course\./)
   assert.doesNotMatch(html, /private provider details/)
 }))
 

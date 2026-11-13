@@ -10,7 +10,7 @@ import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { postPracticeCommand } from '@/lib/practice/client'
 import { INSTANT_COPY, browserHapticEnv, firstOpenQuestion, optionMarkOf, vibrateForResult } from './instant-feedback'
-import { optionLetter, practiceIdentity } from './practice-presentation'
+import { PRACTICE_COPY, attemptHref, optionLetter, practiceIdentity, signInToAttemptHref } from './practice-presentation'
 import { clearPendingPick, readPendingPick, writePendingPick } from './practice-storage'
 import type { GradedAttempt, OpenAttempt, PickFeedback } from '@/lib/practice/contract'
 import type { PendingPick } from './practice-storage'
@@ -21,7 +21,9 @@ type Props = {
   courseCode: string
   courseTitle: string
   repositoryOnly: boolean
+  // Exit goes to the course's topics; signing in or reloading comes back to this attempt on the course's page.
   courseHref: string
+  coursePageHref: string
   attempt: OpenAttempt
   onGraded: (attempt: GradedAttempt) => void
 }
@@ -29,10 +31,9 @@ type Props = {
 // What the line under the options says while a pick has no result.
 type Waiting = 'sending' | 'offline' | 'signed-out' | 'refused' | null
 const REFUSED: Record<string, string> = {
-  'session-changed': 'You signed in on another tab. Refresh this page to continue.',
+  'session-changed': PRACTICE_COPY.sessionChangedTitle,
   'not-found': 'This attempt is no longer available.',
 }
-const RETRY = 'Something went wrong. Try again.'
 
 function feedbackOf(attempt: OpenAttempt): Record<string, PickFeedback> {
   return Object.fromEntries(attempt.questions.flatMap(question =>
@@ -47,7 +48,7 @@ export function InstantAttempt(props: Props): ReactElement {
   const [feedback, setFeedback] = useState<Record<string, PickFeedback>>(() => feedbackOf(attempt))
   const [pending, setPending] = useState<PendingPick | null>(null)
   const [waiting, setWaiting] = useState<Waiting>(null)
-  const [refusal, setRefusal] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<{ text: string; status: string } | null>(null)
   const [graded, setGraded] = useState<GradedAttempt | null>(null)
   const sending = useRef(false)
   // Haptics follow a tap on this page only: a pick resent by a reload does not vibrate.
@@ -92,7 +93,7 @@ export function InstantAttempt(props: Props): ReactElement {
     clearPendingPick(attempt.id)
     setPending(null)
     setWaiting('refused')
-    setRefusal(REFUSED[outcome.status] ?? RETRY)
+    setRefusal({ text: REFUSED[outcome.status] ?? INSTANT_COPY.pickAgain, status: outcome.status })
   }, [attempt.id, continuityToken])
 
   // A pick kept from before a reload is sent again; one the server already answered (another tab) is dropped.
@@ -138,7 +139,12 @@ export function InstantAttempt(props: Props): ReactElement {
   const lockedOption = pending?.questionId === question.questionId ? pending.option : null
   const promptId = `${id}-prompt`
   const statusText = waiting === 'sending' ? INSTANT_COPY.checking : waiting === 'offline' ? INSTANT_COPY.offline
-    : waiting === 'signed-out' ? INSTANT_COPY.signedOut : waiting === 'refused' ? refusal : null
+    : waiting === 'signed-out' ? INSTANT_COPY.signedOut : waiting === 'refused' ? refusal?.text ?? null : null
+  // The line's one way on, as a full load back to this attempt: sign in, or load it again for the current sign-in.
+  const statusAction = waiting === 'signed-out'
+    ? { label: PRACTICE_COPY.signIn, href: signInToAttemptHref(props.coursePageHref, attempt.id) }
+    : waiting === 'refused' && refusal?.status === 'session-changed'
+      ? { label: PRACTICE_COPY.reload, href: attemptHref(props.coursePageHref, attempt.id) } : null
   const announcement = shown === undefined ? '' : shown.selected === shown.correctOption ? `${INSTANT_COPY.correct}.`
     : `Incorrect. ${INSTANT_COPY.correctAnswer}: ${optionLetter(shown.correctOption)}.`
 
@@ -186,6 +192,8 @@ export function InstantAttempt(props: Props): ReactElement {
         {waiting === 'offline' && pending !== null ? <> <button type="button"
           className={studentAction(btnGhost, 'border-transparent px-2')} onClick={() => { void send(pending) }}>
           Try again</button></> : null}
+        {statusAction ? <> <a href={statusAction.href} className={studentAction(btnGhost, 'border-transparent px-2')}>
+          {statusAction.label}</a></> : null}
       </p> : null}
       {shown?.explanation ? <section className="student-instant-why" aria-labelledby={`${id}-why`}>
         <h2 id={`${id}-why`}>{INSTANT_COPY.why}</h2>

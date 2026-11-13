@@ -20,7 +20,8 @@ import { ReviewScreen } from './ReviewScreen'
 import { useReviewAccess } from './useReviewAccess'
 import { focusFirst } from './focus-return'
 import { canPractiseTopicAgain } from './instant-feedback'
-import { PRACTICE_COPY, attemptHref } from './practice-presentation'
+import { AUTH_PATHS } from '@/lib/auth/constants'
+import { PRACTICE_COPY, attemptHref, signInToAttemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, settlePendingStart,
   writePendingStart } from './practice-storage'
 import type { GradedAttempt, GradedExam, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
@@ -43,8 +44,6 @@ const PROBLEMS: Record<string, Problem> = {
   'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
   'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
   'locked': { title: 'You can’t start a new practice right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
-  'signed-out': { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody },
-  'session-changed': { title: 'You signed in on another tab.', body: 'Refresh this page to continue.' },
   // An instant start whose topic the course no longer has.
   'topic-missing': { title: 'This topic isn’t available.', body: 'Choose another topic from the course page.' },
 }
@@ -95,6 +94,18 @@ function initialView(initial: QuizInitial): View {
   if (initial.kind === 'graded') return { screen: 'results', attempt: initial.attempt, unsent: false }
   if (initial.kind === 'topic') return { screen: 'starting', topic: initial.topic }
   return { screen: 'intro' }
+}
+
+/** A problem whose way on is a page: sign in and come back, or load this page again for the current sign-in. A start
+ * returns to where it began (the exam's brief, or the course's topics); an attempt returns to that attempt. */
+function problemFor(status: string, courseHref: string, attemptId: string | null, topic: boolean): Problem | undefined {
+  const page = attemptId !== null ? attemptHref(courseHref, attemptId) : topic ? courseHref : `${courseHref}/quiz`
+  if (status === 'signed-out') return { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody,
+    action: { label: PRACTICE_COPY.signIn, href: attemptId !== null ? signInToAttemptHref(courseHref, attemptId)
+      : `${AUTH_PATHS.login}?next=${encodeURIComponent(page)}` } }
+  if (status === 'session-changed') return { title: PRACTICE_COPY.sessionChangedTitle, body: '',
+    action: { label: PRACTICE_COPY.reload, href: page } }
+  return PROBLEMS[status]
 }
 
 export function QuizClient(props: Props): ReactElement | null {
@@ -186,7 +197,8 @@ export function QuizClient(props: Props): ReactElement | null {
       setBriefingVersion(version => version + 1)
       setView({ screen: 'intro' })
     }
-    const known = 'mode' in pending && outcome.status === 'not-found' ? PROBLEMS['topic-missing'] : PROBLEMS[outcome.status]
+    const known = 'mode' in pending && outcome.status === 'not-found' ? PROBLEMS['topic-missing']
+      : problemFor(outcome.status, props.courseHref, null, 'mode' in pending)
     if (known === undefined) retryStart.current = { ...pending, attemptId: crypto.randomUUID() }
     setProblem(known ?? PROBLEMS['start-refused']!)
   }, [courseSlug, continuityToken, show, props.courseHref])
@@ -240,8 +252,8 @@ export function QuizClient(props: Props): ReactElement | null {
     setBusy(false)
     if (outcome.status === 'ready' || outcome.status === 'graded') show(outcome)
     else if (outcome.status === 'unavailable') setProblem(PROBLEMS['no-connection']!)
-    else setProblem(PROBLEMS[outcome.status] ?? PROBLEMS['resume-failed']!)
-  }, [initial, continuityToken, show])
+    else setProblem(problemFor(outcome.status, props.courseHref, initial.attemptId, false) ?? PROBLEMS['resume-failed']!)
+  }, [initial, continuityToken, show, props.courseHref])
 
   const onGraded = useCallback((attempt: GradedAttempt, unsent: boolean) => {
     setView({ screen: 'results', attempt, unsent })
@@ -253,7 +265,7 @@ export function QuizClient(props: Props): ReactElement | null {
 
   if (view.screen === 'active' && view.attempt.mode === 'instant') {
     return <InstantAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken}
-      courseHref={topicsHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)} />
+      courseHref={topicsHref} coursePageHref={props.courseHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)} />
   }
   if (view.screen === 'active') {
     return <ActiveAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken} courseHref={props.courseHref}
@@ -276,7 +288,8 @@ export function QuizClient(props: Props): ReactElement | null {
           setReport({ index, target: { courseId: props.repositoryCourseId, itemId: question.itemId,
             revision: question.revision, questionId: question.questionId, attemptId: attempt.id } })
         }}
-        onBack={() => { setReport(null); setView({ ...view, screen: 'results' }) }} />
+        // Back to the result as it was: no problem from before the review comes back with it.
+        onBack={() => { setReport(null); setProblem(null); setView({ ...view, screen: 'results' }) }} />
       {report ? <ReportQuestionDialog key={report.target.itemId} target={report.target} questionNumber={report.index + 1}
         continuityToken={continuityToken} onClose={() => setReport(null)}
         onReported={questionId => setReported(previous => ({ ...previous, [questionId]: true }))}
@@ -288,7 +301,7 @@ export function QuizClient(props: Props): ReactElement | null {
     const canStartNew = brief !== null && (attempt.canStartNew ?? attempt.reviewAvailable)
     if (!attempt.reviewAvailable) return <ScoreOnly {...identity} attempt={attempt} courseHref={props.courseHref}
       plansOnSale={props.plansOnSale}
-      canStartNew={canStartNew} starting={busy}
+      canStartNew={canStartNew} starting={busy} error={problem} onRetry={retry}
       onRetake={() => { if (brief !== null) start('new', null, brief) }} />
     if (attempt.mode === 'instant') {
       const { topic } = attempt
@@ -303,7 +316,7 @@ export function QuizClient(props: Props): ReactElement | null {
     return <ResultsScreen {...identity} courseHref={props.courseHref} attempt={attempt} canStartNew={canStartNew}
       unsentAtDeadline={view.unsent} starting={busy} openingReview={review.opening} error={review.problem ?? problem}
       onRetry={review.problem !== null ? () => { void review.openReview() } : retry}
-      onReview={() => { void review.openReview() }}
+      onReview={() => { setProblem(null); void review.openReview() }}
       onRetake={() => { if (brief !== null) start('new', null, brief) }}
       onRedo={() => {
         if (brief !== null) start('redo', attempt.id, { questionCount: attempt.questionCount, durationSeconds: brief.durationSeconds })

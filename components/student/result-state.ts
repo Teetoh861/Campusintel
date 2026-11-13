@@ -4,21 +4,17 @@ import { AUTH_PATHS } from '@/lib/auth/constants'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
-import { STUDY_COPY } from './study-families'
 
-/** Exact copy for the result states more than one course surface reports. */
+/** A result state's words: a title that says it all, and a second line only when it adds something. */
+export type ResultCopy = { readonly title: string; readonly body?: string }
+
+/** Exact copy for the result states more than one course surface reports; each comes with its recovery action. */
 export const RESULT_COPY = {
-  'course-invariant': {
-    title: 'Course details unavailable',
-    body: 'We couldn’t show the course details. Please contact support.',
-  },
-  'courses-unavailable': { title: 'Courses temporarily unavailable', body: STUDY_COPY.temporarilyUnavailable },
-  'course-unavailable': { title: 'Course temporarily unavailable', body: STUDY_COPY.temporarilyUnavailable },
-  'missing-profile': {
-    title: 'Profile unavailable',
-    body: 'Your profile could not be found. Please contact support.',
-  },
-} as const
+  'course-invariant': { title: 'We couldn’t show the course details.' },
+  'courses-unavailable': { title: 'We couldn’t load your courses.' },
+  'course-unavailable': { title: 'We couldn’t load this course.' },
+  'missing-profile': { title: 'We couldn’t find your profile.' },
+} as const satisfies Record<string, ResultCopy>
 
 export type ResultStateId = keyof typeof RESULT_COPY
 

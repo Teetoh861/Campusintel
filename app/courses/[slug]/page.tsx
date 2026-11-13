@@ -14,6 +14,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
@@ -27,7 +28,7 @@ import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
 import { NoteUseTracker } from './NoteUseTracker'
-import { COURSE_LEDE, NotesSection, OverviewSection, PracticeSection, ReadingList,
+import { NotesSection, OverviewSection, PracticeSection, ReadingList,
   StudyNav, TheorySection, overviewBankTopics, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
@@ -107,7 +108,7 @@ async function practiceTopicRows(client: Awaited<ReturnType<typeof createClient>
 
 /** Fail closed without any unverified course identity. */
 function CourseUnavailable({ status, slug }: { status: 'unavailable' | 'invariant-failure'; slug: string }): ReactElement {
-  return <StudentPage band={<PageBand title="Course" lede={COURSE_LEDE} />}>
+  return <StudentPage band={<PageBand title="Course" />}>
     <ResultNotice state={status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
       retryHref={`/courses/${encodeURIComponent(slug)}`}
       extra={status === 'unavailable' && <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false}
@@ -148,7 +149,7 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   const number = (id: StudySectionId) => sections.indexOf(id) + 1
   return <StudentPage workspaceClassName="student-detail-workspace" band={<>
     <CourseViewTracker courseSlug={route.slug} />
-    <PageBand title={title} lede={COURSE_LEDE}
+    <PageBand title={title}
       context={<p>{institutional ? <>{code}{institutional.isFree && ' · Free'}</> : <>{REPOSITORY_COURSE_LABEL} · {code}</>}</p>}
       aside={<div className="student-band-actions">
         {content.state === 'ready' ? <RequestMaterialLink href={materialsHref} /> : <span />}
@@ -158,15 +159,15 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
       {!institutional && content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
-          Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
+          Check it against your course outline.
         </Notice>}
       {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
-        plansOnSale={plansOnSale} />
+        plansOnSale={plansOnSale} has={buildTimeStudy(route.slug)} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />
-      </>}>We couldn’t load the study materials for this course just now.</Notice>}
+      </>} />}
       {content.state === 'not-available' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>}
       {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
         action={<RequestMaterialLink href={materialsHref} prominent />}>

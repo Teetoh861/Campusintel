@@ -44,13 +44,24 @@ const REFUSAL: Record<string, string> = {
   // This tab identity cannot save on this exam (the exam already takes changes from as many tabs as it allows).
   // Saving stops in this tab only; every other tab, and everything already saved, is untouched.
   'too-many-tabs': 'You have too many exam tabs open. Continue in one of your existing tabs — nothing you’ve answered there is lost.',
-  'session-changed': 'You signed in on another tab. Refresh this page to continue.',
-  'signed-out': 'You’ve been signed out. Sign in again before time runs out.',
+  'session-changed': 'You signed in on another tab.',
+  'signed-out': 'You’ve been signed out. Sign in before time runs out.',
 }
-const RETRY = 'We couldn’t send your answers. They’re still here. Try again.'
+const RETRY = 'We couldn’t send your answers. They’re still here.'
 // A submission that did not go through with time left: what was confirmed stays saved, the rest stays on this device.
-const SUBMIT_RETRY_SAVED = 'Your answers are saved. Submission didn’t go through — try again.'
-const SUBMIT_RETRY_UNSAVED = 'Your answers are kept on this device. Submission didn’t go through — try again.'
+// The submit button right above the line is the way on.
+const SUBMIT_RETRY_SAVED = 'Your answers are saved. Submission didn’t go through.'
+const SUBMIT_RETRY_UNSAVED = 'Your answers are kept on this device. Submission didn’t go through.'
+
+/** One line under the exam and where it came from: a sync problem goes once a later sync succeeds, a submission problem
+ * stays until the next submission. Signing in or loading the page again comes back to this exam. */
+type ExamLine = { text: string; from: 'sync' | 'submit'; action?: { label: string; href: string } }
+function refusalLine(status: string, from: ExamLine['from']): ExamLine {
+  const page = window.location.pathname
+  const action = status === 'signed-out' ? { label: 'Sign in', href: `/login?next=${encodeURIComponent(page)}` }
+    : status === 'session-changed' ? { label: 'Reload', href: page } : undefined
+  return { text: REFUSAL[status] ?? RETRY, from, action }
+}
 const SUBMITTING = 'Submitting…'
 const DEADLINE_RULE = 'Only answers saved before time runs out count.'
 const CHECKING_CLOCK = 'Checking the time left…'
@@ -129,7 +140,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [save, setSave] = useState<AutosaveSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<ExamLine | null>(null)
   const answersRef = useRef(answers)
   const autosave = useRef<ExamAutosave | null>(null)
   const examClock = useRef<ExamClock | null>(null)
@@ -171,13 +182,15 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       if (outcome.status === 'saved' || outcome.status === 'stale' || outcome.status === 'too-many-tabs') {
         // The sheet that stands, from every tab, laid under this tab's unconfirmed changes.
         autosave.current?.adopt({ revision: outcome.revision, answers: validAnswers(outcome.answers, questions) })
+        // Back in touch with the server: an earlier sync problem no longer applies.
+        setMessage(previous => previous?.from === 'sync' ? null : previous)
         return { serverNow: Date.parse(outcome.now), deadline: Date.parse(outcome.deadlineAt) }
       }
       if (outcome.status === 'ready') {
         if (outcome.preview.kind === 'cbt' && outcome.preview.result !== null) setResult(outcome.preview.result)
         return null
       }
-      if (outcome.status !== 'unavailable') setMessage(REFUSAL[outcome.status] ?? RETRY)
+      if (outcome.status !== 'unavailable') setMessage(refusalLine(outcome.status, 'sync'))
       return null
     }
     const controller = new ExamClock({
@@ -281,10 +294,10 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     setBusy(false)
     setConfirming(false)
     if (outcome.status === 'unavailable') {
-      setMessage(autosave.current?.snapshot().state === 'saved' ? SUBMIT_RETRY_SAVED : SUBMIT_RETRY_UNSAVED)
+      setMessage({ text: autosave.current?.snapshot().state === 'saved' ? SUBMIT_RETRY_SAVED : SUBMIT_RETRY_UNSAVED, from: 'submit' })
       return false
     }
-    setMessage(REFUSAL[outcome.status] ?? RETRY)
+    setMessage(refusalLine(outcome.status, 'submit'))
     return true
   }, [continuityToken, courseSlug, storageKey, tab])
 
@@ -384,7 +397,9 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
           className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:w-auto')}>
           {busy ? SUBMITTING : timeUp ? 'See my result' : 'Submit exam'}
         </button>}
-      {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message}</p>}
+      {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message.text}
+        {message.action ? <> <a href={message.action.href} className={studentAction(btnGhost, 'border-transparent px-2')}>
+          {message.action.label}</a></> : null}</p>}
     </div>
   </div>
 }

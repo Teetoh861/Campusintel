@@ -88,10 +88,6 @@ export function MaterialsClient(): ReactElement {
                 Send materials
               </a>
             </div>
-
-            <p className="mt-4 text-[13.5px] leading-[1.5] text-ci-gray-500">
-              Opens your email app with the course details pre-filled.
-            </p>
           </div>
         </div>
       </section>

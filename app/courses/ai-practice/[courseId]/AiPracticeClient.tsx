@@ -10,15 +10,15 @@ import type { AllowanceSummary, PersonalSetView } from '@/lib/ai-practice/upload
 import { NEUTRAL_TRIAL_WORDING } from '@/lib/entitlements/presentation'
 import type { TrialWording } from '@/lib/entitlements/presentation'
 import { NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName, notEntitledMessage,
-  runUploadJourney } from './journey'
+  runUploadJourney, setDateLabel } from './journey'
 import type { JourneyOutcome, JourneyPhase } from './journey'
 import { PersonalDisclaimer, PersonalPractice } from './PersonalPractice'
 import type { ReactElement } from 'react'
 
 const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
-  uploading: { title: 'Uploading your file', detail: 'Keep this page open while your file uploads.' },
+  uploading: { title: 'Uploading your file', detail: '' },
   reading: { title: 'Reading your notes', detail: 'Preparing your notes for practice questions.' },
-  generating: { title: 'Writing five questions', detail: 'This may take a moment. Keep this page open.' },
+  generating: { title: 'Writing five questions', detail: 'This may take a moment.' },
 }
 
 /** One honest sentence about a counted grant; nothing for token-funded access (paid or Early Access, which have
@@ -39,7 +39,7 @@ export function JourneyProgress({ phase }: { phase: JourneyPhase }): ReactElemen
   return <div className="ai-practice-progress" role="status" aria-live="polite">
     <LoaderCircle aria-hidden="true" size={20} strokeWidth={1.75} className="animate-spin" />
     <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}</p>
-      <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p></div>
+      {PHASE_COPY[phase].detail ? <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p> : null}</div>
   </div>
 }
 
@@ -124,14 +124,16 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     </section>}
     {outcome && <Notice title={outcome.title} tone={outcome.tone} action={outcome.documentId
       ? <button type="button" className={studentAction(btnGhost)} onClick={() => void retry(outcome.documentId!)}>Try again</button>
-      : undefined}>{outcome.message}</Notice>}
+      : outcome.link ? <a href={outcome.link.href} className={studentAction(btnGhost)}>{outcome.link.label}</a>
+        : undefined}>{outcome.message}</Notice>}
     {sets.length > 0 && <section className="ai-practice-history" aria-labelledby="ai-practice-history-title">
       <h2 id="ai-practice-history-title" className="ai-practice-upload-title">Your recent question sets</h2>
       <ul className="ai-practice-history-list">
         {sets.map(set => <li key={set.generationId}>
-          <button type="button" className={studentAction(btnGhost, 'w-full justify-between')} onClick={() => setActive(set)}>
+          {/* Opening a set is something else: the last upload's message goes. */}
+          <button type="button" className={studentAction(btnGhost, 'w-full justify-between')} onClick={() => { setOutcome(null); setActive(set) }}>
             <span>{set.fileName ?? 'Uploaded notes'} · {set.questions.length} questions</span>
-            <span className="ai-practice-history-date">{set.createdAt.slice(0, 10)}</span>
+            <span className="ai-practice-history-date">{setDateLabel(set.createdAt)}</span>
           </button>
         </li>)}
       </ul>

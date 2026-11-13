@@ -113,7 +113,7 @@ test('failed submissions preserve the typed draft and a second click cannot race
   await Promise.all([submit(tree), submit(tree)])
   const refused = attempt.render()
   assert.equal(f.nodes(refused).find(node => node.type === 'textarea').props.value, 'My own answer')
-  assert.match(renderToStaticMarkup(refused), /copy it before reloading the page/)
+  assert.match(renderToStaticMarkup(refused), /This question has changed\. Copy your answer before you reload\./)
   assert.equal(f.requests.length, 1)
   assert.equal(f.nodes(refused).some(node => node.type === f.SelfAssessment), false)
 }))

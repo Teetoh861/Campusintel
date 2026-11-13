@@ -4,6 +4,8 @@ import { ACCOUNT_MESSAGES } from '@/lib/account/constants'
 
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 128
+// The Auth provider refuses a password longer than this many bytes (checked against local Auth, 2026-11-12).
+export const PROVIDER_PASSWORD_MAX_BYTES = 72
 export const EMAIL_MAX_LENGTH = 254
 export const OTP_MAX_LENGTH = 32
 export const AUTH_BODY_MAX_BYTES = 4096

@@ -78,7 +78,7 @@ test('sprint plan 23 Oct item 2: home is a real personalized command centre with
 
 test('Practice describes Campus Bot practice according to its availability, separate from material requests', async () => fixture(async f => {
   const html = await f.html()
-  assert.match(html, /Verified CBT practice/)
+  assert.doesNotMatch(html, /Verified CBT practice/, 'no unbacked claim above Practice')
   assert.match(html, /href="\/my-courses"/)
   assert.match(html, /Practise from your notes/)
   assert.match(html, /Currently unavailable/)
@@ -212,7 +212,7 @@ test('day-one course file shows seven courses and three ready without listing id
   assert.match(card, /^<a\b[^>]*href="\/my-courses"/)
   assert.match(card, /class="dashboard-file-tab">7 courses · 3 ready to study<\/span>/)
   assert.match(card, /<h2 id="my-courses-title">My Courses<\/h2>/)
-  assert.match(card, /Your semester, in one place\./)
+  assert.doesNotMatch(card, /Your semester, in one place/)
   assert.match(card, />View my courses<\/span>/)
   for (const label of ['Overview', 'Notes', 'CBT practice', 'Theory']) assert.ok(card.includes(label), label)
   assert.equal((card.match(/<a\b/g) || []).length, 1, 'the whole card is one target')
@@ -360,7 +360,8 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()
-    assert.match(courseCard(html), /Course information is temporarily unavailable/)
+    // No count and no failure line beside a View my courses that still works.
+    assert.doesNotMatch(courseCard(html), /temporarily unavailable|dashboard-file-tab/)
     assert.match(courseCard(html), />View my courses</, 'only an empty list loses the link')
     assert.doesNotMatch(html, FIGURES)
     assert.doesNotMatch(html, /Continue practising/)
@@ -370,7 +371,8 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
       departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period', [field]: 'changed',
     }, courses: [mappedCourse(0, 'ready')], cbtBankSizes: new Map([['course-0', 40]]) }
     const html = await f.html()
-    assert.match(courseCard(html), /Course information is temporarily unavailable/)
+    assert.doesNotMatch(courseCard(html), /temporarily unavailable|dashboard-file-tab/)
+    assert.match(courseCard(html), />View my courses</)
     assert.equal(items(html).length, 0)
     assert.doesNotMatch(html, /Continue practising|practised/)
   }
