@@ -9,7 +9,6 @@ const path = require('node:path')
 const { uuidV5 } = require('./source-manifest.cjs')
 const { IMPORTS } = require('./official-banks/imports.cjs')
 const { APPROVED_ANSWER_KEY_CHANGES, EXAM_MINUTES, EXAM_QUESTIONS, OFFICIAL_COURSES } = require('./official-banks/decisions.cjs')
-const { OVERVIEW_MIGRATION } = require('./overview-revisions.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const BANK_DIR = path.join(__dirname, 'official-banks')
@@ -196,6 +195,17 @@ function planImport(entry, manifest, banks, identity) {
     shell: created?.shell ?? null, course: created?.course ?? null }
 }
 
+// Migrations every bank must follow, whatever they contain: the seed and its corrections.
+const MUST_PRECEDE_BANKS = ['20261002130000_repository_content_seed.sql',
+  ...new Set(require('./corrections.cjs').CORRECTIONS.map(correction => correction.migration))]
+
+/** Whether a migration writes CBT questions: an insert, update or delete on a managed-content table in a statement
+ *  that names the cbt_question kind. Reads that filter on it (the published read excludes CBT rows) do not count. */
+function writesCbtQuestions(sql) {
+  return sql.split(';').some(statement => /'cbt_question'/.test(statement)
+    && /\b(insert\s+into|update|delete\s+from)\s+public\.managed_content_(items|revisions|reviews|publications)\b/i.test(statement))
+}
+
 /** Every configured import, checked for identity collisions with the seed and with each other. */
 function buildImports(manifest) {
   const banks = loadBanks()
@@ -203,12 +213,21 @@ function buildImports(manifest) {
   const plans = IMPORTS.map(entry => planImport(entry, manifest, banks, identity))
   const migrations = new Set(plans.map(plan => plan.migration))
   assert.equal(migrations.size, plans.length, 'one migration per course')
-  // The overview revisions run after the banks; they publish overview text only, never a CBT question.
-  const later = fs.readdirSync(path.join(ROOT, 'supabase/migrations'))
-    .filter(name => !migrations.has(name) && name !== OVERVIEW_MIGRATION)
-  for (const plan of plans) {
-    assert.match(plan.migration, /^\d{14}_official_bank_[a-z0-9_]+\.sql$/)
-    assert.ok(later.every(name => name < plan.migration), `${plan.migration} must sort after every other migration`)
+  // The banks reconcile each course's CBT questions against everything before them: the seed, its corrections and any
+  // other migration that writes CBT questions must sort before every bank, and no migration after the first bank may
+  // write a CBT question. Migrations that write other content (overviews, notes, theory) may follow the banks.
+  const directory = path.join(ROOT, 'supabase/migrations')
+  const others = fs.readdirSync(directory).filter(name => name.endsWith('.sql') && !migrations.has(name))
+  const firstBank = [...migrations].sort()[0]
+  for (const plan of plans) assert.match(plan.migration, /^\d{14}_official_bank_[a-z0-9_]+\.sql$/)
+  for (const name of others) {
+    const writes = writesCbtQuestions(fs.readFileSync(path.join(directory, name), 'utf8'))
+    if (firstBank !== undefined && (writes || MUST_PRECEDE_BANKS.includes(name))) {
+      assert.ok(name < firstBank, `${name} writes CBT questions, so it must sort before the official banks`)
+    }
+    if (firstBank !== undefined && name > firstBank) {
+      assert.ok(!writes, `${name} sorts after the official banks, so it must not write CBT questions`)
+    }
   }
   const itemIds = new Set(manifest.items.map(item => item.itemId))
   const questionIds = new Set(manifest.items.map(item => item.questionId).filter(Boolean))
@@ -730,5 +749,5 @@ function absentBankOutputs(plans) {
   return plans.length ? [] : [path.join(ROOT, 'supabase/migrations', ROWS_MIGRATION), BEHAVIOUR_TEST]
 }
 
-module.exports = { BANK_ACTOR, absentBankOutputs, bankOutputs, buildImports, convertQuestion, loadBanks,
-  loadIdentityMap, planImport, publishedCbt }
+module.exports = { BANK_ACTOR, writesCbtQuestions, absentBankOutputs, bankOutputs, buildImports, convertQuestion, loadBanks,
+  loadIdentityMap, planImport, publishedCbt, slugFor }

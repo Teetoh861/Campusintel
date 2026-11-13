@@ -86,3 +86,14 @@ test('every imported course has its bank topics for the overview', async () => w
     [...existing, ...OFFICIAL_BANK_COURSES.map(course => course.slug)].sort())
   assert.equal(OFFICIAL_BANK_COURSES.length, 19)
 }))
+
+test('the overview lists the course outcomes and how it is assessed, and leaves out what it does not have', async () => withTsx(async () => {
+  const { OverviewSection } = require('./sections.tsx')
+  const html = renderToStaticMarkup(React.createElement(OverviewSection, { number: 3, overview: { title: 'Overview', body: 'Body.',
+    outcomes: ['Listen effectively in lectures.', 'Write a well-formed paragraph.'],
+    assessment: ['The exam is objective (CBT).', 'Every topic is examinable.'] } }))
+  assert.match(text(html), /Course outcomes 01 Listen effectively in lectures\. 02 Write a well-formed paragraph\./)
+  assert.match(text(html), /How you’re assessed The exam is objective \(CBT\)\. Every topic is examinable\./)
+  const bare = renderToStaticMarkup(React.createElement(OverviewSection, { number: 3, overview: { title: 'Overview', body: 'Body.' } }))
+  assert.doesNotMatch(bare, /Course outcomes|How you’re assessed/)
+}))

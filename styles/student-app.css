@@ -538,3 +538,58 @@ body[data-screen='active'] > footer { display: none; }
 .student-usage-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--student-primary); }
 .student-pay-bar { position: sticky; bottom: 0; z-index: 10; margin: 0 calc(var(--ci-gutter, 16px) * -1); padding: 12px var(--ci-gutter, 16px) 16px; border-top: 1px solid var(--student-border); background: var(--student-surface); }
 @media (min-width: 768px) { .student-pay-bar { position: static; margin: 0; padding: 0; border-top: 0; background: transparent; } }
+
+/* Study guide topics (app/courses/[slug]/guide.tsx): readable prose, lists, folded detail and tables that scroll only
+   inside their own box. */
+.student-anchor { scroll-margin-top: calc(var(--student-header-height) + 12px); }
+.student-guide-article { padding: 20px 16px; }
+.student-guide { display: grid; gap: 24px; min-width: 0; color: var(--student-text-primary); font-size: 16px; line-height: 1.6; }
+.student-guide strong { font-weight: 700; color: var(--student-primary); }
+.student-guide-know { display: grid; gap: 8px; padding: 14px 16px; border-radius: 12px; background: var(--student-brand-surface); }
+.student-guide-lesson { display: grid; gap: 10px; min-width: 0; }
+.student-guide-heading { color: var(--student-primary); font-size: 19px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.student-guide-p { margin: 0; overflow-wrap: anywhere; }
+.student-guide-list { display: grid; gap: 6px; margin: 0; padding-left: 22px; overflow-wrap: anywhere; }
+ul.student-guide-list { list-style: disc; }
+ol.student-guide-list { list-style: decimal; }
+.student-guide-list .student-guide-list { margin-top: 6px; }
+.student-guide-list > li > .student-guide-p { margin-top: 6px; }
+.student-guide-pre { margin: 0; overflow-x: auto; padding: 12px 14px; border-radius: 10px; background: var(--student-brand-surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; line-height: 1.5; }
+.student-guide-more { border-top: 1px solid var(--student-border); padding-top: 6px; }
+.student-guide-more > summary { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; border-radius: 8px;
+  color: var(--student-link); font-weight: 650; cursor: pointer; }
+.student-guide-more-body { display: grid; gap: 10px; padding-top: 6px; }
+.student-guide-practice { display: flex; flex-wrap: wrap; gap: 12px; }
+.student-guide-pager { display: grid; gap: 12px; }
+@media (min-width: 768px) {
+  .student-guide-article { padding: 28px 32px; }
+  .student-guide-pager { grid-template-columns: 1fr 1fr; }
+  .student-guide-pager > a:last-child:not(:first-child) { text-align: right; }
+}
+/* A wide table scrolls inside its box. The shading at an edge (scroll shadows that follow the content) shows there
+   is more to that side; it disappears once the table is scrolled to that end. */
+.student-guide-table { max-width: 100%; overflow-x: auto; border: 1px solid var(--student-border); border-radius: 10px;
+  background:
+    linear-gradient(to right, var(--student-surface) 30%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--student-surface) 30%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(15 23 42 / 22%), transparent) left / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(15 23 42 / 22%), transparent) right / 14px 100% no-repeat scroll,
+    var(--student-surface); }
+.student-guide-table:focus-visible { outline: 2px solid var(--student-focus, var(--student-link)); outline-offset: 2px; }
+/* Separate borders: each cell carries its own line, so the pinned first column keeps its row lines as it moves. */
+.student-guide-table table { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 15px; line-height: 1.45; }
+.student-guide-table th, .student-guide-table td { min-width: 7.5rem; max-width: 22rem; padding: 8px 12px; border-bottom: 1px solid var(--student-border);
+  text-align: left; vertical-align: top; overflow-wrap: break-word; }
+.student-guide-table th { color: var(--student-primary); font-weight: 700; }
+.student-guide-table tr:last-child td { border-bottom: 0; }
+/* The first column (each row's name) stays in view while the rest of a wide table scrolls under it. Each pinned cell
+   draws its row line at its own top edge: a bottom border can be painted over by the next pinned cell when rows end
+   on a fraction of a pixel. */
+.student-guide-table tr > :first-child { position: sticky; left: 0; z-index: 1; border-bottom: 0;
+  background: var(--student-surface); box-shadow: inset -1px 0 0 var(--student-border); }
+.student-guide-table tbody tr > :first-child {
+  background: linear-gradient(var(--student-border), var(--student-border)) top / 100% 1px no-repeat, var(--student-surface); }
+@media (max-width: 599px) {
+  .student-guide-table tr > :first-child { min-width: 6rem; max-width: 8.5rem; }
+}

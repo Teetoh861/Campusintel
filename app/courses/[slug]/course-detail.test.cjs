@@ -158,7 +158,7 @@ test('practice by topic: one row per topic in order, its count before practice a
   f.state.progress = new Map([['Configured first', { practised: 8, lastScore: { score: 6, total: 8 } }],
     ['Third', { practised: 3, lastScore: null }]])
   const html = await f.html()
-  const rows = anchors(html).filter(link => link.includes('student-topic-row'))
+  const rows = anchors(html).filter(link => link.includes('student-topic-row') && link.includes('/quiz?'))
     .map(link => [link.match(/href="([^"]+)"/)[1].replace(/&amp;/g, '&'), text(link).trim().replace(/&amp;/g, '&')])
   assert.deepEqual(rows, [
     ['/courses/central-route/quiz?topic=Configured%20first', '1 Configured first 8 of 12 questions practised · Last score 6/8'],
@@ -177,18 +177,17 @@ test('practice by topic: one row per topic in order, its count before practice a
   assert.match(fallback, /<h1[^>]*>Institutional title<\/h1>/, 'a failed topic read never makes the page unavailable')
 }))
 
-test('notes render plain, topic and calculator payloads with formulas and examples byte-identical', async () => fixture(async f => {
+test('notes are one compact card that opens the topic list; no note is read on the course page', async () => fixture(async f => {
   const html = await f.html()
-  for (const expected of ['Plain note', 'Plain body', 'Topic note', 'Topic body', 'Point A', 'Point B', 'Tip text', 'Trick note', 'Trick body',
-    'Calculator trick', 'Exam tip', 'Example']) assert.ok(html.includes(expected), expected)
+  const cards = anchors(html).filter(link => link.includes('href="/courses/central-route/notes"'))
+  assert.equal(cards.length, 1)
+  assert.equal(text(cards[0]).trim(), 'Open notes 3 topics')
+  for (const body of ['Plain body', 'Topic body', 'Point A', 'Trick body', 'Tip text']) assert.ok(!html.includes(body), body)
+  assert.doesNotMatch(html, /data-note-item/, 'the plan-use tracker runs on the topic page, not here')
   const rails = [...html.matchAll(/<code>(.*?)<\/code>/g)].map(match => match[1].replace(/<[^>]*>/g, ''))
-  assert.ok(rails.includes(TRICK), 'calculator formula inside the formula rail')
   assert.ok(rails.includes(FORMULA), 'overview formula inside the formula rail')
-  assert.ok(html.includes(EXAMPLE.replace(/₦/g, '₦')), 'example text untouched')
   assert.match(html, /x² \+ y²/)
   assert.doesNotMatch(html, /\\\(|\\frac|katex/)
-  // Each note is identified for the opened-topic tracker (plan use), by its item id only.
-  assert.equal((html.match(/<article class="student-surface student-detail-note" data-note-item="n[123]">/g) ?? []).length, 3)
   assert.match(html, /Published overview body\.\nSecond paragraph\./)
   assert.match(html, /Chapter one|Focus area|Remember this/)
   assert.match(html, /Q1<\/span>/)

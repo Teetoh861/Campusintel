@@ -59,6 +59,17 @@ test('overview and note edits preserve their structured repository fields', asyn
       assert.equal(writes.length, 1)
       assert.deepEqual(writes[0].payload, item.payload)
     }
+    // A study guide topic opens read-only: no form, so nothing can be saved over its lessons.
+    hooks.length = 0
+    cursor = 0
+    const guide = ContentForm({ courseId: '40000000-0000-4000-8000-000000000001',
+      item: { item_id: '10000000-0000-4000-8000-000000000009', parent_item_id: null, lock_version: 3, kind: 'note',
+        payload: { title: 'Listening', body: 'Know', noteType: 'guide_topic', number: 1, mustKnow: [{ text: 'Know' }],
+          lessons: [{ number: '1.1', title: 'L', mustKnow: [{ type: 'paragraph', text: [{ text: 'M' }] }] }],
+          recap: [{ type: 'paragraph', text: [{ text: 'R' }] }] } },
+      allItems: [], busy: false, onSave: async () => { throw new Error('must not save') } })
+    assert.equal(findForm(guide), undefined)
+    assert.match(JSON.stringify(guide), /imported study guide/)
   } finally {
     Module._load = oldLoad
     if (oldTsx) Module._extensions['.tsx'] = oldTsx

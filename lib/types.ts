@@ -50,7 +50,8 @@ export interface Course {
   tagline?: string
   level: number // 200, 300, 400
   semester: number // 1, 2
-  credits: number
+  // Absent for a course created for a study guide: the owner's course list gives no units for it.
+  credits?: number
   difficulty?: 'Easy' | 'Medium' | 'Hard'
   featured?: boolean // shown in the homepage's curated set
   examCritical?: boolean // gets the "Exam-critical" treatment; quiz CTA still requires a usable quiz
