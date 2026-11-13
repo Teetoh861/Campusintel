@@ -28,7 +28,10 @@ const isPunctuation = char => char !== undefined && /[\p{P}\p{S}]/u.test(char)
  *    for italic, and runs caught between them can no longer match;
  *  - the rule of three: when either run could both open and close, they do not match if their lengths add up to a
  *    multiple of three, unless both lengths are multiples of three;
- *  - an asterisk that matches nothing is literal text: a truncation sign (teen*), a USSD code (*XYZ#). */
+ *  - a single asterisk that matches nothing is literal text: a truncation sign (teen*), a USSD code (*XYZ#).
+ *  One guard from before these rules is kept: two asterisks together mean bold and nothing else. A pair that
+ *  CommonMark would leave in the text, or spend on italics, is a slip in the source, so the build stops and names the
+ *  place. A literal pair is written with backslashes. */
 function parseInline(text, where) {
   refuseUnsafe(text, where)
   // The line's characters with escapes resolved; an unescaped asterisk is a delimiter.
@@ -40,14 +43,15 @@ function parseInline(text, where) {
     }
     chars.push({ char: points[index], star: points[index] === '*' })
   }
-  // Delimiter runs. `first` and `last` bound the asterisks a run has not yet given to a match.
+  // Delimiter runs. `first` and `last` bound the asterisks a run has not yet given to a match; `bold` counts the
+  // asterisks it has given to bold.
   const runs = []
   for (let index = 0; index < chars.length; index++) {
     if (!chars[index].star) continue
     let last = index
     while (last + 1 < chars.length && chars[last + 1].star) last++
     const before = chars[index - 1]?.char, after = chars[last + 1]?.char
-    runs.push({ first: index, last, length: last - index + 1, active: true,
+    runs.push({ first: index, last, length: last - index + 1, active: true, bold: 0,
       canOpen: !isSpace(after) && (!isPunctuation(after) || isSpace(before) || isPunctuation(before)),
       canClose: !isSpace(before) && (!isPunctuation(before) || isSpace(after) || isPunctuation(after)) })
     index = last
@@ -73,12 +77,14 @@ function parseInline(text, where) {
       // The opener gives its innermost asterisks and the closer its first ones.
       effects.set(opener.last - used + 1, { [flag]: 1 })
       effects.set(closer.first, { [flag]: -1 })
-      if (bold) { effects.set(opener.last, {}); effects.set(closer.first + 1, {}) }
+      if (bold) { effects.set(opener.last, {}); effects.set(closer.first + 1, {}); opener.bold += 2; closer.bold += 2 }
       opener.last -= used
       closer.first += used
       for (let between = at + 1; between < position; between++) runs[between].active = false
     }
   })
+  // Every pair of asterisks in a run made bold; only an odd run's last asterisk may do anything else.
+  for (const run of runs) assert.ok(run.bold === run.length - run.length % 2, `${where}: unbalanced bold`)
   const spans = []
   let bold = 0, italic = 0
   chars.forEach(({ char }, index) => {

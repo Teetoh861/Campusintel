@@ -62,13 +62,33 @@ test('inline text keeps ordinary *italic* and **bold**, both together, and escap
   assert.deepEqual(parseInline('\\*not italic\\* and 2 \\* 3', 't'), [{ text: '*not italic* and 2 * 3' }])
 })
 
-test('an asterisk that matches nothing stays in the text: a USSD code, a truncation sign, a multiplication', () => {
+test('a single asterisk that matches nothing stays in the text: a USSD code, a truncation sign, a multiplication', () => {
   assert.deepEqual(parseInline('dial *XYZ# now', 't'), [{ text: 'dial *XYZ# now' }])
   assert.deepEqual(parseInline('dial *737# or *894# to check', 't'), [{ text: 'dial *737# or *894# to check' }])
   assert.deepEqual(parseInline('teen* retrieves teen, teens and teenager', 't'), [{ text: 'teen* retrieves teen, teens and teenager' }])
   assert.deepEqual(parseInline('a * b * c', 't'), [{ text: 'a * b * c' }])
-  assert.deepEqual(parseInline('**unclosed', 't'), [{ text: '**unclosed' }])
   assert.deepEqual(parseInline('an asterisk (*) on its own', 't'), [{ text: 'an asterisk (*) on its own' }])
+})
+
+test('an unmatched ** stops the build and names its place', () => {
+  assert.throws(() => parseInline('**unclosed', 't'), /unbalanced bold/)
+  // A pair with no partner, a pair that can neither open nor close, and a pair CommonMark would spend on italics or
+  // leave in the text: each stops the build, saying where.
+  for (const source of ['**unclosed', 'closed** only', '**one** and **two', 'a ** b', '****', '**Label:**text',
+    '**bold* then italic', '*italic then bold**',
+    '** foo bar**', 'a**"foo"**', '**foo bar **', '**(**foo)', '** is not an empty emphasis', 'foo ***', '*foo**bar*',
+    'foo******bar*********baz', '**foo*', '*foo**', '****foo*', '*foo****', '*foo**bar']) {
+    assert.throws(() => parseInline(source, 'ABC101/T1.md line 7'), { message: 'ABC101/T1.md line 7: unbalanced bold' }, source)
+  }
+  // In a guide, the place is the file, the lesson and the line within it.
+  const topic = fs.readFileSync(path.join(SOURCE, 'GST111', 'T14.md'), 'utf8')
+  assert.ok(topic.includes('**asterisk (*)**'))
+  assert.throws(() => parseTopic(topic.replace('**asterisk (*)**', '**asterisk (*)'), 'GST111/T14.md'),
+    { message: /^GST111\/T14\.md "Lesson 14\.3: Search techniques" must know line \d+: unbalanced bold$/ })
+  // A pair meant as text is written with backslashes, and a matched pair is bold as ever.
+  assert.deepEqual(parseInline('dial \\*\\*21\\*number# to forward calls', 't'), [{ text: 'dial **21*number# to forward calls' }])
+  assert.deepEqual(parseInline('**one** and **two**', 't'), [
+    { text: 'one', bold: true }, { text: ' and ' }, { text: 'two', bold: true }])
 })
 
 test('GST 111 topic 14 keeps its asterisks: the truncation sign and the bracketed search', () => {
@@ -98,7 +118,8 @@ test('GST 111 topic 14 keeps its asterisks: the truncation sign and the brackete
 })
 
 test('asterisks follow CommonMark: flanking runs, nearest opener, the rule of three', () => {
-  // Each line is an example from the CommonMark spec's "Emphasis and strong emphasis", written as it renders.
+  // Each line is an example from the CommonMark spec's "Emphasis and strong emphasis", written as it renders. Cases
+  // that leave a pair of asterisks unmatched are in the test above: here they stop the build.
   const rendered = source => parseInline(source, 't').map(span => {
     let out = span.text
     if (span.bold) out = `<strong>${out}</strong>`
@@ -109,24 +130,18 @@ test('asterisks follow CommonMark: flanking runs, nearest opener, the rule of th
     // A run opens only when left-flanking and closes only when right-flanking.
     ['*foo bar*', '<em>foo bar</em>'], ['a * foo bar*', 'a * foo bar*'], ['a*"foo"*', 'a*"foo"*'], ['*foo bar *', '*foo bar *'],
     ['*(*foo)', '*(*foo)'], ['*(*foo*)*', '<em>(foo)</em>'], ['foo*bar*', 'foo<em>bar</em>'], ['5*6*78', '5<em>6</em>78'],
-    ['*foo*bar', '<em>foo</em>bar'], ['**foo bar**', '<strong>foo bar</strong>'], ['** foo bar**', '** foo bar**'],
-    ['a**"foo"**', 'a**"foo"**'], ['foo**bar**', 'foo<strong>bar</strong>'], ['**foo bar **', '**foo bar **'],
-    ['**(**foo)', '**(**foo)'], ['**foo**bar', '<strong>foo</strong>bar'],
-    ['** is not an empty emphasis', '** is not an empty emphasis'], ['foo ***', 'foo ***'],
+    ['*foo*bar', '<em>foo</em>bar'], ['**foo bar**', '<strong>foo bar</strong>'],
+    ['foo**bar**', 'foo<strong>bar</strong>'], ['**foo**bar', '<strong>foo</strong>bar'],
     // Nesting, with bold taken first when both runs have two asterisks.
     ['*(**foo**)*', '<em>(</em><em><strong>foo</strong></em><em>)</em>'],
     ['*foo**bar**baz*', '<em>foo</em><em><strong>bar</strong></em><em>baz</em>'],
     ['***foo** bar*', '<em><strong>foo</strong></em><em> bar</em>'], ['*foo **bar***', '<em>foo </em><em><strong>bar</strong></em>'],
     ['foo***bar***baz', 'foo<em><strong>bar</strong></em>baz'], ['*foo *bar* baz*', '<em>foo bar baz</em>'],
     // The rule of three: lengths adding up to a multiple of three do not match when either run could open and close.
-    ['*foo**bar*', '<em>foo**bar</em>'], ['*foo**bar***', '<em>foo</em><em><strong>bar</strong></em>'],
-    ['foo******bar*********baz', 'foo<strong>bar</strong>***baz'], ['**foo*bar**', '<strong>foo*bar</strong>'],
-    // Whatever is left over stays in the text.
-    ['**foo*', '*<em>foo</em>'], ['*foo**', '<em>foo</em>*'], ['***foo**', '*<strong>foo</strong>'], ['****foo*', '***<em>foo</em>'],
-    ['**foo***', '<strong>foo</strong>*'], ['*foo****', '<em>foo</em>***'], ['*foo**bar', '*foo**bar'],
+    ['*foo**bar***', '<em>foo</em><em><strong>bar</strong></em>'], ['**foo*bar**', '<strong>foo*bar</strong>'],
+    // A single asterisk left over stays in the text.
+    ['***foo**', '*<strong>foo</strong>'], ['**foo***', '<strong>foo</strong>*'],
   ]) assert.equal(rendered(source), expected, source)
-  // A closing run after punctuation needs a space or punctuation after it, so this label is not bold.
-  assert.deepEqual(parseInline('**Label:**text', 't'), [{ text: '**Label:**text' }])
 })
 
 test('HTML, links, images, inline code and entities are refused anywhere', () => {
