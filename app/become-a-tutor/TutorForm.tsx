@@ -157,10 +157,6 @@ export function TutorForm() {
           Back to tutors
         </Link>
       </div>
-
-      <p className="mt-5 text-[14px] leading-[1.55] text-ci-gray-600">
-        Opens WhatsApp with your details pre-filled. Review them there before sending your application.
-      </p>
     </div>
   )
 }

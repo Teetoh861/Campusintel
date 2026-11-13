@@ -8,7 +8,9 @@ export const passwordSchema = z.string().min(PASSWORD_MIN_LENGTH, `Use at least 
 // This is an abuse bound, not an assumption about the provider's configured OTP length.
 export const codeSchema = z.string().min(1, 'Enter your code.').max(OTP_MAX_LENGTH, 'Check your code.').regex(/^[0-9]+$/, 'Enter the numbers from your email.')
 export const emailRequestSchema = z.object({ email: emailSchema }).strict()
-export const registerSchema = emailRequestSchema.extend({ password: passwordSchema })
+// Create account refuses what the provider would refuse, on the screen: newPasswordSchema (declared below with Change
+// password's rule) is read lazily because it is defined after this line.
+export const registerSchema = emailRequestSchema.extend({ password: z.lazy(() => newPasswordSchema) })
 export const loginSchema = emailRequestSchema.extend({ password: z.string().min(1, 'Enter your password.').max(PASSWORD_MAX_LENGTH, 'Incorrect email or password.'), next: z.string().max(AUTH_RETURN_PATH_MAX_LENGTH).optional() })
 export const confirmSchema = emailRequestSchema.extend({ code: codeSchema, next: z.string().max(AUTH_RETURN_PATH_MAX_LENGTH).optional() })
 export const recoveryVerificationSchema = emailRequestSchema.extend({ code: codeSchema })

@@ -1,8 +1,8 @@
 // app/courses/[slug]/quiz/page.tsx — Practice entry. The student's own attempts come first: an attempt URL, then the
 // course's open attempt, whatever the student's access or the bank is now (an attempt started may always finish, and
 // its review stays the student's). Then ?topic= starts instant feedback on that topic and ?mode=exam opens the exam
-// (its latest unseen result first, then its brief); anything else goes back to the course's topic list. Current access
-// and a live bank decide only whether a fresh attempt may start.
+// (its latest unseen result first, then its brief); anything else goes back to the course page's Practice card. Current
+// access and a live bank decide only whether a fresh attempt may start.
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
@@ -17,6 +17,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { practicePolicyFor, readPracticeAttempt, readPracticeState } from '@/lib/practice/server'
 import { readPracticeTopics } from '@/lib/practice/topics'
@@ -77,7 +78,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     {PRACTICE_COPY.backToCourse}
   </Link>
   const retry = () => <StudentPage band={band}>
-    <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
+    <Notice title={PRACTICE_COPY.loadFailedTitle} action={<>
       <a href={`${route.href}/quiz`} className={studentAction(btnNavy, studentFocusDark)}>Try again</a>{backToCourse}
     </>}>{PRACTICE_COPY.temporaryBody}</Notice>
   </StudentPage>
@@ -115,7 +116,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
       <Notice tone="info" title={PRACTICE_COPY.resultMissingTitle} action={<>
         <Link href={`${route.href}#cbtPractice`} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Go to practice</Link>
         {backToCourse}
-      </>}>Open practice from the course page to see your attempts.</Notice>
+      </>} />
     </StudentPage>
   }
 
@@ -157,7 +158,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     return await quiz({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,
       total: state.attempt.questionCount, minutesLeft: Math.max(0, Math.floor(left / MS_PER_MINUTE)) })
   }
-  // Practice starts from the course's topic list, or from its Exam mode button.
+  // Practice starts from the course page's Practice card: Practise by topic, or Exam mode.
   if (entry.topic === null && !entry.exam) redirect(`${route.href}#cbtPractice`)
   if (entry.topic !== null) {
     if (brief !== null) return await quiz({ kind: 'topic', topic: entry.topic })
@@ -176,7 +177,8 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
 
   if (course.content.state === 'locked') {
     return <StudentPage band={band}><LockedCourseNotice reason={course.content.reason} backHref={route.href}
-      backLabel={PRACTICE_COPY.backToCourse} plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} /></StudentPage>
+      backLabel={PRACTICE_COPY.backToCourse} plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)}
+      has={buildTimeStudy(route.slug)} /></StudentPage>
   }
   if (course.content.state === 'not-available') return <StudentPage band={band}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={backToCourse}>{null}</Notice>

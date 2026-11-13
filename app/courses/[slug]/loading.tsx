@@ -3,14 +3,13 @@ import { PageBand } from '@/components/student/PageBand'
 import { StudentLoadingState } from '@/components/student/StudentLoadingState'
 import { StudentPage } from '@/components/student/StudentPage'
 import { Skeleton } from '@/components/ui/skeleton'
-import { COURSE_LEDE } from './sections'
 import type { ReactElement } from 'react'
 
 const PLACEHOLDER_SECTIONS = 3
 
 /** Never show a placeholder code, title, bookmark or practice action while the course resolves. */
 export default function Loading(): ReactElement {
-  return <StudentPage band={<PageBand title="Course" lede={COURSE_LEDE}
+  return <StudentPage band={<PageBand title="Course"
     context={<Skeleton aria-hidden="true" className="h-4 w-24 animate-none" />} />}>
     <StudentLoadingState message="Loading course.">
       <div className="student-stack">

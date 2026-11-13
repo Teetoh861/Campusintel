@@ -136,12 +136,13 @@ test('results show the server grading with the locked bands, truthful counts and
   assert.match(html, /Strong attempt/)
   assert.doesNotMatch(html, /Practice feedback|official grade/)
   assert.match(text(html), /Correct 7 .*Incorrect 2 .*Unanswered 1/)
-  assert.match(html, /Result saved to your account\./)
+  assert.doesNotMatch(html, /Result saved to your account/, 'no process talk on the result')
   assert.doesNotMatch(html, /weakest|Mastered|Revisit|Section [A-Z]\b|history|best score/i)
   assert.deepEqual(actions(html), ['Review answers', 'Retake with new questions', 'Redo the same questions', 'Back to course'])
   assert.doesNotMatch(html, /Retake gives you|Redo repeats/, 'the buttons name what they do')
   assert.match(html, /href="\/courses\/bua-216"/)
   assert.match(text(html), /3 questions to review/)
+  assert.doesNotMatch(html, /See the correct answer for every question/, 'the heading is not contradicted by a second line')
   // D4: a bank no larger than the attempt offers one "Practise again".
   const whole = render({}, { bankSize: 10 })
   assert.deepEqual(actions(whole), ['Review answers', 'Practise again', 'Back to course'])
@@ -541,7 +542,7 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     state.result = { status: 'unavailable' }
     let out = await html()
     assert.match(out, /<h1[^>]*>Practice<\/h1>/)
-    assert.match(out, /temporarily unavailable/i)
+    assert.match(out, /We couldn’t load this course\./)
     assert.match(out, /href="\/courses\/x\/quiz"/)
     state.result = { status: 'invariant-failure' }
     out = await html()
@@ -550,7 +551,8 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     state.result = institutional({ state: 'temporarily-unavailable', reason: 'publication-read-failed' }, null)
     out = await html()
     assert.match(out, /BUA 216 · Financial Management/)
-    assert.match(out, /couldn’t load the practice questions just now/)
+    assert.match(out, /We couldn’t load the practice questions\./)
+    assert.doesNotMatch(out, /Study materials are temporarily unavailable/)
     assert.match(out, /href="\/courses\/x\/quiz"[^>]*>Try again/)
     assert.match(out, /href="\/courses\/x"[^>]*>Back to course/)
     state.result = institutional(ready({ cbtPractice: false }), null)
@@ -561,7 +563,7 @@ test('the route page distinguishes not found, signed out, unavailable, invariant
     state.result = institutional(ready({ cbtPractice: true }), practice)
     state.practice = { status: 'unavailable' }
     out = await html()
-    assert.match(out, /couldn’t load the practice questions just now/)
+    assert.match(out, /We couldn’t load the practice questions\./)
     state.practice = { status: 'none' }
     await assert.rejects(render({}), /redirect:\/courses\/x#cbtPractice/)
     const client = await render()

@@ -20,14 +20,13 @@ function courseSummary(courses: ReadonlyArray<StudentCourse>): string {
 function CourseFile({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
   const empty = courses?.length === 0
   const body = <>
-    {!empty && <span className="dashboard-file-tab">{courses === null
-      ? 'Course information is temporarily unavailable.' : courseSummary(courses)}</span>}
+    {/* The count when it could be read; otherwise nothing, since View my courses below still works. */}
+    {courses !== null && !empty && <span className="dashboard-file-tab">{courseSummary(courses)}</span>}
     <div className="dashboard-file-body">
       <CBrandTexture />
       <div className="dashboard-file-content">
         {empty ? <p className="dashboard-primary-copy">{EMPTY_COURSES_MESSAGE}</p> : <>
           <h2 id="my-courses-title">{STUDENT_DESTINATIONS.myCourses.label}</h2>
-          <p className="dashboard-primary-copy">Your semester, in one place.</p>
           <div className="dashboard-file-index" aria-hidden="true">
             {['Overview', ...STUDY_FAMILIES.map(family => family.label)].map((label, index) =>
               <span key={label}><span>{String(index + 1).padStart(2, '0')}</span>{label}</span>)}
@@ -49,7 +48,6 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
   return <section aria-label="Study and practice" className="dashboard-primary-grid">
     <CourseFile courses={courses} />
     <article aria-labelledby="practice-title" className="dashboard-practice student-enter student-enter-2">
-      <p className="dashboard-practice-eyebrow">Verified CBT practice</p>
       <div className="dashboard-practice-heading">
         <h2 id="practice-title">Practice</h2>
         <div className="dashboard-answer-sheet" aria-hidden="true">

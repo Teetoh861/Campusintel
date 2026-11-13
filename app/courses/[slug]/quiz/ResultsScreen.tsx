@@ -81,12 +81,11 @@ export function ResultsScreen(props: Props): ReactElement {
           <div><dt><X aria-hidden="true" size={16} strokeWidth={2.25} />Incorrect</dt><dd>{incorrect}</dd></div>
           <div><dt><Minus aria-hidden="true" size={16} strokeWidth={2.25} />Unanswered</dt><dd>{unanswered}</dd></div>
         </dl>
-        <p className="student-practice-meta"><Check aria-hidden="true" size={16} strokeWidth={2.25} />{PRACTICE_COPY.saved}</p>
       </section>
 
       <section className="student-practice-next" aria-labelledby="student-practice-next-heading">
-        <h2 id="student-practice-next-heading">{plural(toReview, 'question')} to review</h2>
-        <p>See the correct answer for every question in this attempt.</p>
+        {/* What there is to review, said once: the review itself shows every question. */}
+        <h2 id="student-practice-next-heading">{toReview === 0 ? 'Every answer correct' : `${plural(toReview, 'question')} to review`}</h2>
         <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={props.onReview}
           disabled={props.openingReview} aria-busy={props.openingReview}>Review answers</button>
         {canStartNew && wholeBank ? <button type="button" className={studentAction(btnGhost)} disabled={starting}

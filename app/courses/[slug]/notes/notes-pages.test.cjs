@@ -123,7 +123,7 @@ test('a topic page shows the whole topic, its practice and theory links, and pre
   assert.match(html, /<h2 class="student-guide-heading">Theory question<\/h2>/)
   const links = anchors(html).map(link => [decode(link.match(/href="([^"]+)"/)[1]), text(link).trim()])
   assert.ok(links.some(([href, label]) => label === 'Answer this question'
-    && href === `/courses/use-of-english/theory?question=${QUESTION}#question-${QUESTION}`))
+    && href === `/courses/use-of-english/theory?question=${QUESTION}`))
   assert.ok(links.some(([href, label]) => label === 'Practise this topic'
     && href === '/courses/use-of-english/quiz?topic=Listening Skills and Note-taking'.replaceAll(' ', '%20')))
   assert.ok(links.some(([href, label]) => href === '/courses/use-of-english/notes/2' && label === 'Next topic IAS 2 Inventories'))

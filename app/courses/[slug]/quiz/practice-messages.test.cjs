@@ -96,7 +96,7 @@ async function flow(initial, run) {
   }
 }
 
-test('no reply to a start: the automatic re-check runs, then "No connection. Reconnect and tap Try again."; Try again opens the attempt with its real time left', async () => flow({ kind: 'intro' }, async f => {
+test('no reply to a start: the automatic re-check runs, then "No connection." with Try again; Try again opens the attempt with its real time left', async () => flow({ kind: 'intro' }, async f => {
   f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
   const brief = f.render()
   assert.equal(brief.type.name, 'IntroScreen', 'Exam mode opens straight on its brief: there is no choice of mode')
@@ -106,7 +106,7 @@ test('no reply to a start: the automatic re-check runs, then "No connection. Rec
   assert.equal(intro.type.name, 'IntroScreen')
   assert.equal(f.requests.length, 3, 'the automatic re-check is kept')
   assert.equal(new Set(f.requests.map(request => request.attemptId)).size, 1, 'every re-check asks for the same start')
-  assert.deepEqual(intro.props.error, { title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true })
+  assert.deepEqual(intro.props.error, { title: 'No connection.', body: '', retry: true })
   // Reconnected: the same start reaches the server, which returns the attempt it started (or starts it now).
   f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId) }))
   intro.props.onRetry()
@@ -118,13 +118,13 @@ test('no reply to a start: the automatic re-check runs, then "No connection. Rec
   assert.equal(active.props.serverNow, NOW, 'and the server\'s clock, so the time left is real')
 }))
 
-test('a start the server refused: "We couldn’t start your practice. Try again."; Try again asks for a new start', async () => flow({ kind: 'intro' }, async f => {
+test('a start the server refused: "We couldn’t start your practice." with Try again; Try again asks for a new start', async () => flow({ kind: 'intro' }, async f => {
   f.answers.push({ status: 'not-found' })
   f.render().props.onStart()
   await f.settle()
   const intro = f.render()
   assert.equal(f.requests.length, 1, 'a server answer is not re-checked')
-  assert.deepEqual(intro.props.error, { title: 'We couldn’t start your practice.', body: 'Try again.', retry: true })
+  assert.deepEqual(intro.props.error, { title: 'We couldn’t start your practice.', body: '', retry: true })
   f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId) }))
   intro.props.onRetry()
   await f.settle()
@@ -132,7 +132,7 @@ test('a start the server refused: "We couldn’t start your practice. Try again.
   assert.equal(f.render().type.name, 'ActiveAttempt')
 }))
 
-test('a topic from the course page starts its instant feedback at once, with no brief; a lost reply keeps the same attempt id', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+test('a chosen topic starts its instant feedback at once, with no brief; a lost reply keeps the same attempt id', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
   f.answers.push({ status: 'unavailable' }, { status: 'unavailable' }, { status: 'unavailable' })
   f.render()
   await f.settle()
@@ -143,14 +143,15 @@ test('a topic from the course page starts its instant feedback at once, with no 
   assert.equal(f.requests[0].action, 'start-instant')
   assert.equal(f.requests[0].topic, 'Capital Budgeting')
   assert.equal(f.requests.length, 3, 'started once, with the automatic re-checks only')
-  assert.deepEqual(starting.props.error, { title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true })
+  assert.deepEqual(starting.props.error, { title: 'No connection.', body: '', retry: true })
   f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
   starting.props.onRetry()
   await f.settle()
   assert.equal(new Set(f.requests.map(request => request.attemptId)).size, 1, 'a replayed start can only find this attempt')
   const attempt = f.render()
   assert.equal(attempt.type.name, 'InstantAttempt')
-  assert.equal(attempt.props.courseHref, `/courses/${COURSE}#cbtPractice`, 'Exit returns to the topic list')
+  assert.equal(attempt.props.topicsHref, `/courses/${COURSE}/practice`, 'Exit returns to the topic list')
+  assert.equal(attempt.props.coursePageHref, `/courses/${COURSE}`)
   f.render()
   await f.settle()
   assert.equal(f.requests.length, 4, 'the topic never starts a second time')
@@ -162,7 +163,20 @@ test('a topic the course no longer has: "This topic isn’t available.", with no
   await f.settle()
   const starting = f.render()
   assert.equal(f.requests.length, 1)
-  assert.deepEqual(starting.props.error, { title: 'This topic isn’t available.', body: 'Choose another topic from the course page.' })
+  assert.deepEqual(starting.props.error, { title: 'This topic isn’t available.', body: 'Choose another topic.' })
+  assert.equal(starting.props.topicsHref, `/courses/${COURSE}/practice`, 'All topics is the way to another topic')
+}))
+
+for (const [status, error] of [
+  ['signed-out', { title: 'You’ve been signed out.', body: '', action: { label: 'Sign in', href: `/login?next=${encodeURIComponent(`/courses/${COURSE}/practice`)}` } }],
+  ['session-changed', { title: 'You signed in on another tab.', body: '', action: { label: 'Reload', href: `/courses/${COURSE}/practice` } }],
+]) test(`a topic start refused as ${status} leads back to the course's topics, where it began`, async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+  f.answers.push({ status })
+  f.render()
+  await f.settle()
+  assert.deepEqual(f.render().props.error, error)
+  const { getSafeReturnPath } = require('../../../../lib/auth/redirect.ts')
+  assert.equal(getSafeReturnPath(`/courses/${COURSE}/practice`), `/courses/${COURSE}/practice`, 'sign-in returns there')
 }))
 
 test('a topic while an exam is open: "Finish your exam first.", with Resume exam and no Try again', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
@@ -178,12 +192,13 @@ test('a topic while an exam is open: "Finish your exam first.", with Resume exam
 
 test('the exam-open notice links to the exam and offers no Try again', async () => withTsx(async () => {
   const { InstantStarting } = require('./InstantStarting.tsx')
-  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, courseHref: `/courses/${COURSE}#cbtPractice`,
+  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, topicsHref: `/courses/${COURSE}/practice`,
     topic: 'Capital Budgeting', busy: false, onRetry() {}, error: { title: 'Finish your exam first.',
       body: 'Practice opens again once your exam is submitted or its time runs out.',
       action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } } }))
-  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Practice opens again .* Resume exam Back to course$/)
+  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Practice opens again .* Resume exam All topics$/)
   assert.match(html, new RegExp(`href="/courses/${COURSE}/quiz\\?attempt=${ATTEMPT}"`))
+  assert.match(html, new RegExp(`href="/courses/${COURSE}/practice"[^>]*>All topics<`))
   assert.doesNotMatch(html, /Try again/)
 }))
 
@@ -197,7 +212,7 @@ test('the end of a topic: Practise again draws this topic again, Next topic star
     const end = f.render()
     assert.equal(end.type.name, 'InstantResult')
     assert.equal(end.props.nextTopic, 'Working Capital')
-    assert.equal(end.props.courseHref, `/courses/${COURSE}#cbtPractice`)
+    assert.equal(end.props.topicsHref, `/courses/${COURSE}/practice`)
     f.answers.push(command => ({ status: 'ready', now: NOW, attempt: openAttempt(command.attemptId, 'instant') }))
     end.props.onPractiseAgain()
     await f.settle()
@@ -215,14 +230,14 @@ test('the end of a topic: Practise again draws this topic again, Next topic star
   })
 })
 
-test('resume with no connection: "No connection. Reconnect and tap Try again."; Try again continues the attempt', async () => flow(
+test('resume with no connection: "No connection." with Try again; Try again continues the attempt', async () => flow(
   { kind: 'resume', attemptId: ATTEMPT, answered: 3, total: 50, minutesLeft: 12 }, async f => {
     f.answers.push({ status: 'unavailable' })
     f.render().props.onContinue()
     await f.settle()
     const resume = f.render()
     assert.equal(resume.type.name, 'ResumeScreen')
-    assert.deepEqual(resume.props.error, { title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true })
+    assert.deepEqual(resume.props.error, { title: 'No connection.', body: '', retry: true })
     f.answers.push({ status: 'ready', now: NOW, attempt: openAttempt(ATTEMPT) })
     resume.props.onRetry()
     await f.settle()
@@ -230,31 +245,33 @@ test('resume with no connection: "No connection. Reconnect and tap Try again."; 
     assert.equal(f.render().type.name, 'ActiveAttempt')
   }))
 
-test('resume signed out: "You’ve been signed out. Sign in again to continue." with no Try again', async () => flow(
+test('resume signed out: "You’ve been signed out." with Sign in back to this attempt, and no Try again', async () => flow(
   { kind: 'resume', attemptId: ATTEMPT, answered: 3, total: 50, minutesLeft: 12 }, async f => {
     f.answers.push({ status: 'signed-out' })
     f.render().props.onContinue()
     await f.settle()
-    assert.deepEqual(f.render().props.error, { title: 'You’ve been signed out.', body: 'Sign in again to continue.' })
+    assert.deepEqual(f.render().props.error, { title: 'You’ve been signed out.', body: '',
+      action: { label: 'Sign in', href: '/login?next=%2Fcourses%2Fbua-216%2Fquiz%3Fattempt%3D11111111-1111-4111-8111-111111111111' } })
   }))
 
-test('each problem reads as one sentence on screen, with Try again only where it can help; the resume screen has no start wording', async () => withTsx(async () => {
+test('each problem is its title on screen, with Try again or its one link only where it can help; the resume screen has no start wording', async () => withTsx(async () => {
   const { ProblemNotice } = require('./ProblemNotice.tsx')
   const { ResumeScreen } = require('./ResumeScreen.tsx')
   const shown = problem => text(renderToStaticMarkup(React.createElement(ProblemNotice, { problem, busy: false, onRetry() {} })))
-  assert.equal(shown({ title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true }),
-    'No connection. Reconnect and tap Try again. Try again')
-  assert.equal(shown({ title: 'We couldn’t start your practice.', body: 'Try again.', retry: true }),
-    'We couldn’t start your practice. Try again. Try again')
-  assert.equal(shown({ title: 'You’ve been signed out.', body: 'Sign in again to continue.' }),
-    'You’ve been signed out. Sign in again to continue.')
-  for (const error of [{ title: 'No connection.', body: 'Reconnect and tap Try again.', retry: true },
-    { title: 'You’ve been signed out.', body: 'Sign in again to continue.' }]) {
+  assert.equal(shown({ title: 'No connection.', body: '', retry: true }), 'No connection. Try again')
+  assert.equal(shown({ title: 'We couldn’t start your practice.', body: '', retry: true }), 'We couldn’t start your practice. Try again')
+  const signedOut = { title: 'You’ve been signed out.', body: '', action: { label: 'Sign in', href: '/login?next=%2Fcourses%2Fbua-216%2Fquiz%3Fattempt%3D11111111-1111-4111-8111-111111111111' } }
+  assert.equal(shown(signedOut), 'You’ve been signed out. Sign in')
+  // A full load, so signing in starts from the server's view of the attempt.
+  assert.match(renderToStaticMarkup(React.createElement(ProblemNotice, { problem: signedOut, busy: false })), /<a href="\/login\?next=/)
+  for (const error of [{ title: 'No connection.', body: '', retry: true },
+    { title: 'You’ve been signed out.', body: '', action: { label: 'Sign in', href: '/login?next=%2Fcourses%2Fbua-216%2Fquiz%3Fattempt%3D11111111-1111-4111-8111-111111111111' } }]) {
     const html = renderToStaticMarkup(React.createElement(ResumeScreen, { ...identity, courseHref: `/courses/${COURSE}`,
       answered: 3, total: 50, minutesLeft: 12, opening: false, error, onContinue() {}, onRetry() {} }))
     // The last notice on the screen is the problem (the first is the attempt in progress).
     const notice = text(html.match(/<div class="student-notice"[\s\S]*?<\/div><\/div>/g).at(-1))
-    assert.ok(notice.startsWith(`${error.title} ${error.body}`), notice)
+    assert.ok(notice.startsWith(error.title), notice)
+    assert.doesNotMatch(html, /student-notice-text">Reconnect|Sign in again to continue/, 'no instruction under the title')
     assert.doesNotMatch(notice, /start|timer/i, 'no start wording on the resume screen')
     assert.equal(/>Try again</.test(html), error.retry === true)
   }

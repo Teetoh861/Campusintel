@@ -74,7 +74,7 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
           'max-w-full !whitespace-normal text-center disabled:pointer-events-none disabled:opacity-60')} onClick={async () => {
       setResent(false); resetField('code')
       if (await submit(AUTH_API.forgot, { email })) setResent(true)
-    }}>Didn't receive it? Resend code</button>
+    }}>Didn’t receive it? Resend code</button>
     <button type="button" disabled={pending} className={cx(btnBase, btnSm, btnGhost, focusRingNavy,
       'disabled:pointer-events-none disabled:opacity-60')} onClick={async () => {
       setResent(false)

@@ -24,7 +24,10 @@ async function bookmarks(run, { catalog = catalogOf(23), snapshot = { mode: 'acc
   Module._load = function(name, ...args) {
     if (name === '@/lib/bookmarks/client') return { useBookmarks: () => ({
       snapshot: store.snapshot,
-      refresh: async () => { store.refreshes++ },
+      refresh: async () => {
+        store.refreshes++
+        if (store.afterRefresh) { store.snapshot = store.afterRefresh; store.afterRefresh = null }
+      },
       toggle: async () => { throw new Error('the register removes; it never toggles') },
       remove: course => new Promise((resolve, reject) => {
         store.removals.push(course.contentKey)
@@ -33,7 +36,11 @@ async function bookmarks(run, { catalog = catalogOf(23), snapshot = { mode: 'acc
             store.snapshot = { ...store.snapshot, keys: store.snapshot.keys.filter(key => key !== course.contentKey) }
             resolve(true)
           } else if (store.outcome === 'rejected') reject(new Error('transport rejected'))
-          else resolve(false)
+          else {
+            // An uncertain write (offline or timed out) leaves the store unable to vouch for any list.
+            if (store.outcome === 'uncertain') store.snapshot = { mode: 'unavailable', keys: [] }
+            resolve(false)
+          }
         }
         if (store.release === 'manual') store.settle = settle; else settle()
       }),
@@ -105,6 +112,12 @@ async function bookmarks(run, { catalog = catalogOf(23), snapshot = { mode: 'acc
       const pager = () => f.nodes(tree()).find(element => element.type === Pagination)
       const feedback = () => /class="student-bookmark-feedback" data-state="([^"]+)"/.exec(html())?.[1]
       const count = () => /student-bookmarks-count">([^<]+)</.exec(html())?.[1] ?? null
+      // Rows carrying a failed-removal message, by key, and that row's own Try again button.
+      const problems = () => (f.nodes(tree()).find(element => element.type === CourseRegister)?.props.children ?? [])
+        .filter(row => row.props.problem !== undefined).map(row => row.key)
+      const rowRetry = key => f.nodes(tree()).find(element => element.type === CourseRegister)
+        .props.children.find(row => row.key === key).props.problem.action
+      const settled = () => new Promise(resolve => setImmediate(resolve))
       const press = async key => {
         const toggle = toggles().find(element => element.props.label === `Bookmark ${key}`)
         assert.ok(toggle, `toggle for ${key}`)
@@ -113,6 +126,7 @@ async function bookmarks(run, { catalog = catalogOf(23), snapshot = { mode: 'acc
         return tree()
       }
       await run({ ...f, store, focused, focusDocument, events, attached, deferredRefs, view, tree, html, toggles, visibleKeys, pager, feedback, count, press,
+        problems, rowRetry, settled,
         BookmarkToggle, EmptyState, Pagination, CourseRegister })
     })
   } finally {
@@ -206,25 +220,92 @@ test('the final removal leaves the success feedback mounted, renders EmptyState 
     assert.doesNotMatch(html, /class="student-pagination"|aria-pressed/)
   }, { catalog: catalogOf(1), snapshot: { mode: 'account', keys: keysOf(1) } }))
 
-test('a failed removal keeps the row, keeps the toggle pressed, keeps focus there and shows the shared failure copy', async () =>
+test('a failed removal keeps the row, keeps the toggle pressed, keeps focus there and says so on that row only', async () =>
   bookmarks(async f => {
     f.store.outcome = 'failed'
     await f.press(titleOf(2))
     assert.deepEqual(f.visibleKeys(), keys(1, 2, 3))
     assert.equal(f.count(), '3 courses')
-    assert.equal(f.feedback(), 'error')
-    assert.match(f.html(), /Could not update bookmarks\. Try again\./)
+    assert.equal(f.feedback(), 'idle', 'no list-wide message')
+    assert.deepEqual(f.problems(), ['key-2'])
+    const html = f.html()
+    assert.equal((html.match(/We couldn’t remove this bookmark\./g) || []).length, 1)
+    assert.match(html, /<div class="student-course-row-problem" role="alert">[\s\S]*?We couldn’t remove this bookmark\.<\/span><button type="button"[^>]*>Try again<\/button><\/div>/)
+    assert.doesNotMatch(html, /Could not update bookmarks/)
     const toggle = f.toggles().find(element => element.props.label === `Bookmark ${titleOf(2)}`)
     assert.deepEqual([toggle.props.pressed, toggle.props.busy], [true, false])
     assert.deepEqual(f.focused, [`Bookmark ${titleOf(2)}`])
     // A new deliberate operation clears the obsolete failure while it is pending.
     f.store.release = 'manual'
     const second = f.press(titleOf(2))
-    assert.equal(f.feedback(), 'idle')
+    assert.deepEqual(f.problems(), [])
     f.store.settle(); await second
-    assert.equal(f.feedback(), 'error')
+    assert.deepEqual(f.problems(), ['key-2'])
     assert.deepEqual(f.store.removals, ['key-2', 'key-2'])
+    // The row's own Try again repeats the same removal.
+    f.store.outcome = 'confirmed'
+    f.store.release = null
+    f.rowRetry('key-2').props.onClick()
+    await f.settled()
+    assert.deepEqual(f.visibleKeys(), keys(1, 3))
+    assert.deepEqual(f.problems(), [])
+    assert.equal(f.feedback(), 'removed')
+    assert.deepEqual(f.store.removals, ['key-2', 'key-2', 'key-2'])
+    assert.equal(f.focused.at(-1), 'Bookmark Course 3')
   }, { catalog: catalogOf(3), snapshot: { mode: 'account', keys: keysOf(3) } }))
+
+test('an offline or timed-out removal keeps the confirmed list on screen and says so on that row only', async () =>
+  bookmarks(async f => {
+    f.store.outcome = 'uncertain'
+    await f.press(titleOf(2))
+    assert.equal(f.store.snapshot.mode, 'unavailable')
+    assert.deepEqual(f.visibleKeys(), keys(1, 2, 3))
+    assert.equal(f.count(), '3 courses')
+    assert.deepEqual(f.problems(), ['key-2'])
+    assert.equal(f.feedback(), 'idle')
+    assert.doesNotMatch(f.html(), /We couldn’t load your bookmarks|student-notice|Loading your bookmarks/)
+    assert.deepEqual(f.focused, ['Bookmark Course 2'])
+    assert.ok(f.toggles().every(toggle => toggle.props.pressed && !toggle.props.busy && !toggle.props.disabled))
+    // A store read in flight (focus, another tab) keeps the same list rather than a skeleton.
+    f.store.snapshot = { mode: 'loading', keys: [] }
+    assert.deepEqual(f.visibleKeys(), keys(1, 2, 3))
+    assert.doesNotMatch(f.html(), /Loading your bookmarks|Course placeholders/)
+    f.store.snapshot = { mode: 'unavailable', keys: [] }
+    // Try again reads the list first; once the store is back, the removal goes through.
+    f.store.outcome = 'confirmed'
+    f.store.afterRefresh = { mode: 'account', keys: keysOf(3) }
+    f.rowRetry('key-2').props.onClick()
+    await f.settled()
+    assert.equal(f.store.refreshes, 1)
+    assert.deepEqual(f.store.removals, ['key-2', 'key-2'])
+    assert.deepEqual(f.visibleKeys(), keys(1, 3))
+    assert.deepEqual(f.problems(), [])
+    assert.equal(f.feedback(), 'removed')
+    assert.equal(f.focused.at(-1), 'Bookmark Course 3')
+  }, { catalog: catalogOf(3), snapshot: { mode: 'account', keys: keysOf(3) } }))
+
+test('after an uncertain removal, the store’s own read decides: still listed keeps the message, gone reports the removal', async () =>
+  bookmarks(async f => {
+    f.store.outcome = 'uncertain'
+    await f.press(titleOf(2))
+    f.store.snapshot = { mode: 'account', keys: keysOf(3) }
+    assert.deepEqual(f.visibleKeys(), keys(1, 2, 3))
+    assert.deepEqual(f.problems(), ['key-2'], 'the message stays until the student acts again')
+    assert.equal(f.feedback(), 'idle')
+    // The timed-out write committed after all; the next read comes back without the course.
+    f.store.snapshot = { mode: 'account', keys: keys(1, 3) }
+    assert.deepEqual(f.visibleKeys(), keys(1, 3))
+    assert.deepEqual(f.problems(), [])
+    assert.equal(f.feedback(), 'removed')
+    assert.equal(f.focused.at(-1), 'Bookmark Course 3')
+    assert.deepEqual(f.store.removals, ['key-2'])
+  }, { catalog: catalogOf(3), snapshot: { mode: 'account', keys: keysOf(3) } }))
+
+test('a failure that never had a list on screen still shows the load notice', async () =>
+  bookmarks(async f => {
+    assert.match(f.html(), /We couldn’t load your bookmarks\./)
+    assert.deepEqual(f.visibleKeys(), [])
+  }, { catalog: catalogOf(3), snapshot: { mode: 'unavailable', keys: [] } }))
 
 test('while a removal is pending the toggle is busy and still pressed, and repeated activation is ignored', async () =>
   bookmarks(async f => {
@@ -296,8 +377,8 @@ test('loading, unavailable and empty states come from the shared owners with rea
   }, { snapshot: { mode: 'loading', keys: [] } })
   await bookmarks(async f => {
     const html = f.html()
-    assert.match(html, /role="alert"[\s\S]*Bookmarks temporarily unavailable/)
-    assert.match(html, /We couldn’t load your bookmarks just now\. Try again to see your latest bookmarks\./)
+    assert.match(html, /role="alert"[\s\S]*We couldn’t load your bookmarks\./)
+    assert.doesNotMatch(html, /temporarily|student-notice-text/)
     assert.doesNotMatch(html, /aria-pressed|student-bookmarks-count|haven’t bookmarked/)
     f.nodes(f.tree()).find(element => element.type === 'button' && element.props.children === 'Try again').props.onClick()
     assert.equal(f.store.refreshes, 1)
@@ -321,7 +402,8 @@ test('a rejected removal retains confirmed rows, pressed state and the same focu
     f.store.outcome = 'rejected'
     await f.press(titleOf(2))
     assert.deepEqual(f.visibleKeys(), keys(1, 2, 3))
-    assert.equal(f.feedback(), 'error')
+    assert.equal(f.feedback(), 'idle')
+    assert.deepEqual(f.problems(), ['key-2'])
     assert.deepEqual(f.focused, ['Bookmark Course 2'])
     assert.deepEqual(f.toggles().map(toggle => toggle.props.pressed), [true, true, true])
   }, { catalog: catalogOf(3), snapshot: { mode: 'account', keys: keysOf(3) } }))
@@ -368,7 +450,8 @@ for (const total of [11, 21]) {
         const targetKey = outcome === 'confirmed' ? 'key-3' : 'key-2'
         assert.equal(f.pager().props.page, 1)
         assert.equal(f.count(), `${outcome === 'confirmed' ? total - 1 : total} courses`)
-        assert.equal(f.feedback(), outcome === 'confirmed' ? 'removed' : 'error')
+        assert.equal(f.feedback(), outcome === 'confirmed' ? 'removed' : 'idle')
+        assert.deepEqual(f.problems(), outcome === 'confirmed' ? [] : ['key-2'])
         assert.deepEqual(f.focused, [outcome === 'confirmed' ? 'Bookmark Course 3' : 'Bookmark Course 2'])
         assert.equal(f.focusDocument.activeElement, f.attached.get(targetKey).node)
         assert.equal(f.focusDocument.activeElement.disabled, false)

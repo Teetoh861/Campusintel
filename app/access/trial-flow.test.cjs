@@ -42,5 +42,5 @@ test('every refusal of this account closes the offer with the one approved sente
 
 test('a pass refused because the courses changed in another tab says so and reloads the plan (D7)', () => {
   assert.deepEqual(describeResult({ status: 'selection-changed' }), { next: 'refresh',
-    message: { tone: 'error', text: 'Your courses were just updated. Check them and try again.' } })
+    message: { tone: 'error', text: 'Your courses were just updated.' } })
 })

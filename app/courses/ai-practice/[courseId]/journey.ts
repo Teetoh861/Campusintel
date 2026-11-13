@@ -3,6 +3,7 @@
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
 import { CAMPUS_BOT_LIMIT_COPY, NEUTRAL_TRIAL_WORDING, accessCopy, trialGrantName } from '@/lib/entitlements/presentation'
 import { MAX_UPLOAD_BYTES, UPLOAD_REJECTION_MESSAGES, mediaTypeForFileName } from '@/lib/ai-practice/upload-contract'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { AiPracticeCommand, AiPracticeResult, AllowanceSummary, PersonalSetView }
   from '@/lib/ai-practice/upload-contract'
 import type { TrialWording } from '@/lib/entitlements/presentation'
@@ -12,7 +13,8 @@ export type JourneyPhase = 'uploading' | 'reading' | 'generating'
 export type JourneyOutcome =
   | { kind: 'generated'; set: PersonalSetView; allowance: AllowanceSummary | null }
   | { kind: 'problem'; tone: 'error' | 'info'; title: string; message: string; retry: 'same-file' | 'new-file' | 'none'
-      allowance?: AllowanceSummary | null; signedOut?: boolean
+      // signedOut: the page loads again and its account gate takes over. link: the one place the message points to.
+      allowance?: AllowanceSummary | null; signedOut?: boolean; link?: { label: string; href: string }
       /** Present when the file was read successfully, so "try again" regenerates without re-uploading. */
       documentId?: string }
 
@@ -60,6 +62,13 @@ export type JourneyDeps = {
   requests: GenerationRequests
 }
 
+// A question set's day in words, in Lagos time like every date students see (the same on the server and in the browser).
+const SET_DAY = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'long', year: 'numeric' })
+export function setDateLabel(iso: string): string {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? '' : SET_DAY.format(date)
+}
+
 export const NOT_ENTITLED_TITLE = 'Campus Bot isn’t included in your account'
 export const CAMPUS_BOT_LIMIT_TITLE = 'Campus Bot limit reached'
 
@@ -67,7 +76,7 @@ export const CAMPUS_BOT_LIMIT_TITLE = 'Campus Bot limit reached'
 export function notEntitledMessage(trial: TrialWording, plansOnSale: boolean = false): string {
   if (plansOnSale) return accessCopy(true).aiNotEntitled
   return trial.passAvailable
-    ? 'Campus Bot opens with a free pass or Early Access. Get your free pass from Plan & Access. GST courses stay free.'
+    ? 'Campus Bot opens with a free pass or Early Access. GST courses stay free.'
     : accessCopy(false).aiNotEntitled
 }
 
@@ -103,7 +112,8 @@ export function describeResult(result: AiPracticeResult, trial: TrialWording = N
     case 'allowance-expired': return { ...problem('Your Campus Bot access has ended',
       `Your ${grantName(result.allowance, trial)} has ended. Your course materials stay available.`, 'none', 'info'),
       allowance: result.allowance }
-    case 'not-entitled': return problem(NOT_ENTITLED_TITLE, notEntitledMessage(trial, plansOnSale), 'none', 'info')
+    case 'not-entitled': return { ...problem(NOT_ENTITLED_TITLE, notEntitledMessage(trial, plansOnSale), 'none', 'info'),
+      link: { label: STUDENT_DESTINATIONS.access.label, href: STUDENT_DESTINATIONS.access.href } }
     case 'campus-bot-limit': return problem(CAMPUS_BOT_LIMIT_TITLE, result.limit === 'session'
       ? CAMPUS_BOT_LIMIT_COPY.session(result.resetsAt) : result.limit === 'week' ? CAMPUS_BOT_LIMIT_COPY.week(result.resetsAt)
         : CAMPUS_BOT_LIMIT_COPY.undelivered, 'none', 'info')
@@ -113,12 +123,12 @@ export function describeResult(result: AiPracticeResult, trial: TrialWording = N
       'Too many students are generating questions right now. Try again later.', 'same-file', 'info')
     case 'upload-limit': return problem('Daily upload limit reached',
       'You have uploaded the maximum number of files for today. Try again tomorrow.', 'none', 'info')
-    case 'pass-upload-limit': return problem('Free pass uploads used',
-      'Your pass includes a small number of uploads and they have been used. They do not renew.', 'none', 'info')
+    case 'pass-upload-limit': return problem('Free pass uploads used', UPLOAD_REJECTION_MESSAGES['pass-upload-limit'], 'none', 'info')
     case 'not-eligible': return problem('This course has study materials',
       'Use the study materials for this course instead.', 'none', 'info')
     case 'signed-out': return { ...problem('Signed out', 'Sign in again to continue.', 'none'), signedOut: true }
-    case 'session-changed': return problem('Your sign-in has changed', 'Reload this page and try again.', 'none')
+    // The page loads again for the current sign-in, as it does when signed out.
+    case 'session-changed': return { ...problem('Your sign-in has changed', '', 'none'), signedOut: true }
     case 'disabled': return problem('Campus Bot is unavailable', 'Try again later.', 'none', 'info')
     case 'not-found': return problem('Upload not found', 'Choose your file again.')
     default: return problem('Something went wrong', 'Check your connection and try again.', 'same-file')

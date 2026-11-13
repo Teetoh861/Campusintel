@@ -87,7 +87,6 @@ export const PLAN_COPY = {
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
   keepSemester: 'Keep Semester',
-  gstFree: 'GST courses stay free.',
 } as const
 
 /** "Both semesters · save ₦1,000" under a Session card. */
@@ -308,23 +307,19 @@ export const TERMS_COPY = {
 export function accessCopy(onSale: boolean) {
   return onSale ? {
     lockedTitle: 'Included when you subscribe',
-    lockedBody: 'Department courses open when you subscribe.',
     lockedAction: 'Subscribe',
     studyLocked: 'Included when you subscribe.',
     previewOthers: (code: string) => `The other topics in ${code} are included when you subscribe.`,
     answersLine: 'Answers and explanations are included when you subscribe.',
-    aiNotEntitled: 'Campus Bot is included when you subscribe. GST courses stay free.',
-    accessLede: 'GST courses are free for every student. Department courses open when you subscribe.',
+    aiNotEntitled: 'Campus Bot is included when you subscribe.',
     aiSection: 'Campus Bot practice from your own notes is included when you subscribe.',
   } as const : {
     lockedTitle: 'Included with full access',
-    lockedBody: 'Department courses open fully with Early Access.',
     lockedAction: 'See how to unlock',
     studyLocked: 'Included with full access.',
     previewOthers: (code: string) => `The other topics in ${code} come with full access.`,
     answersLine: 'Answers and explanations are included with full access.',
-    aiNotEntitled: 'Campus Bot opens with Early Access. GST courses stay free.',
-    accessLede: 'GST courses are free for every student. Department courses open fully with Early Access.',
+    aiNotEntitled: 'Campus Bot opens with Early Access.',
     aiSection: 'Campus Bot practice from your own notes comes with Early Access.',
   } as const
 }

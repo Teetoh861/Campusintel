@@ -1,6 +1,6 @@
 # Student copy rules
 
-Read this before writing any text a student will see in CampusIntell.
+Read this before writing any text or building any screen a student will see in CampusIntell.
 
 1. Write only what the student needs for the task on that screen. Never explain how CampusIntell works.
 2. Never show internal or process words: AI (say Campus Bot), model answer, self-assessment, unverified, not verified, graded, attempt history, saved or sent to CampusIntell, database, server, Discovery Pass.
@@ -11,5 +11,7 @@ Read this before writing any text a student will see in CampusIntell.
 7. Never tell students how to use a screen; the layout should make it obvious.
 8. Headings must read naturally. Never drop words to save space.
 9. A message belongs on the screen where its action happened, and goes away once the student does something else.
+10. Show only what the student needs for the next step: one card per choice, with one line and its action. Lists of topics or questions live on the page that card opens.
+11. Keep each screen simple: one clear way to do each thing, and no extra steps, choices or controls the task doesn't need.
 
 `lib/student-copy/student-copy.test.cjs` fails when text students see contains a word or phrase from rule 2.

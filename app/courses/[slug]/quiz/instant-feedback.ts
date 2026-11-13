@@ -13,7 +13,9 @@ export const INSTANT_COPY = {
   exit: 'Exit',
   checking: 'Checking your answer…',
   offline: 'No connection. Your answer is kept and will be checked when you’re back online.',
-  signedOut: 'You’ve been signed out. Sign in again on this device. Your answer is kept.',
+  signedOut: 'You’ve been signed out. Your answer is kept.',
+  // A pick the server refused is not kept: the options open again.
+  pickAgain: 'Choose your answer again.',
   practiseAgain: 'Practise again',
   nextTopic: 'Next topic',
 } as const
