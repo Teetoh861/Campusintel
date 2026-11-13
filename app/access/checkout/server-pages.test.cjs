@@ -116,18 +116,13 @@ test('Early Access continues first: the plan keeps courses open after it', async
   assert.match(words, /Your Early Access month continues until Wed, 25 Nov 2026\. Your plan then keeps your courses open until Mon, 8 Mar 2027\./)
 })
 
-test('each reason the checkout sent back shows its one line above the form; none promises anything about charges', async () => {
-  const lines = { 'unavailable': 'We couldn’t open the payment page. Try again in a moment.',
-    'checkout-expired': 'That payment page expired. Try again to open a new one.',
-    'selection-changed': 'Your courses changed. Check the list below, then try again.',
-    'session-changed': 'Your session changed. Try again.', 'invalid-request': 'Something went wrong. Try again.',
-    'something-new': 'We couldn’t open the payment page. Try again in a moment.' }
-  for (const [status, line] of Object.entries(lines)) {
+test('a reason the checkout sent back is never in the server\'s page (the browser reads it), and the form is there', async () => {
+  for (const status of ['unavailable', 'checkout-expired', 'selection-changed', 'session-changed', 'invalid-request', 'something-new']) {
     const { html } = await confirm('standard_semester', {}, status)
-    assert.ok(text(html).includes(line), status)
+    assert.doesNotMatch(html, /role="alert"|couldn’t open the payment page|expired|Your courses changed|Your session changed|Something went wrong/,
+      `${status}: the router's copy of this page holds no reason for Back to bring back`)
     assert.match(html, /<checkout-form/, `${status}: the student can try again from here`)
-    assert.ok(html.indexOf(line) < html.indexOf('Business Administration') &&
-      html.indexOf('Business Administration') < html.indexOf('<checkout-form'), `${status}: reason, courses, then the form`)
+    assert.ok(html.indexOf('Business Administration') < html.indexOf('<checkout-form'), `${status}: courses, then the form`)
     assert.doesNotMatch(html, /charged/i)
   }
 })

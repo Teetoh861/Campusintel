@@ -115,8 +115,10 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
     case 'confirming': {
       const still = stopped
       const waitedLong = Date.now() - Date.parse(order.created_at) >= SUPPORT_AFTER_MS
-      return <Outcome icon="busy" title={still ? RETURN_COPY.stillTitle : RETURN_COPY.confirmingTitle}
-        body={still ? RETURN_COPY.stillBody : RETURN_COPY.confirmingBody} status order={order}
+      // As in "couldn't check": the spinner runs only while the page is still asking on its own.
+      return <Outcome icon={still ? 'alert' : 'busy'} title={still ? RETURN_COPY.stillTitle : RETURN_COPY.confirmingTitle}
+        body={still ? RETURN_COPY.stillBody : RETURN_COPY.confirmingBody} note={still ? RETURN_COPY.stillLeave : undefined}
+        status order={order}
         actions={<>{still && check}{back}</>}
         after={<>
           {still && failedCheck}
@@ -167,9 +169,12 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
   }
 }
 
-function Outcome({ icon, title, body, actions, order, state = 'not-found', status = false, alert = false, after = null,
+function Outcome({ icon, title, body, note, actions, order, state = 'not-found', status = false, alert = false, after = null,
   amount }: {
-  icon: 'busy' | 'alert' | 'check'; title: string; body?: string; actions: ReactNode; order?: OrderView
+  icon: 'busy' | 'alert' | 'check'; title: string; body?: string
+  // A second line under the body.
+  note?: string
+  actions: ReactNode; order?: OrderView
   // What the page reports when there is no order to name its state.
   state?: 'not-found' | 'unavailable'; status?: boolean
   alert?: boolean; after?: ReactNode
@@ -184,6 +189,7 @@ function Outcome({ icon, title, body, actions, order, state = 'not-found', statu
         : icon === 'alert' ? 'text-student-error' : 'text-student-success'} />
       <h1 className="student-page-band-title">{title}</h1>
       {body !== undefined && <p className="text-student-text-secondary">{body}</p>}
+      {note !== undefined && <p className="text-student-text-secondary">{note}</p>}
     </div>
     {order && <dl className="student-surface grid py-1 text-sm">
       <div className="flex justify-between gap-3 border-b border-student-border py-3">

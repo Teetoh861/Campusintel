@@ -155,6 +155,8 @@ export const RETURN_COPY = {
   confirmingBody: 'This usually takes a few seconds.',
   stillTitle: 'We’re still confirming your payment',
   stillBody: 'Bank transfers can take a few minutes.',
+  // On the still-confirming screen only: the page has stopped asking, and the student need not stay.
+  stillLeave: 'You can leave this page. We’ll add your plan as soon as your payment is confirmed.',
   stillWaiting: 'Paid but still waiting?',
   checkAgain: 'Check again',
   checking: 'Checking…',

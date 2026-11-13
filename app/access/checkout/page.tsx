@@ -1,7 +1,7 @@
 // app/access/checkout/page.tsx — Confirm your courses: every Pay comes here first. The plan and its catalogue price, the
 // student's study context and course list, then one form that posts to /api/payments/checkout. No amount ever comes
-// from the browser; the server copies the price onto the order. A reason the checkout route sent back shows once
-// (ConfirmAndPay takes it out of the address).
+// from the browser; the server copies the price onto the order. A reason the checkout route sent back (?status=) is
+// never rendered here: ConfirmAndPay reads it in the browser, shows it once and takes it out of the address.
 import { randomUUID } from 'node:crypto'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -31,20 +31,19 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Confirm your courses | CampusIntell', robots: { index: false, follow: false } }
 
 const PLANS: ReadonlySet<string> = new Set(['standard_semester', 'standard_session', 'plus_semester', 'plus_session'])
-type Search = { plan?: string; status?: string }
+type Search = { plan?: string }
 
 export default async function ConfirmCoursesPage({ searchParams }: { searchParams: Promise<Search> }): Promise<ReactElement> {
-  const { plan, status } = await searchParams
+  const { plan } = await searchParams
   if (typeof plan !== 'string' || !PLANS.has(plan)) redirect(STUDENT_DESTINATIONS.access.href)
   const here = `${CHECKOUT_PATH}?plan=${plan}`
   return <StudentAccessGate returnPath={here}>
-    {continuityToken => <ConfirmCourses plan={plan as PlanKey} status={typeof status === 'string' ? status : null}
-      continuityToken={continuityToken} here={here} />}
+    {continuityToken => <ConfirmCourses plan={plan as PlanKey} continuityToken={continuityToken} here={here} />}
   </StudentAccessGate>
 }
 
-async function ConfirmCourses({ plan, status, continuityToken, here }: { plan: PlanKey; status: string | null;
-  continuityToken: string; here: string }): Promise<ReactElement> {
+async function ConfirmCourses({ plan, continuityToken, here }: { plan: PlanKey; continuityToken: string; here: string }):
+  Promise<ReactElement> {
   const client = await createClient()
   const context = await getStudentSessionContext(undefined, client)
   if (context === null) return redirectForStudentState('signed-out', here)
@@ -97,10 +96,9 @@ async function ConfirmCourses({ plan, status, continuityToken, here }: { plan: P
     </Notice>
   </StudentPage>
   const early = entitlement.access?.source === 'early_access' ? entitlement.access.ends_at : null
-  const problem = status === null || status === 'already-paid' ? null : CHECKOUT_PROBLEM[status] ?? CHECKOUT_PROBLEM.unavailable!
   return <StudentPage band={band(lede)}>
     <div className="mx-auto grid w-full max-w-[680px] gap-6">
-      <ConfirmAndPay problem={problem} plan={plan} priceKobo={onSale.price_kobo} expectedRevision={revision}
+      <ConfirmAndPay plan={plan} priceKobo={onSale.price_kobo} expectedRevision={revision}
         requestId={randomUUID()} continuityToken={continuityToken}>
         <div className="student-surface flex items-center justify-between gap-3 bg-student-brand-surface py-2">
           <p className="min-w-0 font-semibold text-student-text-primary">{studyContext}</p>

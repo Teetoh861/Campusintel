@@ -153,52 +153,85 @@ test('Confirm and pay posts the plan, revision, request id and token only, and i
   } finally { delete global.window }
 })
 
-test('the checkout reason shows once: it leaves the address on load, and goes when the student pays again or comes Back', async () => {
-  const line = 'We couldn’t open the payment page. Try again in a moment.'
+test('the checkout reason is read in the browser and shows once: never in the first render, out of the address on the next task, gone on Pay or Back', async () => {
+  const lines = { 'unavailable': 'We couldn’t open the payment page. Try again in a moment.',
+    'checkout-expired': 'That payment page expired. Try again to open a new one.',
+    'selection-changed': 'Your courses changed. Check the list below, then try again.',
+    'session-changed': 'Your session changed. Try again.', 'invalid-request': 'Something went wrong. Try again.',
+    'something-new': 'We couldn’t open the payment page. Try again in a moment.' }
+  const line = lines.unavailable
   const CheckoutForm = props => React.createElement('checkout-form', { 'data-plan': props.plan, 'data-price': String(props.priceKobo),
     'data-revision': String(props.expectedRevision), 'data-request': props.requestId, 'data-token': props.continuityToken })
-  async function screen(search, problem, run) {
-    const listeners = new Map(), replaced = []
-    global.window = { location: { href: `https://campusintell.test/access/checkout${search}` },
-      history: { replaceState: (state, unused, url) => replaced.push([state, url]) },
+  /** One mount of the screen at `location`; the browser's replace changes that address, as a real one would. */
+  async function screen(location, run) {
+    const listeners = new Map(), replaced = [], timers = []
+    global.window = { location,
+      history: { replaceState: (state, unused, url) => { replaced.push([state, url]); location.href = new URL(url, location.href).href } },
+      setTimeout: fn => timers.push(fn), clearTimeout: () => {},
       addEventListener: (event, fn) => listeners.set(event, fn), removeEventListener: event => listeners.delete(event) }
     try {
-      await drive('./checkout/ConfirmAndPay.tsx', 'ConfirmAndPay', { problem, plan: 'plus_session', priceKobo: 1100000,
+      await drive('./checkout/ConfirmAndPay.tsx', 'ConfirmAndPay', { plan: 'plus_session', priceKobo: 1100000,
         expectedRevision: 7, requestId: 'b7c6d5e4-0000-4000-8000-000000000001', continuityToken: 'page-token',
         children: React.createElement('course-list') },
-      ({ render, html }) => run({ render, html, listeners, replaced }), { './CheckoutForm': { CheckoutForm } })
+      ({ render, html }) => run({ render, html, listeners, replaced, timers }), { './CheckoutForm': { CheckoutForm } })
     } finally { delete global.window }
   }
-  await screen('?plan=plus_session&status=unavailable', line, async ({ render, html, replaced }) => {
+  const at = search => ({ href: `https://campusintell.test/access/checkout${search}` })
+  const location = at('?plan=plus_session&status=unavailable')
+  await screen(location, async ({ render, html, replaced, timers }) => {
+    assert.doesNotMatch(html(), /role="alert"/, 'the first render (the server\'s, and so the router\'s copy) has no reason')
     const first = html()
     assert.match(first, /role="alert"/)
     assert.ok(first.indexOf(line) !== -1 && first.indexOf(line) < first.indexOf('<course-list'), 'the reason, above the courses')
     assert.ok(first.indexOf('<course-list') < first.indexOf('<checkout-form'), 'the form last')
     assert.match(first, /<checkout-form data-plan="plus_session" data-price="1100000" data-revision="7" data-request="b7c6d5e4-0000-4000-8000-000000000001" data-token="page-token"/)
+    assert.deepEqual(replaced, [], 'the address waits for the next task, when the router has taken over the history')
+    assert.equal(timers.length, 1)
+    timers[0]()
     assert.deepEqual(replaced, [[null, '/access/checkout?plan=plus_session']], 'status leaves the address; the plan stays')
     html()
-    assert.equal(replaced.length, 1, 'once')
+    assert.equal(timers.length, 1, 'once')
     find(render(), node => node.type === CheckoutForm).props.onSubmitStart()
     const paying = html()
     assert.ok(!paying.includes(line), 'paying again hides the last attempt\'s reason')
     assert.doesNotMatch(paying, /role="alert"/)
     assert.match(paying, /<course-list><\/course-list><checkout-form /)
   })
-  await screen('?plan=plus_session&status=unavailable', line, async ({ html, listeners }) => {
+  // Back to this entry after an in-app link mounts the screen again: the address has no reason now, so none shows.
+  assert.equal(location.href, 'https://campusintell.test/access/checkout?plan=plus_session')
+  await screen(location, async ({ html, replaced, timers }) => {
+    html()
+    assert.doesNotMatch(html(), /role="alert"/)
+    assert.deepEqual(replaced, [])
+    assert.equal(timers.length, 0)
+  })
+  await screen(at('?plan=plus_session&status=unavailable'), async ({ html, listeners }) => {
     html()
     listeners.get('pageshow')({ persisted: false })
     assert.ok(html().includes(line), 'an ordinary load keeps it')
     listeners.get('pageshow')({ persisted: true })
-    assert.ok(!html().includes(line), 'Back restores the page without the old reason')
+    assert.ok(!html().includes(line), 'Back restores the page from memory without the old reason')
   })
+  for (const [status, expected] of Object.entries(lines)) {
+    await screen(at(`?plan=plus_session&status=${status}`), async ({ html }) => {
+      html()
+      const shown = html()
+      assert.ok(text(shown).includes(expected), status)
+      assert.doesNotMatch(shown, /charged/i, status)
+    })
+  }
   // A status with no line of its own (already-paid) still leaves the address; a clean address is left alone.
-  await screen('?plan=plus_session&status=already-paid', null, async ({ html, replaced }) => {
+  await screen(at('?plan=plus_session&status=already-paid'), async ({ html, replaced, timers }) => {
+    html()
     assert.doesNotMatch(html(), /role="alert"/)
+    timers[0]()
     assert.deepEqual(replaced, [[null, '/access/checkout?plan=plus_session']])
   })
-  await screen('?plan=plus_session', null, async ({ html, replaced }) => {
+  await screen(at('?plan=plus_session'), async ({ html, replaced, timers }) => {
+    html()
     assert.match(html(), /<checkout-form /)
     assert.deepEqual(replaced, [])
+    assert.equal(timers.length, 0)
   })
 })
 
@@ -258,6 +291,7 @@ test('confirming: role="status", polls our order every 3 seconds with no-store, 
     assert.match(first, /data-return-state="confirming"/)
     assert.match(first, /role="status" aria-live="polite"/)
     assert.match(text(first), /Confirming your payment This usually takes a few seconds\. Plan /, 'one line, nothing about the page')
+    assert.match(first, /animate-spin/, 'asking on its own')
     assert.match(text(first), /Plan Standard · Semester Amount ₦4,000 Payment reference 3F2C9A1B7D/)
     assert.doesNotMatch(first, /subscribed/i)
     assert.equal(intervals[0].ms, 3000)
@@ -307,8 +341,9 @@ test('after two minutes: still confirming with Check again; Check again asks onc
     for (let n = 0; n < 39; n++) { answers.push({ status: 200, body: order('confirming') }); await tick(3000); html() }
     await tick(3000)
     const still = html()
-    assert.match(text(still), /We’re still confirming your payment Bank transfers can take a few minutes\. Plan /)
-    assert.doesNotMatch(text(still), /charged|leave this page/i)
+    assert.match(text(still), /We’re still confirming your payment Bank transfers can take a few minutes\. You can leave this page\. We’ll add your plan as soon as your payment is confirmed\. Plan /)
+    assert.doesNotMatch(text(still), /charged/i)
+    assert.doesNotMatch(still, /animate-spin/, 'the page has stopped asking: no spinner, as in "couldn’t check"')
     assert.match(still, /role="status"/)
     assert.doesNotMatch(text(still), /Paid but still waiting/, 'the support line waits 30 minutes')
     assert.equal(intervals.filter(interval => interval.live).length, 0, 'no polling after two minutes')
