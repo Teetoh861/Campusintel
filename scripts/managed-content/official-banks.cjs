@@ -19,6 +19,10 @@ const IDENTITY_MAP = path.join(BANK_DIR, 'identity-map.csv')
 const BANK_ACTOR = '00000000-0000-4000-8000-000000000043'
 const SOURCE_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/
 const LETTERS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+// Migrations that may run after the banks, because none of them changes what an import replaces: the overview
+// revisions publish overview text only, never a CBT question; the recovery grant retry adds password recovery
+// functions and touches no content table.
+const AFTER_THE_BANKS = new Set([OVERVIEW_MIGRATION, '20261112100000_recovery_grant_retry.sql'])
 
 const BEHAVIOUR_TEST = path.join(ROOT, 'supabase/tests/official_banks.test.sql')
 const SECTIONS_MODULE = path.join(ROOT, 'lib/data/official-bank-sections.ts')
@@ -203,9 +207,8 @@ function buildImports(manifest) {
   const plans = IMPORTS.map(entry => planImport(entry, manifest, banks, identity))
   const migrations = new Set(plans.map(plan => plan.migration))
   assert.equal(migrations.size, plans.length, 'one migration per course')
-  // The overview revisions run after the banks; they publish overview text only, never a CBT question.
   const later = fs.readdirSync(path.join(ROOT, 'supabase/migrations'))
-    .filter(name => !migrations.has(name) && name !== OVERVIEW_MIGRATION)
+    .filter(name => !migrations.has(name) && !AFTER_THE_BANKS.has(name))
   for (const plan of plans) {
     assert.match(plan.migration, /^\d{14}_official_bank_[a-z0-9_]+\.sql$/)
     assert.ok(later.every(name => name < plan.migration), `${plan.migration} must sort after every other migration`)

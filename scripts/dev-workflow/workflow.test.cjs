@@ -36,6 +36,20 @@ function startStep() {
   return { workflow, step, env, script }
 }
 
+test('PR verification runs the real-database recovery tests only when the local database is started', () => {
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8')
+  const step = workflow.split('      - name: Verify application and applicable optional checks\n')[1]
+  assert.ok(step, 'the verification step exists')
+  assert.match(step, /^ {8}env:\n(?: {10}#.*\n)* {10}RECOVERY_FLOW_ISOLATION_DB_TEST: \$\{\{ steps\.scope\.outputs\.db == 'true' && '1' \|\| '0' \}\}\n {8}run: node scripts\/dev-workflow\/cli\.cjs verify\n/)
+  assert.match(workflow, /- name: Start local database for SQL tests\n {8}if: steps\.scope\.outputs\.db == 'true'\n/,
+    'the same condition starts the database the tests use')
+  // The tests name the container of the project in supabase/config.toml.
+  const config = fs.readFileSync(path.join(__dirname, '../../supabase/config.toml'), 'utf8')
+  assert.match(config, /^project_id = "Campusintel"$/m)
+  assert.match(fs.readFileSync(path.join(__dirname, '../../lib/auth/recovery-flow-isolation.database.test.cjs'), 'utf8'),
+    /'supabase_db_Campusintel'/)
+})
+
 test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
   const { workflow, step, env, script } = startStep()
   assert.match(workflow, /uses: supabase\/setup-cli@v3\s+if: steps\.scope\.outputs\.db == 'true'\s+with:\s+version: 2\.109\.1/)
