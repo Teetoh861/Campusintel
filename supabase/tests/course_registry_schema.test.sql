@@ -7,8 +7,8 @@ select plan(36);
 
 select is(
   (select count(*)::int from public.courses),
-  34,
-  'the repository content registry contains exactly thirty-four identities: fifteen seeded and nineteen official banks'
+  35,
+  'the repository content registry contains exactly thirty-five identities: fifteen seeded, nineteen official banks and one created for its study guide'
 );
 
 select is(
@@ -49,8 +49,10 @@ select is(
     'legal-methods-1', '4df568c2-4a68-52ab-80d6-380e5921d119',
     'introduction-sociology-1', 'f0a98038-5829-537e-bb07-a06605f6e2a4',
     'business-taxation-2', 'b7bba625-d122-5afa-8b13-127d96411059'
+  ) || jsonb_build_object(
+    'introduction-cost-accounting', '0412653e-c891-5f49-abd8-927ed986fb78'
   ),
-  'all fifteen seeded identities keep their stable IDs and the nineteen official-bank identities are exact'
+  'all fifteen seeded identities keep their stable IDs, and the nineteen official-bank identities and the study guide course are exact'
 );
 
 select is(
@@ -102,8 +104,8 @@ select is(
     from public.institutional_courses
     where repository_course_id is not null
   ),
-  33,
-  'thirty-three confirmed catalogue-to-content links are established, nineteen of them official banks'
+  34,
+  'thirty-four confirmed catalogue-to-content links are established, nineteen of them official banks and one a study guide course'
 );
 
 select is(
@@ -112,7 +114,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is not null
   ),
-  33,
+  34,
   'confirmed content links are one-to-one'
 );
 
@@ -122,7 +124,7 @@ select is(
     from public.institutional_courses
     where repository_course_id is null
   ),
-  121,
+  120,
   'institutional catalogue courses may exist without repository content'
 );
 
@@ -597,6 +599,7 @@ select is(
       'introduction-actuarial-science',
       'introduction-business-1',
       'introduction-computer',
+      'introduction-cost-accounting',
       'introduction-finance',
       'introduction-financial-accounting-1',
       'introduction-insurance',
@@ -611,7 +614,7 @@ select is(
       'principles-marketing'
     ]::text[]
   ),
-  'seeded sharing classifications remain exactly intact and the nineteen official-bank identities are unresolved'
+  'seeded sharing classifications remain exactly intact; the nineteen official-bank identities and the study guide course are unresolved'
 );
 
 select is(
@@ -634,7 +637,7 @@ select is(
   ),
   array[
     'ACC-CM204=unlinked',
-    'ACC121=unlinked',
+    'ACC121=introduction-cost-accounting',
     'ACS-CM207=unlinked',
     'ACS207=unlinked',
     'EHR206=unlinked',
@@ -646,7 +649,7 @@ select is(
     'IRP121=unlinked',
     'LAG-EHR222=unlinked'
   ]::text[],
-  'ambiguous code/title relationships remain separate: only FIN101 links, to its own official bank; the other eleven stay unlinked'
+  'ambiguous code/title relationships remain separate: FIN101 links to its own official bank and ACC121 to the course made for its study guide; the other ten stay unlinked'
 );
 
 select is(

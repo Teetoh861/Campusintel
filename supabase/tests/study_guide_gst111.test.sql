@@ -146,9 +146,12 @@ select is((select count(*)::integer from public.managed_content_revisions where 
   46, 'no revision was written twice');
 
 -- ---------------------------------------------------------------------------------------------------------------
--- With the overview correction (20261110090000): both roll back in reverse order and apply again.
+-- With the overview correction (20261110090000): both roll back in reverse order and apply again. The correction
+-- covers other courses' overviews too, so every guide imported since rolls back before it as well.
 -- ---------------------------------------------------------------------------------------------------------------
 select is(private.study_guide('study_guide_gst111', 'rollback'), 'rolled-back', 'the guide rolls back first');
+select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('and so does %s', guide))
+  from private.study_guides where guide <> 'study_guide_gst111' order by guide;
 select is(private.course_overview_revisions('rollback'), 'rolled-back', 'then the overview correction');
 select is((select jsonb_build_array(i.published_revision, r.authored_by) from public.managed_content_items i
     join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
