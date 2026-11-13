@@ -53,8 +53,7 @@ async function fixture(run) {
       return load.call(this, name, ...args)
     }
     const page = require('./page.tsx').default
-    const home = require('../../components/auth/PublicHomeBoundary.tsx').PublicHomeBoundary
-    await run({ state, page, home, html: async () => renderToStaticMarkup(await page()) })
+    await run({ state, page, html: async () => renderToStaticMarkup(await page()) })
   } finally {
     Module._load = load
     if (tsx) Module._extensions['.tsx'] = tsx; else delete Module._extensions['.tsx']
@@ -389,19 +388,6 @@ test('course-data session loss and incomplete selection retain server routing ga
   await assert.rejects(f.page, /redirect:\/login\?next=%2Fdashboard/)
   f.state.current = { status: 'incomplete' }
   await assert.rejects(f.page, /redirect:\/profile-selection/)
-}))
-
-test('public Home survives lookup failures while verified students route through guarded Dashboard', async () => fixture(async f => {
-  const children = 'public marketing'
-  f.state.context = null
-  assert.equal(await f.home({ children }), children)
-  f.state.failure = true
-  assert.equal(await f.home({ children }), children)
-  f.state.failure = false
-  f.state.context = { user: { id: 'student' }, sessionId: 'session' }
-  await assert.rejects(f.home({ children }), /redirect:\/dashboard/)
-  f.state.enabled = false
-  assert.equal(await f.home({ children }), children)
 }))
 
 test('semantic focus, official C texture and reduced motion have shared owners', () => {

@@ -11,7 +11,7 @@ const INLINE_LINK = 'student-link font-bold'
 
 export function Faq(): ReactElement {
   return (
-    <section id={faq.id} className={`${styles.sec} ${styles.secTight} ${styles.anchor}`} aria-labelledby="faq-title">
+    <section id={faq.id} className={`${styles.sec} ${styles.anchor}`} aria-labelledby="faq-title">
       <div className={`app-container ${styles.faqGrid}`}>
         <div>
           <span className={styles.eyebrow}>{faq.eyebrow}</span>

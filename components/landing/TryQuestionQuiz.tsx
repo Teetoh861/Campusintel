@@ -93,9 +93,7 @@ export function TryQuestionQuiz({ copy, questions, intro, botSrc }: Props): Reac
 
       <div className={styles.quizWrap}>
         <p className={styles.bubble} aria-hidden="true">{bubble}</p>
-        <div className={styles.qbot} aria-hidden="true">
-          <Image src={botSrc} width={420} height={400} alt="" sizes="92px" className={styles.botImg} />
-        </div>
+        <Image src={botSrc} width={420} height={400} alt="" sizes="92px" className={styles.qbot} />
         <div className={styles.quiz} role="group" aria-label={copy.cardLabel}>
           {finished ? (
             <div className={styles.end}>
@@ -116,7 +114,7 @@ export function TryQuestionQuiz({ copy, questions, intro, botSrc }: Props): Reac
             <>
               <div className={styles.quizHead}>
                 <span className={styles.coursePill}>{current.course}</span>
-                <span className={styles.modeTag}><Timer aria-hidden="true" size={16} />{exam ? copy.labelExam : copy.labelPractice}</span>
+                <span className={styles.modeTag}>{exam && <Timer aria-hidden="true" size={16} />}{exam ? copy.labelExam : copy.labelPractice}</span>
               </div>
               <h3 ref={questionRef} tabIndex={-1} className={styles.question}>
                 <span className="sr-only">{fillTemplate(copy.progress, { current: index + 1, total: questions.length })}. </span>
@@ -139,10 +137,13 @@ export function TryQuestionQuiz({ copy, questions, intro, botSrc }: Props): Reac
                   )
                 })}
               </div>
-              <div className={`${styles.explain} ${answered ? styles.explainOpen : ''}`} aria-live="polite">
-                {!answered ? (exam ? copy.promptExam : copy.promptInstant)
-                  : exam ? copy.savedExam
-                    : <><strong>{copy.explanationLabel}</strong> {current.explanation}</>}
+              {/* The region is always present so the explanation is announced when it appears. */}
+              <div aria-live="polite">
+                {answered && (
+                  <p className={styles.explain}>
+                    {exam ? copy.savedExam : <><strong>{copy.explanationLabel}</strong> {current.explanation}</>}
+                  </p>
+                )}
               </div>
               <div className={styles.quizFoot}>
                 <div className={styles.steps} aria-hidden="true">

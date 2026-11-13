@@ -52,6 +52,22 @@ when one is unset (or not https), its button does not render:
 - NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: the pre-launch Early Access form
   ("Before launch: join Early Access for a free month").
 
+The landing page's figures (courses ready to practise, questions and
+departments) are counted from the repository by
+scripts/landing/figures.cjs, which pnpm build runs first. After changing
+course content, run node scripts/landing/figures.cjs and commit
+lib/landing/figures.ts.
+
+The landing page is built once, as a static page, and never reads the
+session on the server: lib/supabase/proxy.ts sends a signed-in student
+to their home before it is served. A browser can also show a copy it
+kept (the Back button) without asking the server; there,
+components/landing/SignedInHome.tsx sends a signed-in student home.
+The page's settings, figures and copyright year are those of the
+build, so they change with the next build. After pnpm build, node
+scripts/landing/static-check.cjs confirms the build lists / as static;
+the verifier runs it as "Landing page build".
+
 ## Project structure
 
     app/                    App Router routes
