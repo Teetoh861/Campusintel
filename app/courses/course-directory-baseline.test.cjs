@@ -112,7 +112,7 @@ test('catalogue unavailable and invariant failure retain the PageBand and safe r
     assert.match(html, /All Courses/)
     assert.equal(f.nodes(tree).some(node => node.type === f.CourseDirectory), false)
     if (status === 'unavailable') { assert.match(html, /We couldn’t load your courses\./); assert.match(html, /Try again/) }
-    else { assert.match(html, /We couldn’t show the course details\./); assert.match(html, /Contact support/) }
+    else { assert.match(html, /We couldn’t show the course details\./); assert.match(html, /Help &amp; Support/) }
     assert.doesNotMatch(html, /student-notice-text/, 'the title says it all')
     assert.doesNotMatch(html, /private|0 courses|15 courses|BUA201/)
   }

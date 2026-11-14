@@ -4,7 +4,6 @@ import { EMAIL_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, PROVIDER_PA
   AUTH_RETURN_PATH_MAX_LENGTH } from './constants'
 
 export const emailSchema = z.string().trim().min(1, 'Enter your email.').max(EMAIL_MAX_LENGTH).email('Enter a valid email.').toLowerCase()
-export const passwordSchema = z.string().min(PASSWORD_MIN_LENGTH, `Use at least ${PASSWORD_MIN_LENGTH} characters.`).max(PASSWORD_MAX_LENGTH, `Use no more than ${PASSWORD_MAX_LENGTH} characters.`)
 // This is an abuse bound, not an assumption about the provider's configured OTP length.
 export const codeSchema = z.string().min(1, 'Enter your code.').max(OTP_MAX_LENGTH, 'Check your code.').regex(/^[0-9]+$/, 'Enter the numbers from your email.')
 export const emailRequestSchema = z.object({ email: emailSchema }).strict()
@@ -14,11 +13,12 @@ export const registerSchema = emailRequestSchema.extend({ password: z.lazy(() =>
 export const loginSchema = emailRequestSchema.extend({ password: z.string().min(1, 'Enter your password.').max(PASSWORD_MAX_LENGTH, 'Incorrect email or password.'), next: z.string().max(AUTH_RETURN_PATH_MAX_LENGTH).optional() })
 export const confirmSchema = emailRequestSchema.extend({ code: codeSchema, next: z.string().max(AUTH_RETURN_PATH_MAX_LENGTH).optional() })
 export const recoveryVerificationSchema = emailRequestSchema.extend({ code: codeSchema })
-// A new password for a reset. The provider refuses one longer than its own limit only once it is asked, and by then
-// the recovery grant is in use; so that limit is checked here first, on the screen and before the grant is held.
-// The provider counts bytes, so accented letters or emoji can pass the limit in fewer characters; then the line
-// names no number, because the number would be wrong.
-export const newPasswordSchema = passwordSchema.superRefine((value, context) => {
+// A new password (Create account, Change password). The provider refuses one longer than its own limit only once it
+// is asked, and by then the recovery grant is in use; so that limit is checked here first, on the screen and before
+// the grant is held. It is the only upper limit, so a password that is too long gets one message, with the limit that
+// applies. The provider counts bytes, so accented letters or emoji can pass the limit in fewer characters; then the
+// line names no number, because the number would be wrong.
+export const newPasswordSchema = z.string().min(PASSWORD_MIN_LENGTH, `Use at least ${PASSWORD_MIN_LENGTH} characters.`).superRefine((value, context) => {
   if (new TextEncoder().encode(value).length <= PROVIDER_PASSWORD_MAX_BYTES) return
   context.addIssue({ code: 'custom', message: Array.from(value).length > PROVIDER_PASSWORD_MAX_BYTES
     ? `Use no more than ${PROVIDER_PASSWORD_MAX_BYTES} characters.` : 'Use a shorter password.' })

@@ -40,6 +40,32 @@ test('generation progress shows its status only; the label belongs to the finish
   }
 })
 
+test('"Keep this page open" shows only while the file uploads', () => {
+  assert.match(html(React.createElement(JourneyProgress, { phase: 'uploading' })),
+    /Uploading your file<\/p><p[^>]*>Keep this page open while your file uploads\.<\/p>/)
+  for (const phase of ['reading', 'generating']) {
+    assert.doesNotMatch(html(React.createElement(JourneyProgress, { phase })), /Keep this page open/, phase)
+  }
+})
+
+test('Campus Bot closed: the notice offers the free pass with its button only to a student who can still get one', () => {
+  const closed = { state: 'not-entitled', source: null, total: 0, used: 0, endsAt: null }
+  const page = props => html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance: closed,
+    recentSets: [], ...props }))
+  const offered = page({ trial: { policy: null, passAvailable: true } })
+  assert.match(offered, /Campus Bot opens with a free pass or Early Access\.<\/p>/)
+  assert.match(offered, /<a[^>]*href="\/access"[^>]*>Get your free pass<\/a>/, 'the button leads to Plan & Access, where the pass starts')
+  assert.equal((offered.match(/<a\b/g) || []).length, 1, 'one button')
+  assert.doesNotMatch(offered, /GST|type="file"/)
+  for (const [props, line] of [[{ trial: { policy: null, passAvailable: false } }, 'Campus Bot opens with Early Access.'],
+    [{}, 'Campus Bot opens with Early Access.'],
+    [{ trial: { policy: null, passAvailable: true }, plansOnSale: true }, 'Campus Bot is included when you subscribe.']]) {
+    const markup = page(props)
+    assert.ok(markup.includes(line), line)
+    assert.doesNotMatch(markup, /free pass|GST|<a\b/, `${line}: no pass is offered, so there is no pass button`)
+  }
+})
+
 test('the workspace leads with the verbatim label, entitled or not', () => {
   for (const initialAllowance of [null, { state: 'not-entitled', source: null, total: 0, used: 0, endsAt: null },
     { state: 'active', source: 'trial', total: 10, used: 2, endsAt: '2026-10-23T00:00:00.000Z' }]) {

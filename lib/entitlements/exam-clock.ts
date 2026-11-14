@@ -9,6 +9,9 @@
 // exchange lands. Every invalidation starts a new generation: an exchange that began before it is discarded when it
 // answers, whatever it says, so only an exchange started after the latest invalidation can enable answering again.
 // The server's reading is also refreshed after a failed exchange, with bounded backoff.
+// The same exchange also bounds the deadline from the other side: it cannot be later than if the server had read its
+// clock as its answer arrived. An exam is handed in at time up only once that has passed (untilPassed), so the server
+// closes it as timed out; handed in at the early cutoff, it could still be open there and be taken as submitted.
 export type ClockReading = {
   /** The server's clock when it answered, in epoch milliseconds. */
   serverNow: number
@@ -40,6 +43,9 @@ export const EXAM_CLOCK = {
   /** Backoff between failed exchanges: base × 2^(attempt − 1), capped. */
   retryBaseMs: 1_000,
   retryMaxMs: 10_000,
+  /** Added before the deadline is taken to have passed on the server: between exchanges the two clocks can run at
+   *  slightly different speeds, and the server's readings arrive in whole milliseconds. */
+  passedMarginMs: 500,
 } as const
 
 export function syncRetryMs(attempt: number): number {
@@ -49,6 +55,8 @@ export function syncRetryMs(attempt: number): number {
 export class ExamClock {
   /** The deadline on the monotonic clock, from the last trusted exchange; null without one. */
   private deadlineAt: number | null = null
+  /** The round trip of that exchange: how much earlier than the server's deadline `deadlineAt` can be. */
+  private roundTrip = 0
   /** wall − monotonic at the last trusted exchange, to notice the device sleeping. */
   private drift = 0
   private attempts = 0
@@ -77,6 +85,16 @@ export class ExamClock {
       return null
     }
     return this.deadlineAt - this.options.monotonic()
+  }
+
+  /**
+   * Milliseconds until the deadline has certainly passed on the server, or null while there is no reading (zero or
+   * less once it has). The cutoff in remaining() can come before the server's deadline by the exchange's round trip:
+   * this gives that round trip back, as if the server had read its clock when its answer arrived, and adds a margin.
+   */
+  untilPassed(): number | null {
+    const remaining = this.remaining()
+    return remaining === null ? null : remaining + this.roundTrip + EXAM_CLOCK.passedMarginMs
   }
 
   /** Start the first exchange. */
@@ -130,6 +148,7 @@ export class ExamClock {
     if (reading !== null && roundTrip >= 0 && roundTrip <= EXAM_CLOCK.maxRoundTripMs) {
       // As if the server read its clock when the request left: the whole round trip counts as elapsed.
       this.deadlineAt = sentAt + (reading.deadline - reading.serverNow)
+      this.roundTrip = roundTrip
       this.drift = this.options.wall() - this.options.monotonic()
       this.attempts = 0
       this.options.onChange('synced')

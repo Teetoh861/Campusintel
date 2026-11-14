@@ -179,6 +179,21 @@ for (const [status, error] of [
   assert.equal(getSafeReturnPath(`/courses/${COURSE}/practice`), `/courses/${COURSE}/practice`, 'sign-in returns there')
 }))
 
+for (const [status, error] of [
+  ['signed-out', { title: 'You’ve been signed out.', body: '', action: { label: 'Sign in', href: `/login?next=${encodeURIComponent(`/courses/${COURSE}/quiz?mode=exam`)}` } }],
+  ['session-changed', { title: 'You signed in on another tab.', body: '', action: { label: 'Reload', href: `/courses/${COURSE}/quiz?mode=exam` } }],
+]) test(`an exam start refused as ${status} leads back to the exam's brief, where it began, not to the course page`, async () => flow({ kind: 'intro' }, async f => {
+  f.answers.push({ status })
+  f.render().props.onStart()
+  await f.settle()
+  const brief = f.render()
+  assert.equal(brief.type.name, 'IntroScreen')
+  assert.deepEqual(brief.props.error, error)
+  // The plain practice address goes on to the course page; the brief's own address is one sign-in returns to.
+  const { getSafeReturnPath } = require('../../../../lib/auth/redirect.ts')
+  assert.equal(getSafeReturnPath(`/courses/${COURSE}/quiz?mode=exam`), `/courses/${COURSE}/quiz?mode=exam`, 'sign-in returns there')
+}))
+
 test('a topic while an exam is open: "Finish your exam first.", with Resume exam and no Try again', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
   f.answers.push({ status: 'exam-open', now: NOW, attempt: openAttempt(ATTEMPT) })
   f.render()
@@ -269,6 +284,7 @@ test('each problem is its title on screen, with Try again or its one link only w
     const html = renderToStaticMarkup(React.createElement(ResumeScreen, { ...identity, courseHref: `/courses/${COURSE}`,
       answered: 3, total: 50, minutesLeft: 12, opening: false, error, onContinue() {}, onRetry() {} }))
     // The last notice on the screen is the problem (the first is the attempt in progress).
+    assert.match(html, /<h2 class="student-notice-title">Practice in progress\.<\/h2>/)
     const notice = text(html.match(/<div class="student-notice"[\s\S]*?<\/div><\/div>/g).at(-1))
     assert.ok(notice.startsWith(error.title), notice)
     assert.doesNotMatch(html, /student-notice-text">Reconnect|Sign in again to continue/, 'no instruction under the title')

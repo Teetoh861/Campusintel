@@ -19,6 +19,7 @@ import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
+import { SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import { accessCopy } from '@/lib/entitlements/presentation'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { postDiscoveryCommand } from '@/lib/entitlements/client'
@@ -44,7 +45,7 @@ const REFUSAL: Record<string, string> = {
   // This tab identity cannot save on this exam (the exam already takes changes from as many tabs as it allows).
   // Saving stops in this tab only; every other tab, and everything already saved, is untouched.
   'too-many-tabs': 'You have too many exam tabs open. Continue in one of your existing tabs — nothing you’ve answered there is lost.',
-  'session-changed': 'You signed in on another tab.',
+  'session-changed': SIGNED_IN_ON_ANOTHER_TAB,
   'signed-out': 'You’ve been signed out. Sign in before time runs out.',
 }
 const RETRY = 'We couldn’t send your answers. They’re still here.'
@@ -301,18 +302,29 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     return true
   }, [continuityToken, courseSlug, storageKey, tab])
 
-  // At the deadline the exam submits itself at once, with any unsaved changes in the submission, and keeps trying
-  // briefly if the network drops. The database marks the sheet it accepted in time, never a later one.
+  // At this device's zero the answers lock and anything unsaved is sent. The exam is handed in once the deadline has
+  // passed on the server too: this device's zero can come up to one clock exchange early, and an exam handed in then
+  // is still open there, so its result would not say that time ran out. It keeps trying briefly if the network
+  // drops. The database marks the sheet it accepted in time, never a later one.
   useEffect(() => {
     if (!timeUp || result !== null) return
     let cancelled = false
+    let timer: number | null = null
     async function attempt(): Promise<void> {
-      if (cancelled || await submit() || autoRetries.current >= MAX_AUTO_RETRIES) return
+      timer = null
+      if (cancelled) return
+      const wait = Math.max(0, examClock.current?.untilPassed() ?? 0)
+      if (wait > 0) { timer = window.setTimeout(() => { void attempt() }, wait); return }
+      if (await submit() || cancelled || autoRetries.current >= MAX_AUTO_RETRIES) return
       autoRetries.current += 1
-      window.setTimeout(() => { void attempt() }, RETRY_MS)
+      timer = window.setTimeout(() => { void attempt() }, RETRY_MS)
     }
+    void autosave.current?.flush()
     void attempt()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+    }
   }, [timeUp, result, submit])
 
   function choose(itemId: string, option: number): void {

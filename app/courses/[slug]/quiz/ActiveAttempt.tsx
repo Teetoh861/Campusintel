@@ -238,21 +238,35 @@ export function ActiveAttempt(props: Props): ReactElement {
     return true
   }, [tab, attempt.id, continuityToken, finish, refuse])
 
-  // At zero the attempt submits itself at once and keeps asking while the network is down; after the last automatic
-  // try the line offers Try again, and coming back online tries once more.
+  // At this device's zero the answers lock and anything unsaved is sent. The hand-in waits until the deadline has
+  // passed on the server too: this device's zero can come up to one clock exchange early, and an attempt handed in
+  // then is still open there, so it would be recorded as submitted and its result would not say that time ran out.
+  // It keeps asking while the network is down; after the last automatic try the line offers Try again, and coming
+  // back online tries once more.
   useEffect(() => {
     if (!timeUp || graded.current) return
     let cancelled = false
+    let timer: number | null = null
+    const untilDue = (): number => Math.max(0, examClock.current?.untilPassed() ?? 0)
     async function attemptSubmit(): Promise<void> {
-      if (cancelled || await submit()) return
+      timer = null
+      if (cancelled) return
+      const wait = untilDue()
+      if (wait > 0) { timer = window.setTimeout(() => { void attemptSubmit() }, wait); return }
+      if (await submit() || cancelled) return
       if (autoRetries.current >= MAX_AUTO_RETRIES) { setAutoRetrying(false); return }
       autoRetries.current += 1
-      window.setTimeout(() => { void attemptSubmit() }, RETRY_MS)
+      timer = window.setTimeout(() => { void attemptSubmit() }, RETRY_MS)
     }
+    void autosave.current?.flush()
     void attemptSubmit()
-    const online = () => { void submit() }
+    const online = () => { if (untilDue() === 0) void submit() }
     window.addEventListener('online', online)
-    return () => { cancelled = true; window.removeEventListener('online', online) }
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+      window.removeEventListener('online', online)
+    }
   }, [timeUp, submit])
 
   const question = attempt.questions[current]!

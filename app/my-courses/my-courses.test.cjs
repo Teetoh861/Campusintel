@@ -253,6 +253,9 @@ test('domain failures retain truthful recovery and never look like an empty seme
     assert.match(html, new RegExp(message))
     assert.match(html, /role="alert"/)
     assert.ok(anchor(html, href))
+    // The way to the team is the page by its name.
+    assert.equal(/>Help &amp; Support<\/a>/.test(html), href === '/contact', status)
+    assert.doesNotMatch(html, /Contact support/)
     assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|Your courses are not available yet/)
   }
 }))
@@ -265,6 +268,7 @@ test('every selection mismatch fails closed before rendering mixed context/cours
       [dimension]: { ...profile.selection[dimension], id: 'changed-selection' },
     } }
     const html = await f.render()
+    assert.match(html, /<h2 class="student-notice-title">Your semester selection has changed\.<\/h2>/)
     assert.match(html, /selection changed/)
     assert.ok(anchor(html, '/my-courses'))
     assert.doesNotMatch(html, /BUA201|Business Administration|Your courses are not available yet/)

@@ -48,7 +48,7 @@ export function TutorForm() {
   const handleSubmit = () => {
     if (!canSubmit) return
     const lines = [
-      'Hello CampusIntel, I want to apply to tutor.',
+      'Hello CampusIntell, I want to apply to tutor.',
       '',
       `Name: ${name.trim()}`,
       `Level: ${level}`,

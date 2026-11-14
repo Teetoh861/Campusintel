@@ -371,8 +371,8 @@ test('reports send the exact item, revision and saved attempt to the existing ba
   assert.equal(JSON.parse(requests[1][1].body).note, null)
   assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'already-reported', reportId: 'r' })), 'already-reported')
   assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'limited' }, 429)), 'limited')
-  assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'signed-out' }, 401)), 'session')
-  assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'session-changed' }, 409)), 'session')
+  assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'signed-out' }, 401)), 'signed-out')
+  assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'session-changed' }, 409)), 'session-changed')
   assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'unavailable' }, 503)), 'failed')
   assert.equal(await sendQuestionReport(target, '', 'token-A', respond({ status: 'invalid-request' }, 400)), 'failed')
   assert.equal(await sendQuestionReport(target, '', 'token-A', async () => { throw new Error('offline') }), 'failed')
@@ -421,14 +421,27 @@ test('reports send the exact item, revision and saved attempt to the existing ba
   assert.equal(all().find(node => node.type?.name === 'Notice').props.title, 'Your report couldn’t be sent.')
   assert.equal(textarea().props.value, 'Marked answer looks wrong.', 'the note is kept')
   assert.ok(byText('button', 'Try again'))
+  // A report refused for the sign-in says what happened in the words every other screen uses, and keeps the note.
+  for (const [status, code, title, body] of [
+    ['signed-out', 401, 'You’ve been signed out.', 'Reload this page and sign in again before reporting. Your note is kept here until you leave.'],
+    ['session-changed', 409, 'You signed in on another tab.', 'Reload this page before reporting. Your note is kept here until you leave.']]) {
+    f.state.fetch = async () => new Response(JSON.stringify({ status }), { status: code })
+    all().find(node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    dialog.render()
+    const refused = all().find(node => node.type?.name === 'Notice')
+    assert.deepEqual([refused.props.title, refused.props.children], [title, body], status)
+    assert.equal(textarea().props.value, 'Marked answer looks wrong.', `${status}: the note is kept`)
+    assert.deepEqual(reported, [], `${status}: nothing was reported`)
+  }
   f.state.fetch = async () => new Response(JSON.stringify({ status: 'reported', reportId: 'r' }), { status: 201 })
   all().find(node => node.type === 'form').props.onSubmit({ preventDefault() {} })
   await new Promise(resolve => setTimeout(resolve, 0))
   dialog.render()
-  assert.equal(all().find(node => node.type?.name === 'Notice').props.title, 'Report sent')
+  assert.equal(all().find(node => node.type?.name === 'Notice').props.title, 'Report sent.')
   assert.deepEqual(reported, ['question-uuid'])
   assert.ok(byText('button', 'Done'))
-  for (const [status, title, marks] of [['already-reported', 'You’ve already reported this question', true], ['limited', 'Report not sent', false]]) {
+  for (const [status, title, marks] of [['already-reported', 'You’ve already reported this question.', true], ['limited', 'Report not sent.', false]]) {
     const again = f.mount(ReportQuestionDialog, { target, questionNumber: 4, continuityToken: 'token-A', onClose() {}, onReported: id => reported.push(id), onRestoreFocus() {} })
     f.state.fetch = async () => new Response(JSON.stringify({ status, reportId: 'r' }), { status: 200 })
     const before = reported.length

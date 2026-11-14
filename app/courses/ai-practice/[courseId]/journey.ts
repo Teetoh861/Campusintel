@@ -1,7 +1,7 @@
 // app/courses/ai-practice/[courseId]/journey.ts — Browser-side upload → read → generate sequence, free of React.
 // Each step reports progress; every failure becomes a student-safe message. fetch is injected for tests.
-import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
-import { CAMPUS_BOT_LIMIT_COPY, NEUTRAL_TRIAL_WORDING, accessCopy, trialGrantName } from '@/lib/entitlements/presentation'
+import { AUTH_CONTINUITY_HEADER, SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
+import { CAMPUS_BOT_LIMIT_COPY, FREE_PASS_COPY, NEUTRAL_TRIAL_WORDING, accessCopy, trialGrantName } from '@/lib/entitlements/presentation'
 import { MAX_UPLOAD_BYTES, UPLOAD_REJECTION_MESSAGES, mediaTypeForFileName } from '@/lib/ai-practice/upload-contract'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { AiPracticeCommand, AiPracticeResult, AllowanceSummary, PersonalSetView }
@@ -69,15 +69,21 @@ export function setDateLabel(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : SET_DAY.format(date)
 }
 
-export const NOT_ENTITLED_TITLE = 'Campus Bot isn’t included in your account'
-export const CAMPUS_BOT_LIMIT_TITLE = 'Campus Bot limit reached'
+export const NOT_ENTITLED_TITLE = 'Campus Bot isn’t included in your account.'
+export const CAMPUS_BOT_LIMIT_TITLE = 'Campus Bot limit reached.'
+
+/** Whether the closed message offers this student a free pass: only when they are eligible for one. */
+const passOffered = (trial: TrialWording, plansOnSale: boolean): boolean => !plansOnSale && trial.passAvailable
 
 /** Why AI practice is closed and where it opens. The pass is named only when this student is eligible for one. */
 export function notEntitledMessage(trial: TrialWording, plansOnSale: boolean = false): string {
   if (plansOnSale) return accessCopy(true).aiNotEntitled
-  return trial.passAvailable
-    ? 'Campus Bot opens with a free pass or Early Access. GST courses stay free.'
-    : accessCopy(false).aiNotEntitled
+  return passOffered(trial, plansOnSale) ? 'Campus Bot opens with a free pass or Early Access.' : accessCopy(false).aiNotEntitled
+}
+
+/** The button under that message when it offers the pass: the pass is started on Plan & Access. */
+export function freePassAction(trial: TrialWording, plansOnSale: boolean = false): { label: string; href: string } | null {
+  return passOffered(trial, plansOnSale) ? { label: FREE_PASS_COPY.start, href: STUDENT_DESTINATIONS.access.href } : null
 }
 
 /** How the student's grant is named in copy: a trial grant by the policy it was actually issued under (a Discovery
@@ -96,42 +102,42 @@ export function describeResult(result: AiPracticeResult, trial: TrialWording = N
   plansOnSale: boolean = false): JourneyOutcome {
   switch (result.status) {
     case 'generated': return { kind: 'generated', set: result.set, allowance: result.allowance }
-    case 'upload-rejected': return problem('We could not use this file', UPLOAD_REJECTION_MESSAGES[result.reason])
-    case 'insufficient-source': return { ...problem('Not enough to work with',
+    case 'upload-rejected': return problem('We could not use this file.', UPLOAD_REJECTION_MESSAGES[result.reason])
+    case 'insufficient-source': return { ...problem('Not enough to work with.',
       'Your notes did not contain enough clear material for five fair questions. Try fuller notes on one topic. ' +
       'This did not use any of your Campus Bot allowance.', 'new-file', 'info'), allowance: result.allowance }
-    case 'flagged-for-review': return { ...problem('We couldn’t use this file',
+    case 'flagged-for-review': return { ...problem('We couldn’t use this file.',
       'We couldn’t use this material for course practice. Upload clear, appropriate study notes for this course instead. ' +
       'This did not use any of your Campus Bot allowance.', 'new-file', 'info'), allowance: result.allowance }
-    case 'generation-failed': return { ...problem('We couldn’t create your questions',
+    case 'generation-failed': return { ...problem('We couldn’t create your questions.',
       'Something went wrong while writing your questions. This did not use any of your Campus Bot allowance. Try again.',
       'same-file'), allowance: result.allowance }
-    case 'allowance-exhausted': return { ...problem('You’ve used your Campus Bot allowance',
+    case 'allowance-exhausted': return { ...problem('You’ve used your Campus Bot allowance.',
       `You have used all of the Campus Bot practice included in your ${grantName(result.allowance, trial)}. ` +
       'Your course materials stay available.', 'none', 'info'), allowance: result.allowance }
-    case 'allowance-expired': return { ...problem('Your Campus Bot access has ended',
+    case 'allowance-expired': return { ...problem('Your Campus Bot access has ended.',
       `Your ${grantName(result.allowance, trial)} has ended. Your course materials stay available.`, 'none', 'info'),
       allowance: result.allowance }
     case 'not-entitled': return { ...problem(NOT_ENTITLED_TITLE, notEntitledMessage(trial, plansOnSale), 'none', 'info'),
-      link: { label: STUDENT_DESTINATIONS.access.label, href: STUDENT_DESTINATIONS.access.href } }
+      link: freePassAction(trial, plansOnSale) ?? { label: STUDENT_DESTINATIONS.access.label, href: STUDENT_DESTINATIONS.access.href } }
     case 'campus-bot-limit': return problem(CAMPUS_BOT_LIMIT_TITLE, result.limit === 'session'
       ? CAMPUS_BOT_LIMIT_COPY.session(result.resetsAt) : result.limit === 'week' ? CAMPUS_BOT_LIMIT_COPY.week(result.resetsAt)
         : CAMPUS_BOT_LIMIT_COPY.undelivered, 'none', 'info')
-    case 'busy': return problem('Still preparing your questions',
+    case 'busy': return problem('Still preparing your questions.',
       'Please wait a moment, then try again.', 'same-file', 'info')
-    case 'capacity': return problem('Campus Bot is busy',
+    case 'capacity': return problem('Campus Bot is busy.',
       'Too many students are generating questions right now. Try again later.', 'same-file', 'info')
-    case 'upload-limit': return problem('Daily upload limit reached',
+    case 'upload-limit': return problem('Daily upload limit reached.',
       'You have uploaded the maximum number of files for today. Try again tomorrow.', 'none', 'info')
-    case 'pass-upload-limit': return problem('Free pass uploads used', UPLOAD_REJECTION_MESSAGES['pass-upload-limit'], 'none', 'info')
-    case 'not-eligible': return problem('This course has study materials',
+    case 'pass-upload-limit': return problem('Free pass uploads used.', UPLOAD_REJECTION_MESSAGES['pass-upload-limit'], 'none', 'info')
+    case 'not-eligible': return problem('This course has study materials.',
       'Use the study materials for this course instead.', 'none', 'info')
-    case 'signed-out': return { ...problem('Signed out', 'Sign in again to continue.', 'none'), signedOut: true }
+    case 'signed-out': return { ...problem('Signed out.', 'Sign in again to continue.', 'none'), signedOut: true }
     // The page loads again for the current sign-in, as it does when signed out.
-    case 'session-changed': return { ...problem('Your sign-in has changed', '', 'none'), signedOut: true }
-    case 'disabled': return problem('Campus Bot is unavailable', 'Try again later.', 'none', 'info')
-    case 'not-found': return problem('Upload not found', 'Choose your file again.')
-    default: return problem('Something went wrong', 'Check your connection and try again.', 'same-file')
+    case 'session-changed': return { ...problem(SIGNED_IN_ON_ANOTHER_TAB, '', 'none'), signedOut: true }
+    case 'disabled': return problem('Campus Bot is unavailable.', 'Try again later.', 'none', 'info')
+    case 'not-found': return problem('Upload not found.', 'Choose your file again.')
+    default: return problem('Something went wrong.', 'Check your connection and try again.', 'same-file')
   }
 }
 
@@ -170,9 +176,9 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
     const put = await deps.fetch(reserved.uploadUrl, { method: 'PUT', cache: 'no-store',
       headers: { 'Content-Type': mediaType, 'x-upsert': 'false' }, body: file })
     if (put.status === 413) return describeResult({ status: 'upload-rejected', reason: 'too-large' })
-    if (!put.ok) return problem('Upload failed', 'Your file did not finish uploading. Check your connection and try again.')
+    if (!put.ok) return problem('Upload failed.', 'Your file did not finish uploading. Check your connection and try again.')
   } catch {
-    return problem('Upload failed', 'Your file did not finish uploading. Check your connection and try again.')
+    return problem('Upload failed.', 'Your file did not finish uploading. Check your connection and try again.')
   }
   deps.onPhase('reading')
   const processed = await command(deps, { operation: 'process-upload', documentId: reserved.documentId })

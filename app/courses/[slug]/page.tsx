@@ -139,7 +139,7 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   </>}>
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
-      {!institutional && content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
+      {!institutional && content.state !== 'not-available' && <Notice tone="info" title={`${REPOSITORY_COURSE_LABEL}.`}>
           Check it against your course outline.
         </Notice>}
       {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}

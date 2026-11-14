@@ -302,6 +302,10 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
     assert.doesNotMatch(textOf(f.notice()), /SQL|provider|private|Please contact/)
     // Only support can fix a missing or broken profile, so the message links there.
     assert.equal(elementNodes(f.notice()).some(node => node.props?.href === '/contact'), /Help & Support$/.test(message), body.status)
+    // The page's name never breaks across two lines, however narrow the screen.
+    for (const link of elementNodes(f.notice()).filter(node => node.props?.href === '/contact')) {
+      assert.match(link.props.className, /(?:^| )whitespace-nowrap(?: |$)/, body.status)
+    }
     assert.equal(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit').props.disabled, false)
   }
   f.respond(async () => { throw new Error('private network detail') })
@@ -491,6 +495,27 @@ test('a non-running semester refusal names only the choice to fix and focuses it
   await f.submit()
   assert.deepEqual(f.navigations,[['replace','/dashboard']])
 }))
+
+test('locked: a refusal about a choice that is not on screen shows in the general area, with the reload that brings the choices back', async () => fixture(async f => {
+  // The semester ended while this page was open: the name-only save sends the saved semester, which no longer runs.
+  f.setMode('locked'); f.remount()
+  f.setName('Amara')
+  f.respond(async () => response(409, { status: 'semester-not-running' }))
+  await f.submit()
+  const tree = f.render(); f.flushEffects()
+  assert.deepEqual(selects(tree), [], 'the semester is still not offered on this view')
+  assert.equal(f.notice(), 'That semester isn’t running now. Choose the current semester.')
+  assert.equal(nodes(tree).filter(node => node.type?.name === 'Feedback').length, 1, 'said once')
+  assert.equal(nodes(tree).find(node => node.props?.id === 'academic-period-error'), undefined, 'not as the error of a field that is not shown')
+  assert.equal(f.input().props['aria-invalid'], false, 'and not as an error in the name')
+  const reload = nodes(tree).find(node => node.type === 'button' && node.props.children === 'Reload choices')
+  assert.ok(reload, 'the choices come back with a reload')
+  reload.props.onClick()
+  assert.deepEqual(f.navigations, [['reload']])
+  // Editing the name clears it, as it clears any other message.
+  f.setName('Amarachi')
+  assert.equal(f.notice(), undefined)
+}, true))
 
 test('open selection: changing only the name sends the saved courses and accepts the server save', async () => fixture(async f => {
   f.setName('Amara')

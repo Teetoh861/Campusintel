@@ -5,6 +5,7 @@
 import { BlueCover } from '@/components/chrome/BlueCover'
 import { buildWhatsAppUrl, WHATSAPP_NUMBER } from '@/lib/whatsapp'
 import { CONTACT_EMAIL } from '@/lib/contact'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 
 import type { ReactElement } from 'react'
 
@@ -33,7 +34,7 @@ export default function ContactPage(): ReactElement {
   return (
     <>
       <BlueCover
-        crumbs={[{ label: 'Home', href: '/' }, { label: 'Contact' }]}
+        crumbs={[{ label: 'Home', href: '/' }, { label: STUDENT_DESTINATIONS.contact.label }]}
         kicker="Student support"
         title="Get in touch"
         lede="Need study materials, have a question or spotted an error? Contact us by WhatsApp, phone or email. WhatsApp is usually fastest."

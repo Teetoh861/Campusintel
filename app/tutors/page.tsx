@@ -13,7 +13,7 @@ import type { ReactElement } from 'react'
 export const dynamic = 'force-dynamic'
 
 const WRAP = 'app-container'
-const WAITLIST_MESSAGE = "I'd like to join the CampusIntel tutoring waitlist."
+const WAITLIST_MESSAGE = "I'd like to join the CampusIntell tutoring waitlist."
 
 /** Render the existing public information with shared responsive gutters. */
 export default function TutorsPage(): ReactElement {
