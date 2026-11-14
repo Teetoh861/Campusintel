@@ -2,8 +2,9 @@
 // This device's zero can come before the server's deadline by one clock exchange (lib/entitlements/exam-clock.ts).
 // At that zero the answers lock and anything unsaved is sent, but the exam is handed in only once the deadline has
 // passed on the server too. Handed in before, the server takes it as an ordinary submission, and the result never
-// says that time ran out. The clock and the network are simulated (so no clock exchange is among the requests); the
-// screens are the real ones.
+// says that time ran out. That holds for a hand-in the student taps too (Submit, See my result), and the button says
+// Submitting… while the hand-in waits. The clock and the network are simulated (so no clock exchange is among the
+// requests); the screens are the real ones.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const Module = require('node:module')
@@ -197,6 +198,46 @@ test('practice: a hand-in that cannot reach the server is tried again after the 
   })
 })
 
+const submitConfirmation = f => elementNodes(f.render())
+  .find(node => node.type?.name === 'AssessmentConfirmation' && node.props.kind === 'submit').props
+
+test('practice: Submit confirmed just after this device\'s zero goes with the time-up hand-in, after the server\'s deadline, and says Submitting… meanwhile', async () => practice(practiceReply, async f => {
+  // A slow clock exchange (3.1 s): this device's zero has just passed, and the countdown's next tick has not shown it.
+  f.device.remaining = -20
+  f.device.untilPassed = 3_100
+  assert.equal(f.screen().submitting, false, 'the countdown still shows time left')
+  submitConfirmation(f).onConfirm()
+  await f.flush()
+  f.screen()
+  await f.flush()
+  const waiting = f.screen()
+  assert.deepEqual(f.sent(), [], 'nothing is handed in while the attempt is still open on the server')
+  assert.equal(waiting.submitting, true, 'the Submit buttons say Submitting…')
+  assert.equal(waiting.saveLine.text, 'Time is up. Getting your result…')
+  assert.ok(f.waits().includes(3_100), `the hand-in is planned for the server's deadline: ${f.waits()}`)
+  // More taps while it waits (the confirmation again, or the line's Try again) send nothing either.
+  submitConfirmation(f).onConfirm()
+  waiting.onRetrySave()
+  await f.flush()
+  assert.deepEqual(f.sent(), [])
+  f.device.untilPassed = -1
+  await f.elapse(3_100)
+  assert.deepEqual(f.sent(), ['submit'], 'one hand-in, once the deadline has passed on the server')
+  assert.equal(f.graded.length, 1)
+  assert.equal(f.graded[0][0].result.timedOut, true, 'so the result says that time ran out')
+}))
+
+test('practice: with time left, a confirmed Submit hands in at once', async () => practice(command => command.action === 'submit'
+  ? { status: 'graded', attempt: { id: ATTEMPT, status: 'submitted', result: { timedOut: false, score: 0, total: 1 } } }
+  : practiceReply(command), async f => {
+  assert.equal(f.device.remaining > 0, true)
+  submitConfirmation(f).onConfirm()
+  await f.flush()
+  assert.deepEqual(f.sent(), ['submit'])
+  assert.equal(f.graded.length, 1)
+  assert.equal(f.graded[0][0].result.timedOut, false)
+}))
+
 function freePassExam(reply, run) {
   return mount(() => ({ Component: require('./[slug]/preview/[kind]/DiscoveryExam.tsx').DiscoveryExam,
     props: { continuityToken: 'verified-student', courseSlug: 'financial-accounting-1', deadlineAt: DEADLINE, serverNow: NOW,
@@ -226,4 +267,62 @@ test('free-pass exam: the same rule, and its result says that time ran out', asy
   const result = f.render()
   assert.equal(result.type.name, 'ExamReview')
   assert.equal(result.props.result.timed_out, true)
+}))
+
+const freePassReply = command => command.action === 'submit-exam'
+  ? { status: 'ready', preview: { kind: 'cbt', result: { score: 0, total: 1, timed_out: true } } }
+  : saved(command.action === 'save-answers' ? command.changes : {}, command.action === 'save-answers' ? 1 : 0)
+const handInButton = tree => elementNodes(tree)
+  .find(node => node.type === 'button' && /^(Submit exam|See my result|Submitting…)$/.test(String(node.props.children))).props
+const confirmButton = tree => elementNodes(tree).find(node => node.type === 'button' && node.props.children === 'Submit').props
+
+test('free-pass exam: at time up the button says Submitting… while the hand-in waits for the server\'s deadline, and a tap sends nothing early', async () => freePassExam(freePassReply, async f => {
+  f.device.remaining = -40
+  f.device.untilPassed = 3_100
+  f.tick()
+  f.render()
+  await f.flush()
+  const waiting = handInButton(f.render())
+  assert.deepEqual([waiting.children, waiting.disabled], ['Submitting…', true], 'not See my result while it waits')
+  // A tap that lands anyway (it was See my result a moment before) joins the waiting hand-in.
+  waiting.onClick()
+  await f.flush()
+  assert.deepEqual(f.sent(), [], 'nothing is handed in while the exam is still open on the server')
+  assert.ok(f.waits().includes(3_100), `the hand-in is planned for the server's deadline: ${f.waits()}`)
+  f.device.untilPassed = -1
+  await f.elapse(3_100)
+  assert.deepEqual(f.sent(), ['submit-exam'], 'one hand-in, once the deadline has passed on the server')
+  const result = f.render()
+  assert.equal(result.type.name, 'ExamReview')
+  assert.equal(result.props.result.timed_out, true, 'so the result says that time ran out')
+}))
+
+test('free-pass exam: Submit tapped just after this device\'s zero, before the countdown shows it, waits for the server\'s deadline too', async () => freePassExam(freePassReply, async f => {
+  const atStart = handInButton(f.render())
+  assert.equal(atStart.children, 'Submit exam')
+  f.device.remaining = -15
+  f.device.untilPassed = 3_100
+  // One question is not answered, so the tap asks to confirm; the confirmation's Submit is the hand-in.
+  atStart.onClick()
+  confirmButton(f.render()).onClick()
+  await f.flush()
+  f.render()
+  await f.flush()
+  const waiting = handInButton(f.render())
+  assert.deepEqual(f.sent(), [], 'nothing is handed in while the exam is still open on the server')
+  assert.deepEqual([waiting.children, waiting.disabled], ['Submitting…', true])
+  f.device.untilPassed = -1
+  await f.elapse(3_100)
+  assert.deepEqual(f.sent(), ['submit-exam'])
+  assert.equal(f.render().props.result.timed_out, true)
+}))
+
+test('free-pass exam: with time left, Submit hands in at once', async () => freePassExam(command => command.action === 'submit-exam'
+  ? { status: 'ready', preview: { kind: 'cbt', result: { score: 0, total: 1, timed_out: false } } } : freePassReply(command), async f => {
+  assert.equal(f.device.remaining > 0, true)
+  handInButton(f.render()).onClick()
+  confirmButton(f.render()).onClick()
+  await f.flush()
+  assert.deepEqual(f.sent(), ['submit-exam'])
+  assert.equal(f.render().props.result.timed_out, false)
 }))

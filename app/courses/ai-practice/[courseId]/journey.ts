@@ -132,7 +132,7 @@ export function describeResult(result: AiPracticeResult, trial: TrialWording = N
     case 'pass-upload-limit': return problem('Free pass uploads used.', UPLOAD_REJECTION_MESSAGES['pass-upload-limit'], 'none', 'info')
     case 'not-eligible': return problem('This course has study materials.',
       'Use the study materials for this course instead.', 'none', 'info')
-    case 'signed-out': return { ...problem('Signed out.', 'Sign in again to continue.', 'none'), signedOut: true }
+    case 'signed-out': return { ...problem('You’ve been signed out.', 'Sign in again to continue.', 'none'), signedOut: true }
     // The page loads again for the current sign-in, as it does when signed out.
     case 'session-changed': return { ...problem(SIGNED_IN_ON_ANOTHER_TAB, '', 'none'), signedOut: true }
     case 'disabled': return problem('Campus Bot is unavailable.', 'Try again later.', 'none', 'info')

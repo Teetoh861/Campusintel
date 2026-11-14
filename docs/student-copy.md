@@ -11,7 +11,7 @@ Read this before writing any text or building any screen a student will see in C
 7. Never tell students how to use a screen; the layout should make it obvious.
 8. Headings must read naturally. Never drop words to save space.
 9. A message belongs on the screen where its action happened, and goes away once the student does something else.
-10. One card per kind of study, with one line per choice and its action. Lists of topics live on the page the card opens, and questions come one at a time.
+10. One card per kind of study, with one line per choice and its action. Lists of topics live on the page the card opens, and practice questions come one at a time.
 11. Keep each screen simple: one clear way to do each thing, and no extra steps, choices or controls the task doesn't need.
 
 `lib/student-copy/student-copy.test.cjs` checks rule 2 only: it fails when text students see contains a word or phrase from that rule.

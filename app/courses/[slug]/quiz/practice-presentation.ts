@@ -46,7 +46,7 @@ export const PRACTICE_COPY = {
   submitUnsaved: 'Submission didn’t go through, and some answers are only on this page.',
   saveFailedUnsaved: 'Your answers couldn’t be saved, and some are only on this page.',
   submitting: 'Submitting…',
-  resumeTitle: 'Practice in progress.',
+  resumeTitle: 'Practice in progress',
   resumeAction: 'Continue practice',
   timeUp: 'Time is up. Getting your result…',
   timeUpOffline: 'Time is up. We’ll show your result as soon as you’re back online.',

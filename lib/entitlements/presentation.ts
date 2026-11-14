@@ -423,7 +423,7 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     return null
   }
   if (passOfferable(summary) && discoveryOffered(summary)) {
-    return { id: 'trial-available', tone: 'info', title: `${FREE_PASS_COPY.heading}.`,
+    return { id: 'trial-available', tone: 'info', title: FREE_PASS_COPY.heading,
       body: FREE_PASS_COPY.line(summary.trial_hours), action: FREE_PASS_COPY.start }
   }
   return null

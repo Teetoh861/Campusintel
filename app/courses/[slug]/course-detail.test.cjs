@@ -331,7 +331,8 @@ test('repository-only renders repository identity and content without any fabric
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Static repository title<\/h1>/)
   assert.match(html, /Additional study material · STATIC 999/)
-  assert.match(html, /<h2 class="student-notice-title">Additional study material\.<\/h2><p class="student-notice-text">Check it against your course outline\.<\/p>/)
+  // The title is a label, so it takes no full stop; the sentence under it does.
+  assert.match(html, /<h2 class="student-notice-title">Additional study material<\/h2><p class="student-notice-text">Check it against your course outline\.<\/p>/)
   assert.doesNotMatch(html, /have not been confirmed/)
   assert.doesNotMatch(html, /INST101|Institutional title|Confirmed for|Business Administration|Insurance|200 Level|Semester|Free/)
   assert.match(html, /id="notes"/)

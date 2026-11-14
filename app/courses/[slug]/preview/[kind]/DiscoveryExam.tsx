@@ -9,9 +9,10 @@
 // at the moment of the tap, not from the once-a-second countdown, and a refused tap changes nothing on screen.
 // Answers are saved as the student goes through lib/entitlements/exam-autosave.ts: only the questions this tab
 // changed, over the revision it last received, so another tab's answers are never overwritten; the database answers
-// with the sheet that stands and this tab shows it. Submission is sent at once and carries the same pending changes
-// (no wait for a save in flight), and the database grades the sheet it holds once they are laid over it; while a
-// submission is in flight the answer controls are inert, so the screen cannot drift from what is being graded.
+// with the sheet that stands and this tab shows it. With time left, a submission is sent at once and carries the same
+// pending changes (no wait for a save in flight), and the database grades the sheet it holds once they are laid over
+// it; at time up every hand-in, automatic or tapped, waits for the server's deadline. While a submission is in flight
+// the answer controls are inert, so the screen cannot drift from what is being graded.
 // "Saved" is shown only once the server confirmed this tab's latest change.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
@@ -140,6 +141,8 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [clockFailures, setClockFailures] = useState(0)
   const [save, setSave] = useState<AutosaveSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
+  // Time is up here and the hand-in is waiting for the server's deadline (the button says Submitting… meanwhile).
+  const [awaitingDeadline, setAwaitingDeadline] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [message, setMessage] = useState<ExamLine | null>(null)
   const answersRef = useRef(answers)
@@ -302,10 +305,24 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     return true
   }, [continuityToken, courseSlug, storageKey, tab])
 
+  /**
+   * A hand-in the student asks for: Submit, or See my result. With time left on this device (or no reading to wait
+   * on) it goes at once. Once this device's zero has passed it goes with the time-up hand-in below, which waits for
+   * the server's deadline: sent before it, the exam is still open there and its result would not say that time ran
+   * out. The clock is read at the tap, not from the countdown shown a moment ago, so a tap just after zero waits too;
+   * the countdown is brought up to date, which starts that hand-in.
+   */
+  const handIn = useCallback((): void => {
+    const left = examClock.current?.remaining() ?? null
+    if (left === null || left > 0 || Math.max(0, examClock.current?.untilPassed() ?? 0) === 0) { void submit(); return }
+    setRemaining(remainingMs())
+  }, [submit, remainingMs])
+
   // At this device's zero the answers lock and anything unsaved is sent. The exam is handed in once the deadline has
   // passed on the server too: this device's zero can come up to one clock exchange early, and an exam handed in then
-  // is still open there, so its result would not say that time ran out. It keeps trying briefly if the network
-  // drops. The database marks the sheet it accepted in time, never a later one.
+  // is still open there, so its result would not say that time ran out. While it waits the button says Submitting…
+  // (a tap joins this hand-in, see handIn). It keeps trying briefly if the network drops. The database marks the
+  // sheet it accepted in time, never a later one.
   useEffect(() => {
     if (!timeUp || result !== null) return
     let cancelled = false
@@ -314,7 +331,12 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       timer = null
       if (cancelled) return
       const wait = Math.max(0, examClock.current?.untilPassed() ?? 0)
-      if (wait > 0) { timer = window.setTimeout(() => { void attempt() }, wait); return }
+      if (wait > 0) {
+        setAwaitingDeadline(true)
+        timer = window.setTimeout(() => { void attempt() }, wait)
+        return
+      }
+      setAwaitingDeadline(false)
       if (await submit() || cancelled || autoRetries.current >= MAX_AUTO_RETRIES) return
       autoRetries.current += 1
       timer = window.setTimeout(() => { void attempt() }, RETRY_MS)
@@ -324,6 +346,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     return () => {
       cancelled = true
       if (timer !== null) window.clearTimeout(timer)
+      setAwaitingDeadline(false)
     }
   }, [timeUp, result, submit])
 
@@ -340,6 +363,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   }
 
   if (result !== null) return <ExamReview result={result} plansOnSale={plansOnSale} />
+  const handingIn = busy || awaitingDeadline
   const question = questions[index]!
   const unanswered = questions.length - answered
   const saving = saveLine(save, timeUp)
@@ -358,7 +382,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       {saving.retry && <div><button type="button" onClick={() => autosave.current?.retry()}
         className={studentAction(btnGhost, 'bg-student-surface')}>Save now</button></div>}
     </div>
-    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer} aria-busy={busy || undefined}>
+    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer} aria-busy={handingIn || undefined}>
       <legend className="student-detail-kicker">Question {index + 1} of {questions.length}</legend>
       <p className="student-practice-prompt mt-2">{question.prompt}</p>
       <div className="student-practice-options mt-3">
@@ -400,14 +424,14 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setConfirming(false)} className={studentAction(btnGhost, 'bg-student-surface')}>
               Keep going</button>
-            <button type="button" disabled={busy} onClick={() => void submit()}
-              className={studentAction(btnNavy, studentFocusDark)}>{busy ? SUBMITTING : 'Submit'}</button>
+            <button type="button" disabled={handingIn} onClick={handIn}
+              className={studentAction(btnNavy, studentFocusDark)}>{handingIn ? SUBMITTING : 'Submit'}</button>
           </div>
         </>
-        : <button type="button" disabled={busy}
-          onClick={() => { if (unanswered > 0 && !timeUp) setConfirming(true); else void submit() }}
+        : <button type="button" disabled={handingIn}
+          onClick={() => { if (unanswered > 0 && !timeUp) setConfirming(true); else handIn() }}
           className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:w-auto')}>
-          {busy ? SUBMITTING : timeUp ? 'See my result' : 'Submit exam'}
+          {handingIn ? SUBMITTING : timeUp ? 'See my result' : 'Submit exam'}
         </button>}
       {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message.text}
         {message.action ? <> <a href={message.action.href} className={studentAction(btnGhost, 'border-transparent px-2')}>

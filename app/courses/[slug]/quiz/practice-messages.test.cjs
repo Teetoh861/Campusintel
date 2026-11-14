@@ -284,7 +284,7 @@ test('each problem is its title on screen, with Try again or its one link only w
     const html = renderToStaticMarkup(React.createElement(ResumeScreen, { ...identity, courseHref: `/courses/${COURSE}`,
       answered: 3, total: 50, minutesLeft: 12, opening: false, error, onContinue() {}, onRetry() {} }))
     // The last notice on the screen is the problem (the first is the attempt in progress).
-    assert.match(html, /<h2 class="student-notice-title">Practice in progress\.<\/h2>/)
+    assert.match(html, /<h2 class="student-notice-title">Practice in progress<\/h2>/, 'a label, so no full stop')
     const notice = text(html.match(/<div class="student-notice"[\s\S]*?<\/div><\/div>/g).at(-1))
     assert.ok(notice.startsWith(error.title), notice)
     assert.doesNotMatch(html, /student-notice-text">Reconnect|Sign in again to continue/, 'no instruction under the title')
