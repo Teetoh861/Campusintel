@@ -5,7 +5,8 @@ import type { ReactElement, ReactNode } from 'react'
 /** Announce meaningful page feedback with its caller-owned, safe recovery action. */
 export function Notice({ title, children, action, tone = 'error' }: {
   title: string
-  children: ReactNode
+  // A title that says it all needs no second line.
+  children?: ReactNode
   action?: ReactNode
   tone?: 'error' | 'info'
 }): ReactElement {
@@ -14,7 +15,7 @@ export function Notice({ title, children, action, tone = 'error' }: {
     <Icon aria-hidden="true" size={20} strokeWidth={1.75} />
     <div className="student-notice-body">
       <h2 className="student-notice-title">{title}</h2>
-      <p className="student-notice-text">{children}</p>
+      {children === undefined || children === null || children === '' ? null : <p className="student-notice-text">{children}</p>}
       {action && <div className="student-notice-action">{action}</div>}
     </div>
   </div>

@@ -11,7 +11,7 @@ const REGISTER_ROWS = 6
 
 /** Announce loading while keeping student identity and unverified course data out of the boundary. */
 export default function Loading(): ReactElement {
-  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.myCourses.label} lede="Your semester, in one place."
+  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.myCourses.label}
     context={<Skeleton aria-hidden="true" className="h-4 w-4/5 max-w-96 animate-none" />}
     aside={<Skeleton aria-hidden="true" className="h-11 w-40 max-w-full animate-none" />} />}>
     <StudentLoadingState message="Loading your semester courses.">

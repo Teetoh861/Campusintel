@@ -7,6 +7,8 @@ export type OverviewDraft = {
   examFocus?: CourseOverviewPayload['examFocus']
   keyTakeaways?: CourseOverviewPayload['keyTakeaways']
   formulaSheet?: CourseOverviewPayload['formulaSheet']
+  outcomes?: CourseOverviewPayload['outcomes']
+  assessment?: CourseOverviewPayload['assessment']
 }
 
 export type NoteFormat = 'generic' | 'topic_note' | 'calculator_trick'
@@ -26,6 +28,8 @@ export function initialOverviewDraft(payload?: unknown): OverviewDraft | null {
     examFocus: value.examFocus?.slice(),
     keyTakeaways: value.keyTakeaways?.map(entry => ({ ...entry })),
     formulaSheet: value.formulaSheet?.map(entry => ({ ...entry })),
+    outcomes: value.outcomes?.slice(),
+    assessment: value.assessment?.slice(),
   }
 }
 
@@ -36,11 +40,17 @@ export function emptyNoteDraft(format: NoteFormat): NoteDraft {
   return { format: 'generic' }
 }
 
+/** Whether a stored note is a study guide topic. Guide topics come from an import and are changed only by a new one:
+ *  the editor never loads them into a form, so a save can never drop their lessons. */
+export function isGuideTopic(payload: unknown): boolean {
+  return typeof payload === 'object' && payload !== null && (payload as { noteType?: unknown }).noteType === 'guide_topic'
+}
+
 /** Load the existing note subtype and all of its supported fields. */
 export function initialNoteDraft(payload?: unknown): NoteDraft | null {
   if (payload === undefined) return emptyNoteDraft('generic')
   const parsed = noteContent.safeParse(payload)
-  if (!parsed.success) return null
+  if (!parsed.success || isGuideTopic(parsed.data)) return null
   const value = parsed.data
   if ('noteType' in value && value.noteType === 'topic_note') {
     return { format: 'topic_note', keyPoints: value.keyPoints.slice(), examTip: value.examTip ?? '' }
@@ -59,6 +69,8 @@ export function overviewPayload(title: string, body: string, draft: OverviewDraf
     ...(draft.examFocus === undefined ? {} : { examFocus: draft.examFocus }),
     ...(draft.keyTakeaways === undefined ? {} : { keyTakeaways: draft.keyTakeaways }),
     ...(draft.formulaSheet === undefined ? {} : { formulaSheet: draft.formulaSheet }),
+    ...(draft.outcomes === undefined ? {} : { outcomes: draft.outcomes }),
+    ...(draft.assessment === undefined ? {} : { assessment: draft.assessment }),
   }
 }
 

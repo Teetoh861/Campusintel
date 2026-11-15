@@ -5,7 +5,8 @@ select no_plan();
 insert into auth.users(id, email_confirmed_at) values
   ('11111111-1111-4111-8111-111111111111', now()),
   ('33333333-3333-4333-8333-333333333333', now()),
-  ('44444444-4444-4444-8444-444444444444', now());
+  ('44444444-4444-4444-8444-444444444444', now()),
+  ('66666666-6666-4666-8666-666666666666', now());
 select ok((select relrowsecurity from pg_class where oid='public.auth_recovery_grants'::regclass), 'recovery RLS enabled');
 set local role anon;
 select throws_ok($$select * from public.auth_recovery_grants$$, '42501', null, 'anon cannot read');
@@ -58,10 +59,134 @@ select public.prune_recovery_grants();
 select is((select count(*) from public.auth_recovery_grants where grant_hash=repeat('d',64)),0::bigint,'scheduled cleanup deletes expired row');
 select is((select count(*) from public.auth_recovery_grants where grant_hash=repeat('a',64)),1::bigint,'cleanup preserves live row');
 select ok((select expires_at > clock_timestamp()+interval '9 minutes' and expires_at <= created_at+interval '10 minutes' from public.auth_recovery_grants where grant_hash=repeat('a',64)), 'ten minute lifetime');
-select columns_are('public','auth_recovery_grants',array['grant_hash','user_id','flow_binding','created_at','expires_at'],'only hashed credential, bound identity and timestamps stored');
+select columns_are('public','auth_recovery_grants',array['grant_hash','user_id','flow_binding','created_at','expires_at','password_attempts'],'only hashed credential, bound identity, timestamps and the attempt count stored');
 select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='public.consume_recovery_grant(text,text)'::regprocedure),'consume safe search path');
 select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='public.issue_recovery_grant(text,uuid,text)'::regprocedure),'issue safe search path');
 select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='public.prune_recovery_grants()'::regprocedure),'cleanup safe search path');
 select ok(exists(select 1 from cron.job where jobname='campusintell-recovery-grant-expiry' and active and schedule='* * * * *'),'expiry cleanup scheduled independently of traffic');
+
+-- A reset request holds the grant while it tries a password; only that request can put it back, and unchanged.
+set local role anon;
+select throws_ok($$select * from public.claim_recovery_grant(repeat('a',64),repeat('b',64))$$, '42501', null, 'anon cannot claim');
+select throws_ok($$select public.restore_recovery_grant(repeat('a',64),repeat('b',64),'55555555-5555-4555-8555-555555555555')$$, '42501', null, 'anon cannot restore');
+select throws_ok($$select public.finish_recovery_grant(repeat('a',64),'55555555-5555-4555-8555-555555555555')$$, '42501', null, 'anon cannot finish');
+reset role;
+set local role authenticated;
+select throws_ok($$select * from public.claim_recovery_grant(repeat('a',64),repeat('b',64))$$, '42501', null, 'authenticated cannot claim');
+select throws_ok($$select public.restore_recovery_grant(repeat('a',64),repeat('b',64),'55555555-5555-4555-8555-555555555555')$$, '42501', null, 'authenticated cannot restore');
+select throws_ok($$select public.finish_recovery_grant(repeat('a',64),'55555555-5555-4555-8555-555555555555')$$, '42501', null, 'authenticated cannot finish');
+reset role;
+set local role service_role;
+select lives_ok($$select * from public.claim_recovery_grant(repeat('0',64),repeat('0',64))$$, 'service role can claim');
+select lives_ok($$select public.restore_recovery_grant(repeat('0',64),repeat('0',64),'55555555-5555-4555-8555-555555555555')$$, 'service role can restore');
+select lives_ok($$select public.finish_recovery_grant(repeat('0',64),'55555555-5555-4555-8555-555555555555')$$, 'service role can finish');
+select throws_ok($$select private.recovery_grant_held_key(repeat('0',64),'55555555-5555-4555-8555-555555555555')$$, '42501', null, 'the held key is not a capability of its own');
+reset role;
+select throws_ok($$select * from public.claim_recovery_grant('bad',repeat('b',64))$$, '22023', null, 'claim rejects an invalid hash');
+select throws_ok($$select * from public.claim_recovery_grant(repeat('a',64),null)$$, '22023', null, 'claim needs its email binding');
+select throws_ok($$select public.restore_recovery_grant(repeat('a',64),repeat('b',64),null)$$, '22023', null, 'restore needs its claim id');
+select throws_ok($$select public.finish_recovery_grant('bad','55555555-5555-4555-8555-555555555555')$$, '22023', null, 'finish rejects an invalid hash');
+select throws_ok($$select public.finish_recovery_grant(repeat('a',64),null)$$, '22023', null, 'finish needs its claim id');
+select public.issue_recovery_grant(repeat('1',64),'33333333-3333-4333-8333-333333333333',repeat('2',64));
+create temp table grant_issued as select created_at, expires_at from public.auth_recovery_grants where user_id='33333333-3333-4333-8333-333333333333';
+select is((select count(*) from public.claim_recovery_grant(repeat('1',64),repeat('3',64))), 0::bigint, 'a different email binding cannot claim');
+select is((select count(*) from public.auth_recovery_grants where grant_hash=repeat('1',64)), 1::bigint, 'and leaves the grant intact');
+create temp table held as select * from public.claim_recovery_grant(repeat('1',64),repeat('2',64));
+select is((select holder from held), '33333333-3333-4333-8333-333333333333'::uuid, 'claim returns the verified identity');
+select ok((select claim is not null from held), 'with a one-time claim id');
+select is((select count(*) from public.claim_recovery_grant(repeat('1',64),repeat('2',64))), 0::bigint, 'a held grant cannot be claimed again');
+select is(public.consume_recovery_grant(repeat('1',64),repeat('2',64)), null, 'or consumed with its credential');
+select is((select count(*) from public.auth_recovery_grants where user_id='33333333-3333-4333-8333-333333333333'), 1::bigint, 'the held row waits for its own request');
+select is(public.restore_recovery_grant(repeat('9',64),repeat('2',64),(select claim from held)), false, 'another credential (another browser) cannot take it over');
+select is(public.restore_recovery_grant(repeat('1',64),repeat('2',64),'55555555-5555-4555-8555-555555555555'), false, 'nor a request without the claim id');
+select is(public.restore_recovery_grant(repeat('1',64),repeat('3',64),(select claim from held)), false, 'nor a different email binding');
+select is(public.restore_recovery_grant(repeat('1',64),repeat('2',64),(select claim from held)), true, 'the same request restores it');
+select ok((select g.created_at = i.created_at and g.expires_at = i.expires_at from public.auth_recovery_grants g, grant_issued i where g.grant_hash=repeat('1',64)), 'with the expiry it always had');
+select is(public.restore_recovery_grant(repeat('1',64),repeat('2',64),(select claim from held)), false, 'a claim id restores once');
+create temp table held_again as select * from public.claim_recovery_grant(repeat('1',64),repeat('2',64));
+select is((select holder from held_again), '33333333-3333-4333-8333-333333333333'::uuid, 'a restored grant can be used again');
+select isnt((select claim from held_again), (select claim from held), 'under a new claim id');
+select is((select count(*) from public.claim_recovery_grant(repeat('1',64),repeat('2',64))), 0::bigint, 'a grant that is not restored is used up');
+select public.issue_recovery_grant(repeat('5',64),'33333333-3333-4333-8333-333333333333',repeat('2',64));
+select is(public.restore_recovery_grant(repeat('1',64),repeat('2',64),(select claim from held_again)), false, 'a newer grant ends the held one');
+select is(public.consume_recovery_grant(repeat('5',64),repeat('2',64)), '33333333-3333-4333-8333-333333333333'::uuid, 'and the newer grant works on its own');
+-- The request that held a grant finishes it once the password is accepted: the row is gone at once.
+select public.issue_recovery_grant(repeat('8',64),'33333333-3333-4333-8333-333333333333',repeat('2',64));
+create temp table held_done as select * from public.claim_recovery_grant(repeat('8',64),repeat('2',64));
+select public.finish_recovery_grant(repeat('8',64),'55555555-5555-4555-8555-555555555555');
+select is((select count(*) from public.auth_recovery_grants where user_id='33333333-3333-4333-8333-333333333333'), 1::bigint, 'finishing with another claim id touches nothing');
+select public.finish_recovery_grant(repeat('8',64),(select claim from held_done));
+select is((select count(*) from public.auth_recovery_grants where user_id='33333333-3333-4333-8333-333333333333'), 0::bigint, 'a successful change uses the grant up: its row is deleted');
+select is(public.restore_recovery_grant(repeat('8',64),repeat('2',64),(select claim from held_done)), false, 'a finished grant cannot come back');
+select lives_ok($$select public.finish_recovery_grant(repeat('8',64),(select claim from held_done))$$, 'finishing twice is harmless');
+select public.issue_recovery_grant(repeat('8',64),'33333333-3333-4333-8333-333333333333',repeat('2',64));
+create temp table held_back as select * from public.claim_recovery_grant(repeat('8',64),repeat('2',64));
+select is(public.restore_recovery_grant(repeat('8',64),repeat('2',64),(select claim from held_back)), true, 'restored for another try');
+select public.finish_recovery_grant(repeat('8',64),(select claim from held_back));
+select is((select count(*) from public.auth_recovery_grants where grant_hash=repeat('8',64)), 1::bigint, 'a restored grant is out of reach of finish');
+select is(public.consume_recovery_grant(repeat('8',64),repeat('2',64)), '33333333-3333-4333-8333-333333333333'::uuid, 'and still works');
+-- Time passing is simulated by moving the row's own timestamps back together; restore never writes them.
+select public.issue_recovery_grant(repeat('6',64),'44444444-4444-4444-8444-444444444444',repeat('7',64));
+create temp table held_then_restored as select * from public.claim_recovery_grant(repeat('6',64),repeat('7',64));
+select is(public.restore_recovery_grant(repeat('6',64),repeat('7',64),(select claim from held_then_restored)), true, 'restored before its expiry');
+update public.auth_recovery_grants set created_at = created_at - interval '11 minutes', expires_at = expires_at - interval '11 minutes'
+  where user_id='44444444-4444-4444-8444-444444444444';
+select is((select count(*) from public.claim_recovery_grant(repeat('6',64),repeat('7',64))), 0::bigint, 'a restored grant still expires on time');
+select is((select count(*) from public.auth_recovery_grants where user_id='44444444-4444-4444-8444-444444444444'), 0::bigint, 'and claiming an expired grant spends it');
+select public.issue_recovery_grant(repeat('6',64),'44444444-4444-4444-8444-444444444444',repeat('7',64));
+create temp table held_too_long as select * from public.claim_recovery_grant(repeat('6',64),repeat('7',64));
+update public.auth_recovery_grants set created_at = created_at - interval '11 minutes', expires_at = expires_at - interval '11 minutes'
+  where user_id='44444444-4444-4444-8444-444444444444';
+select is(public.restore_recovery_grant(repeat('6',64),repeat('7',64),(select claim from held_too_long)), false, 'a grant that expired while held is not restored');
+select public.prune_recovery_grants();
+select is((select count(*) from public.auth_recovery_grants where user_id='44444444-4444-4444-8444-444444444444'), 0::bigint, 'and is pruned like any other');
+-- One code allows five refused passwords. Holding the grant counts the try in the same UPDATE; putting it back keeps
+-- the count; the fifth is not put back; a new code starts at zero.
+select public.issue_recovery_grant(repeat('b',64),'66666666-6666-4666-8666-666666666666',repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 0::smallint, 'a new code has no attempts');
+create temp table try_1 as select * from public.claim_recovery_grant(repeat('b',64),repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 1::smallint, 'holding the grant counts try 1');
+select is(public.restore_recovery_grant(repeat('b',64),repeat('c',64),(select claim from try_1)), true, 'refused password 1 goes back');
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 1::smallint, 'and putting it back keeps the count at 1');
+create temp table try_2 as select * from public.claim_recovery_grant(repeat('b',64),repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 2::smallint, 'holding the grant counts try 2');
+select is(public.restore_recovery_grant(repeat('b',64),repeat('c',64),(select claim from try_2)), true, 'refused password 2 goes back');
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 2::smallint, 'and putting it back keeps the count at 2');
+create temp table try_3 as select * from public.claim_recovery_grant(repeat('b',64),repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 3::smallint, 'holding the grant counts try 3');
+select is(public.restore_recovery_grant(repeat('b',64),repeat('c',64),(select claim from try_3)), true, 'refused password 3 goes back');
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 3::smallint, 'and putting it back keeps the count at 3');
+create temp table try_4 as select * from public.claim_recovery_grant(repeat('b',64),repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 4::smallint, 'holding the grant counts try 4');
+select is(public.restore_recovery_grant(repeat('b',64),repeat('c',64),(select claim from try_4)), true, 'refused password 4 goes back');
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 4::smallint, 'and putting it back keeps the count at 4');
+create temp table try_5 as select * from public.claim_recovery_grant(repeat('b',64),repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 5::smallint, 'the fifth try is counted too');
+select is(public.restore_recovery_grant(repeat('b',64),repeat('c',64),(select claim from try_5)), false, 'the fifth refused password does not go back');
+select is((select count(*) from public.claim_recovery_grant(repeat('b',64),repeat('c',64))), 0::bigint, 'so there is no sixth try');
+select public.finish_recovery_grant(repeat('b',64),(select claim from try_5));
+select is((select count(*) from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 0::bigint, 'and its request uses the code up');
+-- A new code starts at zero, also when it replaces a grant that has attempts, held or not.
+select public.issue_recovery_grant(repeat('d',64),'66666666-6666-4666-8666-666666666666',repeat('c',64));
+create temp table try_new as select * from public.claim_recovery_grant(repeat('d',64),repeat('c',64));
+select is(public.restore_recovery_grant(repeat('d',64),repeat('c',64),(select claim from try_new)), true, 'a new code takes refused passwords again');
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 1::smallint, 'counting from one');
+select public.issue_recovery_grant(repeat('e',64),'66666666-6666-4666-8666-666666666666',repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 0::smallint, 'a newer code replaces it at zero');
+create temp table try_held as select * from public.claim_recovery_grant(repeat('e',64),repeat('c',64));
+select public.issue_recovery_grant(repeat('f',64),'66666666-6666-4666-8666-666666666666',repeat('c',64));
+select is((select password_attempts from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), 0::smallint, 'also when the grant it replaces is held');
+-- A grant at the limit is never held, even one edited by hand, and the count cannot leave 0 to 5.
+update public.auth_recovery_grants set password_attempts = 5 where user_id='66666666-6666-4666-8666-666666666666';
+select is((select count(*) from public.claim_recovery_grant(repeat('f',64),repeat('c',64))), 0::bigint, 'a grant at the limit cannot be held');
+select is((select grant_hash from public.auth_recovery_grants where user_id='66666666-6666-4666-8666-666666666666'), repeat('f',64), 'and is left as it is');
+select throws_ok($$update public.auth_recovery_grants set password_attempts = 6 where user_id='66666666-6666-4666-8666-666666666666'$$, '23514', null, 'the count never passes five');
+select throws_ok($$update public.auth_recovery_grants set password_attempts = -1 where user_id='66666666-6666-4666-8666-666666666666'$$, '23514', null, 'nor drops below zero');
+select col_default_is('public','auth_recovery_grants','password_attempts','0','a grant starts with no attempts');
+select col_not_null('public','auth_recovery_grants','password_attempts','the count is always known');
+select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='public.claim_recovery_grant(text,text)'::regprocedure),'claim safe search path');
+select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='public.restore_recovery_grant(text,text,uuid)'::regprocedure),'restore safe search path');
+select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='public.finish_recovery_grant(text,uuid)'::regprocedure),'finish safe search path');
+select ok((select proconfig @> array['search_path=""'] from pg_proc where oid='private.recovery_grant_held_key(text,uuid)'::regprocedure),'held key safe search path');
 select * from finish();
 rollback;

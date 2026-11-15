@@ -22,9 +22,9 @@ const hanken = Hanken_Grotesk({
   variable: '--font-hanken',
 })
 
-const SITE_TITLE = 'CampusIntell · Past questions and exam practice for UNILAG'
+const SITE_TITLE = 'CampusIntell'
 const SITE_DESCRIPTION =
-  'Verified past questions, study guides and timed exam practice for Management Sciences courses at the University of Lagos.'
+  'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.'
 
 export const metadata: Metadata = {
   title: SITE_TITLE,

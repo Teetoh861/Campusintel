@@ -111,8 +111,9 @@ test('catalogue unavailable and invariant failure retain the PageBand and safe r
     const tree = await f.granted(), html = f.html(tree)
     assert.match(html, /All Courses/)
     assert.equal(f.nodes(tree).some(node => node.type === f.CourseDirectory), false)
-    if (status === 'unavailable') { assert.match(html, /Study materials are temporarily unavailable\./); assert.match(html, /Try again/) }
-    else { assert.match(html, /Course details unavailable/); assert.match(html, /Contact support/) }
+    if (status === 'unavailable') { assert.match(html, /We couldn’t load your courses\./); assert.match(html, /Try again/) }
+    else { assert.match(html, /We couldn’t show the course details\./); assert.match(html, /Contact support/) }
+    assert.doesNotMatch(html, /student-notice-text/, 'the title says it all')
     assert.doesNotMatch(html, /private|0 courses|15 courses|BUA201/)
   }
 }))
@@ -128,7 +129,7 @@ test('session loss before or during the catalogue preserves the existing login r
 
 test('validation failure is sanitized and empty catalogue remains a genuine empty institutional state', async () => fixture(async f => {
   f.state.sessionError = true
-  assert.match(f.html(await f.granted()), /Study materials are temporarily unavailable\./)
+  assert.match(f.html(await f.granted()), /We couldn’t load your courses\./)
   assert.doesNotMatch(f.html(await f.granted()), /private provider details/)
   f.state.sessionError = false; f.state.result = { status: 'ok', courses: [] }
   const html = f.html(await f.granted())

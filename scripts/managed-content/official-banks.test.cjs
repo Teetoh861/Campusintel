@@ -77,3 +77,20 @@ test('planning batch 1 reproduces the audited counts for every course', () => {
       manifest, banks, identity), /counts differ from the audit/)
   }
 })
+
+test('the ordering rule: only writes of CBT questions must precede the banks, not reads that filter on them', () => {
+  const { writesCbtQuestions } = require('./official-banks.cjs')
+  assert.equal(writesCbtQuestions("update public.managed_content_items set published_revision = 2 where kind = 'cbt_question';"), true)
+  assert.equal(writesCbtQuestions("insert into public.managed_content_items (kind) values ('cbt_question');"), true)
+  assert.equal(writesCbtQuestions("select * from public.managed_content_items i where i.kind <> 'cbt_question' order by i.id;"), false)
+  assert.equal(writesCbtQuestions("update public.managed_content_items set position = 1 where kind = 'note';"), false)
+  // Every bank migration is a CBT writer, and so is no migration that sorts after the first bank.
+  const directory = require('node:path').join(__dirname, '../../supabase/migrations')
+  const names = require('node:fs').readdirSync(directory).sort()
+  const firstBank = names.find(name => /_official_bank_(?!rows)/.test(name))
+  const later = names.filter(name => name > firstBank && !/_official_bank_/.test(name))
+  assert.ok(later.includes('20261110090000_course_overview_revisions.sql') && later.includes('20261112110000_study_guide_notes.sql'))
+  for (const name of later) {
+    assert.equal(writesCbtQuestions(require('node:fs').readFileSync(require('node:path').join(directory, name), 'utf8')), false, name)
+  }
+})

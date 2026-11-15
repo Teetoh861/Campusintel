@@ -13,14 +13,15 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readCourseSelection } from '@/lib/profile/course-selection'
 import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
-import { PROFILE_SELECTION_PATH, selectionReturnPath } from '@/lib/profile/paths'
+import { PROFILE_SELECTION_PATH, PROFILE_TITLE, selectionReturnPath } from '@/lib/profile/paths'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ProfileSelectionForm } from './ProfileSelectionForm'
 import type { CourseSelectionMode } from './ProfileSelectionForm'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Profile selection | CampusIntell', robots: { index: false, follow: false } }
+export const metadata = { title: `${PROFILE_TITLE} | CampusIntell`, robots: { index: false, follow: false } }
 
 /**
  * Locked when the database says the courses are set for the semester. A first pick while a plan or pass is running is
@@ -47,7 +48,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
   Promise<ReactElement> {
   // Where a save returns to: only Confirm courses or a practice result (allow-listed); otherwise the home page.
   const returnPath = selectionReturnPath((await searchParams)?.return)
-  if (!isStudentAuthEnabled()) return <ProfilePageFrame title="Profile selection" narrow>
+  if (!isStudentAuthEnabled()) return <ProfilePageFrame title={PROFILE_TITLE} narrow>
     <div className="student-surface"><AuthUnavailable /></div>
   </ProfilePageFrame>
   let continuityToken: string | undefined
@@ -55,7 +56,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
     const context = await getStudentSessionContext()
     if (context !== null) continuityToken = issueAccountContinuityToken(context.user.id, context.sessionId)
   } catch {
-    return <ProfilePageFrame title="Profile selection" narrow>
+    return <ProfilePageFrame title={PROFILE_TITLE} narrow>
       <div className="student-surface"><Feedback tone="error" message={AUTH_MESSAGES.unavailable} /></div>
     </ProfilePageFrame>
   }
@@ -66,19 +67,19 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
   }
   const complete = profile.status === 'complete'
   const mode = profile.status === 'incomplete' || complete ? await courseSelectionMode() : 'open'
-  return <ProfilePageFrame title={mode === 'locked' ? 'Your details' : complete ? 'Change selection' : 'Complete your profile'}
+  return <ProfilePageFrame title={PROFILE_TITLE}
     description={mode === null ? undefined : mode === 'locked' ? 'Update your first name.'
       : complete ? 'Update your first name and academic details.' : 'Add your first name and confirm the details used for your courses.'} narrow>
     <AuthFlowSync signedIn continuityToken={continuityToken} />
     {mode === null ? <div className="student-surface">
-      <Feedback tone="error" message="We couldn't load your courses. Refresh the page to try again." />
+      <Feedback tone="error" message={<>We couldn’t load your courses. <a href={PROFILE_SELECTION_PATH}
+        className="underline underline-offset-2">Reload</a></>} />
     </div> : profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} mode={mode}
       returnPath={returnPath} /> : <div className="student-surface space-y-3">
-      <Feedback tone="error" message={profile.status === 'missing-profile'
-        ? 'Your profile could not be found. Please contact support.'
-        : profile.status === 'invariant-failure'
-          ? 'Your profile needs attention. Please contact support.'
-          : AUTH_MESSAGES.unavailable} />
+      <Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure' ? <>
+        {profile.status === 'missing-profile' ? 'Your profile could not be found.' : 'Your profile needs attention.'}{' '}
+        <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="underline underline-offset-2">
+          {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} />
       <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl)}>Back to account</Link>
     </div>}
   </ProfilePageFrame>

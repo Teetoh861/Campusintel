@@ -1,5 +1,4 @@
 // app/courses/[slug]/quiz/ProblemNotice.tsx — A start or resume problem, with Try again when trying again can help.
-import Link from 'next/link'
 import { btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
@@ -12,9 +11,9 @@ export function ProblemNotice({ problem, busy, onRetry }: {
   busy: boolean
   onRetry?: () => void
 }): ReactElement {
+  // A full load: signing in, reloading or opening another attempt starts from the server's view.
   const action = problem.action
-    ? <Link href={problem.action.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
-      {problem.action.label}</Link>
+    ? <a href={problem.action.href} className={studentAction(btnNavy, studentFocusDark)}>{problem.action.label}</a>
     : problem.retry && onRetry
       ? <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={busy} onClick={onRetry}>
         {PRACTICE_COPY.tryAgain}</button>

@@ -20,15 +20,17 @@ const formSchema = registerSchema.extend({ confirmation: z.string() }).refine(va
 /** Keep only email in memory after registration; clear password fields immediately. */
 export function RegisterForm({ next }: { next: string }) {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<z.infer<typeof formSchema>>({ resolver: zodResolver(formSchema) })
-  const { submit, pending, error } = useAuthSubmit()
+  const { submit, pending, error, clearError } = useAuthSubmit()
   const [requestedEmail, setRequestedEmail] = useState<string | null>(null)
   const startOver = () => { reset({ email: '', password: '', confirmation: '' }); setRequestedEmail(null) }
   // Every accepted request reaches the same screen; only the verification endpoint judges the code.
   if (requestedEmail !== null) return <ConfirmEmailForm email={requestedEmail} next={next} onStartOver={startOver} />
-  return <form method="post" noValidate onSubmit={handleSubmit(async values => {
+  const create = handleSubmit(async values => {
     const result = await submit(AUTH_API.register, { email: values.email, password: values.password })
     if (result) { reset(); setRequestedEmail(values.email) }
-  })}>
+  })
+  // Every attempt, valid or not, clears the last message.
+  return <form method="post" noValidate onSubmit={event => { clearError(); return create(event) }}>
     <AuthFormLayout
       fields={<>
         <FormField id="email" label="Email" type="email" autoComplete="email" maxLength={EMAIL_MAX_LENGTH} {...register('email')} error={errors.email?.message} disabled={pending} />

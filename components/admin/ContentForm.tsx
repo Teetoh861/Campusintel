@@ -2,7 +2,7 @@
 'use client'
 import { useState } from 'react'
 import { contentKind, contentPayloadProblem, parseContentPayload } from '@/lib/operator/editor-contract'
-import { initialNoteDraft, initialOverviewDraft, notePayload, overviewPayload } from '@/lib/operator/structured-form'
+import { initialNoteDraft, initialOverviewDraft, isGuideTopic, notePayload, overviewPayload } from '@/lib/operator/structured-form'
 import { NoteFields } from './NoteFields'
 import { OverviewFields } from './OverviewFields'
 import type { FormEvent, ReactElement } from 'react'
@@ -55,9 +55,13 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
   const availableKinds = kinds.filter(candidate => candidate !== 'course_overview' ||
     !allItems.some(existing => existing.kind === 'course_overview'))
 
+  // A study guide topic is changed by a new import of its guide, never here: a form cannot hold its lessons.
+  const guideTopic = item?.kind === 'note' && isGuideTopic(item.payload)
+
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setValidation('')
+    if (guideTopic) return
     if (!sourceValid) {
       setValidation('This item has invalid or unsupported stored fields. Reload it before saving.')
       return
@@ -84,6 +88,13 @@ export function ContentForm({ courseId, item, allItems, busy, onSave }: Props): 
     else await onSave({ action: 'create', courseId, kind, payload: parsed,
       ...(dependent ? { parentItemId } : {}) })
   }
+
+  if (guideTopic) return (
+    <section aria-labelledby="content-form-heading" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 id="content-form-heading" className="text-xl font-semibold text-blue-950">Study guide topic</h3>
+      <p className="mt-1 text-sm text-slate-600">This topic comes from an imported study guide. Change the guide source and import it again to update it.</p>
+    </section>
+  )
 
   return (
     <section aria-labelledby="content-form-heading" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

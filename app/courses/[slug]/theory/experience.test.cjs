@@ -5,13 +5,13 @@ const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const { withTsx } = require('../../../../lib/test/tsx-loader.cjs')
 const { elementNodes } = require('../../../../lib/test/element-walker.cjs')
-const { feedback, question, slug, command, longDraft } = require('../../../../lib/theory-practice/fixtures.cjs')
+const { feedback, question, slug, command, longDraft, answerId, rubricId } = require('../../../../lib/theory-practice/fixtures.cjs')
 
 // Exercise real event handlers with deterministic hooks; browser checks cover native focus/validation/layout.
 async function fixture(run, { realClient = false } = {}) {
   return withTsx(async () => {
     const original = Module._load, events = [], requests = [], focuses = []
-    let active, index, ids = 0, response = { status: 'ready', feedback }
+    let active, index, ids = 0, response = { status: 'ready', feedback }, search = ''
     const depsEqual = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]))
     const hooks = {
       ...React,
@@ -42,26 +42,30 @@ async function fixture(run, { realClient = false } = {}) {
       Module._load = function(name, ...args) {
         if (name === 'react') return hooks
         if (name === '@vercel/analytics') return { track: (...args) => events.push(args) }
+        // The address of the page: its ?question= names the question on screen.
+        if (name === 'next/navigation') return { useSearchParams: () => new URLSearchParams(search) }
         if (name === '@/lib/theory-practice/client' && !realClient) return { revealTheoryAnswer: async (...args) => { requests.push(args); return response } }
         return original.call(this, name, ...args)
       }
       const { TheoryAttempt } = require('./TheoryAttempt.tsx')
       const { SelfAssessment } = require('./SelfAssessment.tsx')
+      const { TheoryPractice } = require('./TheoryPractice.tsx')
       const mount = (Component, props) => {
         const instance = { slots: [], effects: [], props, render() {
           active = instance; index = 0; instance.effects = []
           let tree
           try { tree = Component(instance.props) } finally { active = null }
           for (const node of elementNodes(tree)) if (node.props.ref && typeof node.props.ref === 'object') {
-            node.props.ref.current = { focus: () => focuses.push(node.type), closest: () => ({ open: true }) }
+            // On screen: no hidden question holds it.
+            node.props.ref.current = { focus: () => focuses.push(node.type), closest: () => null }
           }
           instance.effects.forEach(effect => effect())
           return tree
         } }
         return instance
       }
-      await run({ mount, TheoryAttempt, SelfAssessment, requests, events, focuses,
-        respond: value => { response = value }, nodes: elementNodes })
+      await run({ mount, TheoryAttempt, SelfAssessment, TheoryPractice, requests, events, focuses,
+        respond: value => { response = value }, address: value => { search = value }, nodes: elementNodes })
     } finally { Module._load = original }
   })
 }
@@ -113,7 +117,7 @@ test('failed submissions preserve the typed draft and a second click cannot race
   await Promise.all([submit(tree), submit(tree)])
   const refused = attempt.render()
   assert.equal(f.nodes(refused).find(node => node.type === 'textarea').props.value, 'My own answer')
-  assert.match(renderToStaticMarkup(refused), /copy it before reloading the page/)
+  assert.match(renderToStaticMarkup(refused), /This question has changed\. Copy your answer before you reload\./)
   assert.equal(f.requests.length, 1)
   assert.equal(f.nodes(refused).some(node => node.type === f.SelfAssessment), false)
 }))
@@ -163,4 +167,99 @@ test('model-answer-only practice has no marking checklist or fabricated score an
   await submit(tree)
   assert.match(renderToStaticMarkup(assessment.render()), /Review complete/)
   assert.equal(f.events[0][1].has_rubric, false)
+}))
+
+// Theory practice, one question at a time. Typing and the reveal run in a real browser check; these cover what shows.
+const steps = [{ question: { ...question, examTip: 'Define it first.' }, practicable: true },
+  { question: { itemId: answerId, publishedRevision: 1, prompt: 'Read-only question', examTip: 'Give one example.' }, practicable: false },
+  { question: { itemId: rubricId, publishedRevision: 5, prompt: 'Third question' }, practicable: true }]
+// The words on screen, without rendering the answer boxes (each is its own component, covered above).
+const words = node => Array.isArray(node) ? node.map(words).join(' ') : node === null || node === undefined || node === false ? ''
+  : typeof node === 'object' ? (typeof node.type === 'string' ? words(node.props.children) : '') : String(node)
+const text = tree => words(tree).replace(/\s+/g, ' ').trim()
+
+/** The screen as a student sees it: which question shows, and the two steps. */
+function screen(f, tree) {
+  const panels = f.nodes(tree).filter(node => node.type === 'div' && 'hidden' in node.props)
+  const shown = panels.filter(panel => !panel.props.hidden)
+  const button = label => f.nodes(tree).find(node => node.type === 'button' && node.props.children === label)
+  return { panels, shown, previous: button('Previous'), next: button('Next') }
+}
+
+test('one question shows at a time, with its place, its exam tip and its answer box; Previous and Next move between them', async () => fixture(async f => {
+  const replaced = [], window = globalThis.window, frame = globalThis.requestAnimationFrame
+  globalThis.window = { history: { replaceState: (...args) => replaced.push(args) } }
+  globalThis.requestAnimationFrame = callback => callback()
+  try {
+    const practice = f.mount(f.TheoryPractice, { questions: steps, courseSlug: slug, continuityToken: 'page-token' })
+    let view = screen(f, practice.render())
+    assert.equal(view.panels.length, 3, 'every question stays mounted, so its draft and its revealed answer are kept')
+    assert.equal(view.shown.length, 1)
+    assert.equal(text(view.shown[0]), 'Question 1 of 3 Explain management. Exam tip: Define it first.')
+    assert.equal(view.previous.props.disabled, true)
+    assert.equal(view.next.props.disabled, false)
+    // Each question that can be practised keeps its own answer box; a question with no suggested answer is read only.
+    const attempts = view.panels.map(panel => f.nodes(panel).filter(node => node.type === f.TheoryAttempt))
+    assert.deepEqual(attempts.map(found => found.length), [1, 0, 1])
+    assert.deepEqual(attempts[0][0].props, { question: steps[0].question, courseSlug: slug, continuityToken: 'page-token' })
+    const kept = attempts[0][0]
+
+    view.next.props.onClick()
+    view = screen(f, practice.render())
+    assert.equal(text(view.shown[0]), 'Question 2 of 3 Read-only question Exam tip: Give one example.')
+    assert.deepEqual(replaced.at(-1), [null, '', `/courses/${slug}/theory?question=${answerId}`], 'the address follows the question')
+    assert.equal(f.focuses.at(-1), 'h2', 'the question\'s place takes focus')
+    assert.equal(view.previous.props.disabled, false)
+
+    view.next.props.onClick()
+    view = screen(f, practice.render())
+    assert.equal(text(view.shown[0]), 'Question 3 of 3 Third question')
+    assert.equal(view.next.props.disabled, true, 'nothing after the last question')
+
+    view.previous.props.onClick()
+    view.previous = screen(f, practice.render()).previous
+    view.previous.props.onClick()
+    view = screen(f, practice.render())
+    assert.equal(text(view.shown[0]), 'Question 1 of 3 Explain management. Exam tip: Define it first.')
+    const again = f.nodes(view.panels[0]).find(node => node.type === f.TheoryAttempt)
+    assert.equal(again.key, kept.key, 'the same answer box as before, not a new one')
+    assert.deepEqual(replaced.map(call => call[2]), [answerId, rubricId, answerId, question.itemId]
+      .map(id => `/courses/${slug}/theory?question=${id}`))
+    assert.deepEqual(f.nodes(practice.render()).filter(node => ['ol', 'ul', 'li', 'details', 'summary'].includes(node.type)), [],
+      'no list of questions')
+  } finally { globalThis.window = window; globalThis.requestAnimationFrame = frame }
+}))
+
+test('a question a study guide links to opens first; any other address opens the first question', async () => fixture(async f => {
+  f.address(`question=${rubricId}`)
+  const linked = screen(f, f.mount(f.TheoryPractice, { questions: steps, courseSlug: slug, continuityToken: 'page-token' }).render())
+  assert.equal(text(linked.shown[0]), 'Question 3 of 3 Third question')
+  for (const other of ['', 'question=not-a-question', 'topic=1']) {
+    f.address(other)
+    const first = screen(f, f.mount(f.TheoryPractice, { questions: steps, courseSlug: slug, continuityToken: 'page-token' }).render())
+    assert.equal(text(first.shown[0]), 'Question 1 of 3 Explain management. Exam tip: Define it first.', other)
+  }
+}))
+
+test('a single question has no Previous or Next', async () => fixture(async f => {
+  const view = screen(f, f.mount(f.TheoryPractice, { questions: steps.slice(0, 1), courseSlug: slug, continuityToken: 'page-token' }).render())
+  assert.equal(text(view.shown[0]), 'Question 1 of 1 Explain management. Exam tip: Define it first.')
+  assert.equal(view.previous, undefined)
+  assert.equal(view.next, undefined)
+}))
+
+test('a refusal\'s way on comes back to the same question', async () => fixture(async f => {
+  for (const [status, href] of [
+    ['signed-out', `/login?next=${encodeURIComponent(`/courses/${slug}/theory?question=${question.itemId}`)}`],
+    ['session-changed', `/courses/${slug}/theory?question=${question.itemId}`],
+    ['content-changed', `/courses/${slug}/theory?question=${question.itemId}`]]) {
+    f.respond({ status })
+    const attempt = f.mount(f.TheoryAttempt, { question, courseSlug: slug, continuityToken: 'page-token' })
+    await submit(attempt.render())
+    const link = f.nodes(attempt.render()).find(node => node.type === 'a')
+    assert.equal(link.props.href, href, status)
+  }
+  const { getSafeReturnPath } = require('../../../../lib/auth/redirect.ts')
+  const page = `/courses/${slug}/theory?question=${question.itemId}`
+  assert.equal(getSafeReturnPath(page), page, 'sign-in keeps the question')
 }))

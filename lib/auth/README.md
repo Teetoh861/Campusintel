@@ -27,8 +27,10 @@ Confirmation and recovery emails display `{{ .Token }}` without action links.
 A GET never verifies a code. No email, code, hash or session credential is included
 in a destination. Recovery now uses email → server-verified code → password screens.
 `POST /api/auth/verify-recovery` verifies the code and issues a recovery-only grant;
-`POST /api/auth/reset-password` consumes that grant before password replacement and
-global sign-out. Reset success is never reported if revocation fails. Normal logout uses
+`POST /api/auth/reset-password` holds that grant before password replacement and
+global sign-out, so no other request can use it. The reset screen confirms the change
+itself ("Password changed", with Sign in); nothing about it travels in an address.
+Reset success is never reported if revocation fails. Normal logout uses
 local scope. Supabase global logout revokes refresh sessions; already-issued access
 JWTs can remain cryptographically valid until expiry. CampusIntell therefore uses a
 remote `getUser()` check as the single owner of student signed-in state; a JWT whose
@@ -61,10 +63,12 @@ Hosted forwarding requires a modern secret key and explicit dashboard enablement
 
 ## Verified recovery authorization
 
-Apply `supabase/migrations/20260915100000_recovery_grants.sql` before deploying the
-new handlers. `auth_recovery_grants` has RLS and no direct table access for anon,
-authenticated or service_role. Only service_role can invoke the two narrowly scoped
-SECURITY DEFINER RPCs; both have an empty search_path. No profile permissions change.
+Apply `supabase/migrations/20260915100000_recovery_grants.sql` and
+`supabase/migrations/20261112100000_recovery_grant_retry.sql` before deploying the
+handlers. `auth_recovery_grants` has RLS and no direct table access for anon,
+authenticated or service_role. Only service_role can invoke the narrowly scoped
+SECURITY DEFINER RPCs (issue, consume, claim, restore and finish); each has an empty
+search_path. No profile permissions change.
 
 The `ci-recovery-grant` cookie contains 32 random bytes encoded as base64url. It is
 HttpOnly, SameSite=Lax, Secure in production, scoped to `/api/auth`, and expires in
@@ -78,8 +82,12 @@ a newer cookie. All instances share the strong AUTH_INTERNAL_SECRET.
 
 Verification immediately revokes the temporary Supabase session with local-scope
 admin sign-out before issuing a grant. Failure to revoke prevents grant issuance.
-The password endpoint atomically consumes the grant using DELETE ... RETURNING,
-checks expiry and email binding, then calls server-only admin updateUserById.
+The password endpoint atomically holds the grant: one UPDATE ... RETURNING re-keys
+its row to a value only that request can rebuild, so the credential alone no longer
+finds it, and counts the attempt in the same statement (password_attempts), so two
+tabs or a double submit never get an uncounted try. It checks expiry and email binding,
+then calls server-only admin
+updateUserById. Unless the grant goes back (below), the same request then deletes it.
 Supabase Auth's password-update transaction globally revokes that user's refresh
 sessions. This behavior is verified against local GoTrue v2.192.0; repeat the real
 revocation check against hosted Auth before rollout. No normal student session is
@@ -87,15 +95,25 @@ created during recovery. Existing access JWTs may remain cryptographically valid
 but CampusIntell no longer treats that alone as an active student session.
 
 OTP verification retains the existing PASSWORD_RESET_SUBMIT account/origin limits.
-Each grant permits one password-update attempt; provider failure never restores it.
-Issuing a newer grant replaces the prior unconsumed grant for that user.
-Email change, resend and logout discard the cookie-backed grant. Consumption and
-password-update failures clear the cookie and require a new code.
+Each grant permits one password change. A new password the provider itself refuses
+(weak or reused) changes nothing, so the same request puts the grant back and the
+student stays on Change password: the same credential, so the same browser only, and
+the expiry it always had (restoring never writes the row's timestamps or its count,
+and the cookie is left untouched). One code allows five refused passwords: the fifth is
+not restored, the grant is used up and the student starts again with a new code. The
+password's length is checked before the grant is held, so it never counts. Any other
+provider failure never restores the grant.
+Issuing a newer grant replaces the prior grant for that user, held or not, and starts
+its count at zero.
+Email change, resend and logout discard the cookie-backed grant. A grant that cannot
+be held, and every password-update failure other than a refused password, clears the
+cookie and requires a new code.
 
 The migration requires pg_cron and schedules expiry cleanup every minute, independent
 of recovery traffic. The cleanup function is owner-only; service_role can execute
-only issue/consume and cannot read the table directly. Expiry is checked on every
-consume even before cleanup runs. Enable and monitor the cron job when deploying.
+only issue, consume, claim, restore and finish, and cannot read the table directly.
+Expiry is checked on every consume, claim and restore even before cleanup runs.
+Enable and monitor the cron job when deploying.
 Verify the migration and active cron job in each target environment's deployment evidence;
 repository documentation is not a live record of hosted migration state.
 
@@ -129,6 +147,9 @@ Email initiation acknowledges a request, never mailbox delivery. An eligible rec
 delivery failure, provider exception, recipient cooldown and an ineligible/nonexistent
 recipient's no-op all receive the same neutral response. Signup and resend have the same
 property: an existing confirmed signup or an ineligible resend can skip mail transport.
+The line a screen shows after Resend code ("We sent a new code to {email}.") is built
+from that one response and the address the student typed, so it reads the same for
+every address.
 Recipient-independent application/provider limits still return 429; signup password
 policy still returns 400. Application configuration failures and invalid SDK success
 envelopes fail closed. Verification and recovery grants retain their separate authority.

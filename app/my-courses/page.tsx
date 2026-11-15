@@ -32,7 +32,6 @@ import type { ReactElement } from 'react'
 import type { StudentProfileState } from '@/lib/profile/student-profile'
 
 const MY_COURSES_PATH = STUDENT_DESTINATIONS.myCourses.href
-const MY_COURSES_LEDE = 'Your semester, in one place.'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'My Courses | CampusIntell', robots: { index: false, follow: false } }
@@ -45,7 +44,7 @@ const RESULT_STATE: Record<Exclude<ErrorState, 'selection-changed'>, ResultState
 }
 
 function MyCoursesBand(props: Omit<Parameters<typeof PageBand>[0], 'title' | 'lede'>): ReactElement {
-  return <PageBand title={STUDENT_DESTINATIONS.myCourses.label} lede={MY_COURSES_LEDE} {...props} />
+  return <PageBand title={STUDENT_DESTINATIONS.myCourses.label} {...props} />
 }
 
 function MyCoursesError({ state }: { state: ErrorState }): ReactElement {

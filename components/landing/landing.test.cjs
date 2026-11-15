@@ -198,11 +198,13 @@ test('landing copy claims only what the product does', async () => {
   noMatch(text, /for UNILAG students/)
 })
 
-test('the page title and description say CampusIntell and describe the product', () => {
+test('the page title and description say CampusIntell and describe the product', async () => {
   const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8')
   const metadata = layout.slice(layout.indexOf('const SITE_TITLE'), layout.indexOf('export const viewport'))
-  match(metadata, /const SITE_TITLE = 'CampusIntell · Past questions and exam practice for UNILAG'/)
-  match(metadata, /Verified past questions, study guides and timed exam practice for Management Sciences courses at the University of Lagos\./)
+  // The site's own title and description, shared with every page: the description is the hero's sentence.
+  match(metadata, /const SITE_TITLE = 'CampusIntell'\n/)
+  match(metadata, /Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students\./)
+  assert.ok(metadata.includes(`'${(await content()).hero.lead}'`), 'the description is the hero lead')
   match(metadata, /siteName: 'CampusIntell'/)
   noMatch(metadata, /CampusIntel(?!l)|inside track|Academic [Ii]ntelligence|decoded exam patterns/)
   assert.equal(count(metadata, /title: SITE_TITLE/g), 3, 'page, Open Graph and X share one title')

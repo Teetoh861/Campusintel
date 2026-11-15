@@ -23,5 +23,6 @@ export type ReportTarget = {
   attemptId: string | null
 }
 
-/** One line under the question about this tab's answers; never "saved" before the server confirmed it. */
-export type SaveLine = { text: string; retry: boolean } | null
+/** One line under the question about this tab's answers; never "saved" before the server confirmed it. `action` is the
+ * one way on when the line names something to do elsewhere: sign in, or load the page again. */
+export type SaveLine = { text: string; retry: boolean; action?: { label: string; href: string } } | null

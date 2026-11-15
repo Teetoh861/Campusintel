@@ -4,7 +4,7 @@ import { btnGhost } from '@/components/chrome/ui'
 import { Notice } from './Notice'
 import { RESULT_COPY, recoveryAction } from './result-state'
 import { studentAction } from './ui'
-import type { ResultStateId } from './result-state'
+import type { ResultCopy, ResultStateId } from './result-state'
 import type { ReactElement, ReactNode } from 'react'
 
 /** Compose Notice with the shared copy; `retryHref` is the surface to reload, `extra` adds page actions. */
@@ -13,7 +13,7 @@ export function ResultNotice({ state, retryHref, extra }: {
   retryHref: string
   extra?: ReactNode
 }): ReactElement {
-  const copy = RESULT_COPY[state]
+  const copy: ResultCopy = RESULT_COPY[state]
   const action = recoveryAction(state, retryHref)
   return <Notice title={copy.title} action={<>
     {action.kind === 'retry'

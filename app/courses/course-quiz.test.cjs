@@ -300,8 +300,9 @@ test('the latest graded attempt is offered, and an attempt URL reloads its resul
 test('managed read unavailability fails closed on the quiz route', async () => fixture(validQuiz, async f => {
   f.publishedState.available = false
   const html = renderToStaticMarkup(await f.quizRoute(exam()))
-  assert.match(html, /temporarily unavailable/i)
-  assert.match(html, /couldn’t load the practice questions just now/)
+  // One subject: the practice questions, never "Study materials" over a practice line.
+  assert.match(html, /We couldn’t load the practice questions\./)
+  assert.doesNotMatch(html, /Study materials are temporarily unavailable/)
   assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
   assert.doesNotMatch(html, /not available for this course/)
 }))
@@ -318,7 +319,7 @@ test('a locked course with no attempt of the student\'s shows the plan notice', 
 test('an unreadable practice state fails closed with a retry', async () => fixture(validQuiz, async f => {
   f.publishedState.practice.state = { status: 'unavailable' }
   const html = renderToStaticMarkup(await f.quizRoute(exam()))
-  assert.match(html, /couldn’t load the practice questions just now/)
+  assert.match(html, /We couldn’t load the practice questions\./)
   assert.match(html, new RegExp(`href="${quizHref}"[^>]*>Try again`))
 }))
 

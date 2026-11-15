@@ -18,7 +18,7 @@ test('profile selection pending state is an accessible, inert form skeleton', ()
     const Loading = require(file).default
     const html = renderToStaticMarkup(React.createElement(Loading))
 
-    assert.match(html, /<h1[^>]*>Profile selection<\/h1>/)
+    assert.match(html, /<h1[^>]*>Your profile<\/h1>/)
     assert.match(html, /role="status"/)
     assert.match(html, /aria-live="polite"/)
     assert.match(html, /aria-busy="true"/)

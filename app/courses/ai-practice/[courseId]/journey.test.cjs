@@ -162,8 +162,10 @@ test('every server result has student-safe copy; unknown or broken replies degra
     'capacity', 'upload-limit', 'not-eligible', 'session-changed', 'disabled', 'not-found', 'unavailable', 'invalid-request']) {
     const outcome = describeResult({ status, allowance: null })
     assert.equal(outcome.kind, 'problem')
-    assert.ok(outcome.title.length > 0 && outcome.message.length > 0, status)
+    // A changed sign-in loads the page again, as a signed-out one does, so it needs no second line.
+    assert.ok(outcome.title.length > 0 && (outcome.signedOut === true || outcome.message.length > 0), status)
   }
+  assert.equal(describeResult({ status: 'session-changed', allowance: null }).signedOut, true)
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
   assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot isn’t included in your account', 'none', 'info'])
@@ -215,7 +217,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
   // The copy switch: once plans are on sale, a student without access is pointed to a plan, pass or not.
   for (const wording of [eligible, offered, neutral]) {
     assert.equal(describeResult({ status: 'not-entitled' }, wording, true).message,
-      'Campus Bot is included when you subscribe. GST courses stay free.')
+      'Campus Bot is included when you subscribe.')
   }
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)
   assert.equal(broken.title, 'Something went wrong')

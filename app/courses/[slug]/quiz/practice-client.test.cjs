@@ -116,10 +116,30 @@ test('the attempt line never claims a save the server has not confirmed', () => 
   assert.match(saveLineFor({ ...base, clockSynced: false, clockFailures: 2 }).text, /^Reconnecting…/)
   assert.equal(saveLineFor({ ...base, timeUp: true }).text, PRACTICE_COPY.timeUp)
   assert.equal(saveLineFor({ ...base, timeUp: true, submitFailing: true }).text, PRACTICE_COPY.timeUpOffline)
-  assert.equal(saveLineFor({ ...base, refusal: 'You signed in on another tab.' }).text, 'You signed in on another tab.')
-  assert.equal(saveLineFor({ ...base, submitFailing: true }).text, 'Your answers are saved. Submission didn’t go through — try again.')
-  assert.equal(saveLineFor({ ...base, submitFailing: true, save: 'unsaved' }).text,
-    'Your answers are kept on this device. Submission didn’t go through — try again.')
+  const reload = { label: 'Reload', href: '/courses/x/quiz?attempt=a' }
+  const changed = { text: 'You signed in on another tab.', action: reload, timeUpText: PRACTICE_COPY.timeUpSessionChanged, timeUpAction: reload }
+  assert.deepEqual(saveLineFor({ ...base, refusal: changed }), { text: 'You signed in on another tab.', retry: false, action: reload })
+  // A refused hand-in at time up says why, with its way on, never "Getting your result…" for good.
+  assert.deepEqual(saveLineFor({ ...base, timeUp: true, refusal: changed }),
+    { text: 'Time is up. You signed in on another tab.', retry: false, action: reload })
+  const signIn = { label: 'Sign in', href: '/login?next=%2Fcourses%2Fx%2Fquiz%3Fattempt%3Da' }
+  assert.deepEqual(saveLineFor({ ...base, timeUp: true, refusal: { text: 'You’ve been signed out. The timer is still running.',
+    action: signIn, timeUpText: PRACTICE_COPY.timeUpSignedOut, timeUpAction: signIn } }),
+    { text: 'Time is up. Sign in to see your result.', retry: false, action: signIn })
+  // After the last automatic try at time up, Try again takes over; while they run, the line waits.
+  assert.deepEqual(saveLineFor({ ...base, timeUp: true, submitFailing: true, autoRetrying: false }),
+    { text: 'Time is up. We couldn’t get your result.', retry: true })
+  assert.equal(saveLineFor({ ...base, timeUp: true, submitFailing: true, autoRetrying: true }).retry, false)
+  // A submission on its way says so, in place of "All answers saved".
+  assert.deepEqual(saveLineFor({ ...base, submitting: true }), { text: 'Submitting…', retry: false })
+  assert.equal(saveLineFor({ ...base, timeUp: true, submitting: true }).text, PRACTICE_COPY.timeUp)
+  // A submission that didn't go through offers Try again, never "try again" without a button.
+  assert.deepEqual(saveLineFor({ ...base, submitFailing: true }), { text: 'Your answers are saved. Submission didn’t go through.', retry: true })
+  assert.deepEqual(saveLineFor({ ...base, submitFailing: true, save: 'unsaved' }),
+    { text: 'Your answers are kept on this device. Submission didn’t go through.', retry: true })
+  assert.deepEqual(saveLineFor({ ...base, submitFailing: true, answersSafe: false }),
+    { text: 'Submission didn’t go through, and some answers are only on this page.', retry: true })
+  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Keep this page open|Refresh this page|Reconnect and tap/)
   for (const state of ['saving', 'unsaved', 'failed', 'closed']) {
     assert.doesNotMatch(saveLineFor({ ...base, save: state })?.text ?? '', /saved$/i)
     assert.equal(exitBodyFor(state === 'closed' ? 'saving' : state, 3), PRACTICE_COPY.exitSaving)

@@ -70,9 +70,10 @@ export default async function AccountPage(): Promise<ReactElement> {
             {profile.status === 'complete' ? <>
               <div className="mt-4 min-w-0"><SelectionSummary selection={profile.selection} /></div>
               <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit profile and selection</Link>
-            </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile'
-              ? 'Your profile could not be found. Please contact support.' : profile.status === 'invariant-failure'
-                ? 'Your profile needs attention. Please contact support.' : AUTH_MESSAGES.unavailable} /></div>}
+            </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure'
+              ? <>{profile.status === 'missing-profile' ? 'Your profile could not be found.' : 'Your profile needs attention.'}{' '}
+                <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="underline underline-offset-2">
+                  {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} /></div>}
           </section>
         </div>
         <div className="grid min-w-0 content-start gap-4">

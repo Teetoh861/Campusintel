@@ -90,4 +90,8 @@ jobs:
             echo "::warning::Could not pull $PG_PROVE_IMAGE in advance; supabase test db will pull its own runner."
           fi
       - name: Verify application and applicable optional checks
+        env:
+          # With the local database up, the real-database recovery tests run with the application tests. They need
+          # the stack's database container (supabase_db_Campusintel) and clean up the rows they add.
+          RECOVERY_FLOW_ISOLATION_DB_TEST: ${{ steps.scope.outputs.db == 'true' && '1' || '0' }}
         run: node scripts/dev-workflow/cli.cjs verify

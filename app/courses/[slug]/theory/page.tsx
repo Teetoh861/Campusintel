@@ -12,10 +12,10 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction } from '@/components/student/ui'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { createClient } from '@/lib/supabase/server'
-import { theoryDisplayNumbers } from '@/lib/theory-practice/numbering'
 import { getTheoryPracticeForVerifiedStudent } from '@/lib/theory-practice/published'
-import { TheoryAttempt } from './TheoryAttempt'
+import { TheoryPractice } from './TheoryPractice'
 import type { TheoryPracticeResult } from '@/lib/theory-practice/published'
 import type { ReactElement } from 'react'
 
@@ -39,9 +39,10 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}/theory`)
-  if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice" />}>
+  if (result.status === 'locked') return <StudentPage band={<PageBand title="Theory practice"
+    context={<p>{result.course.code} · {result.course.title}</p>} />}>
     <LockedCourseNotice outsideList={result.outsideList} reason={result.reason} backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course"
-      plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} />
+      plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} has={buildTimeStudy(result.course.slug)} />
   </StudentPage>
   if (result.status === 'unavailable' && result.notAvailable) return <StudentPage band={<PageBand title="Theory practice" />}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>
@@ -52,28 +53,12 @@ async function Theory({ slug, continuityToken }: { slug: string; continuityToken
   </StudentPage>
 
   const { course, materials } = result
-  // Label every published question first so numbers match Course Detail, then keep only practicable ones.
-  const labels = theoryDisplayNumbers(materials.map(material => material.question))
-  const questions = materials.flatMap((material, index) =>
-    !material.feedbackAvailable ? [] : [{ question: material.question, label: labels[index] }])
+  // Every published question, in the published order: one with a suggested answer is practised, one without is read.
   return <StudentPage band={<PageBand title="Theory practice"
     context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>
-    <div className="student-stack min-w-0">
-      {questions.length === 0 ? <Notice tone="info" title="Theory practice isn’t available for this course">
-        Check the course page for theory questions to revise and other study materials.
-      </Notice> : <div className="student-stack">
-        {questions.map(({ question, label }, index) => <details key={`${question.itemId}:${question.publishedRevision}:${continuityToken}`} name="theory-practice"
-          open={index === 0} className="student-surface min-w-0">
-          <summary className="min-h-11 cursor-pointer rounded-ci-btn-sm py-3 font-semibold text-student-primary [overflow-wrap:anywhere] focus-visible:outline focus-visible:outline-2 focus-visible:outline-student-focus">
-            Q{label} · {question.prompt}
-          </summary>
-          <TheoryAttempt question={question} courseSlug={course.slug} continuityToken={continuityToken} />
-        </details>)}
-        {materials.length > questions.length && <p className="student-meta">
-          More theory questions are on the course page.
-        </p>}
-      </div>}
-    </div>
+    {materials.length === 0 ? <Notice tone="info" title="Theory practice isn’t available for this course" />
+      : <TheoryPractice courseSlug={course.slug} continuityToken={continuityToken}
+        questions={materials.map(({ question, feedbackAvailable }) => ({ question, practicable: feedbackAvailable }))} />}
   </StudentPage>
 }

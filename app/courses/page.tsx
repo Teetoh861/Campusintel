@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getStudentCatalogueForVerifiedStudent } from '@/lib/courses/read-model'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { CourseDirectory } from './CourseDirectory'
-import { CATALOGUE_CONTEXT, CATALOGUE_LEDE } from './catalogue-presentation'
+import { CATALOGUE_CONTEXT } from './catalogue-presentation'
 import type { StudentCatalogueResult } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
@@ -33,7 +33,7 @@ async function CourseDirectoryPage(): Promise<ReactElement> {
       : await Promise.all([getStudentCatalogueForVerifiedStudent(client), readPlansOnSale(client)])
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'signed-out') redirectForStudentState('signed-out', STUDENT_DESTINATIONS.courses.href)
-  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.courses.label} lede={CATALOGUE_LEDE}
+  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.courses.label}
     context={<p>{CATALOGUE_CONTEXT}</p>}
     aside={result.status === 'ok' && result.courses.length > 0 && <p className="student-summary">
       {result.courses.length} {result.courses.length === 1 ? 'course' : 'courses'}

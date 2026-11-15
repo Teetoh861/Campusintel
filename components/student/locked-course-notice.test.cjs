@@ -62,14 +62,26 @@ test('locked semester mismatch has one team-contact action using the existing ch
   }
 })
 
-test('a locked course offers the free pass in the one offer wording, linking to where it starts', () => {
-  const html = render('2349012345678', { passHours: 72 })
-  const offer = html.match(/<div data-pass-offer="">[\s\S]*$/)[0]
-  assert.match(offer, /Free pass/)
-  assert.match(offer, /Try your department courses free for 3 days\./)
-  assert.match(offer, /<a [^>]*href="\/access"[^>]*>Get your free pass<\/a>/)
-  assert.doesNotMatch(html, /CBT|study guide|one per|preview them first|Discovery/i, 'what the pass includes stays in the modal')
-  assert.match(html, /Included with full access/)
-  assert.doesNotMatch(render('2349012345678', { passHours: null }), /data-pass-offer|Free pass/)
-  assert.doesNotMatch(render('2349012345678', {}), /data-pass-offer|Free pass/)
+const SOME = { notes: true, cbtPractice: true, theory: false }
+const NONE = { notes: false, cbtPractice: false, theory: false }
+
+test('a locked course is one notice: what it has, the unlock action and the free pass as a second button', () => {
+  const html = render('2349012345678', { passHours: 72, has: SOME })
+  assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'no second notice linking to the same page')
+  assert.match(html, /<h2 class="student-notice-title">Included with full access<\/h2><p class="student-notice-text">Notes · CBT practice<\/p>/)
+  assert.match(html, /<a class="[^"]*" href="\/access">See how to unlock<\/a><a data-pass-offer="" class="[^"]*" href="\/access">Get your free pass<\/a>/)
+  assert.doesNotMatch(html, /GST|open fully|Try your department courses|CBT exam|study guide|one per|preview them first|Discovery/i,
+    'no repetition, no GST line, and what the pass includes stays in the modal')
+  const subscribe = render('2349012345678', { passHours: null, has: SOME, plansOnSale: true })
+  assert.match(subscribe, /Included when you subscribe[\s\S]*>Subscribe<\/a>/)
+  assert.doesNotMatch(subscribe, /data-pass-offer|Free pass|Get your free pass/)
+  assert.doesNotMatch(render('2349012345678', { has: SOME }), /data-pass-offer|Get your free pass/)
+})
+
+test('a locked course with nothing published offers nothing to buy and says so', () => {
+  const html = render('2349012345678', { passHours: 72, has: NONE, plansOnSale: true, backHref: '/courses/x', backLabel: 'Back to course' })
+  assert.match(html, /<h2 class="student-notice-title">Study materials are not available\.<\/h2>/)
+  assert.doesNotMatch(html, /href="\/access"|Subscribe|See how to unlock|Get your free pass|Included/)
+  assert.match(html, /href="\/courses\/x"[^>]*>Back to course<\/a>/)
+  assert.equal((html.match(/<a\b/g) || []).length, 1)
 })

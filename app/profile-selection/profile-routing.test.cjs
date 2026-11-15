@@ -7,6 +7,11 @@ const { elementNodes } = require('../../lib/test/element-walker.cjs')
 
 
 const nodes = element => elementNodes(element)
+// The words of a message that may hold a link (Reload, Help & Support), without rendering it.
+const textOf = node => typeof node === 'string' || typeof node === 'number' ? String(node)
+  : Array.isArray(node) ? node.map(textOf).join('') : node?.props ? textOf(node.props.children) : ''
+const COURSES_UNREADABLE = 'We couldn’t load your courses. Reload'
+const hrefsOf = node => nodes(node).filter(element => typeof element.props?.href === 'string').map(element => element.props.href)
 
 const options = {
   departments: [{ id: 'dept', label: 'Fixture department' }],
@@ -79,7 +84,7 @@ test('signed-out entry points retain Auth redirects without reading the account 
 test('incomplete account reaches selection; completed account stays and offers intentional editing', async () => fixture(async f => {
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   let page = await f.selectionPage()
-  assert.equal(page.props.title, 'Complete your profile')
+  assert.equal(page.props.title, 'Your profile')
   assert.equal(page.props.children[1].type.name, 'ProfileSelectionForm')
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
@@ -88,7 +93,7 @@ test('incomplete account reaches selection; completed account stays and offers i
   const link = nodes(account).find(node => node.props?.children === 'Edit profile and selection')
   assert.equal(link.props.href, '/profile-selection')
   page = await f.selectionPage()
-  assert.equal(page.props.title, 'Change selection')
+  assert.equal(page.props.title, 'Your profile', 'one title whatever the account state')
   assert.equal(page.props.children[1].props.initial.status, 'complete')
 }))
 
@@ -114,7 +119,7 @@ test('auth and selection redirects terminate, including a completed student open
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   assert.equal(nodes(await f.account()).find(node => node.type?.name === 'StudentPage').props.band.props.title, 'Account')
-  assert.equal((await f.selectionPage()).props.title, 'Change selection')
+  assert.equal((await f.selectionPage()).props.title, 'Your profile')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
   assert.equal(getSafeReturnPath('/profile-selection'), '/profile-selection')
   const { unstable_doesMiddlewareMatch } = require('next/experimental/testing/server')
@@ -128,8 +133,12 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
     ['unavailable', 'Something went wrong'],
   ]) {
     f.state.profile = { status }
-    assert.match(nodes(await f.account()).find(node => node.type?.name === 'Feedback').props.message, new RegExp(expected))
-    assert.match(nodes(await f.selectionPage()).find(node => node.type?.name === 'Feedback').props.message, new RegExp(expected))
+    for (const page of [await f.account(), await f.selectionPage()]) {
+      const message = nodes(page).find(node => node.type?.name === 'Feedback').props.message
+      assert.match(textOf(message), new RegExp(expected))
+      // A profile only support can fix links to support, in the message itself.
+      assert.deepEqual(hrefsOf(message), status === 'unavailable' ? [] : ['/contact'], status)
+    }
   }
   f.state.enabled = false
   const reads = f.state.reads
@@ -173,11 +182,11 @@ test('Profile selection uses the student workspace for incomplete, complete and 
   let page = await f.selectionPage()
   let frame = page.type(page.props)
   assert.match(frame.props.className, /app-container student-workspace student-page/)
-  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Complete your profile')
+  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Your profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   page = await f.selectionPage()
-  assert.equal(page.props.title, 'Change selection')
+  assert.equal(page.props.title, 'Your profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.selection, selection)
   f.state.profile = { status: 'unavailable' }
   page = await f.selectionPage()
@@ -193,8 +202,9 @@ test('an unknown course lock withholds the form and asks for a refresh', async (
     f.state.courses = null
     const page = await f.selectionPage()
     assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
-    assert.equal(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message,
-      "We couldn't load your courses. Refresh the page to try again.")
+    const message = nodes(page).find(node => node.type?.name === 'Feedback')?.props.message
+    assert.equal(textOf(message), COURSES_UNREADABLE)
+    assert.deepEqual(hrefsOf(message), ['/profile-selection'])
   }
 }))
 
@@ -203,8 +213,7 @@ test('an unknown plan cannot allow a first pick without knowing whether it will 
     f.state.plan = { status }
     const page = await f.selectionPage()
     assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
-    assert.equal(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message,
-      "We couldn't load your courses. Refresh the page to try again.")
+    assert.equal(textOf(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message), COURSES_UNREADABLE)
   }
   f.state.plan = { status: 'ok', entitlement: { tier: 'full', trial: { status: 'unavailable' } } }
   assert.equal(nodes(await f.selectionPage()).find(node => node.type?.name === 'ProfileSelectionForm')?.props.mode, 'first-pick',
@@ -215,7 +224,7 @@ test('locked courses have a title and description for the name edit only', async
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   f.state.courses = { state: 'locked', locked: true, lastDay: '2027-03-08' }
   const page = await f.selectionPage()
-  assert.equal(page.props.title, 'Your details')
+  assert.equal(page.props.title, 'Your profile')
   assert.equal(page.props.description, 'Update your first name.')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.mode, 'locked')
 }))
@@ -225,6 +234,5 @@ test('a thrown course-read setup failure also withholds the form', async () => f
   f.state.clientError = true
   const page = await f.selectionPage()
   assert.equal(nodes(page).some(node => node.type?.name === 'ProfileSelectionForm'), false)
-  assert.equal(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message,
-    "We couldn't load your courses. Refresh the page to try again.")
+  assert.equal(textOf(nodes(page).find(node => node.type?.name === 'Feedback')?.props.message), COURSES_UNREADABLE)
 }))

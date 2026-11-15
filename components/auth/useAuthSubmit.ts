@@ -45,7 +45,8 @@ export function useAuthSubmit() {
             return null
           }
           const message = safeAuthMessage('error' in value ? value.error : undefined)
-          const code = 'code' in value && (value.code === RECOVERY_FAILURE.invalidCode || value.code === RECOVERY_FAILURE.restart) ? value.code : undefined
+          const code = 'code' in value && (value.code === RECOVERY_FAILURE.invalidCode || value.code === RECOVERY_FAILURE.restart ||
+            value.code === RECOVERY_FAILURE.password) ? value.code : undefined
           setError(message)
           onFailure?.({ message, code })
           return null
@@ -61,5 +62,7 @@ export function useAuthSubmit() {
     } catch { setError(AUTH_MESSAGES.unavailable); return null }
     finally { lock.current = false; setPending(false) }
   }
-  return { submit, pending, error }
+  /** Drop the last failure. Forms call this on every submit attempt, so an old message never sits beside a new one. */
+  const clearError = () => setError('')
+  return { submit, pending, error, clearError }
 }

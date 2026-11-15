@@ -288,6 +288,13 @@ body {
     outline: 2px solid var(--student-focus);
     outline-offset: 3px;
   }
+
+  /* A step heading that takes focus when its step opens (Confirm email): room between its text and the ring. */
+  form h2[tabindex="-1"]:focus-visible {
+    outline: 2px solid var(--student-focus);
+    outline-offset: 6px;
+    border-radius: 4px;
+  }
 }
 
 @media (min-width: 768px) {

@@ -35,6 +35,9 @@ test('one-time name completion pre-fills persisted academic choices and never in
 }, true))
 
 const nodes = element => elementNodes(element)
+// The words of a message that may hold a link (Help & Support), without rendering it.
+const textOf = node => typeof node === 'string' || typeof node === 'number' ? String(node)
+  : Array.isArray(node) ? node.map(textOf).join('') : node?.props ? textOf(node.props.children) : ''
 
 function response(status, body) {
   return { status, ok: status >= 200 && status < 300, json: async () => body }
@@ -288,15 +291,17 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
   const cases = [
     [503, { status: 'unavailable', details: 'private SQL error' }, 'We couldn’t save your changes. Please try again.'],
     [400, { status: 'invalid-selection' }, 'Review your first name and choices, or reload if a choice is no longer available.'],
-    [409, { status: 'missing-profile' }, 'Your profile could not be found. Please contact support.'],
-    [409, { status: 'invariant-failure' }, 'Your profile needs attention. Please contact support.'],
+    [409, { status: 'missing-profile' }, 'Your profile could not be found. Help & Support'],
+    [409, { status: 'invariant-failure' }, 'Your profile needs attention. Help & Support'],
     [400, { status: 'invalid-request' }, 'We couldn’t save your changes. Please try again.'],
   ]
   for (const [status, body, message] of cases) {
     f.respond(async () => response(status, body))
     await f.submit()
-    assert.equal(f.notice(), message)
-    assert.doesNotMatch(f.notice(), /SQL|provider|private/)
+    assert.equal(textOf(f.notice()), message)
+    assert.doesNotMatch(textOf(f.notice()), /SQL|provider|private|Please contact/)
+    // Only support can fix a missing or broken profile, so the message links there.
+    assert.equal(elementNodes(f.notice()).some(node => node.props?.href === '/contact'), /Help & Support$/.test(message), body.status)
     assert.equal(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit').props.disabled, false)
   }
   f.respond(async () => { throw new Error('private network detail') })
@@ -456,7 +461,9 @@ test('the database refusal (CI423, sent as locked) shows the locked view, never 
   await f.submit()
   const tree = f.render()
   assert.equal(coursesSet(tree), true)
-  assert.equal(f.notice(), undefined, 'no error message, only the locked message')
+  // The courses-set message says why; the save itself is reported under the name, which can still be saved.
+  assert.equal(f.notice(), 'Your name wasn’t saved.')
+  assert.ok(nodes(tree).find(node => node.props?.id === 'first-name-error'), 'under the first name')
   assert.equal(nodes(tree).find(node => node.type === 'button' && node.props.type === 'submit')?.props.children, 'Save name')
   assert.deepEqual(selects(tree), [])
   assert.deepEqual(f.navigations, [])
@@ -473,7 +480,7 @@ test('a non-running semester refusal names only the choice to fix and focuses it
   f.select('academic-period').props.ref.current={focus:()=>focused.push('semester')}
   f.respond(async()=>response(409,{status:'semester-not-running'}))
   await f.submit(); f.render(); f.flushEffects()
-  assert.equal(f.notice(),"That semester isn't running now. Choose the current semester.")
+  assert.equal(f.notice(),'That semester isn’t running now. Choose the current semester.')
   assert.equal(f.select('academic-period').props['aria-invalid'],true)
   assert.equal(f.select('academic-period').props['aria-describedby'],'academic-period-error')
   assert.equal(focused.at(-1),'semester')
