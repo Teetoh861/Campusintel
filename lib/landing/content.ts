@@ -7,7 +7,8 @@ export type IconName = 'past-questions' | 'notes' | 'exam' | 'upload'
 
 export type LandingImage = { src: string; width: number; height: number; alt: string }
 
-export type Feature = { icon: IconName; title: string; text: string; highlight?: boolean }
+/** A card names what you get; `text` adds one sentence where the name alone does not say it. */
+export type Feature = { icon: IconName; title: string; text?: string; highlight?: boolean }
 export type ShowcaseRow = {
   eyebrow: string
   title: string
@@ -30,6 +31,8 @@ export type FaqItem = { question: string; answer: string }
 
 const REGISTER = '/register'
 const LOGIN = '/login'
+// Said in the hero and again in the footer, in the same words.
+const PITCH = 'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.'
 const NUMBER = new Intl.NumberFormat('en-GB')
 
 export const landingContent = {
@@ -49,13 +52,13 @@ export const landingContent = {
       { label: 'Try a question', href: '#try' },
       { label: 'FAQ', href: '#faq' },
     ] satisfies TextLink[],
-    login: { label: 'Log in', href: LOGIN },
+    login: { label: 'Sign in', href: LOGIN },
     register: { label: 'Create account', href: REGISTER },
   },
   hero: {
     titleLead: 'Walk into every exam already',
     titleEmphasis: 'prepared.',
-    lead: 'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.',
+    lead: PITCH,
     primary: { label: 'Start for free', href: REGISTER },
     secondary: { label: 'Try a real question', href: '#try' },
     earlyAccess: 'Before launch: join Early Access for a free month',
@@ -126,8 +129,8 @@ export const landingContent = {
         text: 'Notes that follow your course outline, one topic at a time.' },
       { icon: 'exam', title: 'Exam mode',
         text: 'Timed practice that holds your results until the end.' },
-      { icon: 'upload', title: 'Campus Bot practice from your notes',
-        text: 'When a course has no study materials yet, Campus Bot builds practice questions from your notes.' },
+      // Named here only: the showcase row below explains it.
+      { icon: 'upload', title: 'Campus Bot practice from your notes' },
     ] satisfies Feature[],
   },
   // The only place that explains Campus Bot practice and theory practice.
@@ -147,8 +150,9 @@ export const landingContent = {
       title: 'Theory questions with suggested answers.',
       text: 'Practise theory questions and see a suggested answer for each one.',
       ticks: [],
+      // GST 111, theory question 12 of 15: the study guide's own question and suggested answer, word for word.
       shots: [
-        { src: '/landing/theory-answer.webp', width: 700, height: 1228, alt: 'A theory question with a typed answer and the suggested answer' },
+        { src: '/landing/theory-answer.webp', width: 700, height: 1098, alt: 'A theory question with a typed answer and the suggested answer' },
       ],
       flip: true,
     },
@@ -174,8 +178,6 @@ export const landingContent = {
         answer: `Courses for the ${LANDING_FIGURES.departments} departments of the Faculty of Management Sciences at UNILAG, added course by course.` },
       { question: 'Where do the questions come from?',
         answer: 'From past papers, class tests, course outlines and class notes, and our team vets every question.' },
-      { question: 'What if my course has no material yet?',
-        answer: 'Campus Bot builds practice questions from the notes you upload for that course.' },
       { question: 'Can I try it before paying?',
         answer: 'Yes: GST courses are free for every UNILAG student, and a new account can start a free pass for its department courses.' },
     ] satisfies FaqItem[],
@@ -184,14 +186,14 @@ export const landingContent = {
     title: 'Your next exam is closer than you think.',
     text: 'Create your account and start practising today.',
     primary: { label: 'Start for free', href: REGISTER },
-    secondary: { label: 'Log in', href: LOGIN },
+    secondary: { label: 'Sign in', href: LOGIN },
     community: 'Join the WhatsApp community',
-    facultyLead: 'Faculty not listed?',
+    facultyLead: 'Not in Management Sciences?',
     waitlist: 'Join the waitlist on WhatsApp',
     waitlistMessage: "I'd like to join the waitlist for my faculty.",
   },
   footer: {
-    text: 'Verified past questions, study guides and timed exam practice for UNILAG students.',
+    text: PITCH,
     productHeading: 'Product',
     product: [
       { label: 'Try a question', href: '#try' },

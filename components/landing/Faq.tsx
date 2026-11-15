@@ -25,7 +25,8 @@ export function Faq(): ReactElement {
                 {faq.helpInstagram}<span className="sr-only"> {landingContent.newTab}</span>
               </a>{' '}
               {faq.helpJoin}{' '}
-              <a href={`mailto:${CONTACT_EMAIL}`} className={`${INLINE_LINK} [overflow-wrap:anywhere]`}>{CONTACT_EMAIL}</a>.
+              {/* The address stays whole: the card gives it a line of its own where it would not fit (landing.module.css). */}
+              <a href={`mailto:${CONTACT_EMAIL}`} className={`${INLINE_LINK} whitespace-nowrap`}>{CONTACT_EMAIL}</a>.
             </p>
           </div>
         </div>

@@ -162,9 +162,11 @@
 .landing .faqItem h3 { font-family: inherit; font-size: 1rem; }
 .faqSign { width: 30px; height: 30px; border-radius: 50%; background: var(--l-blue-soft); color: var(--l-blue); display: grid; place-items: center; flex: none; }
 .faqAnswer { color: var(--l-muted); padding-bottom: 20px; }
-.help { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: 22px; padding: 24px; margin-top: 28px; display: flex; gap: 16px; align-items: center; }
+/* The words sit beside the picture while they have 12rem, the width that holds the email address whole; on a narrower
+   phone they go below it, so the address is never split. */
+.help { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: 22px; padding: 24px; margin-top: 28px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
 .helpBot { width: 64px; height: auto; flex: none; }
-.help p { color: var(--l-muted); font-size: .95rem; }
+.help p { color: var(--l-muted); font-size: .95rem; flex: 1 1 12rem; }
 
 /* final call to action */
 .cta { background: var(--l-navy); border-radius: 36px; padding: clamp(36px, 6vw, 72px); position: relative; overflow: hidden; color: var(--l-on-navy); }

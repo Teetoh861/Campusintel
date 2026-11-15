@@ -8,7 +8,7 @@ import type { ReactElement } from 'react'
 
 const { brand, header } = landingContent
 
-/** Sticky landing header with no menu: phones show the logo, Log in and Create account; tablets add the two links. */
+/** Sticky landing header with no menu: phones show the logo, Sign in and Create account; tablets add the two links. */
 export function LandingHeader(): ReactElement {
   return (
     <header className={styles.header}>

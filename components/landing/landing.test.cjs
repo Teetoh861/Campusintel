@@ -142,13 +142,15 @@ test('the page runs in the agreed order and the retired sections are gone', asyn
   }
   noMatch(html, /id="how"|href="#how"|href="\/courses"|class="(?:marquee|track|trust|tagChip|tagline|dangle|blob|stage)\b/)
   for (const file of REMOVED_FILES) assert.equal(fs.existsSync(path.join(__dirname, file)), false, file)
-  // What you get is four cards; the showcase is two rows; the FAQ has four questions.
+  // What you get is four cards; the showcase is two rows; the FAQ has three questions.
   const features = /<section id="features"[\s\S]*?<\/section>/.exec(html)[0]
   assert.deepEqual([...features.matchAll(/<h3>([^<]*)<\/h3>/g)].map(match => match[1]),
     ['Verified past questions', 'Study guides by topic', 'Exam mode', 'Campus Bot practice from your notes'])
+  // The Campus Bot card is its name alone; the other three add one sentence.
+  assert.deepEqual([...features.matchAll(/<li class="fcard[^"]*">([\s\S]*?)<\/li>/g)].map(card => count(card[1], /<p>/g)), [1, 1, 1, 0])
   const { showcase, faq } = await content()
   assert.deepEqual(showcase.map(row => row.shots.length), [2, 1])
-  assert.equal(faq.items.length, 4)
+  assert.equal(faq.items.length, 3)
 })
 
 test('landing copy claims only what the product does', async () => {
@@ -185,6 +187,15 @@ test('landing copy claims only what the product does', async () => {
     'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.']) {
     assert.ok(text.includes(phrase), phrase)
   }
+  // Campus Bot practice is explained once, in the showcase: its card only names it and no FAQ answer repeats it.
+  assert.equal(count(text, /Campus Bot builds/g), 1)
+  assert.equal(count(text, /no study materials yet|no material yet/g), 1)
+  const { faq, footer, hero } = await content()
+  assert.deepEqual(faq.items.filter(item => /Campus Bot|your notes|upload/.test(item.question + item.answer)), [])
+  // The footer describes the product in the hero's words, for the same students.
+  assert.equal(footer.text, hero.lead)
+  assert.equal(count(text, /for UNILAG Management Sciences students\./g), 2)
+  noMatch(text, /for UNILAG students/)
 })
 
 test('the page title and description say CampusIntell and describe the product', () => {
@@ -197,17 +208,17 @@ test('the page title and description say CampusIntell and describe the product',
   assert.equal(count(metadata, /title: SITE_TITLE/g), 3, 'page, Open Graph and X share one title')
 })
 
-test('the header has no menu: two links from tablet up, Log in and Create account at every width', async () => {
+test('the header has no menu: two links from tablet up, Sign in and Create account at every width', async () => {
   const html = await renderHome({ env: CONFIGURED })
   const header = /<header[^>]*>([\s\S]*?)<\/header>/.exec(html)[1]
   noMatch(header, /<button|aria-expanded|aria-controls|aria-haspopup/)
   const nav = /<nav aria-label="Primary"[^>]*>([\s\S]*?)<\/nav>/.exec(header)[1]
   assert.deepEqual(anchors(nav).map(link => [link.text, link.href]), [['Try a question', '#try'], ['FAQ', '#faq']])
-  const account = anchors(header).filter(link => link.text === 'Log in' || link.text === 'Create account')
-  assert.deepEqual(account.map(link => [link.text, link.href]), [['Log in', '/login'], ['Create account', '/register']])
+  const account = anchors(header).filter(link => link.text === 'Sign in' || link.text === 'Create account')
+  assert.deepEqual(account.map(link => [link.text, link.href]), [['Sign in', '/login'], ['Create account', '/register']])
   // Neither is hidden at any width: no `hidden` class and no display utility behind a breakpoint.
   for (const link of account) noMatch(link.attributes, /\bhidden\b|:(?:inline-flex|flex|block|grid|hidden)\b/, `${link.text} shows on phones too`)
-  assert.equal(anchors(header).length, 5, 'logo, two links, Log in and Create account')
+  assert.equal(anchors(header).length, 5, 'logo, two links, Sign in and Create account')
   const css = landingCss()
   match(ruleBody(css, '.headerLinks'), /display: none;[\s\S]*display: flex;/, 'links are hidden on phones and shown later')
   match(css, /@media \(min-width: 768px\) \{[^@]*\.headerLinks \{ display: flex; \}/)
@@ -216,7 +227,10 @@ test('the header has no menu: two links from tablet up, Log in and Create accoun
 
 test('calls to action go to login and register; nothing links to the course library', async () => {
   const html = await renderHome({ env: CONFIGURED })
-  assert.deepEqual(hrefsFor(html, 'Log in'), ['/login', '/login'], 'header and closing call to action')
+  assert.deepEqual(hrefsFor(html, 'Sign in'), ['/login', '/login'], 'header and closing call to action')
+  // The link says what the page it opens is called.
+  match(fs.readFileSync(path.join(root, 'app/login/page.tsx'), 'utf8'), /<AuthShell title="Sign in">/)
+  noMatch(visibleText(html), /\bLog ?in\b/i)
   for (const label of ['Create account', 'Start for free']) {
     const hrefs = hrefsFor(html, label)
     assert.ok(hrefs.length > 0, label)
@@ -307,7 +321,7 @@ test('the courses line shows the figures counted from the repository', async () 
 
 test('setting-controlled links render only when their setting is a valid https link', async () => {
   const unset = await renderHome()
-  for (const label of ['Join the WhatsApp community', 'Before launch: join Early Access for a free month', 'Faculty not listed?',
+  for (const label of ['Join the WhatsApp community', 'Before launch: join Early Access for a free month', 'Not in Management Sciences?',
     'Join the waitlist', 'WhatsApp us', 'Community']) {
     assert.equal(unset.includes(label), false, label)
   }
@@ -328,7 +342,7 @@ test('setting-controlled links render only when their setting is a valid https l
   const live = await renderHome({ env: { NEXT_PUBLIC_WHATSAPP_NUMBER: CONFIGURED.NEXT_PUBLIC_WHATSAPP_NUMBER,
     NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL } })
   noMatch(live, /Early Access/)
-  match(live, /Faculty not listed\?/)
+  match(live, /Not in Management Sciences\?/)
 
   const unsafe = await renderHome({ env: { NEXT_PUBLIC_WHATSAPP_NUMBER: '+234 800',
     NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: 'javascript:alert(1)', NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: 'http://forms.example.com' } })
@@ -338,10 +352,12 @@ test('setting-controlled links render only when their setting is a valid https l
 test('the closing section has its actions, the community link and one waitlist line', async () => {
   const html = await renderHome({ env: CONFIGURED })
   const closing = /<section aria-labelledby="final-cta-title">([\s\S]*?)<\/section>/.exec(html)[1]
-  assert.deepEqual(anchors(closing).map(link => link.text), ['Start for free', 'Log in', 'Join the WhatsApp community (opens in a new tab)',
+  assert.deepEqual(anchors(closing).map(link => link.text), ['Start for free', 'Sign in', 'Join the WhatsApp community (opens in a new tab)',
     'Join the waitlist on WhatsApp (opens in a new tab)'])
-  assert.equal(count(visibleText(html), /Faculty not listed\?/g), 1)
-  match(closing, /<p class="faculty">Faculty not listed\? <a /)
+  assert.equal(count(visibleText(html), /Not in Management Sciences\?/g), 1)
+  match(closing, /<p class="faculty">Not in Management Sciences\? <a /)
+  // The page lists no faculties, so the line does not speak of a list.
+  noMatch(visibleText(html), /not listed/i)
   // The waitlist is a text link on the Navy card: no mark of its own, and no picture in the section but the community mark.
   const waitlist = anchors(closing).find(link => link.text.startsWith('Join the waitlist'))
   noMatch(waitlist.inner, /<img/)
@@ -532,7 +548,7 @@ test('FAQ questions are buttons with aria-expanded that open and close their ans
   const list = await interactive('FaqList.tsx', { items: faq.items })
   const toggles = () => list.buttons()
   assert.equal(toggles().length, faq.items.length)
-  assert.deepEqual(toggles().map(node => node.props['aria-expanded']), [true, false, false, false])
+  assert.deepEqual(toggles().map(node => node.props['aria-expanded']), faq.items.map((_item, index) => index === 0))
   const answer = id => list.tree().find(node => node.props?.id === id)
   const second = toggles()[1]
   assert.equal(answer(second.props['aria-controls']).props.hidden, true)
@@ -541,6 +557,19 @@ test('FAQ questions are buttons with aria-expanded that open and close their ans
   assert.equal(answer(second.props['aria-controls']).props.hidden, false)
   toggles()[1].props.onClick()
   assert.equal(toggles()[1].props['aria-expanded'], false)
+})
+
+test('the FAQ email address stays whole: the help card gives it a line of its own on a narrow phone', async () => {
+  const html = await renderHome()
+  const help = /<div class="help">([\s\S]*?)<\/div>/.exec(html)[1]
+  const email = anchors(help).find(link => link.href.startsWith('mailto:'))
+  assert.equal(email.text, 'hello@campusintell.com')
+  match(email.attributes, /\bwhitespace-nowrap\b/)
+  noMatch(email.attributes, /overflow-wrap|break-(?:all|words)/)
+  // The words sit beside the picture while they have the address's width, and below it when they do not.
+  const css = landingCss()
+  match(ruleBody(css, '.help'), /flex-wrap: wrap;/)
+  match(ruleBody(css, '.help p'), /flex: 1 1 12rem;/)
 })
 
 // Emoji are pictographs; the typographic © ® ™ marks are text symbols the copyright line legitimately uses.

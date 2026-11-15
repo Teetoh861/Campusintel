@@ -19,7 +19,7 @@ export function Features(): ReactElement {
             <li key={item.title} className={`${styles.fcard} ${item.highlight ? styles.fcardHi : ''}`}>
               <div className={styles.fcardIcon}><LandingIcon name={item.icon} size={24} /></div>
               <h3>{item.title}</h3>
-              <p>{item.text}</p>
+              {item.text && <p>{item.text}</p>}
             </li>
           ))}
         </ul>
