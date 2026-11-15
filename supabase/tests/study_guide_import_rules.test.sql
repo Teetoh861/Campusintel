@@ -117,9 +117,12 @@ select pg_temp.store(jsonb_build_object('guide', 'study_guide_rules_b', 'code', 
 create temporary table kept_start on commit drop as
   select pg_temp.pointers('92000000-0000-4000-8000-000000000202') question, pg_temp.pointers('92000000-0000-4000-8000-000000000203') answer;
 
-select throws_ok($$select private.study_guide('study_guide_rules_b', 'rollback')$$, 'P0001',
-  'Study guide RULES-B: the published notes, theory or overview are not the ones this import published',
-  'a guide that has not been applied cannot be rolled back');
+-- A guide that has not been applied is already where a rollback would leave it, so a rollback changes nothing.
+create temporary table before_b on commit drop as select pg_temp.totals() totals;
+select is(private.study_guide('study_guide_rules_b', 'rollback'), 'unchanged', 'rolling back a guide that has not been applied is unchanged');
+select is(pg_temp.totals(), (select totals from before_b), 'and changes nothing');
+select is((select count(*)::integer from public.managed_content_items where course_id = '92000000-0000-4000-8000-000000000001'
+    and created_by = '00000000-0000-4000-8000-000000000045'), 0, 'none of its items exists yet');
 
 savepoint stray_item;
 select pg_temp.operator_item('92000000-0000-4000-8000-000000000204', '92000000-0000-4000-8000-000000000001', 'note', 'another-note',

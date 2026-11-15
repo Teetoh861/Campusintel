@@ -4,6 +4,24 @@ import type { Course } from '@/lib/types'
 // What each imported study guide publishes for its course, by course slug: its notes topics and its theory questions.
 export const STUDY_GUIDE_COURSES: Readonly<Record<string, { readonly notes: number; readonly theory: number }>> = {
   "use-of-english": { notes: 15, theory: 15 },
+  "financial-accounting-1": { notes: 8, theory: 8 },
+  "introduction-financial-accounting-1": { notes: 8, theory: 8 },
+  "introduction-cost-accounting": { notes: 11, theory: 11 },
+  "introduction-actuarial-science": { notes: 7, theory: 7 },
+  "principles-management": { notes: 10, theory: 10 },
+  "introduction-business-1": { notes: 10, theory: 10 },
+  "principles-business-administration": { notes: 10, theory: 10 },
+  "leadership-governance": { notes: 8, theory: 8 },
+  "principles-economics-1": { notes: 10, theory: 10 },
+  "entrepreneurship-innovation": { notes: 7, theory: 7 },
+  "elements-banking": { notes: 15, theory: 15 },
+  "introduction-finance": { notes: 7, theory: 7 },
+  "business-statistics-1": { notes: 8, theory: 8 },
+  "mathematics-business": { notes: 10, theory: 10 },
+  "principles-marketing": { notes: 10, theory: 10 },
+  "marketing-communication": { notes: 8, theory: 8 },
+  "managerial-economics": { notes: 8, theory: 8 },
+  "legal-methods-1": { notes: 9, theory: 9 },
 }
 
 // Courses created for a study guide: shelf identity only (code, official title, level, first semester taught). Which

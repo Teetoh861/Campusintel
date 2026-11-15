@@ -1,5 +1,5 @@
 -- supabase/migrations/20261113090000_study_guide_imports.sql
--- Study guide imports for the other courses. private.study_guide (20261111090000_study_guide_notes.sql) gains three
+-- Study guide imports for the other courses. private.study_guide (20261112110000_study_guide_notes.sql) gains three
 -- things the first guide did not need. An import that uses none of them behaves exactly as before.
 --   keep             Study items the course publishes today that stay published as they are: a course's own theory
 --                    questions and their answers. The import refuses unless each is still published at the revision

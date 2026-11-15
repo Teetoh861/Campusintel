@@ -142,7 +142,9 @@ select is(private.study_guide('study_guide_gst111', 'apply'), 'applied', 'apply 
 select is(pg_temp.published('note') + pg_temp.published('theory_question') + pg_temp.published('model_answer'), 45, 'all published');
 select is((select published_revision from public.managed_content_items where id = pg_temp.item('course-overview')), 3,
   'the overview publishes revision three again');
-select is((select count(*)::integer from public.managed_content_revisions where authored_by = '00000000-0000-4000-8000-000000000045'),
+-- Counted on this course: the other guides' revisions carry the same import as their author.
+select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
+    where i.course_id = pg_temp.course() and r.authored_by = '00000000-0000-4000-8000-000000000045'),
   46, 'no revision was written twice');
 
 -- ---------------------------------------------------------------------------------------------------------------

@@ -131,14 +131,29 @@ function guidePlan(entry, manifest, bankPlans, overviewRevisions) {
   const course = guideCourse(entry, manifest, bankPlan)
   const { courseId } = course
   const { cover, topics } = readGuide(entry.code)
-  // Today's published study items. Replacing notes is a decision recorded on the import; the course's own theory
-  // questions, answers and rubrics stay published exactly as they are.
+  // Today's published study items. Replacing them is a decision recorded on the import: the notes (replacesNotes) and
+  // the theory questions with their answers (replacesTheory). Theory the import does not replace stays published
+  // exactly as it is.
   const today = manifest.items.filter(item => item.courseId === courseId && STUDY_KINDS.includes(item.kind))
   const todayNotes = today.filter(item => item.kind === 'note')
   assert.equal(todayNotes.length, entry.replacesNotes ?? 0,
     `${entry.code}: the course publishes ${todayNotes.length} notes today; replacing them is a decision (replacesNotes)`)
-  const retire = todayNotes.map(item => ({ itemId: item.itemId, revision: 1, parentRevision: null }))
-  const keep = today.filter(item => item.kind !== 'note').map(item => ({ itemId: item.itemId, revision: 1 }))
+  const todayTheory = today.filter(item => item.kind !== 'note')
+  const todayQuestions = todayTheory.filter(item => item.kind === 'theory_question')
+  const replacesTheory = entry.replacesTheory !== undefined
+  if (replacesTheory) {
+    assert.equal(todayQuestions.length, entry.replacesTheory,
+      `${entry.code}: the course publishes ${todayQuestions.length} theory questions today; replacing them is a decision (replacesTheory)`)
+    assert.ok(todayTheory.every(item => item.kind === 'theory_question' || todayQuestions.some(question => question.itemId === item.parentItemId)),
+      `${entry.code}: a theory answer without its question`)
+  }
+  // What the import unpublishes, in its order: the notes, then each replaced theory question's answers before the
+  // question. A rollback republishes them in reverse, each answer bound to its question's revision again.
+  const retire = [...todayNotes.map(item => ({ itemId: item.itemId, revision: 1, parentRevision: null })),
+    ...(replacesTheory ? todayQuestions.flatMap(question => [
+      ...todayTheory.filter(item => item.parentItemId === question.itemId).map(item => ({ itemId: item.itemId, revision: 1, parentRevision: 1 })),
+      { itemId: question.itemId, revision: 1, parentRevision: null }]) : [])]
+  const keep = replacesTheory ? [] : todayTheory.map(item => ({ itemId: item.itemId, revision: 1 }))
   const bank = bankPlan?.bank
   if (entry.practice !== 'none' && entry.practice !== 'by-number') {
     assert.deepEqual(Object.keys(entry.practice).map(Number), topics.map(topic => topic.number), `${entry.code}: a mapping for every guide topic`)
@@ -192,7 +207,10 @@ function guidePlan(entry, manifest, bankPlans, overviewRevisions) {
       after: { title: course.title, body: text, outcomes: lists.outcomes, assessment } }
   }
   const before = Object.fromEntries(STUDY_KINDS.map(kind => [kind, today.filter(item => item.kind === kind).map(item => item.sourceKey)]))
-  return { ...entry, courseId, slug: course.slug, created: course.created ?? null, notes, theory, overview, retire, keep, before }
+  // The source keys of what it retires, by kind.
+  const retired = Object.fromEntries(STUDY_KINDS.map(kind => [kind, kind === 'note' || replacesTheory ? before[kind] : []]))
+  assert.equal(STUDY_KINDS.reduce((sum, kind) => sum + retired[kind].length, 0), retire.length, `${entry.code}: every retired item is listed once`)
+  return { ...entry, courseId, slug: course.slug, created: course.created ?? null, notes, theory, overview, retire, retired, keep, before }
 }
 
 function guidePlans(manifest, bankPlans, overviewRevisions) {
@@ -254,7 +272,9 @@ function migrationSql(plan) {
     `-- private.study_guide (${IMPORTS_MIGRATION}), which refuses unless the course publishes`,
     '-- exactly what this import was written against.',
     ...(plan.created ? ['-- The course has no repository identity yet: it is created and its catalogue course linked.'] : []),
-    ...(plan.retire.length ? [`-- The ${plan.retire.length} notes the course publishes today are unpublished, never deleted.`] : []),
+    ...(plan.retired.note.length ? [`-- The ${plan.retired.note.length} notes the course publishes today are unpublished, never deleted.`] : []),
+    ...(plan.retired.theory_question.length ? [`-- So are its own ${plan.retired.theory_question.length} theory questions and their answers: the guide's ${
+      plan.theory.length} replace them.`] : []),
     ...(plan.keep.length ? [`-- Its own ${plan.before.theory_question.length} theory questions and their answers stay published as they are.`] : []),
     plan.overview.create ? '-- The course has no overview: one is created with its outcomes and how it is assessed.'
       : '-- The course overview gains its outcomes and how the course is assessed.',
@@ -351,13 +371,18 @@ function importsTestSql(plans) {
     const answerKeys = plan.theory.map(question => question.answer.sourceKey)
     const own = n * 3 + (plan.overview.create ? 1 : 0)
     const overview = `'${plan.overview.itemId}'::uuid`
-    const afterKeys = { note: noteKeys, theory_question: [...plan.before.theory_question, ...theoryKeys],
-      model_answer: [...plan.before.model_answer, ...answerKeys], rubric: plan.before.rubric }
+    // After the import the course publishes the guide's items and the theory of its own that the import keeps.
+    const keptKeys = kind => plan.before[kind].filter(key => !plan.retired[kind].includes(key))
+    const afterKeys = { note: noteKeys, theory_question: [...keptKeys('theory_question'), ...theoryKeys],
+      model_answer: [...keptKeys('model_answer'), ...answerKeys], rubric: keptKeys('rubric') }
+    const retiredTheory = [...plan.retired.theory_question, ...plan.retired.model_answer, ...plan.retired.rubric]
+    const replacing = [...(plan.retired.note.length ? [`${plan.retired.note.length} notes`] : []),
+      ...(retiredTheory.length ? [`${plan.retired.theory_question.length} theory questions with their answers`] : [])]
     const published = (keys, text) => ['note', 'theory_question', 'model_answer', 'rubric'].map(kind =>
       `select is(pg_temp.keys(${course}, '${kind}'), ${sqlArray(sorted(keys[kind]))}, ${label(`${text}: ${kind.replace('_', ' ')}s`)});`)
     lines.push(
       '-- ---------------------------------------------------------------------------------------------------------------',
-      `-- ${plan.code} (${plan.slug}): ${n} topics${plan.retire.length ? `, replacing ${plan.retire.length} notes` : ''}${
+      `-- ${plan.code} (${plan.slug}): ${n} topics${replacing.length ? `, replacing ${replacing.join(' and ')}` : ''}${
         plan.keep.length ? `, keeping ${plan.keep.length} theory items` : ''}${plan.overview.create ? ', a new overview' : ''}${
         plan.created ? ', a new course' : ''}.`,
       '-- ---------------------------------------------------------------------------------------------------------------',
@@ -377,10 +402,17 @@ function importsTestSql(plans) {
       `    and a.source_key = replace(q.source_key, 'guide-theory', 'guide-answer')), ${n}, ${label('each answer is bound to its question')});`,
       `select is((select count(*)::integer from public.managed_content_items where course_id = ${course} and created_by = '${GUIDE_ACTOR}'`,
       `  and current_revision = 1 and approved_revision = 1 and published_revision = 1), ${own}, ${label('every guide item is published at revision one, with the import as its author')});`)
-    if (plan.retire.length) {
+    if (plan.retired.note.length) {
       lines.push(`select is((select count(*)::integer from public.managed_content_items where course_id = ${course} and kind = 'note'`,
-        `  and source_key = any (${sqlArray(plan.before.note)}) and published_revision is null and current_revision = 1 and approved_revision = 1),`,
-        `  ${plan.retire.length}, ${label(`the ${plan.retire.length} notes it replaces are unpublished and kept`)});`)
+        `  and source_key = any (${sqlArray(plan.retired.note)}) and published_revision is null and current_revision = 1 and approved_revision = 1),`,
+        `  ${plan.retired.note.length}, ${label(`the ${plan.retired.note.length} notes it replaces are unpublished and kept`)});`)
+    }
+    if (retiredTheory.length) {
+      lines.push(`select is((select count(*)::integer from public.managed_content_items where course_id = ${course}`,
+        `  and kind in ('theory_question', 'model_answer', 'rubric') and source_key = any (${sqlArray(retiredTheory)})`,
+        `  and published_revision is null and published_parent_revision is null and current_revision = 1 and approved_revision = 1`,
+        `  and created_by <> '${GUIDE_ACTOR}'), ${retiredTheory.length},`,
+        `  ${label(`the ${plan.retired.theory_question.length} theory questions it replaces and their answers are unpublished and kept`)});`)
     }
     if (plan.keep.length) {
       lines.push(`select is((select count(*)::integer from public.managed_content_items where course_id = ${course}`,
@@ -455,9 +487,9 @@ function importsTestSql(plans) {
         `  ${label("one of the course's own theory questions, revised since, is refused")});`,
         'rollback to savepoint kept_revised;')
     }
-    if (plan.retire.length) {
+    if (plan.retired.note.length) {
       lines.push('savepoint retired_republished;',
-        `update public.managed_content_items set published_revision = 1, lock_version = lock_version + 1 where id = ${item(plan.before.note[0])};`,
+        `update public.managed_content_items set published_revision = 1, lock_version = lock_version + 1 where id = ${item(plan.retired.note[0])};`,
         save('retired republished'),
         `select throws_ok($$select private.study_guide(${guide}, 'rollback')$$, 'P0001', ${refused('rollback')},`,
         `  ${label('a replaced note someone published again is refused')});`,
@@ -465,19 +497,43 @@ function importsTestSql(plans) {
         `select is(${state}, ${snapshot('retired republished')}, ${label('and nothing changed')});`,
         'rollback to savepoint retired_republished;')
     }
+    if (retiredTheory.length) {
+      lines.push('savepoint retired_theory_republished;',
+        `update public.managed_content_items set published_revision = 1, lock_version = lock_version + 1 where id = ${item(plan.retired.theory_question[0])};`,
+        save('retired theory republished'),
+        `select throws_ok($$select private.study_guide(${guide}, 'rollback')$$, 'P0001', ${refused('rollback')},`,
+        `  ${label('a replaced theory question someone published again is refused')});`,
+        `select throws_ok($$select private.study_guide(${guide}, 'apply')$$, 'P0001', ${refused('apply')}, ${label('by a rerun too')});`,
+        `select is(${state}, ${snapshot('retired theory republished')}, ${label('and nothing changed')});`,
+        'rollback to savepoint retired_theory_republished;')
+    }
     lines.push(`select is(${state}, ${snapshot('applied')}, ${label('back to the applied state')});`, '')
     // Rollback.
     lines.push(`select is(private.study_guide(${guide}, 'rollback'), 'rolled-back', ${label('rollback runs')});`,
       ...published(plan.before, 'after a rollback, exactly what the course published before'),
       `select is((select count(*)::integer from public.managed_content_items where course_id = ${course} and created_by = '${GUIDE_ACTOR}'`,
       `  and published_revision is null and current_revision = 1 and approved_revision = 1), ${own}, ${label('every guide item is unpublished, and none was deleted')});`)
-    if (plan.retire.length) {
+    if (plan.retired.note.length) {
       lines.push(`select is((select count(*)::integer from public.managed_content_items where course_id = ${course} and kind = 'note'`,
-        `  and source_key = any (${sqlArray(plan.before.note)}) and published_revision = 1 and published_parent_revision is null),`,
-        `  ${plan.retire.length}, ${label('the notes it replaced are published again at the revision they had')});`,
+        `  and source_key = any (${sqlArray(plan.retired.note)}) and published_revision = 1 and published_parent_revision is null),`,
+        `  ${plan.retired.note.length}, ${label('the notes it replaced are published again at the revision they had')});`,
         `select is((select count(*)::integer from public.managed_content_publications p join public.managed_content_items i on i.id = p.item_id`,
         `  where i.course_id = ${course} and i.kind = 'note' and i.created_by <> '${GUIDE_ACTOR}' and p.acted_by = '${GUIDE_ACTOR}' and p.action = 'publish'),`,
-        `  ${plan.retire.length}, ${label('through the publish history')});`)
+        `  ${plan.retired.note.length}, ${label('through the publish history')});`)
+    }
+    if (retiredTheory.length) {
+      const answers = [...plan.retired.model_answer, ...plan.retired.rubric]
+      lines.push(`select is((select count(*)::integer from public.managed_content_items where course_id = ${course} and kind = 'theory_question'`,
+        `  and source_key = any (${sqlArray(plan.retired.theory_question)}) and published_revision = 1 and published_parent_revision is null),`,
+        `  ${plan.retired.theory_question.length}, ${label('the theory questions it replaced are published again at the revision they had')});`,
+        `select is((select count(*)::integer from public.managed_content_items a join public.managed_content_items q on q.id = a.parent_item_id`,
+        `  where a.course_id = ${course} and a.source_key = any (${sqlArray(answers)}) and q.kind = 'theory_question'`,
+        `    and a.published_revision = 1 and a.published_parent_revision = q.published_revision),`,
+        `  ${answers.length}, ${label('each of their answers is bound to its question again')});`,
+        `select is((select count(*)::integer from public.managed_content_publications p join public.managed_content_items i on i.id = p.item_id`,
+        `  where i.course_id = ${course} and i.kind in ('theory_question', 'model_answer', 'rubric') and i.created_by <> '${GUIDE_ACTOR}'`,
+        `    and p.acted_by = '${GUIDE_ACTOR}' and p.action = 'publish'),`,
+        `  ${retiredTheory.length}, ${label('through the publish history')});`)
     }
     if (plan.overview.create) {
       lines.push(`select is(pg_temp.pointers(${overview}), '[null, 1, 1]'::jsonb, ${label('the overview it created is unpublished and kept')});`)

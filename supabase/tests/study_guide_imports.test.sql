@@ -36,11 +36,11 @@ create temporary table snapshots (name text primary key, state jsonb not null) o
 create temporary table applicability_start on commit drop as select * from public.course_applicability;
 
 -- ---------------------------------------------------------------------------------------------------------------
--- ACC-CM201 (financial-accounting-1): 8 topics, replacing 20 notes, keeping 40 theory items.
+-- ACC-CM201 (financial-accounting-1): 8 topics, replacing 20 notes and 20 theory questions with their answers.
 -- ---------------------------------------------------------------------------------------------------------------
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'note'), array['guide-topic:1', 'guide-topic:2', 'guide-topic:3', 'guide-topic:4', 'guide-topic:5', 'guide-topic:6', 'guide-topic:7', 'guide-topic:8']::text[], 'ACC-CM201: after the import: notes');
-select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'theory_question'), array['guide-theory:1', 'guide-theory:2', 'guide-theory:3', 'guide-theory:4', 'guide-theory:5', 'guide-theory:6', 'guide-theory:7', 'guide-theory:8', 'theory:1', 'theory:10', 'theory:11', 'theory:12', 'theory:13', 'theory:14', 'theory:15', 'theory:16', 'theory:17', 'theory:18', 'theory:19', 'theory:2', 'theory:20', 'theory:3', 'theory:4', 'theory:5', 'theory:6', 'theory:7', 'theory:8', 'theory:9']::text[], 'ACC-CM201: after the import: theory questions');
-select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'model_answer'), array['guide-answer:1', 'guide-answer:2', 'guide-answer:3', 'guide-answer:4', 'guide-answer:5', 'guide-answer:6', 'guide-answer:7', 'guide-answer:8', 'theory-answer:1', 'theory-answer:10', 'theory-answer:11', 'theory-answer:12', 'theory-answer:13', 'theory-answer:14', 'theory-answer:15', 'theory-answer:16', 'theory-answer:17', 'theory-answer:18', 'theory-answer:19', 'theory-answer:2', 'theory-answer:20', 'theory-answer:3', 'theory-answer:4', 'theory-answer:5', 'theory-answer:6', 'theory-answer:7', 'theory-answer:8', 'theory-answer:9']::text[], 'ACC-CM201: after the import: model answers');
+select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'theory_question'), array['guide-theory:1', 'guide-theory:2', 'guide-theory:3', 'guide-theory:4', 'guide-theory:5', 'guide-theory:6', 'guide-theory:7', 'guide-theory:8']::text[], 'ACC-CM201: after the import: theory questions');
+select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'model_answer'), array['guide-answer:1', 'guide-answer:2', 'guide-answer:3', 'guide-answer:4', 'guide-answer:5', 'guide-answer:6', 'guide-answer:7', 'guide-answer:8']::text[], 'ACC-CM201: after the import: model answers');
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'rubric'), array[]::text[], 'ACC-CM201: after the import: rubrics');
 select is(pg_temp.shown('40000000-0000-4000-8000-000000000007'::uuid, 'note', 'guide-topic:'), array['guide-topic:1', 'guide-topic:2', 'guide-topic:3', 'guide-topic:4', 'guide-topic:5', 'guide-topic:6', 'guide-topic:7', 'guide-topic:8']::text[], 'ACC-CM201: topics in order');
 select is(pg_temp.shown('40000000-0000-4000-8000-000000000007'::uuid, 'theory_question', 'guide-theory:'), array['guide-theory:1', 'guide-theory:2', 'guide-theory:3', 'guide-theory:4', 'guide-theory:5', 'guide-theory:6', 'guide-theory:7', 'guide-theory:8']::text[], 'ACC-CM201: theory questions in topic order');
@@ -61,8 +61,10 @@ select is((select count(*)::integer from public.managed_content_items where cour
   and source_key = any (array['topic-note:1', 'topic-note:2', 'topic-note:3', 'topic-note:4', 'topic-note:5', 'topic-note:6', 'topic-note:7', 'topic-note:8', 'topic-note:9', 'topic-note:10', 'calculator-trick:1', 'calculator-trick:2', 'calculator-trick:3', 'calculator-trick:4', 'calculator-trick:5', 'calculator-trick:6', 'calculator-trick:7', 'calculator-trick:8', 'calculator-trick:9', 'calculator-trick:10']::text[]) and published_revision is null and current_revision = 1 and approved_revision = 1),
   20, 'ACC-CM201: the 20 notes it replaces are unpublished and kept');
 select is((select count(*)::integer from public.managed_content_items where course_id = '40000000-0000-4000-8000-000000000007'::uuid
-  and source_key = any (array['theory:1', 'theory:2', 'theory:3', 'theory:4', 'theory:5', 'theory:6', 'theory:7', 'theory:8', 'theory:9', 'theory:10', 'theory:11', 'theory:12', 'theory:13', 'theory:14', 'theory:15', 'theory:16', 'theory:17', 'theory:18', 'theory:19', 'theory:20', 'theory-answer:1', 'theory-answer:2', 'theory-answer:3', 'theory-answer:4', 'theory-answer:5', 'theory-answer:6', 'theory-answer:7', 'theory-answer:8', 'theory-answer:9', 'theory-answer:10', 'theory-answer:11', 'theory-answer:12', 'theory-answer:13', 'theory-answer:14', 'theory-answer:15', 'theory-answer:16', 'theory-answer:17', 'theory-answer:18', 'theory-answer:19', 'theory-answer:20']::text[])
-  and published_revision = 1 and created_by <> '00000000-0000-4000-8000-000000000045'), 40, 'ACC-CM201: the course''s own theory questions and answers are untouched');
+  and kind in ('theory_question', 'model_answer', 'rubric') and source_key = any (array['theory:1', 'theory:2', 'theory:3', 'theory:4', 'theory:5', 'theory:6', 'theory:7', 'theory:8', 'theory:9', 'theory:10', 'theory:11', 'theory:12', 'theory:13', 'theory:14', 'theory:15', 'theory:16', 'theory:17', 'theory:18', 'theory:19', 'theory:20', 'theory-answer:1', 'theory-answer:2', 'theory-answer:3', 'theory-answer:4', 'theory-answer:5', 'theory-answer:6', 'theory-answer:7', 'theory-answer:8', 'theory-answer:9', 'theory-answer:10', 'theory-answer:11', 'theory-answer:12', 'theory-answer:13', 'theory-answer:14', 'theory-answer:15', 'theory-answer:16', 'theory-answer:17', 'theory-answer:18', 'theory-answer:19', 'theory-answer:20']::text[])
+  and published_revision is null and published_parent_revision is null and current_revision = 1 and approved_revision = 1
+  and created_by <> '00000000-0000-4000-8000-000000000045'), 40,
+  'ACC-CM201: the 20 theory questions it replaces and their answers are unpublished and kept');
 select is(pg_temp.pointers('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), '[3, 3, 3]'::jsonb, 'ACC-CM201: the overview publishes revision 3');
 select is(pg_temp.payload('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid)->'outcomes', $expected$["Explain the purpose of the Conceptual Framework, the qualitative characteristics, the elements, recognition and measurement.","Apply the five-step model of IFRS 15 to recognise revenue.","Prepare and present financial statements in line with IAS 1.","Measure inventories at the lower of cost and net realisable value under IAS 2.","Account for changes in accounting policies and estimates, and correct prior period errors, under IAS 8.","Recognise, measure, depreciate, revalue and derecognise property, plant and equipment under IAS 16.","Account for government grants under IAS 20.","Capitalise borrowing costs on qualifying assets under IAS 23."]$expected$::jsonb, 'ACC-CM201: course outcomes');
 select is(pg_temp.payload('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid)->'assessment', $expected$["Expect objective questions and calculations on each standard.","Calculations come up in every topic. Work through every worked example until you can do them quickly.","Every topic is examinable."]$expected$::jsonb, 'ACC-CM201: how you are assessed');
@@ -72,7 +74,7 @@ select is((select (now_published.payload - 'outcomes' - 'assessment') = earlier.
 select is((select count(*)::integer from public.managed_content_publications p join public.managed_content_items i on i.id = p.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and p.acted_by = '00000000-0000-4000-8000-000000000045' and p.action = 'publish'), 25, 'ACC-CM201: every publication is in the history');
 select is((select count(*)::integer from public.managed_content_publications p join public.managed_content_items i on i.id = p.item_id
-  where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and p.acted_by = '00000000-0000-4000-8000-000000000045' and p.action = 'unpublish'), 20, 'ACC-CM201: and so is every unpublication');
+  where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and p.acted_by = '00000000-0000-4000-8000-000000000045' and p.action = 'unpublish'), 60, 'ACC-CM201: and so is every unpublication');
 
 insert into snapshots values ('ACC-CM201 applied', pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid));
 select is(private.study_guide('study_guide_acc_cm201', 'apply'), 'unchanged', 'ACC-CM201: a rerun is unchanged');
@@ -95,22 +97,6 @@ select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'apply')$
 select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'rollback')$$, 'P0001', 'Study guide ACC-CM201: the published notes, theory or overview are not the ones this import published', 'ACC-CM201: and by a rollback');
 select is(pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid), (select state from snapshots where name = 'ACC-CM201 edited theory'), 'ACC-CM201: and nothing changed');
 rollback to savepoint edited_theory;
-savepoint kept_unpublished;
-update public.managed_content_items set published_revision = null, published_parent_revision = null, lock_version = lock_version + 1
-  where id = pg_temp.item('40000000-0000-4000-8000-000000000007'::uuid, 'theory-answer:1');
-insert into snapshots values ('ACC-CM201 kept unpublished', pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid));
-select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'rollback')$$, 'P0001', 'Study guide ACC-CM201: the published notes, theory or overview are not the ones this import published',
-  'ACC-CM201: one of the course''s own answers, unpublished since, is refused');
-select is(pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid), (select state from snapshots where name = 'ACC-CM201 kept unpublished'), 'ACC-CM201: and nothing changed');
-rollback to savepoint kept_unpublished;
-savepoint kept_revised;
-insert into public.managed_content_revisions (item_id, revision, payload, authored_by)
-  values (pg_temp.item('40000000-0000-4000-8000-000000000007'::uuid, 'theory:1'), 2, '{"prompt":"An operator question"}', '11111111-1111-4111-8111-111111111111');
-update public.managed_content_items set current_revision = 2, approved_revision = 2, published_revision = 2,
-  lock_version = lock_version + 3 where id = pg_temp.item('40000000-0000-4000-8000-000000000007'::uuid, 'theory:1');
-select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'rollback')$$, 'P0001', 'Study guide ACC-CM201: the published notes, theory or overview are not the ones this import published',
-  'ACC-CM201: one of the course''s own theory questions, revised since, is refused');
-rollback to savepoint kept_revised;
 savepoint retired_republished;
 update public.managed_content_items set published_revision = 1, lock_version = lock_version + 1 where id = pg_temp.item('40000000-0000-4000-8000-000000000007'::uuid, 'topic-note:1');
 insert into snapshots values ('ACC-CM201 retired republished', pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid));
@@ -119,6 +105,14 @@ select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'rollback
 select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'apply')$$, 'P0001', 'Study guide ACC-CM201: the published notes, theory or overview are not the ones this import replaces', 'ACC-CM201: by a rerun too');
 select is(pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid), (select state from snapshots where name = 'ACC-CM201 retired republished'), 'ACC-CM201: and nothing changed');
 rollback to savepoint retired_republished;
+savepoint retired_theory_republished;
+update public.managed_content_items set published_revision = 1, lock_version = lock_version + 1 where id = pg_temp.item('40000000-0000-4000-8000-000000000007'::uuid, 'theory:1');
+insert into snapshots values ('ACC-CM201 retired theory republished', pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid));
+select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'rollback')$$, 'P0001', 'Study guide ACC-CM201: the published notes, theory or overview are not the ones this import published',
+  'ACC-CM201: a replaced theory question someone published again is refused');
+select throws_ok($$select private.study_guide('study_guide_acc_cm201', 'apply')$$, 'P0001', 'Study guide ACC-CM201: the published notes, theory or overview are not the ones this import replaces', 'ACC-CM201: by a rerun too');
+select is(pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid), (select state from snapshots where name = 'ACC-CM201 retired theory republished'), 'ACC-CM201: and nothing changed');
+rollback to savepoint retired_theory_republished;
 select is(pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid), (select state from snapshots where name = 'ACC-CM201 applied'), 'ACC-CM201: back to the applied state');
 
 select is(private.study_guide('study_guide_acc_cm201', 'rollback'), 'rolled-back', 'ACC-CM201: rollback runs');
@@ -134,6 +128,17 @@ select is((select count(*)::integer from public.managed_content_items where cour
 select is((select count(*)::integer from public.managed_content_publications p join public.managed_content_items i on i.id = p.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and i.kind = 'note' and i.created_by <> '00000000-0000-4000-8000-000000000045' and p.acted_by = '00000000-0000-4000-8000-000000000045' and p.action = 'publish'),
   20, 'ACC-CM201: through the publish history');
+select is((select count(*)::integer from public.managed_content_items where course_id = '40000000-0000-4000-8000-000000000007'::uuid and kind = 'theory_question'
+  and source_key = any (array['theory:1', 'theory:2', 'theory:3', 'theory:4', 'theory:5', 'theory:6', 'theory:7', 'theory:8', 'theory:9', 'theory:10', 'theory:11', 'theory:12', 'theory:13', 'theory:14', 'theory:15', 'theory:16', 'theory:17', 'theory:18', 'theory:19', 'theory:20']::text[]) and published_revision = 1 and published_parent_revision is null),
+  20, 'ACC-CM201: the theory questions it replaced are published again at the revision they had');
+select is((select count(*)::integer from public.managed_content_items a join public.managed_content_items q on q.id = a.parent_item_id
+  where a.course_id = '40000000-0000-4000-8000-000000000007'::uuid and a.source_key = any (array['theory-answer:1', 'theory-answer:2', 'theory-answer:3', 'theory-answer:4', 'theory-answer:5', 'theory-answer:6', 'theory-answer:7', 'theory-answer:8', 'theory-answer:9', 'theory-answer:10', 'theory-answer:11', 'theory-answer:12', 'theory-answer:13', 'theory-answer:14', 'theory-answer:15', 'theory-answer:16', 'theory-answer:17', 'theory-answer:18', 'theory-answer:19', 'theory-answer:20']::text[]) and q.kind = 'theory_question'
+    and a.published_revision = 1 and a.published_parent_revision = q.published_revision),
+  20, 'ACC-CM201: each of their answers is bound to its question again');
+select is((select count(*)::integer from public.managed_content_publications p join public.managed_content_items i on i.id = p.item_id
+  where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and i.kind in ('theory_question', 'model_answer', 'rubric') and i.created_by <> '00000000-0000-4000-8000-000000000045'
+    and p.acted_by = '00000000-0000-4000-8000-000000000045' and p.action = 'publish'),
+  40, 'ACC-CM201: through the publish history');
 select is((select published_revision from public.managed_content_items where id = 'fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), 2,
   'ACC-CM201: the overview publishes its revision 2 again');
 select is(pg_temp.payload('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), $expected${"title":"Financial Accounting I","body":"Fundamentals of financial accounting under IFRS: the IASB conceptual framework and the key standards governing revenue, financial-statement presentation, inventories, accounting policies, property, plant and equipment, government grants, and borrowing costs.","topics":[{"chapter":"1","description":"IASB Framework for the Preparation and Presentation of Financial Statements"},{"chapter":"2","description":"IFRS 15 - Revenue from Contracts with Customers"},{"chapter":"3","description":"IAS 1 - Presentation of Financial Statements"},{"chapter":"4","description":"IAS 2 - Accounting for Inventory"},{"chapter":"5","description":"IAS 8 - Accounting Policies, Changes in Estimates and Errors"},{"chapter":"6","description":"IAS 16 - Property, Plant, and Equipment (PPE)"},{"chapter":"7","description":"IAS 20 - Government Grants"},{"chapter":"8","description":"IAS 23 - Borrowing Costs"}],"examFocus":["IASB Framework qualitative characteristics","IFRS 15 five-step revenue recognition model","IAS 1 complete set of financial statements","IAS 2 inventory valuation (lower of cost and NRV)","IAS 8 retrospective vs prospective application","IAS 16 depreciation calculations (straight-line & reducing balance)","IAS 20 government grants recognition rules","IAS 23 borrowing costs capitalization"]}$expected$::jsonb, 'ACC-CM201: with the text it had');
@@ -160,8 +165,8 @@ select is(pg_temp.state('40000000-0000-4000-8000-000000000007'::uuid), (select s
 
 select is(private.study_guide('study_guide_acc_cm201', 'apply'), 'applied', 'ACC-CM201: apply after rollback');
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'note'), array['guide-topic:1', 'guide-topic:2', 'guide-topic:3', 'guide-topic:4', 'guide-topic:5', 'guide-topic:6', 'guide-topic:7', 'guide-topic:8']::text[], 'ACC-CM201: applied again: notes');
-select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'theory_question'), array['guide-theory:1', 'guide-theory:2', 'guide-theory:3', 'guide-theory:4', 'guide-theory:5', 'guide-theory:6', 'guide-theory:7', 'guide-theory:8', 'theory:1', 'theory:10', 'theory:11', 'theory:12', 'theory:13', 'theory:14', 'theory:15', 'theory:16', 'theory:17', 'theory:18', 'theory:19', 'theory:2', 'theory:20', 'theory:3', 'theory:4', 'theory:5', 'theory:6', 'theory:7', 'theory:8', 'theory:9']::text[], 'ACC-CM201: applied again: theory questions');
-select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'model_answer'), array['guide-answer:1', 'guide-answer:2', 'guide-answer:3', 'guide-answer:4', 'guide-answer:5', 'guide-answer:6', 'guide-answer:7', 'guide-answer:8', 'theory-answer:1', 'theory-answer:10', 'theory-answer:11', 'theory-answer:12', 'theory-answer:13', 'theory-answer:14', 'theory-answer:15', 'theory-answer:16', 'theory-answer:17', 'theory-answer:18', 'theory-answer:19', 'theory-answer:2', 'theory-answer:20', 'theory-answer:3', 'theory-answer:4', 'theory-answer:5', 'theory-answer:6', 'theory-answer:7', 'theory-answer:8', 'theory-answer:9']::text[], 'ACC-CM201: applied again: model answers');
+select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'theory_question'), array['guide-theory:1', 'guide-theory:2', 'guide-theory:3', 'guide-theory:4', 'guide-theory:5', 'guide-theory:6', 'guide-theory:7', 'guide-theory:8']::text[], 'ACC-CM201: applied again: theory questions');
+select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'model_answer'), array['guide-answer:1', 'guide-answer:2', 'guide-answer:3', 'guide-answer:4', 'guide-answer:5', 'guide-answer:6', 'guide-answer:7', 'guide-answer:8']::text[], 'ACC-CM201: applied again: model answers');
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'rubric'), array[]::text[], 'ACC-CM201: applied again: rubrics');
 select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and r.authored_by = '00000000-0000-4000-8000-000000000045'), 25, 'ACC-CM201: no revision was written twice');

@@ -4,8 +4,9 @@
 begin;
 select no_plan();
 
--- The study guides imported after this correction publish later overview revisions (GST 111's revision three). They are
--- rolled back here, inside this test's transaction, so the overviews stand as this correction left them.
+-- The study guides imported after this correction publish later overview revisions (revision three on the five revised
+-- overviews that have a guide). They are rolled back here, inside this test's transaction, so the overviews stand as
+-- this correction left them.
 select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('%s rolled back for this test', guide))
   from private.study_guides order by guide;
 
@@ -24,9 +25,11 @@ create function pg_temp.state() returns jsonb language sql as $$
     'revisions', (select count(*) from public.managed_content_revisions),
     'reviews', (select count(*) from public.managed_content_reviews),
     'publications', (select count(*) from public.managed_content_publications)) $$;
--- GST 111's rolled-back guide revision stays its current revision, as the history keeps it; that is not a draft.
+-- A rolled-back guide's overview revision stays the current revision, as the history keeps it; that is not a draft.
+-- Five of the revised overviews have a guide: GST 111, ACC-CM201, BUA 201, BUA 205 and ENT 211.
 create function pg_temp.current(p_slug text) returns integer language sql as $$
-  select case when p_slug = 'use-of-english' then 3 else 2 end $$;
+  select case when p_slug in ('use-of-english', 'financial-accounting-1', 'principles-business-administration',
+    'leadership-governance', 'entrepreneurship-innovation') then 3 else 2 end $$;
 select is((select jsonb_build_array(i.current_revision, r.authored_by) from public.managed_content_items i
     join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.current_revision
     where i.id = pg_temp.overview('use-of-english')), '[3, "00000000-0000-4000-8000-000000000045"]'::jsonb,

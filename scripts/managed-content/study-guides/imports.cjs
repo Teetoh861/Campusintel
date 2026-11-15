@@ -3,7 +3,10 @@
 // with several bank topics gets one button per topic, named after it. namedTopics lists the guide topics whose single
 // button is named too, because they share its bank topic with other guide topics.
 // replacesNotes: the number of notes the course publishes today, all of which the guide replaces (unpublished through
-// the publish history, republished by a rollback). The course's own theory questions and their answers stay published.
+// the publish history, republished by a rollback).
+// replacesTheory: the number of theory questions the course publishes today, all of which the guide's questions
+// replace: they and their answers are unpublished through the publish history and republished by a rollback. Without
+// it, a course's own theory questions and their answers stay published as they are.
 // newCourse: the course has no repository identity yet; the import creates it and links its catalogue course.
 const GUIDE_IMPORTS = [
   // GST 111 Communication in English: the pilot. Its 15 guide topics are its 15 bank topics, in the same order.
@@ -11,9 +14,10 @@ const GUIDE_IMPORTS = [
     practice: 'by-number' },
 
   // The other guides, in code order. Their migrations follow 20261113090000_study_guide_imports.sql.
-  // ACC-CM201 Financial Accounting I: replaces 10 topic notes and 10 calculator tricks; its 20 theory questions stay.
+  // ACC-CM201 Financial Accounting I: replaces 10 topic notes and 10 calculator tricks, and the guide's 8 theory
+  // questions replace the course's own 20 and their answers.
   { code: 'ACC-CM201', contentKey: 'financial-accounting-1', guide: 'study_guide_acc_cm201',
-    migration: '20261113100000_study_guide_acc_cm201.sql', practice: 'by-number', replacesNotes: 20 },
+    migration: '20261113100000_study_guide_acc_cm201.sql', practice: 'by-number', replacesNotes: 20, replacesTheory: 20 },
   // ACC 101: 8 guide topics over 15 bank topics. Every bank topic has one button.
   { code: 'ACC101', contentKey: 'introduction-financial-accounting-1', guide: 'study_guide_acc101',
     migration: '20261113100100_study_guide_acc101.sql',

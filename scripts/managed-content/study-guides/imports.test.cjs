@@ -101,25 +101,51 @@ test('ACC 121 has notes and theory questions but no practice button', () => {
   assert.equal(banks.some(bank => bank.code === 'ACC121'), false, 'it has no bank')
 })
 
-test('four guides replace the notes their course publishes today, and nothing else is unpublished', () => {
+test('four guides replace the notes their course publishes today; one also replaces the theory; nothing else is unpublished', () => {
   for (const plan of guides) {
     const today = manifest.items.filter(item => item.courseId === plan.courseId)
     const notes = today.filter(item => item.kind === 'note')
-    assert.equal(plan.retire.length, REPLACED[plan.code] ?? 0, `${plan.code}: notes replaced`)
-    assert.deepEqual(plan.retire.map(entry => entry.itemId).sort(), notes.map(item => item.itemId).sort(), `${plan.code}: every note of today`)
-    assert.ok(plan.retire.every(entry => entry.revision === 1 && entry.parentRevision === null))
-    // The course's own theory questions and their answers stay published exactly as they are.
-    const kept = today.filter(item => ['theory_question', 'model_answer', 'rubric'].includes(item.kind))
-    assert.deepEqual(plan.keep, kept.map(item => ({ itemId: item.itemId, revision: 1 })), `${plan.code}: theory items kept`)
+    const theory = today.filter(item => ['theory_question', 'model_answer', 'rubric'].includes(item.kind))
+    assert.equal(notes.length, REPLACED[plan.code] ?? 0, `${plan.code}: notes replaced`)
+    const replaced = plan.code === 'ACC-CM201' ? [...notes, ...theory] : notes
+    assert.deepEqual(plan.retire.map(entry => entry.itemId).sort(), replaced.map(item => item.itemId).sort(), `${plan.code}: what it unpublishes`)
+    assert.ok(plan.retire.every(entry => entry.revision === 1))
+    // Theory the import does not replace stays published exactly as it is. Only ACC-CM201 had theory, and it is replaced.
+    assert.deepEqual(plan.keep, [], `${plan.code}: nothing is kept`)
+    assert.equal(theory.length > 0, plan.code === 'ACC-CM201', `${plan.code}: theory of its own`)
     const mine = new Set([...plan.notes, ...plan.theory, ...plan.theory.map(question => question.answer)].map(entry => entry.itemId))
     assert.ok(today.every(item => !mine.has(item.itemId)), `${plan.code}: no guide item reuses an existing identity`)
   }
-  // ACC-CM201: ten topic notes and the ten calculator tricks go; its twenty theory questions and answers stay.
-  const accounting = manifest.items.filter(item => item.courseId === guide('ACC-CM201').courseId && item.kind === 'note')
-  assert.deepEqual([accounting.filter(item => item.payload.noteType === 'topic_note').length,
-    accounting.filter(item => item.payload.noteType === 'calculator_trick').length], [10, 10])
-  assert.equal(guide('ACC-CM201').keep.length, 40)
-  assert.deepEqual(guides.filter(plan => plan.keep.length).map(plan => plan.code), ['ACC-CM201'])
+  // ACC-CM201: ten topic notes and the ten calculator tricks go, and so do its twenty theory questions and their twenty
+  // answers. The guide's eight questions replace them.
+  const accounting = guide('ACC-CM201')
+  const own = manifest.items.filter(item => item.courseId === accounting.courseId)
+  const notes = own.filter(item => item.kind === 'note')
+  assert.deepEqual([notes.filter(item => item.payload.noteType === 'topic_note').length,
+    notes.filter(item => item.payload.noteType === 'calculator_trick').length], [10, 10])
+  const questions = own.filter(item => item.kind === 'theory_question'), answers = own.filter(item => item.kind === 'model_answer')
+  assert.deepEqual([questions.length, answers.length, own.filter(item => item.kind === 'rubric').length], [20, 20, 0])
+  assert.deepEqual([accounting.retire.length, accounting.theory.length], [60, 8])
+  assert.deepEqual(accounting.retired, { note: notes.map(item => item.sourceKey), theory_question: questions.map(item => item.sourceKey),
+    model_answer: answers.map(item => item.sourceKey), rubric: [] })
+  // The notes go first. Then each answer goes before its question, so that a rollback, which runs the list backwards,
+  // republishes a question before the answer bound to it.
+  const order = accounting.retire.map(entry => entry.itemId)
+  assert.deepEqual(order.slice(0, 20).sort(), notes.map(item => item.itemId).sort())
+  for (const answer of answers) {
+    assert.ok(order.indexOf(answer.itemId) >= 20 && order.indexOf(answer.itemId) === order.indexOf(answer.parentItemId) - 1,
+      `${answer.sourceKey} is unpublished just before its question`)
+  }
+  const byId = new Map(accounting.retire.map(entry => [entry.itemId, entry]))
+  assert.ok(answers.every(answer => byId.get(answer.itemId).parentRevision === 1), 'an answer comes back bound to revision one of its question')
+  assert.ok([...notes, ...questions].every(item => byId.get(item.itemId).parentRevision === null))
+  // The other three replace notes only, and the document they store is unchanged by this rule.
+  for (const code of ['BUA201', 'BUA205', 'ENT211']) {
+    assert.deepEqual(guide(code).retired, { note: guide(code).before.note, theory_question: [], model_answer: [], rubric: [] }, code)
+    assert.ok(guide(code).retire.every(entry => entry.parentRevision === null), code)
+  }
+  assert.equal('keep' in guideDocument(accounting), false, 'the stored document keeps nothing')
+  assert.deepEqual(guides.filter(plan => plan.replacesTheory !== undefined).map(plan => [plan.code, plan.replacesTheory]), [['ACC-CM201', 20]])
 })
 
 const EXAMINABLE = 'Every topic is examinable.'
@@ -211,8 +237,8 @@ test('each import is its own migration, after the newest on origin, in statement
   const later = guides.slice(1)
   assert.deepEqual(later.map(plan => plan.migration), [...later.map(plan => plan.migration)].sort(), 'in code order')
   for (const plan of later) {
-    // After the function they use and after 20261112100000, the sign-in fix a test database takes first.
-    assert.ok(plan.migration > IMPORTS_MIGRATION && IMPORTS_MIGRATION > '20261112100000', plan.migration)
+    // After the function they use, which is after 20261112130000, the newest migration on develop.
+    assert.ok(plan.migration > IMPORTS_MIGRATION && IMPORTS_MIGRATION > '20261112130000', plan.migration)
     const sql = fs.readFileSync(path.join(directory, plan.migration), 'utf8')
     assert.equal(sql, migrationSql(plan), `${plan.migration} is what the generator writes`)
     const statements = sql.split('\n').filter(line => line && !line.startsWith('--'))
@@ -227,7 +253,7 @@ test('each import is its own migration, after the newest on origin, in statement
     assert.equal(guideDocument(plan).actor, GUIDE_ACTOR)
   }
   const names = fs.readdirSync(directory).filter(name => /_study_guide_/.test(name)).sort()
-  assert.deepEqual(names, ['20261111090000_study_guide_notes.sql', '20261111100000_study_guide_gst111.sql', IMPORTS_MIGRATION,
+  assert.deepEqual(names, ['20261112110000_study_guide_notes.sql', '20261112120000_study_guide_gst111.sql', IMPORTS_MIGRATION,
     ...later.map(plan => plan.migration)], 'no other study guide migration exists')
   assert.deepEqual(GUIDE_IMPORTS.map(entry => entry.migration), guides.map(plan => plan.migration))
 })

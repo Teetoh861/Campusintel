@@ -224,10 +224,17 @@ function testSql(manifest, plans, revisions, guides) {
     lines.push("  0, 'all live repository items outside the revised overviews are approved and published at revision one');")
   }
   if (guide.retired.size) {
-    // A replaced note keeps its revision and approval; only its publication is withdrawn.
+    // A replaced item keeps its revision and approval; only its publication is withdrawn.
+    const retired = manifest.items.filter(item => guide.retired.has(item.itemId))
+    assert.equal(retired.length, guide.retired.size, 'every retired item is a source item')
+    const notes = retired.filter(item => item.kind === 'note').length
     lines.push(`select is((select count(*)::int from public.managed_content_items where created_by = '${manifest.actor}'`)
     lines.push("  and kind = 'note' and published_revision is null and current_revision = 1 and approved_revision = 1),")
-    lines.push(`  ${guide.retired.size}, 'the notes a study guide replaced are unpublished, and nothing else is');`)
+    lines.push(`  ${notes}, 'the notes a study guide replaced are unpublished, and nothing else is');`)
+    lines.push(`select is((select count(*)::int from public.managed_content_items where created_by = '${manifest.actor}'`)
+    lines.push("  and kind in ('theory_question', 'model_answer', 'rubric') and published_revision is null and current_revision = 1")
+    lines.push(`  and approved_revision = 1), ${retired.length - notes},`)
+    lines.push("  'the theory questions and answers a study guide replaced are unpublished, and nothing else is');")
   }
   lines.push(`select is((select count(*)::int from public.managed_content_reviews where reviewed_by = '${manifest.actor}'`)
   lines.push("  and decision = 'rejected'), 0, 'migration never publishes a rejected revision');")

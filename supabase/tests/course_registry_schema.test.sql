@@ -67,7 +67,7 @@ select is(
 
 select is(
   (select count(distinct content_key)::int from public.courses),
-  34,
+  35,
   'repository content keys remain unique'
 );
 
@@ -154,6 +154,7 @@ select is(
   array[
     'ACC-CM201=financial-accounting-1',
     'ACC101=introduction-financial-accounting-1',
+    'ACC121=introduction-cost-accounting',
     'ACS101=introduction-actuarial-science',
     'AMS101=principles-management',
     'AMS103=introduction-computer',
@@ -186,7 +187,7 @@ select is(
     'SOC101=introduction-sociology-1',
     'TAX-CM223=business-taxation-2'
   ]::text[],
-  'the thirty-three confirmed content links resolve to the exact repository identities'
+  'the thirty-four confirmed content links resolve to the exact repository identities'
 );
 
 select is(
@@ -507,8 +508,8 @@ select is(
       on institutional_courses.id = course_applicability.institutional_course_id
     where institutional_courses.repository_course_id is not null
   ),
-  103,
-  'the approved links expose existing mappings without adding applicability: 45 before, plus 58 for the nineteen official banks'
+  105,
+  'the approved links expose existing mappings without adding applicability: 45 before, plus 58 for the nineteen official banks and 2 for the course a study guide created'
 );
 
 select is(
