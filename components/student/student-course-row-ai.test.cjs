@@ -52,3 +52,10 @@ test('the rendered row keeps "not yet available" first and labels the link as Ca
   assert.match(html, /Practise from your own notes/)
   assert.match(html, /student-ai-practice-tag">Campus Bot</)
 })
+
+test('the link takes its own line under the status, so the two never run together', () => {
+  const css = fs.readFileSync(require('node:path').join(__dirname, '../../styles/ai-practice.css'), 'utf8')
+  const [, rule] = /\.student-ai-practice-link \{([^}]*)\}/.exec(css)
+  assert.match(rule, /^ display: flex; width: fit-content;/, 'a block of its own at every width, no wider than its words')
+  assert.doesNotMatch(rule, /inline/)
+})

@@ -12,7 +12,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction } from '@/components/student/ui'
 import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
 import { aiPracticePath } from '@/lib/ai-practice/routes'
-import { isAiPracticeEligible } from '@/lib/ai-practice/student-flow'
+import { isAiPracticeEligible, isCampusBotCourse } from '@/lib/ai-practice/student-flow'
 import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supabase-env'
 import { getCourseAccessForVerifiedStudent } from '@/lib/courses/access'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
@@ -20,6 +20,7 @@ import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLo
   from '@/lib/courses/read-model'
 import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AiPracticeClient } from './AiPracticeClient'
@@ -60,9 +61,11 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
     </StudentPage>
   }
   const { course } = result
-  const access = await getCourseAccessForVerifiedStudent(client, [course.institutionalCourseId])
+  const [access, profile] = await Promise.all([getCourseAccessForVerifiedStudent(client, [course.institutionalCourseId]),
+    getCurrentStudentProfileForVerifiedStudent(client, context.user)])
   const decision = access.status === 'ok' ? access.decisions.get(course.institutionalCourseId) : undefined
-  const scoped = decision !== undefined && (decision.on_list || (decision.team_added && decision.allowed))
+  // A free course on the student's own list is theirs to practise too: the decision alone never says so.
+  const scoped = isCampusBotCourse(decision, course, profile.status === 'complete' ? profile.selection : null)
   // Already generated personal sets remain the owner's when course or AI access ends.
   const sets = await listPersonalSetsForCourse(client, context.user.id, course.institutionalCourseId)
   if (!scoped && sets.length === 0) redirect(STUDENT_DESTINATIONS.myCourses.href)

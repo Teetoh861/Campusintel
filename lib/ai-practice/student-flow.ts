@@ -1,6 +1,7 @@
 // lib/ai-practice/student-flow.ts — The upload-to-practice journey over an injected, already-authorized environment.
 // Callers verify the session first; everything here acts only for env.userId and never trusts client identity.
 import 'server-only'
+import type { CourseDecision } from '@/lib/courses/access'
 import { getStudentCourseUnavailability, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import type { StudentCourse, StudentCourseByIdResult } from '@/lib/courses/read-model'
 import { AI_PRACTICE_LIMITS } from './contract'
@@ -83,6 +84,25 @@ export type AiPracticeEnv = {
 /** PRD 4.3: AI practice requires an active offering whose content is honestly not built. */
 export function isAiPracticeEligible(course: StudentCourse): boolean {
   return hasActiveCourseOffering(course) && getStudentCourseUnavailability(course) === 'missing'
+}
+
+type SavedSelection = { department: { id: string }; academicLevel: { id: string }; academicPeriod: { id: string } }
+
+/**
+ * Whether Campus Bot covers this course for the student, funding aside: the page's reading of the database's own
+ * check (private.ai_course_allowed). The access decision answers a free course, and an operator, before it looks at
+ * the student's list, so for those the list is read here the way the database reads it: an active offering for the
+ * student's saved department, level and semester.
+ */
+export function isCampusBotCourse(decision: CourseDecision | undefined, course: Pick<StudentCourse, 'applicability'>,
+  selection: SavedSelection | null): boolean {
+  if (decision === undefined) return false
+  if (decision.on_list || (decision.team_added && decision.allowed)) return true
+  if ((decision.reason !== 'free' && decision.reason !== 'operator') || selection === null) return false
+  return course.applicability.some(({ department, academicLevel, academicPeriod }) =>
+    department.isActive && academicLevel.isActive && academicPeriod.isActive &&
+    department.id === selection.department.id && academicLevel.id === selection.academicLevel.id &&
+    academicPeriod.id === selection.academicPeriod.id)
 }
 
 type CourseCheck = { status: 'ok'; course: StudentCourse } | { status: 'signed-out' | 'not-found' | 'unavailable' | 'not-eligible' }
