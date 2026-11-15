@@ -25,11 +25,9 @@ export function describeResult(result: EntitlementResult): { message: FlowMessag
     case 'capacity': return { next: 'stay', message: { tone: 'error',
       text: 'Passes can’t be started right now because of high demand. Please try again later.' } }
     case 'signed-out':
-    case 'session-changed': return { next: 'refresh', message: { tone: 'error',
-      text: 'Your session changed. Refresh the page and sign in again.' } }
-    // The courses changed in another tab: reload so the student sees which courses a pass would set.
-    case 'selection-changed': return { next: 'refresh', message: { tone: 'error',
-      text: 'Your courses were just updated. Check them and try again.' } }
+    case 'session-changed': return { next: 'refresh', message: { tone: 'error', text: 'Your sign-in has changed.' } }
+    // The courses changed in another tab: the page loads again, so the student sees which courses a pass would set.
+    case 'selection-changed': return { next: 'refresh', message: { tone: 'error', text: 'Your courses were just updated.' } }
     case 'invalid-request': return { next: 'stay', message: { tone: 'error', text: 'Something went wrong. Please try again.' } }
     case 'unavailable': return { next: 'stay', message: { tone: 'error',
       text: 'This isn’t available right now. Please try again in a few minutes.' } }

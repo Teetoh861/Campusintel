@@ -10,6 +10,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { readPlansOnSale } from '@/lib/entitlements/server'
 import { createClient } from '@/lib/supabase/server'
 import { NOTE_KICKER } from '../sections'
@@ -46,7 +47,7 @@ export async function notesBlocked(result: NotesResult, slug: string, path: stri
   if (result.status === 'locked') return <StudentPage band={<PageBand title={title} />}>
     <LockedCourseNotice outsideList={result.outsideList} reason={result.reason}
       backHref={`/courses/${encodeURIComponent(slug)}`} backLabel="Back to course"
-      plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} />
+      plansOnSale={await readPlansOnSale(await createClient()).catch(() => false)} has={buildTimeStudy(slug)} />
   </StudentPage>
   if (result.status === 'unavailable' && result.notAvailable) return <StudentPage band={<PageBand title={title} />}>
     <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>

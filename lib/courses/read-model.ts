@@ -95,7 +95,7 @@ export type StudentCourseDetailLearning = {
   overview: ManagedOverview | null
   notes: ManagedNote[]
   theoryQuestions: ManagedTheoryQuestion[]
-  // The theory page offers at least one question for practice; the course page links to it.
+  // The theory page offers at least one question for practice. It shows every question either way.
   theoryPractice: boolean
   // The theory questions the theory page offers for practice (each has a published model answer), by item id.
   theoryPracticeItems: string[]

@@ -1,5 +1,5 @@
 // scripts/managed-content/study-guides/system-migration.test.cjs — The overview correction's functions, recreated in
-// 20261111090000_study_guide_notes.sql, are the ones 20261110090000 runs except for the rolled-back guide's revision.
+// 20261112110000_study_guide_notes.sql, are the ones 20261110090000 runs except for the rolled-back guide's revision.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')

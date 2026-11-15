@@ -9,7 +9,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction } from '@/components/student/ui'
 import { NoteUseTracker } from '../../NoteUseTracker'
 import { NoteBody } from '../../sections'
-import { theoryHref } from '../load'
+import { theoryQuestionHref } from '../../theory/presentation'
 import { notesBlocked, resolve } from '../shared'
 import type { ReactElement } from 'react'
 
@@ -45,7 +45,7 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
       <article className="student-surface student-detail-note student-guide-article" data-note-item={note.itemId}>
         <NoteBody note={note} level={2} links={{
           ...(practiceHref ? { practiceHref } : {}),
-          ...(theoryId && theoryItems.has(theoryId) ? { theoryHref: theoryHref(course.href, theoryId) } : {}) }} />
+          ...(theoryId && theoryItems.has(theoryId) ? { theoryHref: theoryQuestionHref(course.href, theoryId) } : {}) }} />
       </article>
       <nav aria-label="Topics" className="student-guide-pager">
         {previous ? <Link href={`${course.href}/notes/${index}`} prefetch={false} className="student-topic-row student-focus-control">

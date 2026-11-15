@@ -24,8 +24,8 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
   const counts = countSelfRatings(points, ratings)
 
   useEffect(() => {
-    // A student can close this question while its submission is in flight.
-    if (heading.current?.closest('details')?.open !== false) heading.current?.focus()
+    // A student can move to another question while this one's answer is on its way: it then waits out of sight.
+    if (heading.current?.closest('[hidden]') === null) heading.current.focus()
   }, [complete])
 
   function finish(event: FormEvent<HTMLFormElement>) {

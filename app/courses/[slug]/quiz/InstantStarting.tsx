@@ -15,7 +15,8 @@ import type { ReactElement } from 'react'
 type Props = {
   courseCode: string
   courseTitle: string
-  courseHref: string
+  // The Practise by topic page: the way on when this topic's start fails.
+  topicsHref: string
   repositoryOnly: boolean
   topic: string
   busy: boolean
@@ -29,8 +30,8 @@ export function InstantStarting(props: Props): ReactElement {
     {props.error ? <div className="max-w-[720px]">
       <ProblemNotice problem={props.error} busy={props.busy} onRetry={props.onRetry} />
       <div className="student-practice-row">
-        <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
-          {PRACTICE_COPY.backToCourse}
+        <Link href={props.topicsHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
+          {PRACTICE_COPY.allTopics}
         </Link>
       </div>
     </div> : <p role="status" className="student-practice-help !mt-0">{PRACTICE_COPY.starting}</p>}

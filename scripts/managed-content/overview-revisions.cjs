@@ -147,7 +147,7 @@ function overviewRevisions(manifest) {
 
 /** The migration: one statement publishes every revision or none, and the same function rolls them back. */
 /** A pending revision written by the given actor, with the published revision still approved: a study guide's overview
- *  revision left in the history when the guide rolled back (20261111090000_study_guide_notes.sql). */
+ *  revision left in the history when the guide rolled back (20261112110000_study_guide_notes.sql). */
 const guidePending = actor => item => `(${item}.approved_revision = ${item}.published_revision and exists (select 1
           from public.managed_content_revisions g where g.item_id = ${item}.id and g.revision = ${item}.current_revision
           and g.authored_by = '${actor}'))`

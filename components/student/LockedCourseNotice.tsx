@@ -4,9 +4,10 @@ import { LockKeyhole } from 'lucide-react'
 import { courseAdditionContact, courseChangeContact } from '@/lib/whatsapp'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from './Notice'
-import { STUDY_COPY } from './study-families'
+import { STUDY_COPY, getStudyFamilyLabels } from './study-families'
 import { profileSelectionHref } from '@/lib/profile/paths'
 import type { CourseLockReason } from '@/lib/courses/read-model'
+import type { BuildTimeStudy } from '@/lib/courses/build-time-study'
 import { studentAction, studentFocusDark } from './ui'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { FREE_PASS_COPY, accessCopy } from '@/lib/entitlements/presentation'
@@ -18,8 +19,10 @@ import type { ReactElement, ReactNode } from 'react'
  * read); otherwise the pass is not mentioned at all, and no reason is given.
  */
 export function LockedCourseNotice({ backHref, backLabel, passHours = null, outsideList = false, reason,
-  plansOnSale = false, confirmReturnPath }: {
+  plansOnSale = false, confirmReturnPath, has }: {
   backHref?: string; backLabel?: string; outsideList?: boolean; reason?: CourseLockReason
+  /** What the course publishes, from build-time data (the database refuses to read it); it decides the offer. */
+  has: BuildTimeStudy
   /** The pass length when this account can still start a free pass; null offers none. */
   passHours?: number | null
   /** The copy switch (plans_on_sale): "Subscribe" once plans are on sale. */
@@ -54,18 +57,17 @@ export function LockedCourseNotice({ backHref, backLabel, passHours = null, outs
       </div>
     </div>
   }
-  const locked = <Notice tone="info" title={copy.lockedTitle} action={<>
+  const families = getStudyFamilyLabels(has)
+  // Nothing published: there is nothing to subscribe to, so the page says so and offers only the way back.
+  if (families.length === 0) return <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={back}>{null}</Notice>
+  // One notice: what the course has, the unlock action and, when this account can start one, the free pass beside it;
+  // what the pass includes is shown only where it is started.
+  return <Notice tone="info" title={copy.lockedTitle} action={<>
     <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
       {copy.lockedAction}
-    </Link>{back}
-  </>}>
-    {copy.lockedBody} GST courses stay free for every student.
-  </Notice>
-  if (passHours === null) return locked
-  // The free pass offer, as on My Courses and Plan & Access; what it includes is shown only where it is started.
-  return <div className="grid gap-3">{locked}
-    <div data-pass-offer=""><Notice tone="info" title={FREE_PASS_COPY.heading} action={<Link
-      href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
-      {FREE_PASS_COPY.start}</Link>}>{FREE_PASS_COPY.line(passHours)}</Notice></div>
-  </div>
+    </Link>
+    {passHours !== null && <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} data-pass-offer=""
+      className={studentAction(btnGhost, 'bg-student-surface')}>{FREE_PASS_COPY.start}</Link>}
+    {back}
+  </>}>{families.join(' · ')}</Notice>
 }

@@ -9,7 +9,7 @@ import { SearchField } from '@/components/student/SearchField'
 import { FilterSelect } from '@/components/student/FilterSelect'
 import { Pagination } from '@/components/student/Pagination'
 import { studentAction, studentFocusControl } from '@/components/student/ui'
-import { COURSES_PER_PAGE } from './catalogue-presentation'
+import { COURSES_PER_PAGE, noMatchMessage } from './catalogue-presentation'
 import type { FilterOption } from '@/components/student/FilterSelect'
 import type { DirectoryItem } from './catalogue-presentation'
 import type { StudentCourseApplicability } from '@/lib/courses/read-model'
@@ -40,9 +40,9 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
   const [filters, setFilters] = useState<Filters>(ALL_FILTERS)
   const [requestedPage, setPage] = useState(1)
   const searchRef = useRef<HTMLInputElement>(null)
-  const departmentRef = useRef<HTMLSelectElement>(null)
   const resultsRef = useRef<HTMLElement>(null)
   const hasFilters = Object.values(filters).some(value => value !== null)
+  const narrowed = hasFilters || query !== ''
   const options = useMemo(() => ({
     department: optionsFor(items, 'department'),
     academicLevel: optionsFor(items, 'academicLevel'),
@@ -63,6 +63,8 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
   const changeFilter = (dimension: keyof Filters, value: string | null) => {
     setFilters(current => ({ ...current, [dimension]: value })); setPage(1)
   }
+  // One reset for everything that narrows the list, the search included; focus returns to the first control.
+  const clearAll = () => { setQuery(''); setFilters(ALL_FILTERS); setPage(1); searchRef.current?.focus() }
 
   if (items.length === 0) return <EmptyState title={EMPTY_COURSES_MESSAGE} icon={null} actions={null}>{null}</EmptyState>
 
@@ -74,7 +76,7 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
       </div>
       <div className="student-catalogue-filter-fields">
         <FilterSelect id="course-department" label="Department" value={filters.department}
-          options={options.department} onChange={value => changeFilter('department', value)} selectRef={departmentRef} />
+          options={options.department} onChange={value => changeFilter('department', value)} />
         <FilterSelect id="course-level" label="Level" value={filters.academicLevel}
           options={options.academicLevel} onChange={value => changeFilter('academicLevel', value)} />
         <FilterSelect id="course-semester" label="Semester" value={filters.academicPeriod}
@@ -85,8 +87,7 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
       <p className="student-summary" role="status" aria-live="polite" aria-atomic="true">
         {filtered.length} {filtered.length === 1 ? 'result' : 'results'} of {items.length} courses
       </p>
-      <button type="button" disabled={!hasFilters} className={studentAction(btnGhost)}
-        onClick={() => { setFilters(ALL_FILTERS); setPage(1); departmentRef.current?.focus() }}>Clear filters</button>
+      <button type="button" disabled={!narrowed} className={studentAction(btnGhost)} onClick={clearAll}>Clear filters</button>
     </div>
     <section ref={resultsRef} tabIndex={-1} aria-labelledby="course-results-title"
       className={'student-catalogue-results ' + studentFocusControl}>
@@ -95,7 +96,7 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
         ? <CourseRegister label="Courses">
           {visible.map(item => <Fragment key={item.institutionalCourseId}>{item.row}</Fragment>)}
         </CourseRegister>
-        : <EmptyState title={EMPTY_COURSES_MESSAGE} icon={null} actions={null}>{null}</EmptyState>}
+        : <EmptyState title={noMatchMessage(query.trim(), hasFilters)} icon={null} actions={null}>{null}</EmptyState>}
     </section>
     <Pagination page={page} totalPages={totalPages} onPageChange={setPage}
       label="Course catalogue pages" scrollTarget={resultsRef} />

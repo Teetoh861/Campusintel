@@ -11,6 +11,9 @@ export function selectionReturnPath(raw: unknown): string | null {
 }
 
 /** The selection flow, returning to `returnPath` after a save when it is one we accept. */
+/** The profile page's one title: while it loads, in every state of the form, and when it can't be shown. */
+export const PROFILE_TITLE = 'Your profile'
+
 export function profileSelectionHref(returnPath?: string | null): string {
   const safe = selectionReturnPath(returnPath)
   return safe === null ? PROFILE_SELECTION_PATH : `${PROFILE_SELECTION_PATH}?return=${encodeURIComponent(safe)}`

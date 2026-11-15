@@ -12,13 +12,14 @@ import { postPracticeCommand } from '@/lib/practice/client'
 import { AssessmentConfirmation } from './AssessmentConfirmation'
 import { QuestionScreen } from './QuestionScreen'
 import { focusFirst } from './focus-return'
-import { LOW_TIME_SECONDS, exitBodyFor, saveLineFor } from './practice-presentation'
+import { LOW_TIME_SECONDS, PRACTICE_COPY, attemptHref, exitBodyFor, saveLineFor, signInToAttemptHref } from './practice-presentation'
 import { clearUnsent, readFlags, readUnsent, writeFlags, writeUnsent } from './practice-storage'
 import type { AutosaveSnapshot, SaveOutcome } from '@/lib/entitlements/exam-autosave'
 import type { ClockReading, ClockState } from '@/lib/entitlements/exam-clock'
 import type { ExamTab } from '@/lib/entitlements/exam-tab'
 import type { GradedAttempt, OpenAttempt, PracticeResult, PracticeSheet } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
+import type { AttemptRefusal } from './practice-presentation'
 import type { ReactElement } from 'react'
 
 const TICK_MS = 1000
@@ -26,13 +27,22 @@ const TICK_MS = 1000
 const RETRY_MS = 10_000
 const MAX_AUTO_RETRIES = 30
 const NO_RETURN_FOCUS: ReturnFocus = []
-const REFUSAL: Record<string, string> = {
-  'too-many-tabs': 'You have too many practice tabs open. Continue in one of your other tabs — nothing you’ve answered there is lost.',
-  'session-changed': 'You signed in on another tab. Refresh this page to continue.',
-  'signed-out': 'You’ve been signed out. Sign in again to continue — the timer is still running.',
-  'not-found': 'This attempt is no longer available.',
+/** Why the server refused this tab, during the attempt and once time is up, with the one way on. A refusal at time up
+ * is never left as "Getting your result…": the server grades at the deadline, so this attempt's page shows the result. */
+function refusalFor(status: string, courseHref: string, attemptId: string): AttemptRefusal {
+  const here = { label: PRACTICE_COPY.reload, href: attemptHref(courseHref, attemptId) }
+  const signIn = { label: PRACTICE_COPY.signIn, href: signInToAttemptHref(courseHref, attemptId) }
+  if (status === 'too-many-tabs') return { text: 'You have too many practice tabs open. Continue in one of your other tabs — nothing you’ve answered there is lost.',
+    timeUpText: 'Time is up.', timeUpAction: { label: 'See your result', href: here.href } }
+  if (status === 'session-changed') return { text: PRACTICE_COPY.sessionChangedTitle, action: here,
+    timeUpText: PRACTICE_COPY.timeUpSessionChanged, timeUpAction: here }
+  if (status === 'signed-out') return { text: 'You’ve been signed out. The timer is still running.', action: signIn,
+    timeUpText: PRACTICE_COPY.timeUpSignedOut, timeUpAction: signIn }
+  const back = { label: PRACTICE_COPY.backToCourse, href: courseHref }
+  if (status === 'not-found') return { text: 'This attempt is no longer available.', action: back, timeUpText: PRACTICE_COPY.timeUpGone,
+    timeUpAction: back }
+  return { text: 'Something went wrong.', action: here, timeUpText: PRACTICE_COPY.timeUpRetry, retry: true }
 }
-const RETRY = 'Something went wrong. Try again.'
 
 type Props = {
   continuityToken: string
@@ -67,7 +77,9 @@ export function ActiveAttempt(props: Props): ReactElement {
   const [busy, setBusy] = useState(false)
   const [submitFailing, setSubmitFailing] = useState(false)
   const [confirm, setConfirm] = useState<'submit' | 'exit' | null>(null)
-  const [refusal, setRefusal] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<AttemptRefusal | null>(null)
+  // Once time is up: whether the automatic hand-in tries are still going; after the last, Try again takes over.
+  const [autoRetrying, setAutoRetrying] = useState(true)
   const [navOpen, setNavOpen] = useState(false)
   const [identity, setIdentity] = useState<ExamTab | null>(null)
   const answersRef = useRef(answers)
@@ -106,8 +118,8 @@ export function ActiveAttempt(props: Props): ReactElement {
 
   const refuse = useCallback((outcome: PracticeResult) => {
     if (outcome.status === 'graded' && outcome.attempt.status !== 'in_progress') { finish(outcome.attempt); return }
-    if (outcome.status !== 'unavailable') setRefusal(REFUSAL[outcome.status] ?? RETRY)
-  }, [finish])
+    if (outcome.status !== 'unavailable') setRefusal(refusalFor(outcome.status, courseHref, attempt.id))
+  }, [finish, courseHref, attempt.id])
 
   useEffect(() => {
     // Held for the life of the page (claimExamTabOnce), so a remount reuses it and a duplicated tab is still answered.
@@ -163,7 +175,7 @@ export function ActiveAttempt(props: Props): ReactElement {
         return { kind: outcome.status, revision: outcome.revision, answers: validSheet(outcome.answers, options) }
       }
       if (outcome.status === 'too-many-tabs') {
-        setRefusal(REFUSAL['too-many-tabs']!)
+        setRefusal(refusalFor('too-many-tabs', courseHref, attempt.id))
         return { kind: 'refused', status: outcome.status,
           sheet: { revision: outcome.revision, answers: validSheet(outcome.answers, options) } }
       }
@@ -204,7 +216,7 @@ export function ActiveAttempt(props: Props): ReactElement {
       window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', hidden)
     }
-  }, [identity, attempt.id, attempt.saved, continuityToken, options, refuse])
+  }, [identity, attempt.id, attempt.saved, continuityToken, options, refuse, courseHref])
 
   /** Grade now, with this tab's pending changes. True when nothing more is to be tried. */
   const submit = useCallback(async (): Promise<boolean> => {
@@ -226,17 +238,21 @@ export function ActiveAttempt(props: Props): ReactElement {
     return true
   }, [tab, attempt.id, continuityToken, finish, refuse])
 
-  // At zero the attempt submits itself at once and keeps asking while the network is down.
+  // At zero the attempt submits itself at once and keeps asking while the network is down; after the last automatic
+  // try the line offers Try again, and coming back online tries once more.
   useEffect(() => {
     if (!timeUp || graded.current) return
     let cancelled = false
     async function attemptSubmit(): Promise<void> {
-      if (cancelled || await submit() || autoRetries.current >= MAX_AUTO_RETRIES) return
+      if (cancelled || await submit()) return
+      if (autoRetries.current >= MAX_AUTO_RETRIES) { setAutoRetrying(false); return }
       autoRetries.current += 1
       window.setTimeout(() => { void attemptSubmit() }, RETRY_MS)
     }
     void attemptSubmit()
-    return () => { cancelled = true }
+    const online = () => { void submit() }
+    window.addEventListener('online', online)
+    return () => { cancelled = true; window.removeEventListener('online', online) }
   }, [timeUp, submit])
 
   const question = attempt.questions[current]!
@@ -277,8 +293,10 @@ export function ActiveAttempt(props: Props): ReactElement {
       isMarked={flags.has(question.questionId)} timeLeft={timeLeft}
       isLowTime={timeLeft !== null && timeLeft <= LOW_TIME_SECONDS} canAnswer={canAnswer}
       saveLine={saveLineFor({ timeUp, submitFailing, refusal, clockSynced: clockState === 'synced', clockFailures,
-        save: saveState, answered, answersSafe })}
-      onRetrySave={() => autosave.current?.retry()}
+        save: saveState, answered, answersSafe, submitting: busy && !timeUp, autoRetrying })}
+      submitting={busy}
+      // Try again resends a submission that did not go through (and, at time up, the hand-in); otherwise the save.
+      onRetrySave={() => { if (timeUp || submitFailing || refusal !== null) void submit(); else autosave.current?.retry() }}
       navOpen={navOpen} answeredCount={answered} markedCount={flags.size} answersMap={answersMap} markedMap={markedMap}
       onSelectOption={choose} onToggleMark={toggleFlag}
       onPrev={() => setCurrent(index => Math.max(0, index - 1))}

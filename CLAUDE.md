@@ -1,8 +1,9 @@
 # CampusIntell
 
-## Student copy (required reading)
+## Student copy and screens (required reading)
 
-Read [docs/student-copy.md](docs/student-copy.md) before writing any text a student will see.
+Read [docs/student-copy.md](docs/student-copy.md) before writing any text or building any screen a student will see.
+Its rules cover screens as well as copy.
 
 ## Browser checks (required)
 

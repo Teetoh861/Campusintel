@@ -1,4 +1,4 @@
--- supabase/tests/seeded_note_order.test.sql — The seeded notes in the order the seed lists them (20261111110000): each
+-- supabase/tests/seeded_note_order.test.sql — The seeded notes in the order the seed lists them (20261112130000): each
 -- course's topic notes by number, then its calculator tricks by number. A rerun changes nothing, and an order set
 -- since the seed is kept.
 begin;
@@ -18,7 +18,7 @@ select is((select count(*)::integer from (select course_id from seeded group by 
     having count(distinct position) <> count(*) or max(position) <> count(*)) s), 0, 'with no gap or repeat in any course');
 
 create function pg_temp.migration() returns text language sql as $$
-  select array_to_string(statements, E'\n') from supabase_migrations.schema_migrations where version = '20261111110000' $$;
+  select array_to_string(statements, E'\n') from supabase_migrations.schema_migrations where version = '20261112130000' $$;
 select ok(pg_temp.migration() is not null, 'the migration is recorded');
 
 -- A rerun changes nothing; an order an operator set since is kept.

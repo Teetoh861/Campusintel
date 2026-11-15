@@ -14,20 +14,18 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
 import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
-import { practicePolicyFor } from '@/lib/practice/server'
-import { readPracticeTopics, readTopicProgress, topicRowsOf } from '@/lib/practice/topics'
-import { OFFICIAL_BANK_SECTIONS } from '@/lib/data/official-bank-sections'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
-import { COURSE_LEDE, NotesCard, OverviewSection, PracticeSection, ReadingList,
-  StudyNav, TheorySection, overviewBankTopics, studySections } from './sections'
+import { readTopicRows } from './practice/load'
+import { NotesCard, OverviewSection, PracticeCard, ReadingList, StudyNav, TheoryCard, studySections } from './sections'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
 import type { PracticeTopicRow } from '@/lib/practice/topics'
@@ -62,7 +60,8 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
   let passHours: number | null = null
   // The copy switch for the lock notice (plans_on_sale), read only for a locked course.
   let plansOnSale = false
-  // The course's practice topics with this student's progress; none when they cannot be read now.
+  // The course's practice topics with this student's progress. A topic read that fails leaves Exam mode only, never the
+  // page unavailable.
   let topics: PracticeTopicRow[] = []
   try {
     const client = await createClient()
@@ -79,7 +78,8 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
       plansOnSale = await readPlansOnSale(client)
     }
     if (context !== null && (result.status === 'ok' || result.status === 'repository-only') && result.practice !== null) {
-      topics = await practiceTopicRows(client, context.sessionId, result.course.repository)
+      const { repositoryCourseId, route } = result.course.repository
+      topics = await readTopicRows(client, context.sessionId, { slug: route.slug, repositoryCourseId }) ?? []
     }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'ok' || result.status === 'repository-only') {
@@ -91,22 +91,9 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
   return <CourseUnavailable status={result.status} slug={slug} />
 }
 
-/** The course's topics with this student's progress. A topic read that fails leaves Exam mode only, never the page
- * unavailable; progress that fails leaves each topic's count. */
-async function practiceTopicRows(client: Awaited<ReturnType<typeof createClient>>, sessionId: string,
-  repository: ResolvedCourse['course']['repository']): Promise<PracticeTopicRow[]> {
-  try {
-    const policy = practicePolicyFor(repository.route.slug)
-    if (policy === null) return []
-    const [list, progress] = await Promise.all([readPracticeTopics(client, repository.repositoryCourseId, policy.sections),
-      readTopicProgress(sessionId, repository.repositoryCourseId)])
-    return topicRowsOf(list ?? [], progress)
-  } catch { return [] }
-}
-
 /** Fail closed without any unverified course identity. */
 function CourseUnavailable({ status, slug }: { status: 'unavailable' | 'invariant-failure'; slug: string }): ReactElement {
-  return <StudentPage band={<PageBand title="Course" lede={COURSE_LEDE} />}>
+  return <StudentPage band={<PageBand title="Course" />}>
     <ResultNotice state={status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
       retryHref={`/courses/${encodeURIComponent(slug)}`}
       extra={status === 'unavailable' && <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false}
@@ -136,18 +123,14 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   const locked = content.state === 'locked'
   const scopeNotice = content.state === 'locked' && content.reason !== undefined
   const study = content.state === 'ready' ? content.study : null
-  // A bank course's topics show once: in Practice when it lists them, otherwise in the overview. A course's own
-  // syllabus topics stay in its overview.
-  const bankTopics = overviewBankTopics(OFFICIAL_BANK_SECTIONS[route.slug],
-    study?.cbtPractice === true && practice !== null && topics.length > 0, learning?.overview?.topics?.length ?? 0)
   const sections = locked || content.state === 'not-available' ? [] : studySections({
-    study, learning, practice, textbooks: route.course.textbooks.length, bankTopics: bankTopics?.length,
+    study, learning, practice, textbooks: route.course.textbooks.length,
   })
   const contents = sections.length >= 2
   const number = (id: StudySectionId) => sections.indexOf(id) + 1
   return <StudentPage workspaceClassName="student-detail-workspace" band={<>
     <CourseViewTracker courseSlug={route.slug} />
-    <PageBand title={title} lede={COURSE_LEDE}
+    <PageBand title={title}
       context={<p>{institutional ? <>{code}{institutional.isFree && ' · Free'}</> : <>{REPOSITORY_COURSE_LABEL} · {code}</>}</p>}
       aside={<div className="student-band-actions">
         {content.state === 'ready' ? <RequestMaterialLink href={materialsHref} /> : <span />}
@@ -157,15 +140,15 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
       {!institutional && content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
-          Check that these materials match your course and syllabus. Their department, level and semester have not been confirmed.
+          Check it against your course outline.
         </Notice>}
       {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
-        plansOnSale={plansOnSale} />
+        plansOnSale={plansOnSale} has={buildTimeStudy(route.slug)} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />
-      </>}>We couldn’t load the study materials for this course just now.</Notice>}
+      </>} />}
       {content.state === 'not-available' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>}
       {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
         action={<RequestMaterialLink href={materialsHref} prominent />}>
@@ -173,11 +156,12 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
       </Notice>}
       {sections.includes('notes') && learning && <NotesCard notes={learning.notes} href={`${route.href}/notes`}
         number={number('notes')} />}
-      {sections.includes('cbtPractice') && practice && <PracticeSection practice={practice} topics={topics} number={number('cbtPractice')} />}
-      {sections.includes('theory') && learning && <TheorySection items={learning.theoryQuestions} number={number('theory')}
-        practiceHref={learning.theoryPractice ? `${route.href}/theory` : null} />}
-      {sections.includes('overview') && <OverviewSection overview={learning?.overview ?? null}
-        bankTopics={bankTopics} number={number('overview')} />}
+      {sections.includes('cbtPractice') && practice && <PracticeCard practice={practice} topics={topics}
+        topicsHref={`${route.href}/practice`} number={number('cbtPractice')} />}
+      {sections.includes('theory') && learning && <TheoryCard questions={learning.theoryQuestions.length}
+        href={`${route.href}/theory`} number={number('theory')} />}
+      {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview}
+        number={number('overview')} />}
       {sections.includes('reading') && <ReadingList textbooks={route.course.textbooks} number={number('reading')} />}
     </div>
   </StudentPage>

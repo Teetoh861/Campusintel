@@ -1,6 +1,6 @@
 // app/courses/[slug]/quiz/InstantResult.tsx — The end of a topic's instant feedback: correct out of answered, then
-// the next questions of this topic, the next topic, or back to the course. Every answer was already explained as it was
-// picked, so there is no review here.
+// the next questions of this topic, the next topic, or back to the course's topics. Every answer was already explained
+// as it was picked, so there is no review here.
 'use client'
 
 import Link from 'next/link'
@@ -19,7 +19,8 @@ import type { ReactElement } from 'react'
 type Props = {
   courseCode: string
   courseTitle: string
-  courseHref: string
+  // The Practise by topic page, where this topic's progress now shows.
+  topicsHref: string
   repositoryOnly: boolean
   attempt: ClosedInstantAttempt
   // A new attempt on this topic may start now (current access, a live bank and a topic to draw from).
@@ -53,8 +54,8 @@ export function InstantResult(props: Props): ReactElement {
         onClick={props.onPractiseAgain}>{INSTANT_COPY.practiseAgain}</button> : null}
       {props.nextTopic !== null ? <button type="button" className={studentAction(btnGhost, 'bg-student-surface')}
         disabled={props.starting} onClick={props.onNextTopic}>{INSTANT_COPY.nextTopic}</button> : null}
-      <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
-        {PRACTICE_COPY.backToCourse}
+      <Link href={props.topicsHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
+        {PRACTICE_COPY.allTopics}
       </Link>
     </div>
   </StudentPage>

@@ -89,7 +89,7 @@ test('the ordering rule: only writes of CBT questions must precede the banks, no
   const names = require('node:fs').readdirSync(directory).sort()
   const firstBank = names.find(name => /_official_bank_(?!rows)/.test(name))
   const later = names.filter(name => name > firstBank && !/_official_bank_/.test(name))
-  assert.ok(later.includes('20261110090000_course_overview_revisions.sql') && later.includes('20261111090000_study_guide_notes.sql'))
+  assert.ok(later.includes('20261110090000_course_overview_revisions.sql') && later.includes('20261112110000_study_guide_notes.sql'))
   for (const name of later) {
     assert.equal(writesCbtQuestions(require('node:fs').readFileSync(require('node:path').join(directory, name), 'utf8')), false, name)
   }

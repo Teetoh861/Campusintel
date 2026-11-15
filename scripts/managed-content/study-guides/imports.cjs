@@ -7,7 +7,7 @@
 // newCourse: the course has no repository identity yet; the import creates it and links its catalogue course.
 const GUIDE_IMPORTS = [
   // GST 111 Communication in English: the pilot. Its 15 guide topics are its 15 bank topics, in the same order.
-  { code: 'GST111', contentKey: 'use-of-english', guide: 'study_guide_gst111', migration: '20261111100000_study_guide_gst111.sql',
+  { code: 'GST111', contentKey: 'use-of-english', guide: 'study_guide_gst111', migration: '20261112120000_study_guide_gst111.sql',
     practice: 'by-number' },
 
   // The other guides, in code order. Their migrations follow 20261113090000_study_guide_imports.sql.

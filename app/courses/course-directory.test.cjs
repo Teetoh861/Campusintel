@@ -81,30 +81,39 @@ test('all active dimensions must match one tuple; separate matching tuples never
   assert.deepEqual(f.visible(), ['one', 'two'])
 }))
 
-test('query and filter controls retain recovery while an empty result shows only the approved sentence', async () => directory(async f => {
+test('an empty result names what narrowed it; Clear filters clears the search too; the field clear keeps filters', async () => directory(async f => {
+  const message = () => f.html(f.find(f.EmptyState)).replace(/<[^>]+>/g, '')
+  const clearButton = () => f.nodes(f.view.render()).find(node => node.type === 'button' && node.props.children === 'Clear filters')
+  assert.equal(clearButton().props.disabled, true)
   f.query('Institution One')
+  assert.equal(clearButton().props.disabled, false, 'a search alone can be cleared')
   f.filter('Department', a.id); f.filter('Level', l2.id); f.filter('Semester', p2.id)
   assert.deepEqual(f.visible(), [])
-  f.clear(); assert.deepEqual(f.visible(), ['one'])
-  assert.equal(f.find(f.SearchField).props.value, 'Institution One')
-  f.filter('Department', b.id)
+  assert.equal(message(), 'No courses match “Institution One” with these filters.')
+  assert.equal(f.find(f.EmptyState).props.actions, null)
   let focused = 0
+  f.find(f.SearchField).props.inputRef.current = { focus: () => { focused++ } }
+  f.clear()
+  assert.deepEqual(f.visible(), ['one', 'two'])
+  assert.equal(f.find(f.SearchField).props.value, '')
+  assert.ok(f.nodes(f.view.render()).filter(node => node.type === f.FilterSelect).every(node => node.props.value === null))
+  assert.equal(focused, 1, 'focus moves to the search field, never left on the now disabled button')
+  assert.equal(clearButton().props.disabled, true)
+  f.query('  No such title  ')
+  assert.equal(message(), 'No courses match “No such title”.')
+  f.query(''); f.filter('Department', b.id); f.filter('Level', l1.id)
+  assert.deepEqual(f.visible(), [])
+  assert.equal(message(), 'No courses match these filters.')
+  // The search field's own clear empties only the search and keeps the filters.
+  f.filter('Level', null); f.query('Institution')
   const searchProps = f.find(f.SearchField).props
   searchProps.inputRef.current = { focus: () => { focused++ } }
   const search = f.mount(f.SearchField, searchProps).render()
   f.nodes(search.props.trailing).find(node => node.type === 'button').props.onClick()
   assert.equal(f.find(f.SearchField).props.value, '')
   assert.deepEqual(f.visible(), ['one'])
-  assert.equal(focused, 1)
+  assert.equal(focused, 2)
   assert.equal(f.nodes(f.view.render()).find(node => node.type === f.FilterSelect && node.props.label === 'Department').props.value, b.id)
-  f.query('No such title')
-  const empty = f.find(f.EmptyState)
-  assert.equal(f.html(empty).replace(/<[^>]+>/g, ''), 'Your courses are not available yet.')
-  assert.equal(empty.props.actions, null)
-  f.query(''); f.clear()
-  assert.deepEqual(f.visible(), ['one', 'two'])
-  assert.equal(f.find(f.SearchField).props.value, '')
-  assert.ok(f.nodes(f.view.render()).filter(node => node.type === f.FilterSelect).every(node => node.props.value === null))
 }))
 
 test('search and filters happen before pagination; either input resets page to one', async () => directory(async f => {

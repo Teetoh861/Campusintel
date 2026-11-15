@@ -107,5 +107,6 @@ export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
   'empty': 'We could not find any text in this file. Upload a file with selectable text; scanned images are not supported.',
   'too-short': 'There is not enough text here to write fair questions. Upload fuller notes (at least about 150 words).',
   'too-much-text': 'This file has more text than we can use at once. Upload one topic or chapter at a time.',
-  'pass-upload-limit': 'Your free pass includes one Campus Bot upload, and another file already used it.',
+  // One wording wherever this refusal shows: the pass's upload allowance is a policy setting, so no number is named.
+  'pass-upload-limit': 'Your free pass uploads have been used, and they don’t renew.',
 }

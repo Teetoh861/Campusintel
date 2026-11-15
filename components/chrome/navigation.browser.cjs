@@ -49,7 +49,7 @@ async function studentNavigation({ evaluate, send, waitFor, click }) {
         height: document.querySelector('footer').getBoundingClientRect().height } };
   })()`)
   assert.deepEqual(closed.footerLinks, [])
-  assert.equal(closed.footer.text, 'The inside track on every paper.')
+  assert.match(closed.footer.text, /^© \d{4} CampusIntell$/)
   assert.equal(closed.footer.marks, 1)
   assert.ok(closed.footer.height <= 80, 'compact Student App footer')
   assert.equal(closed.logoutCount, 0)

@@ -33,6 +33,8 @@ type CourseRowProps = CourseRowPresentation & {
   progress?: string
   // A sibling control beside the course target; never nested inside the link.
   trailingAction?: ReactNode
+  // A failed action on this row's control: its message under the row, with its recovery control.
+  problem?: { text: string; action?: ReactNode }
 }
 
 /** Make usable learning one row target; keep unavailable institutional identity inert. */
@@ -75,6 +77,11 @@ export function CourseRow(props: CourseRowProps): ReactElement {
   return <div className="student-course-row-shell">
     {target}
     <div className="student-course-row-action">{props.trailingAction}</div>
+    {props.problem !== undefined && <div className="student-course-row-problem" role="alert">
+      <CircleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
+      <span>{props.problem.text}</span>
+      {props.problem.action}
+    </div>}
   </div>
 }
 
