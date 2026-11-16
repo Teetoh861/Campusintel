@@ -22,7 +22,7 @@ type ProfileView = Extract<StudentProfileState, { status: 'incomplete' | 'comple
 type Draft = { departmentId: string; academicLevelId: string; academicPeriodId: string; first_name: string }
 type Choice = { id: string; label: string }
 type Field = keyof Draft
-// field: shown under that field. support: the one way on is Help & Support.
+// field: shown under that field while it is on screen. support: the one way on is Help & Support.
 type Notice = { message: string; reload?: boolean; field?: Field; support?: boolean }
 /** open: courses can change; first-pick: a plan is running, so this first save sets them; locked: set for the semester. */
 export type CourseSelectionMode = 'open' | 'first-pick' | 'locked'
@@ -83,6 +83,8 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', 
   // A field's own error sits under that field, which names it in aria-describedby.
   const fieldError = (field: Field) => notice?.field === field
     ? <div id={FIELD_ERRORS[field].id}><Feedback compact tone="error" message={notice.message} /></div> : null
+  // While the courses are set only the name is on screen: a refusal about another field has no field to sit under.
+  const offScreen = notice?.field !== undefined && notice.field !== 'first_name' && locked
   const [pending, setPending] = useState(false)
   const [ready, setReady] = useState(false)
   const lock = useRef(false)
@@ -272,11 +274,12 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', 
       <button ref={reloadRef} type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}
         onClick={() => window.location.reload()}>Reload latest profile</button>
     </div>}
-    {/* Only what belongs to no one field shows here; a field's own error sits under it. */}
-    {notice && !notice.field && <div className="space-y-1">
+    {/* What belongs to no one field shows here; a field's own error sits under it. So does the error of a field that
+        is not on screen, with the reload that brings the choices back once they can change. */}
+    {notice && (!notice.field || offScreen) && <div className="space-y-1">
       <Feedback compact tone="error" message={notice.support ? <>{notice.message} <Link href={STUDENT_DESTINATIONS.contact.href}
-        prefetch={false} className="underline underline-offset-2">{STUDENT_DESTINATIONS.contact.label}</Link></> : notice.message} />
-      {notice.reload && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
+        prefetch={false} className="whitespace-nowrap underline underline-offset-2">{STUDENT_DESTINATIONS.contact.label}</Link></> : notice.message} />
+      {(notice.reload || offScreen) && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
     </div>}
     {mode === 'first-pick' && !locked && <p className="text-sm text-student-text-secondary" data-first-pick="">{FIRST_PICK_WARNING}</p>}
     <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">

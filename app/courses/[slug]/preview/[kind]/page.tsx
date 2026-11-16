@@ -147,35 +147,35 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         </ul>
       </section>
     case 'not-enough-time':
-      return <Notice tone="info" title="Not enough time left on your pass" action={plan}>
+      return <Notice tone="info" title="Not enough time left on your pass." action={plan}>
         The {course.code} CBT exam takes {Math.round((examSecondsFor(course.slug) ?? 0) / SECONDS_PER_MINUTE)} minutes,
         and your {DISCOVERY_PASS_NOUN} ends {formatAccessDate(result.endsAt)}. Nothing was used.
       </Notice>
     case 'used-elsewhere':
-      return <Notice tone="info" title="Already used on another course" action={result.courseSlug !== null
+      return <Notice tone="info" title="Already used on another course." action={result.courseSlug !== null
         && <Link href={`/courses/${result.courseSlug}/preview/${PREVIEW_SEGMENT[kind]}`} prefetch={false}
           className={studentAction(btnNavy, studentFocusDark)}>Open it on {result.courseCode}</Link>}>
         Your {TITLE[kind].toLowerCase()} is on {result.courseCode ?? 'another course'}. Your pass includes one.
       </Notice>
     case 'expired':
-      return <Notice tone="info" title={`Your ${DISCOVERY_PASS_NOUN} has ended`} action={plan} />
+      return <Notice tone="info" title={`Your ${DISCOVERY_PASS_NOUN} has ended.`} action={plan} />
     case 'no-pass':
       if (!offered) {
         return <Notice tone="info" title={copy.lockedTitle} action={plan} />
       }
       // The button is the way to the pass itself, so the notice needs no line saying where to find it.
-      return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}`} action={<Link href={STUDENT_DESTINATIONS.access.href}
+      return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}.`} action={<Link href={STUDENT_DESTINATIONS.access.href}
         prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Get your {DISCOVERY_PASS_NOUN}</Link>} />
     case 'nothing-to-preview':
       return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'study guide topics'} />
     default:
-      return <Notice title="This couldn’t be loaded" action={<a href={`${course.href}/preview/${PREVIEW_SEGMENT[kind]}`}
+      return <Notice title="This couldn’t be loaded." action={<a href={`${course.href}/preview/${PREVIEW_SEGMENT[kind]}`}
         className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>}>Nothing was used.</Notice>
   }
 }
 
 function NotOffered({ course, what }: { course: CourseIdentity; what: string }): ReactElement {
-  return <Notice tone="info" title="Not available on this course yet">
+  return <Notice tone="info" title="Not available on this course yet.">
     {course.code} doesn’t have {what} yet. Nothing was used, so you can choose another course.
   </Notice>
 }

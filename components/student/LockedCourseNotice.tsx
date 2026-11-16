@@ -60,14 +60,12 @@ export function LockedCourseNotice({ backHref, backLabel, passHours = null, outs
   const families = getStudyFamilyLabels(has)
   // Nothing published: there is nothing to subscribe to, so the page says so and offers only the way back.
   if (families.length === 0) return <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={back}>{null}</Notice>
-  // One notice: what the course has, the unlock action and, when this account can start one, the free pass beside it;
-  // what the pass includes is shown only where it is started.
+  // One notice with one button to Plan & Access, named for what this account finds there: the free pass when it can
+  // still start one, otherwise the way to unlock. What the pass includes is shown only where it is started.
   return <Notice tone="info" title={copy.lockedTitle} action={<>
     <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
-      {copy.lockedAction}
+      {passHours !== null ? FREE_PASS_COPY.start : copy.lockedAction}
     </Link>
-    {passHours !== null && <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} data-pass-offer=""
-      className={studentAction(btnGhost, 'bg-student-surface')}>{FREE_PASS_COPY.start}</Link>}
     {back}
   </>}>{families.join(' · ')}</Notice>
 }

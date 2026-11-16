@@ -53,7 +53,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
       ? <ResultNotice state="missing-profile" retryHref={STUDENT_HOME_PATH} />
       : <>
         <Feedback tone="error" message={AUTH_MESSAGES.unavailable} />
-        <Link href={STUDENT_DESTINATIONS.contact.href} className={studentAction(btnGhost, 'mt-3')}>Contact support</Link>
+        <Link href={STUDENT_DESTINATIONS.contact.href} className={studentAction(btnGhost, 'mt-3')}>{STUDENT_DESTINATIONS.contact.label}</Link>
       </>}
   </StudentPage></>
   // One practice read for every course, for this verified session only.

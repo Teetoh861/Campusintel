@@ -311,7 +311,7 @@ test('a locked course keeps its identity, renders no study content or reading li
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
-  assert.match(text(html), /Included with full access Notes · CBT practice See how to unlock/)
+  assert.match(text(html), /Included with full access\. Notes · CBT practice See how to unlock/)
   assert.doesNotMatch(html, /GST|open fully|open when you subscribe/, 'one line: what the course has, no repetition, no GST')
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
@@ -331,7 +331,8 @@ test('repository-only renders repository identity and content without any fabric
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Static repository title<\/h1>/)
   assert.match(html, /Additional study material · STATIC 999/)
-  assert.match(html, /Check it against your course outline\./)
+  // The title is a label, so it takes no full stop; the sentence under it does.
+  assert.match(html, /<h2 class="student-notice-title">Additional study material<\/h2><p class="student-notice-text">Check it against your course outline\.<\/p>/)
   assert.doesNotMatch(html, /have not been confirmed/)
   assert.doesNotMatch(html, /INST101|Institutional title|Confirmed for|Business Administration|Insurance|200 Level|Semester|Free/)
   assert.match(html, /id="notes"/)
@@ -414,10 +415,10 @@ test('once plans are on sale, a locked course points to a plan in the new wordin
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
   f.state.plansOnSale = true
   const open = text(await f.html())
-  assert.match(open, /Included when you subscribe/)
+  assert.match(open, /Included when you subscribe\. /)
   assert.doesNotMatch(open, /Included with full access|Early Access/)
   f.state.plansOnSale = false
-  assert.match(text(await f.html()), /Included with full access/)
+  assert.match(text(await f.html()), /Included with full access\. /)
 }))
 
 test('outside-list detail shows the support lock without asking for a pass or rendering learning', async () => fixture(async f => {

@@ -78,7 +78,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
       returnPath={returnPath} /> : <div className="student-surface space-y-3">
       <Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure' ? <>
         {profile.status === 'missing-profile' ? 'Your profile could not be found.' : 'Your profile needs attention.'}{' '}
-        <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="underline underline-offset-2">
+        <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
           {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} />
       <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl)}>Back to account</Link>
     </div>}
