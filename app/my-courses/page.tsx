@@ -14,6 +14,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { INACTIVE_SELECTION_COPY } from '@/components/student/selection-copy'
 import { studentAction } from '@/components/student/ui'
+import { readCampusBotLinks } from '@/lib/ai-practice/campus-bot-courses'
 import { AUTH_MESSAGES } from '@/lib/auth/constants'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
@@ -51,7 +52,7 @@ function MyCoursesError({ state }: { state: ErrorState }): ReactElement {
   return <StudentPage band={<MyCoursesBand />}>
     {state === 'selection-changed'
       // Unique to this surface: the saved selection moved while the page was composing.
-      ? <Notice title="Your semester selection has changed" action={
+      ? <Notice title="Your semester selection has changed." action={
         <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
       }>Your semester selection changed. Reload to see the latest courses.</Notice>
       : <ResultNotice state={RESULT_STATE[state]} retryHref={MY_COURSES_PATH} />}
@@ -76,7 +77,7 @@ function SemesterContext({ selection, total, ready }: {
 /** Render only the current session owner's persisted institutional semester. */
 export default async function MyCoursesPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <StudentPage band={<MyCoursesBand />}>
-    <Notice title="My Courses isn’t available right now" tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
+    <Notice title="My Courses isn’t available right now." tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
   </StudentPage>
 
   let verified: {
@@ -116,6 +117,8 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
 
   const progressByCourse = new Map(homeCoursesFrom(result.courses, result.cbtBankSizes, progress).courses
     .map(course => [course.id, course.progress === null ? undefined : formatCourseProgress(course.progress)]))
+  // A course on this list can still be closed to Campus Bot, as when the semester's courses need confirming.
+  const campusBotLinks = await readCampusBotLinks(client, context.user, result.courses)
 
   return <>{continuity}<StudentPage band={<SemesterContext selection={profile.selection} total={result.courses.length}
     ready={result.courses.filter(isActionableStudentCourse).length} />}>
@@ -126,7 +129,7 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
         <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
         <CourseRegister label="Your semester courses">
           {result.courses.map(course => <StudentCourseRow key={course.institutionalCourseId} course={course}
-            progress={progressByCourse.get(course.institutionalCourseId)}
+            progress={progressByCourse.get(course.institutionalCourseId)} campusBotLinks={campusBotLinks}
             plansOnSale={entitlement.status === 'ok' && entitlement.entitlement.plans_on_sale} />)}
         </CourseRegister>
         {result.courses.some(course => getStudentCourseUnavailability(course) === 'missing') &&

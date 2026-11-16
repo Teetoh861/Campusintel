@@ -248,10 +248,35 @@ test('a single question has no Previous or Next', async () => fixture(async f =>
   assert.equal(view.next, undefined)
 }))
 
+test('every refusal whose way on leaves the page says to copy the answer first: the draft lives only on this page', async () => fixture(async f => {
+  for (const [status, line, label, href] of [
+    ['signed-out', 'You’ve been signed out. Copy your answer before you sign in.', 'Sign in'],
+    ['session-changed', 'You signed in on another tab. Copy your answer before you reload.', 'Reload'],
+    ['incomplete', 'Complete your profile to practise. Copy your answer first.', 'Complete your profile'],
+    ['locked', 'Your access to this course has ended. Copy your answer first.', 'Plan & Access', '/access'],
+    ['content-changed', 'This question has changed. Copy your answer before you reload.', 'Reload'],
+    ['not-found', 'This question has changed. Copy your answer before you reload.', 'Reload']]) {
+    f.respond({ status })
+    const attempt = f.mount(f.TheoryAttempt, { question, courseSlug: slug, continuityToken: 'page-token' })
+    f.nodes(attempt.render()).find(node => node.type === 'textarea').props.onChange({ currentTarget: { value: 'My own answer' } })
+    await submit(attempt.render())
+    const refused = attempt.render()
+    const html = renderToStaticMarkup(refused)
+    assert.ok(html.includes(line), `${status}: ${line}`)
+    assert.equal(f.nodes(refused).find(node => node.type === 'textarea').props.value, 'My own answer', `${status}: the draft is still there to copy`)
+    const link = f.nodes(refused).find(node => node.type === 'a')
+    assert.equal(link.props.children, label, status)
+    if (href) assert.equal(link.props.href, href, status)
+    assert.doesNotMatch(html, /Your answer is still here/)
+  }
+}))
+
 test('a refusal\'s way on comes back to the same question', async () => fixture(async f => {
   for (const [status, href] of [
     ['signed-out', `/login?next=${encodeURIComponent(`/courses/${slug}/theory?question=${question.itemId}`)}`],
     ['session-changed', `/courses/${slug}/theory?question=${question.itemId}`],
+    // Completing the profile returns to the question too (lib/profile/paths.ts accepts exactly this form).
+    ['incomplete', `/profile-selection?return=${encodeURIComponent(`/courses/${slug}/theory?question=${question.itemId}`)}`],
     ['content-changed', `/courses/${slug}/theory?question=${question.itemId}`]]) {
     f.respond({ status })
     const attempt = f.mount(f.TheoryAttempt, { question, courseSlug: slug, continuityToken: 'page-token' })

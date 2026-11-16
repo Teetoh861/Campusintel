@@ -82,7 +82,7 @@ export const PLAN_COPY = {
     plus: 'Everything in Standard, with twice the Campus Bot use.',
   } satisfies Record<PlanTier, string>,
   perPeriod: { semester: 'a semester', session: 'a session' } satisfies Record<PlanPeriod, string>,
-  payment: 'You’ll pay securely by card or bank transfer on our payment partner’s page.',
+  payment: 'Pay by card or bank transfer.',
   refund: 'Full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan.',
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
@@ -151,12 +151,15 @@ export const CHECKOUT_PROBLEM: Record<string, string> = {
 
 export const RETURN_COPY = {
   confirmingTitle: 'Confirming your payment',
-  confirmingBody: 'This usually takes a few seconds. You can leave this page. Your plan appears on Plan & Access once it’s confirmed.',
+  confirmingBody: 'This usually takes a few seconds.',
   stillTitle: 'We’re still confirming your payment',
-  stillBody: 'Bank transfers can take a few minutes. We’ll add your plan as soon as your payment is confirmed. You won’t be charged twice for this checkout.',
+  stillBody: 'Bank transfers can take a few minutes.',
+  // On the still-confirming screen only: the page has stopped asking, and the student need not stay.
+  stillLeave: 'You can leave this page. We’ll add your plan as soon as your payment is confirmed.',
   stillWaiting: 'Paid but still waiting?',
   checkAgain: 'Check again',
   checking: 'Checking…',
+  checkFailed: 'Couldn’t check. Try again.',
   subscribedTitle: 'You’re subscribed',
   failedTitle: 'Your payment didn’t go through',
   failedBody: 'No plan was added. If money left your account, message us with the time you paid and we’ll sort it out.',
@@ -168,6 +171,8 @@ export const RETURN_COPY = {
   refundedTitle: 'Your payment was refunded',
   notFoundTitle: 'We couldn’t find that payment',
   notFoundBody: 'Check Plan & Access for your current plan.',
+  // Our order couldn't be read. Never worded as a missing payment: nothing is known about it yet.
+  unavailableTitle: 'We couldn’t check your payment right now',
   mismatchTitle: 'Payment didn’t match the plan price',
   mismatchBody: 'We’ll refund the full amount. You can then pay for your plan again.',
   nowOpen: (count: number) => count > 0 ? `Now open in your ${count} ${count === 1 ? 'course' : 'courses'}` : 'Now open in your courses',
@@ -306,7 +311,7 @@ export const TERMS_COPY = {
 // ---------------------------------------------------------------------------------------------------------------------
 export function accessCopy(onSale: boolean) {
   return onSale ? {
-    lockedTitle: 'Included when you subscribe',
+    lockedTitle: 'Included when you subscribe.',
     lockedAction: 'Subscribe',
     studyLocked: 'Included when you subscribe.',
     previewOthers: (code: string) => `The other topics in ${code} are included when you subscribe.`,
@@ -314,7 +319,7 @@ export function accessCopy(onSale: boolean) {
     aiNotEntitled: 'Campus Bot is included when you subscribe.',
     aiSection: 'Campus Bot practice from your own notes is included when you subscribe.',
   } as const : {
-    lockedTitle: 'Included with full access',
+    lockedTitle: 'Included with full access.',
     lockedAction: 'See how to unlock',
     studyLocked: 'Included with full access.',
     previewOthers: (code: string) => `The other topics in ${code} come with full access.`,
@@ -395,14 +400,14 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     if (left > 0 && left <= noticeWindow && !continues) {
       const name = access.source === 'paid' && summary.paid !== null ? paidPlanName(summary.paid)
         : ACCESS_SOURCE_LABEL[access.source]
-      return { id: 'access-ending', tone: 'info', title: access.source === 'paid' ? 'Your plan ends soon' : 'Your full access ends soon',
+      return { id: 'access-ending', tone: 'info', title: access.source === 'paid' ? 'Your plan ends soon.' : 'Your full access ends soon.',
         body: `Your ${name} ends ${formatAccessDate(access.ends_at)}. ` +
           'Department courses lock after that. GST courses stay free.', action: 'View your plan' }
     }
   }
   if (early.status === 'awaiting-launch') {
     // No date is promised: the month starts when CampusIntell actually launches, never on the planned date.
-    return { id: 'early-access-awaiting-launch', tone: 'info', title: 'You’re on the Early Access list',
+    return { id: 'early-access-awaiting-launch', tone: 'info', title: 'You’re on the Early Access list.',
       body: 'Your free month of full access starts automatically when CampusIntell launches publicly. ' +
         'There is nothing to claim, and a later launch never shortens your month.', action: 'View your plan' }
   }
@@ -411,13 +416,13 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     const left = msUntil(summary, trial.ends_at)
     // A pass shows its end time only: no allowances or per-course limits.
     return { id: left <= noticeWindow ? 'discovery-ending' : 'discovery-active', tone: 'info',
-      title: left <= noticeWindow ? `Your ${DISCOVERY_PASS_NOUN} ends soon` : `Your ${DISCOVERY_PASS_NOUN} is active`,
+      title: left <= noticeWindow ? `Your ${DISCOVERY_PASS_NOUN} ends soon.` : `Your ${DISCOVERY_PASS_NOUN} is active.`,
       body: `It ends ${formatAccessDate(trial.ends_at)}.`, action: 'View your plan' }
   }
   if (trial.status === 'ended') {
     const since = -msUntil(summary, trial.ends_at)
     if (since >= 0 && since <= ENDED_NOTICE_DAYS * DAY_MS) {
-      return { id: 'trial-ended', tone: 'info', title: `Your ${trialLabel(summary)} has ended`,
+      return { id: 'trial-ended', tone: 'info', title: `Your ${trialLabel(summary)} has ended.`,
         body: 'GST courses stay free, and your saved bookmarks and results are kept.', action: 'View your plan' }
     }
     return null

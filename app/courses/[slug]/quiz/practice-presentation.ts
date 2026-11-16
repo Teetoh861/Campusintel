@@ -1,5 +1,5 @@
 // app/courses/[slug]/quiz/practice-presentation.ts — Practice copy, honest course identity and the locked result bands.
-import { AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_PATHS, SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 
 export const PRACTICE_COPY = {
@@ -28,7 +28,7 @@ export const PRACTICE_COPY = {
   signedOutTitle: 'You’ve been signed out.',
   signedOutBody: '',
   signIn: 'Sign in',
-  sessionChangedTitle: 'You signed in on another tab.',
+  sessionChangedTitle: SIGNED_IN_ON_ANOTHER_TAB,
   reload: 'Reload',
   tryAgain: 'Try again',
   changedTitle: 'Your practice details have changed.',
@@ -54,7 +54,7 @@ export const PRACTICE_COPY = {
   timeUpRetry: 'Time is up. We couldn’t get your result.',
   timeUpSignedOut: 'Time is up. Sign in to see your result.',
   timeUpGone: 'Time is up. This attempt is no longer available.',
-  timeUpSessionChanged: 'Time is up. You signed in on another tab.',
+  timeUpSessionChanged: `Time is up. ${SIGNED_IN_ON_ANOTHER_TAB}`,
   timedOutTitle: 'Time is up. Your attempt has been submitted.',
   timedOutBody: 'Only answers saved before time ran out count. Unanswered questions count as missed.',
   unsentAtDeadline: 'Some answers on this device didn’t reach us before time ran out, so they weren’t counted.',
@@ -72,6 +72,11 @@ export type PracticeProblem = { title: string; body: string; retry?: boolean; ac
 /** The practice page of one attempt, reloadable. */
 export function attemptHref(courseHref: string, attemptId: string): string {
   return `${courseHref}/quiz?attempt=${attemptId}`
+}
+
+/** The exam's brief, where an exam starts (also an allow-listed return path, so signing in comes back to it). */
+export function examBriefHref(courseHref: string): string {
+  return `${courseHref}/quiz?mode=exam`
 }
 
 /** Sign in, then come back to this attempt (an allow-listed return path, lib/auth/redirect.ts). */

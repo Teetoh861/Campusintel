@@ -23,17 +23,20 @@ test('redirects reject external, encoded, control, privileged and looping destin
   assert.equal(getSafeReturnPath('/courses/business-statistics'), '/courses/business-statistics')
 })
 
-test('only four return paths keep a query string, each with one strictly shaped value', () => {
+test('only five return paths keep a query string, each with one strictly shaped value', () => {
   const attempt = '9e4a1d85-6f70-4182-9d9e-0f1a2b3c4d5e'
   for (const path of [`/courses/business-statistics/quiz?attempt=${attempt}`, `/courses/use-of-english/theory?question=${attempt}`,
-    '/access/checkout?plan=standard_semester', '/access/checkout?plan=plus_session', `/access/checkout/return?order=${attempt}`]) {
+    '/courses/business-statistics/quiz?mode=exam', '/access/checkout?plan=standard_semester', '/access/checkout?plan=plus_session', `/access/checkout/return?order=${attempt}`]) {
     assert.equal(getSafeReturnPath(path), path)
   }
   for (const path of [`/courses/x/quiz?attempt=${attempt}&code=1`, '/access/checkout?plan=gold_semester',
     '/access/checkout?plan=standard_semester&next=//evil.test', `/access/checkout/return?order=${attempt}#x`,
     '/access/checkout/return?order=not-a-uuid', `/admin/quiz?attempt=${attempt}`, `//evil.test/access/checkout?plan=plus_session`,
     `/courses/x/quiz?code=${attempt}`, '/courses/x/theory?question=not-a-uuid', `/courses/x/theory?question=${attempt}&next=//evil.test`,
-    `/courses/x/theory?question=${attempt}#x`, `/courses/x/notes?question=${attempt}`, `//evil.test/courses/x/theory?question=${attempt}`]) {
+    `/courses/x/theory?question=${attempt}#x`, `/courses/x/notes?question=${attempt}`, `//evil.test/courses/x/theory?question=${attempt}`,
+    '/courses/x/quiz?mode=instant', '/courses/x/quiz?mode=exam&next=//evil.test', '/courses/x/quiz?mode=exam#x',
+    '/courses/x/quiz?mode=', '/courses/x/theory?mode=exam', '/admin/quiz?mode=exam', '//evil.test/courses/x/quiz?mode=exam',
+    '/courses/X/quiz?mode=exam']) {
     assert.equal(getSafeReturnPath(path), DEFAULT_AUTH_REDIRECT, path)
   }
 })

@@ -36,9 +36,11 @@ export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart:
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'
 // The provider's password rule refused a new password: one line for Create account and Change password.
 const STRONGER_PASSWORD = 'Choose a stronger password.'
+/** The one wording, on every screen, for a page whose sign-in was replaced by a newer one in this browser. */
+export const SIGNED_IN_ON_ANOTHER_TAB = 'You signed in on another tab.'
 export const AUTH_MESSAGES = {
   unavailable: 'Something went wrong. Please try again.',
-  sessionChanged: 'Your sign-in has changed. Reload this page before continuing.',
+  sessionChanged: `${SIGNED_IN_ON_ANOTHER_TAB} Reload this page before continuing.`,
   recoveryCode: 'Invalid or expired code.',
   recoveryRestart: 'Request a new code to continue.',
   comingSoon: 'Student accounts are currently unavailable. Please try again later.',

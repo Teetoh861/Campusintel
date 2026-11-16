@@ -37,8 +37,8 @@ test('result states map to one copy and one recovery action; redirects share the
   try {
     const { RESULT_COPY, recoveryAction, redirectForStudentState, ResultNotice } = await withTsx(() => ({
       ...require('./result-state.ts'), ...require('./ResultNotice.tsx') }))
-    assert.deepEqual(recoveryAction('course-invariant', '/x'), { kind: 'support', href: '/contact', label: 'Contact support' })
-    assert.deepEqual(recoveryAction('missing-profile', '/x'), { kind: 'support', href: '/contact', label: 'Contact support' })
+    assert.deepEqual(recoveryAction('course-invariant', '/x'), { kind: 'support', href: '/contact', label: 'Help & Support' })
+    assert.deepEqual(recoveryAction('missing-profile', '/x'), { kind: 'support', href: '/contact', label: 'Help & Support' })
     assert.deepEqual(recoveryAction('courses-unavailable', '/courses'), { kind: 'retry', href: '/courses', label: 'Try again' })
     assert.deepEqual(recoveryAction('course-unavailable', '/courses/x'), { kind: 'retry', href: '/courses/x', label: 'Try again' })
     // A title that says it all, and no second line repeating it (or switching to study materials).
@@ -53,7 +53,8 @@ test('result states map to one copy and one recovery action; redirects share the
     assert.match(invariant, /role="alert"/)
     assert.match(invariant, /We couldn’t show the course details\./)
     assert.doesNotMatch(invariant, /student-notice-text|Please contact support/)
-    assert.ok(anchors(invariant).some(link => link.includes('href="/contact"') && link.includes('Contact support')))
+    assert.ok(anchors(invariant).some(link => link.includes('href="/contact"') && link.includes('Help &amp; Support')), 'the page by its name')
+    assert.doesNotMatch(invariant, /Contact support/)
     assert.doesNotMatch(invariant, /Try again/)
     const unavailable = renderToStaticMarkup(React.createElement(ResultNotice, { state: 'courses-unavailable', retryHref: '/courses',
       extra: React.createElement('a', { href: '/materials' }, 'Request Material') }))

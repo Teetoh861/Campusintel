@@ -72,7 +72,7 @@ export default async function AccountPage(): Promise<ReactElement> {
               <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit profile and selection</Link>
             </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure'
               ? <>{profile.status === 'missing-profile' ? 'Your profile could not be found.' : 'Your profile needs attention.'}{' '}
-                <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="underline underline-offset-2">
+                <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
                   {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} /></div>}
           </section>
         </div>

@@ -20,12 +20,12 @@ export type ResultStateId = keyof typeof RESULT_COPY
 
 export type RecoveryAction =
   | { kind: 'retry'; href: string; label: 'Try again' }
-  | { kind: 'support'; href: string; label: 'Contact support' }
+  | { kind: 'support'; href: string; label: typeof STUDENT_DESTINATIONS.contact.label }
 
-/** Invariant and profile failures route to support; unavailable states retry the same surface. */
+/** Invariant and profile failures route to Help & Support, by its name; unavailable states retry the same surface. */
 export function recoveryAction(state: ResultStateId, retryHref: string): RecoveryAction {
   return state === 'course-invariant' || state === 'missing-profile'
-    ? { kind: 'support', href: STUDENT_DESTINATIONS.contact.href, label: 'Contact support' }
+    ? { kind: 'support', href: STUDENT_DESTINATIONS.contact.href, label: STUDENT_DESTINATIONS.contact.label }
     : { kind: 'retry', href: retryHref, label: 'Try again' }
 }
 

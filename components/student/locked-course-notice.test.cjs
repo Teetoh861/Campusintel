@@ -65,17 +65,24 @@ test('locked semester mismatch has one team-contact action using the existing ch
 const SOME = { notes: true, cbtPractice: true, theory: false }
 const NONE = { notes: false, cbtPractice: false, theory: false }
 
-test('a locked course is one notice: what it has, the unlock action and the free pass as a second button', () => {
+const links = html => [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]*)<\/a>/g)].map(match => [match[1], match[2]])
+
+test('a locked course is one notice: what it has and one button to Plan & Access, named for what the student finds there', () => {
   const html = render('2349012345678', { passHours: 72, has: SOME })
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'no second notice linking to the same page')
-  assert.match(html, /<h2 class="student-notice-title">Included with full access<\/h2><p class="student-notice-text">Notes · CBT practice<\/p>/)
-  assert.match(html, /<a class="[^"]*" href="\/access">See how to unlock<\/a><a data-pass-offer="" class="[^"]*" href="\/access">Get your free pass<\/a>/)
-  assert.doesNotMatch(html, /GST|open fully|Try your department courses|CBT exam|study guide|one per|preview them first|Discovery/i,
+  assert.match(html, /<h2 class="student-notice-title">Included with full access\.<\/h2><p class="student-notice-text">Notes · CBT practice<\/p>/)
+  assert.deepEqual(links(html), [['/access', 'Get your free pass']], 'a student who can still get a free pass: that, and no second button to the same page')
+  assert.doesNotMatch(html, /GST|open fully|Try your department courses|CBT exam|study guide|one per|preview them first|Discovery|See how to unlock/i,
     'no repetition, no GST line, and what the pass includes stays in the modal')
+  // No pass to get: the way to unlock, in the words the plan state uses.
+  assert.deepEqual(links(render('2349012345678', { passHours: null, has: SOME })), [['/access', 'See how to unlock']])
+  assert.deepEqual(links(render('2349012345678', { has: SOME })), [['/access', 'See how to unlock']])
   const subscribe = render('2349012345678', { passHours: null, has: SOME, plansOnSale: true })
-  assert.match(subscribe, /Included when you subscribe[\s\S]*>Subscribe<\/a>/)
-  assert.doesNotMatch(subscribe, /data-pass-offer|Free pass|Get your free pass/)
-  assert.doesNotMatch(render('2349012345678', { has: SOME }), /data-pass-offer|Get your free pass/)
+  assert.match(subscribe, /Included when you subscribe\./)
+  assert.deepEqual(links(subscribe), [['/access', 'Subscribe']])
+  // The pass comes first while it can still be started, also once plans are on sale; the way back stays beside it.
+  assert.deepEqual(links(render('2349012345678', { passHours: 72, has: SOME, plansOnSale: true, backHref: '/courses/x', backLabel: 'Back to course' })),
+    [['/access', 'Get your free pass'], ['/courses/x', 'Back to course']])
 })
 
 test('a locked course with nothing published offers nothing to buy and says so', () => {

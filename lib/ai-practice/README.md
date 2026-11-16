@@ -10,10 +10,15 @@ or writes official content, operator tools or official quiz attempts.
 
 1. A course row whose content is honestly missing (read model:
    `getStudentCourseUnavailability(course) === 'missing'`) shows a secondary
-   "Practise from your own notes · AI · Unverified" link when AI practice is
-   available. It opens `/courses/ai-practice/[institutionalCourseId]`.
+   "Practise from your own notes" link, tagged Campus Bot, when AI practice is
+   available and the page would open for that student. It opens
+   `/courses/ai-practice/[institutionalCourseId]`.
 2. The page re-derives the student and course on the server. A course that
    has verified content redirects to it; AI practice never competes with it.
+   A course Campus Bot does not cover for the student, and for which they
+   have no kept sets, returns to My Courses. `campus-bot-courses.ts` holds
+   that rule for the page and for the link on My Courses, All Courses and
+   Bookmarks, so no row links to a course the page would send back.
 3. `reserve-upload` checks eligibility and the student's AI grant, reserves a
    document row and returns a signed Storage upload URL for
    `<user_id>/<document_id>`. The browser `PUT`s the file straight to Storage.
