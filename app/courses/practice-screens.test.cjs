@@ -138,7 +138,7 @@ test('results show the server grading with the locked bands, truthful counts and
   assert.match(text(html), /Correct 7 .*Incorrect 2 .*Unanswered 1/)
   assert.doesNotMatch(html, /Result saved to your account/, 'no process talk on the result')
   assert.doesNotMatch(html, /weakest|Mastered|Revisit|Section [A-Z]\b|history|best score/i)
-  assert.deepEqual(actions(html), ['Review answers', 'Retake with new questions', 'Redo the same questions', 'Back to course'])
+  assert.deepEqual(actions(html), ['Review answers', 'New questions', 'Same questions', 'Back to course'])
   assert.doesNotMatch(html, /Retake gives you|Redo repeats/, 'the buttons name what they do')
   assert.match(html, /href="\/courses\/bua-216"/)
   assert.match(text(html), /3 questions to review/)
@@ -146,7 +146,7 @@ test('results show the server grading with the locked bands, truthful counts and
   // D4: a bank no larger than the attempt offers one "Practise again".
   const whole = render({}, { bankSize: 10 })
   assert.deepEqual(actions(whole), ['Review answers', 'Practise again', 'Back to course'])
-  assert.doesNotMatch(whole, /Retake|Redo/)
+  assert.doesNotMatch(whole, /New questions|Same questions/)
   // No new attempt may start now (access or bank): review only.
   assert.deepEqual(actions(render({ canStartNew: false })), ['Review answers', 'Back to course'])
   const timedOut = render({}, { status: 'timed_out', result: { score: 7, total: 10, timedOut: true,

@@ -119,12 +119,12 @@ test('StudentCourseRow forwards a trailing action beside the row target without 
   assert.match(html, /student-course-row-action"><button/)
 })
 
-test('a locked row links to its course page, says it is included with full access, and offers no AI fallback', async () => {
+test('a locked row links to its course page, says it is included with a plan, and offers no AI fallback', async () => {
   const locked = course('BUA211', shelved('locked-slug'), { state: 'locked' })
   const html = await render(locked)
   assert.equal(anchors(html).length, 1)
   assert.ok(anchors(html)[0].includes('href="/courses/locked-slug"'))
-  assert.match(html, /Included with full access\./)
+  assert.match(html, /Included with a plan\./)
   assert.doesNotMatch(html, /Notes|Practice|Theory|Practise from your notes|temporarily unavailable/)
   const { presentStudentCourseRow } = await subject()
   assert.deepEqual(presentStudentCourseRow(locked), { code: 'BUA211', title: 'BUA211 institutional title',
@@ -146,7 +146,7 @@ test('the student row adapter preserves outside-list and both selection recovery
     assert.ok(html.includes(copy))
     assert.equal(anchors(html).length, 1)
     assert.match(html, /student-course-row-locked/)
-    assert.doesNotMatch(html, /Included with full access|Practise from your notes|Practice/)
+    assert.doesNotMatch(html, /Included with a plan|Practise from your notes|Practice/)
   }
 })
 
@@ -155,5 +155,5 @@ test('repository-only not-available rows stay inert and offer neither a plan nor
   const html = await render(unavailable)
   assert.match(html, /Shelved repository title|Additional study material/)
   assert.match(html, /Study materials are not available./)
-  assert.doesNotMatch(html, /<a\b|<button\b|Included with full access|Message us|Practise from your notes/)
+  assert.doesNotMatch(html, /<a\b|<button\b|Included with a plan|Message us|Practise from your notes/)
 })

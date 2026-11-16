@@ -121,7 +121,7 @@ export const practiceResultSchema = z.discriminatedUnion('status', [
 export type PracticeResult = z.infer<typeof practiceResultSchema>
 export type PracticeResultStatus = PracticeResult['status']
 
-/** D4: a bank no larger than the attempt (at the attempt's start) offers one "Practise again", never Retake and Redo. */
+/** D4: a bank no larger than the attempt (at the attempt's start) offers one "Practise again", never New questions and Same questions. */
 export function wholeBankAttempt(attempt: Pick<PracticeAttempt, 'bankSize' | 'questionCount'>): boolean {
   return attempt.bankSize <= attempt.questionCount
 }

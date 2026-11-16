@@ -42,7 +42,7 @@ const PROBLEMS: Record<string, Problem> = {
   'start-refused': { title: PRACTICE_COPY.startRefusedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'resume-failed': { title: PRACTICE_COPY.resumeFailedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
-  'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
+  'questions-changed': { title: 'These questions have changed.', body: 'Choose “New questions” instead.' },
   'locked': { title: 'You can’t start a new practice right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
   // An instant start whose topic the course no longer has.
   'topic-missing': { title: 'This topic isn’t available.', body: 'Choose another topic.' },

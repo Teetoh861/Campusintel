@@ -5,7 +5,6 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { accessCopy } from '@/lib/entitlements/presentation'
 import { profileSelectionHref } from '@/lib/profile/paths'
-import { wholeBankAttempt } from '@/lib/practice/contract'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { ProblemNotice } from './ProblemNotice'
 import { practiceIdentity, PRACTICE_COPY } from './practice-presentation'
@@ -54,7 +53,7 @@ export function ScoreOnly(props: Props) {
         {reason !== 'needs-selection' && reason !== 'outside-list' ? <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
           className={studentAction(btnNavy, studentFocusDark)}>{copy.lockedAction}</Link> : null}
         {props.canStartNew ? <button type="button" disabled={props.starting} onClick={props.onRetake}
-          className={studentAction(btnGhost)}>{wholeBankAttempt(attempt) ? 'Practise again' : 'Retake with new questions'}</button> : null}
+          className={studentAction(btnGhost)}>Practise again</button> : null}
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost)}>{PRACTICE_COPY.backToCourse}</Link>
       </div>
     </div>

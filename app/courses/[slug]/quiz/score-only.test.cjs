@@ -20,20 +20,20 @@ for (const [reason, line] of [
   assert.match(markup, /2 of 5 correct/)
   assert.ok(markup.includes(line))
   assert.match(markup, /href="\/courses\/bua-216"/)
-  assert.doesNotMatch(markup, /Review answers|Retake with new questions/)
+  assert.doesNotMatch(markup, /Review answers|Practise again|New questions/)
   // Confirm courses comes back to this result after the save.
   assert.equal(markup.includes(`href="/profile-selection?return=${encodeURIComponent('/courses/bua-216/quiz?attempt=attempt')}"`),
     reason === 'needs-selection')
   assert.equal(markup.includes('>Confirm your courses<'), reason === 'needs-selection')
 }))
 
-test('score-only retake follows the server permission and the current bank size', async () => withTsx(() => {
+test('score-only offers its one retake as Practise again, whatever the bank size', async () => withTsx(() => {
   const { ScoreOnly } = require('./ScoreOnly.tsx')
-  for (const [bankSize, label] of [[200, 'Retake with new questions'], [5, 'Practise again']]) {
+  for (const bankSize of [200, 5]) {
     const markup = renderToStaticMarkup(React.createElement(ScoreOnly, { ...identity,
       attempt: { ...attempt, bankSize }, canStartNew: true, starting: false, onRetake() {} }))
-    assert.ok(markup.includes(label))
-    assert.doesNotMatch(markup, /Review answers/)
+    assert.ok(markup.includes('>Practise again<'))
+    assert.doesNotMatch(markup, /Review answers|New questions|Same questions/)
   }
 }))
 

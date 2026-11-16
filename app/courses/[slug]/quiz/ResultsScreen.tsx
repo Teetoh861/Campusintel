@@ -90,8 +90,8 @@ export function ResultsScreen(props: Props): ReactElement {
         {canStartNew && wholeBank ? <button type="button" className={studentAction(btnGhost)} disabled={starting}
           onClick={props.onRetake}>Practise again</button> : null}
         {canStartNew && !wholeBank ? <>
-          <button type="button" className={studentAction(btnGhost)} disabled={starting} onClick={props.onRetake}>Retake with new questions</button>
-          <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={starting} onClick={props.onRedo}>Redo the same questions</button>
+          <button type="button" className={studentAction(btnGhost)} disabled={starting} onClick={props.onRetake}>New questions</button>
+          <button type="button" className={studentAction(btnGhost, 'border-transparent')} disabled={starting} onClick={props.onRedo}>Same questions</button>
         </> : null}
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost, 'border-transparent')}>{PRACTICE_COPY.backToCourse}</Link>
       </section>
