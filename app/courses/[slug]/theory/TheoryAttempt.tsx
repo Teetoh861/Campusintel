@@ -5,7 +5,7 @@ import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { THEORY_ANSWER_MAX_LENGTH } from '@/lib/theory-practice/contract'
 import { revealTheoryAnswer } from '@/lib/theory-practice/client'
-import { AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_PATHS, SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import { profileSelectionHref } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { SelfAssessment } from './SelfAssessment'
@@ -21,11 +21,11 @@ type Refusal = { text: string; action?: { label: string; href: string } }
 function refusalFor(status: Exclude<TheorySubmitResult['status'], 'ready'>, page: string): Refusal {
   if (status === 'signed-out') return { text: 'You’ve been signed out. Copy your answer before you sign in.',
     action: { label: 'Sign in', href: `${AUTH_PATHS.login}?next=${encodeURIComponent(page)}` } }
-  if (status === 'session-changed') return { text: 'You signed in on another tab. Copy your answer before you reload.',
+  if (status === 'session-changed') return { text: `${SIGNED_IN_ON_ANOTHER_TAB} Copy your answer before you reload.`,
     action: { label: 'Reload', href: page } }
   if (status === 'incomplete') return { text: 'Complete your profile to practise. Copy your answer first.',
     action: { label: 'Complete your profile', href: profileSelectionHref(page) } }
-  if (status === 'locked') return { text: 'Your access to this course has ended. Your answer is still here.',
+  if (status === 'locked') return { text: 'Your access to this course has ended. Copy your answer first.',
     action: { label: STUDENT_DESTINATIONS.access.label, href: STUDENT_DESTINATIONS.access.href } }
   if (status === 'content-changed' || status === 'not-found') {
     return { text: 'This question has changed. Copy your answer before you reload.', action: { label: 'Reload', href: page } }

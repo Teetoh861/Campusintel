@@ -35,10 +35,11 @@ async function fixture(run) {
         return original.call(this, name, ...args)
       }
       const page = require('./page.tsx').default
-      const workspace = async () => {
-        const gated = await page({ params: Promise.resolve({ slug }) })
+      // `search` is the address's query; signing in returns to `returnPath`.
+      const workspace = async (search, returnPath = `/courses/${slug}/theory`) => {
+        const gated = await page({ params: Promise.resolve({ slug }), searchParams: search === undefined ? undefined : Promise.resolve(search) })
         assert.equal(gated.type, StudentAccessGate)
-        assert.equal(gated.props.returnPath, `/courses/${slug}/theory`)
+        assert.equal(gated.props.returnPath, returnPath)
         const child = gated.props.children('page-token')
         return child.type(child.props)
       }
@@ -92,7 +93,7 @@ test('every published question reaches the page in the published order, with its
 test('a course with no theory questions has a usable state, and one without answers still shows its questions', async () => fixture(async f => {
   f.state.result.materials = []
   const html = await f.html()
-  assert.match(html, /Theory practice isn’t available for this course/)
+  assert.match(html, /<h2 class="student-notice-title">Theory practice isn’t available for this course\.<\/h2>/)
   assert.doesNotMatch(html, /data-practice|data-question|on the course page/)
   assert.match(html, new RegExp(`href="/courses/${slug}"`))
   f.state.result.materials = [{ question, feedbackAvailable: false, feedback: null }]
@@ -115,6 +116,26 @@ test('authentication, unknown courses and failures keep content closed without r
     const html = await f.html()
     assert.doesNotMatch(html, /INST201|Institutional theory title|Explain management|data-practice/)
     assert.match(html, /role="alert"/)
+  }
+}))
+
+test('signing in returns to the question in the address when it is a valid id, otherwise to the theory page', async () => fixture(async f => {
+  const page = `/courses/${slug}/theory`, withQuestion = `${page}?question=${question.itemId}`
+  for (const [search, returnPath] of [[undefined, page], [{}, page], [{ question: question.itemId }, withQuestion],
+    [{ question: 'not-an-id' }, page], [{ question: '' }, page], [{ question: [question.itemId, question.itemId] }, page],
+    [{ question: `${question.itemId}&next=//evil.test` }, page], [{ question: question.itemId.toUpperCase() }, page],
+    [{ question: question.itemId, next: '//evil.test' }, withQuestion]]) {
+    // The gate's own redirect, and the page's when the sign-in has gone by the time the questions are read.
+    await f.workspace(search, returnPath)
+    for (const gone of [state => { state.signedOut = true }, state => { state.result = { status: 'signed-out' } }]) {
+      const before = { signedOut: f.state.signedOut, result: f.state.result }
+      gone(f.state)
+      await assert.rejects(f.workspace(search, returnPath), error => {
+        assert.equal(error.message, 'redirect:/login?next=' + encodeURIComponent(returnPath), JSON.stringify(search))
+        return true
+      })
+      Object.assign(f.state, before)
+    }
   }
 }))
 

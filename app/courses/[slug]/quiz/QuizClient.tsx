@@ -21,7 +21,7 @@ import { useReviewAccess } from './useReviewAccess'
 import { focusFirst } from './focus-return'
 import { canPractiseTopicAgain } from './instant-feedback'
 import { AUTH_PATHS } from '@/lib/auth/constants'
-import { PRACTICE_COPY, attemptHref, signInToAttemptHref } from './practice-presentation'
+import { PRACTICE_COPY, attemptHref, examBriefHref, signInToAttemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, settlePendingStart,
   writePendingStart } from './practice-storage'
 import type { GradedAttempt, GradedExam, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
@@ -99,7 +99,7 @@ function initialView(initial: QuizInitial): View {
 /** A problem whose way on is a page: sign in and come back, or load this page again for the current sign-in. A start
  * returns to where it began (the exam's brief, or the course's topics); an attempt returns to that attempt. */
 function problemFor(status: string, courseHref: string, attemptId: string | null, topic: boolean): Problem | undefined {
-  const page = attemptId !== null ? attemptHref(courseHref, attemptId) : `${courseHref}/${topic ? 'practice' : 'quiz'}`
+  const page = attemptId !== null ? attemptHref(courseHref, attemptId) : topic ? `${courseHref}/practice` : examBriefHref(courseHref)
   if (status === 'signed-out') return { title: PRACTICE_COPY.signedOutTitle, body: PRACTICE_COPY.signedOutBody,
     action: { label: PRACTICE_COPY.signIn, href: attemptId !== null ? signInToAttemptHref(courseHref, attemptId)
       : `${AUTH_PATHS.login}?next=${encodeURIComponent(page)}` } }
