@@ -248,8 +248,8 @@ set local request.jwt.claims =
 
 select is(
   (select count(*)::int from public.courses),
-  34,
-  'authenticated students can read all thirty-four repository content identities'
+  35,
+  'authenticated students can read all thirty-five repository content identities'
 );
 
 select is(

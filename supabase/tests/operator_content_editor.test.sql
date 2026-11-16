@@ -73,7 +73,7 @@ select is((select created from public.provision_repository_content(
 select is((select repository_course_id::text from public.provision_repository_content(
   '50000000-0000-4000-8000-000000000008')), current_setting('test.editor_course'),
   'repeated provisioning returns the same repository UUID');
-select is((select count(*)::int from public.courses), 35,
+select is((select count(*)::int from public.courses), 36,
   'one new repository identity was created and existing identities remain');
 select is((select content_key from public.courses where id = current_setting('test.editor_course')::uuid),
   'managed-' || replace(current_setting('test.editor_course'), '-', ''),

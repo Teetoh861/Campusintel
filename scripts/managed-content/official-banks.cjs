@@ -750,4 +750,4 @@ function absentBankOutputs(plans) {
 }
 
 module.exports = { BANK_ACTOR, writesCbtQuestions, absentBankOutputs, bankOutputs, buildImports, convertQuestion, loadBanks,
-  loadIdentityMap, planImport, publishedCbt }
+  loadIdentityMap, planImport, publishedCbt, slugFor }

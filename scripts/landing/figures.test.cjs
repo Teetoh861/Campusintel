@@ -8,6 +8,7 @@ const { CATALOGUE_MIGRATIONS, figuresModule, landingFigures, readyCourses } = re
 const { buildManifest } = require('../managed-content/source-manifest.cjs')
 const { buildImports, publishedCbt } = require('../managed-content/official-banks.cjs')
 const { IMPORTS } = require('../managed-content/official-banks/imports.cjs')
+const { GUIDE_IMPORTS } = require('../managed-content/study-guides/imports.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const MIGRATIONS = path.join(ROOT, 'supabase/migrations')
@@ -56,7 +57,11 @@ test('the catalogue is changed only by the migrations the figures were checked a
   assert.deepEqual(files.filter(name => /_official_bank_/.test(name)).sort(),
     ['20261106090000_official_bank_rows.sql', ...IMPORTS.map(entry => entry.migration)].sort())
   const writes = /(?:insert into|update|delete from)\s+public\.(?:departments|courses|institutional_courses|course_applicability)\b/i
-  const writers = files.filter(name => !/_official_bank_/.test(name) && writes.test(fs.readFileSync(path.join(MIGRATIONS, name), 'utf8')))
+  // A study guide import that creates its course registers it and links its catalogue course through private.study_guide,
+  // so its migration names neither table: the guide import list says which imports do.
+  const creates = new Set(GUIDE_IMPORTS.filter(entry => entry.newCourse).map(entry => entry.migration))
+  const writers = files.filter(name => !/_official_bank_/.test(name)
+    && (creates.has(name) || writes.test(fs.readFileSync(path.join(MIGRATIONS, name), 'utf8'))))
   assert.deepEqual(writers.sort(), Object.keys(CATALOGUE_MIGRATIONS).sort(),
     'another migration now changes the departments, the registry or the catalogue: check that scripts/landing/figures.cjs '
     + 'still counts the landing figures correctly, then add the migration to CATALOGUE_MIGRATIONS')

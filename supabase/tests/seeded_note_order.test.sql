@@ -31,11 +31,18 @@ select is((select count(*)::integer from public.managed_content_items i join bef
 
 -- Students read the notes in that order.
 select is((select array_agg(i.source_key order by i.position) from public.managed_content_items i
-    join public.courses c on c.id = i.course_id where c.content_key = 'financial-accounting-1' and i.kind = 'note'
+    join public.courses c on c.id = i.course_id where c.content_key = 'business-statistics' and i.kind = 'note'
       and i.published_revision is not null),
+  (select array_agg('topic-note:' || g order by g) from generate_series(1, 11) g),
+  'Business Statistics: its eleven topic notes in order');
+-- Financial Accounting I's seeded notes have since been replaced by its study guide (20261113100000). They keep their
+-- order, so a rollback of the guide shows them as before: ten topic notes, then ten calculator tricks.
+select is((select array_agg(i.source_key order by i.position) from public.managed_content_items i
+    join public.courses c on c.id = i.course_id where c.content_key = 'financial-accounting-1' and i.kind = 'note'
+      and i.created_by = '00000000-0000-4000-8000-000000000042'),
   (select array_agg(n order by k) from (select 'topic-note:' || g n, g k from generate_series(1, 10) g
     union all select 'calculator-trick:' || g, 10 + g from generate_series(1, 10) g) s),
-  'ACC 101: its ten topic notes, then its ten calculator tricks');
+  'Financial Accounting I: its ten topic notes, then its ten calculator tricks');
 
 select * from finish();
 rollback;

@@ -142,13 +142,18 @@ select is(private.study_guide('study_guide_gst111', 'apply'), 'applied', 'apply 
 select is(pg_temp.published('note') + pg_temp.published('theory_question') + pg_temp.published('model_answer'), 45, 'all published');
 select is((select published_revision from public.managed_content_items where id = pg_temp.item('course-overview')), 3,
   'the overview publishes revision three again');
-select is((select count(*)::integer from public.managed_content_revisions where authored_by = '00000000-0000-4000-8000-000000000045'),
+-- Counted on this course: the other guides' revisions carry the same import as their author.
+select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
+    where i.course_id = pg_temp.course() and r.authored_by = '00000000-0000-4000-8000-000000000045'),
   46, 'no revision was written twice');
 
 -- ---------------------------------------------------------------------------------------------------------------
--- With the overview correction (20261110090000): both roll back in reverse order and apply again.
+-- With the overview correction (20261110090000): both roll back in reverse order and apply again. The correction
+-- covers other courses' overviews too, so every guide imported since rolls back before it as well.
 -- ---------------------------------------------------------------------------------------------------------------
 select is(private.study_guide('study_guide_gst111', 'rollback'), 'rolled-back', 'the guide rolls back first');
+select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('and so does %s', guide))
+  from private.study_guides where guide <> 'study_guide_gst111' order by guide;
 select is(private.course_overview_revisions('rollback'), 'rolled-back', 'then the overview correction');
 select is((select jsonb_build_array(i.published_revision, r.authored_by) from public.managed_content_items i
     join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
