@@ -31,7 +31,7 @@ async function render(number) {
 
 test('the locked copy is exactly as approved', async () => {
   const html = await render('2349018750976')
-  assert.match(html, /Your courses are set for this semester\. Need a change\?/)
+  assert.match(html, /Your department, level and semester can’t be changed this semester\. Need a change\?/)
   assert.match(html, />Message us</)
   assert.match(html, /role="status"/)
 })

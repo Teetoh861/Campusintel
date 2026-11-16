@@ -1,10 +1,10 @@
 // components/student/study-families.ts — Product order, names and availability copy of the Student App study families.
 import type { StudyAvailability } from '@/lib/courses/read-model'
 
-/** Locked product order: Notes, CBT practice, Theory. Every surface lists families in this order. */
+/** Locked product order: Notes, Practice, Theory. Every surface lists families in this order. */
 export const STUDY_FAMILIES = [
   { id: 'notes', label: 'Notes' },
-  { id: 'cbtPractice', label: 'CBT practice' },
+  { id: 'cbtPractice', label: 'Practice' },
   { id: 'theory', label: 'Theory' },
 ] as const
 
@@ -22,5 +22,5 @@ export const STUDY_COPY = {
   locked: 'Included with full access.',
   outsideList: 'Not in your courses this semester.',
   confirmCourses: 'Confirm your courses for this semester.',
-  selectionLocked: 'Your courses are set for another semester.',
+  selectionLocked: 'Not in your courses this semester.',
 } as const

@@ -134,7 +134,8 @@ test('each authored point needs a student decision; completion counts coverage a
   await submit(assessment.render())
   const completed = renderToStaticMarkup(assessment.render())
   assert.match(completed, /Review complete/)
-  assert.match(completed, /1 got it · 1 partly · 0 not yet · 2 of 2 points rated/)
+  assert.match(completed, />2 of 2 rated</)
+  assert.doesNotMatch(completed, /got it ·|points rated/, 'no tally of the choices shown just above')
   assert.match(completed, /How did you do\?/)
   assert.match(completed, />Key points</)
   assert.doesNotMatch(completed, /Marking guide|Rate how well/)
@@ -162,8 +163,8 @@ test('model-answer-only practice has no marking checklist or fabricated score an
   assert.match(html, /Suggested answer/)
   assert.match(html, /Check your answer/)
   assert.doesNotMatch(html, /Key points|note what you would improve|Rate how well/)
-  assert.match(html, /You submitted an empty answer/)
-  assert.doesNotMatch(html, /<select|How did you do|points rated/)
+  assert.match(html, /You didn’t write an answer\./)
+  assert.doesNotMatch(html, /<select|How did you do|rated</)
   await submit(tree)
   assert.match(renderToStaticMarkup(assessment.render()), /Review complete/)
   assert.equal(f.events[0][1].has_rubric, false)
@@ -251,9 +252,9 @@ test('a single question has no Previous or Next', async () => fixture(async f =>
 test('every refusal whose way on leaves the page says to copy the answer first: the draft lives only on this page', async () => fixture(async f => {
   for (const [status, line, label, href] of [
     ['signed-out', 'You’ve been signed out. Copy your answer before you sign in.', 'Sign in'],
-    ['session-changed', 'You signed in on another tab. Copy your answer before you reload.', 'Reload'],
+    ['session-changed', 'Copy your answer, then reload this page.', 'Reload'],
     ['incomplete', 'Complete your profile to practise. Copy your answer first.', 'Complete your profile'],
-    ['locked', 'Your access to this course has ended. Copy your answer first.', 'Plan & Access', '/access'],
+    ['locked', 'This course is no longer in your plan. Copy your answer first.', 'Plan & Access', '/access'],
     ['content-changed', 'This question has changed. Copy your answer before you reload.', 'Reload'],
     ['not-found', 'This question has changed. Copy your answer before you reload.', 'Reload']]) {
     f.respond({ status })

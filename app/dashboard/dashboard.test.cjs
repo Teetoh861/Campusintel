@@ -64,8 +64,9 @@ async function fixture(run) {
 test('sprint plan 23 Oct item 2: home is a real personalized command centre with no fabricated activity', async () => fixture(async f => {
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
-  for (const text of ['Welcome back, Ọlá', 'Business Administration', '200 Level', 'First Semester',
-    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request Material', 'Help &amp; Support', 'Account', 'Waitlist']) assert.ok(html.includes(text), text)
+  for (const text of ['Hi, Ọlá', 'Business Administration', '200 Level', 'First Semester',
+    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request material', 'Help &amp; Support', 'Profile', 'Waitlist']) assert.ok(html.includes(text), text)
+  assert.doesNotMatch(html, /Welcome back|Your study space/, 'a first visit is greeted like any other, with no filler beside the university')
   assert.doesNotMatch(html, /streak|GPA|credits remaining|Tobi|not-a-name@|Saved files/)
   assert.match(courseCard(html), /<h2 id="my-courses-title">My Courses<\/h2>/)
   assert.doesNotMatch(html, /This semester|Your courses ·/)
@@ -80,8 +81,8 @@ test('Practice describes Campus Bot practice according to its availability, sepa
   assert.doesNotMatch(html, /Verified CBT practice/, 'no unbacked claim above Practice')
   assert.match(html, /href="\/my-courses"/)
   assert.match(html, /Practise from your notes/)
-  assert.match(html, /Currently unavailable/)
-  assert.match(html, /Campus Bot practice from your notes is unavailable right now/)
+  assert.match(html, /Unavailable right now/)
+  assert.doesNotMatch(html, /Campus Bot practice from your notes is unavailable|Choose a course to practise/, 'said once, by the tag')
   const upload = html.match(/<section aria-labelledby="upload-practice-title"[\s\S]*?<\/section>/)?.[0]
   assert.ok(upload)
   assert.doesNotMatch(upload, /<a |<button|type="file"|href=/)
@@ -92,12 +93,13 @@ test('Practice describes Campus Bot practice according to its availability, sepa
   assert.ok(practice.indexOf(upload) < practice.indexOf('dashboard-practice-action'), 'quiet upload note precedes the live practice action')
   assert.match(html, /id="practice-title">Practice<\/h2>/)
   assert.doesNotMatch(html, /Practice quizzes|dashboard-status/)
-  assert.match(upload, /class="student-status-rail" data-status="unavailable">Currently unavailable/)
+  assert.match(upload, /class="student-status-rail" data-status="unavailable">Unavailable right now/)
   assert.match(html, /class="student-status-rail" data-status="waitlist">Waitlist/)
   f.state.aiAvailable = true
   const enabled = await f.html()
-  assert.doesNotMatch(enabled, /Currently unavailable|Coming soon/)
-  assert.match(enabled, /Upload notes for courses without study materials, and Campus Bot turns them into practice questions/)
+  assert.doesNotMatch(enabled, /Unavailable right now|Currently unavailable|Coming soon/)
+  assert.match(enabled, /<p>Campus Bot turns your notes into practice questions\.<\/p>/)
+  assert.doesNotMatch(enabled, /courses without study materials/, 'the card says what Campus Bot does, not which courses it opens for')
 }))
 
 test('academic identity owns a full-width band outside the bounded course/action workspace', async () => fixture(async f => {
@@ -127,7 +129,8 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
   assert.deepEqual([...material.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
     ['/bookmarks', '/courses', '/materials'])
   assert.deepEqual([...material.matchAll(/<h3>(.*?)<\/h3>/g)].map(match => match[1]),
-    ['Bookmarks', 'All Courses', 'Request Material'])
+    ['Bookmarks', 'All Courses', 'Request material'])
+  assert.doesNotMatch(material, /<p\b/, 'each card is its name and its action, with no sentence between')
   assert.match(material, /dashboard-bookmark-card/)
   const utilities = html.match(/<section aria-labelledby="utilities-title"[\s\S]*?<\/section>/)?.[0]
   assert.ok(utilities)
@@ -136,20 +139,20 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
   assert.equal((utilities.match(/class="[^"]*dashboard-utility-icon"/g) || []).length, 3)
   assert.doesNotMatch(utilities, /dashboard-utility-arrow|lucide-arrow-right/)
   assert.match(utilities, /data-status="waitlist">Waitlist/)
-  assert.doesNotMatch(utilities, /Log out|Logout|<button/)
+  assert.doesNotMatch(utilities, /Sign out|Log out|Logout|<button/)
 }))
 
 test('Dashboard actions stay arrow-free with their labels, destinations and keyboard focus families intact', async () => fixture(async f => {
-  // A student with courses: an empty list has no View my courses (below).
+  // A student with courses: an empty list has no View your courses (below).
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
   const actions = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
     .filter(([, attributes]) => /class="[^"]*\bdashboard-(?:course-file|practice-action|material-card|utility-row)\b/.test(attributes))
   const expected = [
-    ['/my-courses', 'View my courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
-    ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse the library', 'card'],
-    ['/materials', 'Request course material', 'card'], ['/tutors', 'Tutors', 'row'],
-    ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Account', 'row'],
+    ['/my-courses', 'View your courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
+    ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse all courses', 'card'],
+    ['/materials', 'Send a request', 'card'], ['/tutors', 'Tutors', 'row'],
+    ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Profile', 'row'],
   ]
   assert.equal(actions.length, expected.length)
   for (const [index, [href, label, focus]] of expected.entries()) {
@@ -176,14 +179,14 @@ test('server guards redirect absent sessions or incomplete names and keep failur
   f.state.failure = true
   const html = await f.html()
   assert.match(html, /Something went wrong/)
-  assert.doesNotMatch(html, /private provider details|Welcome back/)
+  assert.doesNotMatch(html, /private provider details|Hi, Ọlá/)
   // A profile that can't be shown: the way to the team is the page by its name.
   f.state.failure = false
   f.state.profile = { status: 'invariant-failure' }
   const broken = await f.html()
   assert.match(broken, /Something went wrong/)
   assert.match(broken, /<a[^>]*href="\/contact"[^>]*>Help &amp; Support<\/a>/)
-  assert.doesNotMatch(broken, /Contact support|Welcome back/)
+  assert.doesNotMatch(broken, /Contact support|Hi, Ọlá/)
 }))
 
 const shelf = index => ({ slug: `course-${index}`, contentKey: `course-${index}`, code: `SHELF${index}`, title: `Shelf ${index}` })
@@ -219,8 +222,8 @@ test('day-one course file shows seven courses and three ready without listing id
   assert.match(card, /class="dashboard-file-tab">7 courses · 3 ready to study<\/span>/)
   assert.match(card, /<h2 id="my-courses-title">My Courses<\/h2>/)
   assert.doesNotMatch(card, /Your semester, in one place/)
-  assert.match(card, />View my courses<\/span>/)
-  for (const label of ['Overview', 'Notes', 'CBT practice', 'Theory']) assert.ok(card.includes(label), label)
+  assert.match(card, />View your courses<\/span>/)
+  assert.doesNotMatch(card, /dashboard-file-index|Overview|Notes|CBT practice|Theory/, 'no list of study families: it would read the same for every student')
   assert.equal((card.match(/<a\b/g) || []).length, 1, 'the whole card is one target')
   assert.doesNotMatch(card, /<ul\b|<li\b|<button\b|Available study materials vary by course/)
   assert.doesNotMatch(html, /COURSE\d|Course \d title|This semester|Your courses ·/)
@@ -267,12 +270,12 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
   const next = continueCard(html)
   assert.match(next, /data-continue="resume"/)
   assert.match(next, /href="\/courses\/course-1\/quiz"/)
-  assert.match(next, />Resume practice: COURSE1, 12 min left</)
+  assert.match(next, />Resume exam: COURSE1, 12 min left</, 'an open exam is never called practice')
   assert.equal((html.match(/class="dashboard-continue /g) || []).length, 1, 'one next step only')
   assert.doesNotMatch(courseCard(html), FIGURES)
   for (const [minutes, text] of [[60, '1 hr left'], [95, '1 hr 35 min left'], [0.2, '1 min left']]) {
     f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: minutesFromNow(minutes) } }
-    assert.match(continueCard(await f.html()), new RegExp(`>Resume practice: COURSE1, ${text}<`))
+    assert.match(continueCard(await f.html()), new RegExp(`>Resume exam: COURSE1, ${text}<`))
   }
   f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: NOW } }
   assert.match(continueCard(await f.html()), />Continue practising COURSE0</, 'an attempt whose time is up is never offered')
@@ -290,7 +293,7 @@ test('instant feedback: an open attempt is resumed with no clock, and picks show
   const { formatCourseProgress } = require('../../lib/dashboard/home-courses.ts')
   assert.equal(formatCourseProgress({ practised: 3, total: 25, lastScore: null }), '3 of 25 questions practised')
   assert.equal(formatCourseProgress({ practised: 3, total: 25, lastScore: { score: 2, total: 3 } }),
-    '3 of 25 questions practised · Last score 2/3')
+    '3 of 25 questions practised · Last score 2 of 3 correct')
 }))
 
 
@@ -332,7 +335,7 @@ test('sprint plan 23 Oct item 2: an unavailable or signed-out practice read show
     f.state.progress = { status }
     const html = await f.html()
     assert.match(courseCard(html), />1 course · 1 ready to study</)
-    assert.doesNotMatch(html, /Resume practice|Continue practising|practised|Last score/)
+    assert.doesNotMatch(html, /Resume practice|Resume exam|Continue practising|practised|Last score/)
   }
 }))
 
@@ -360,15 +363,15 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   assert.doesNotMatch(empty, FIGURES)
   assert.equal(continueCard(empty), undefined)
   // My Courses would open empty, so the card offers no way there.
-  assert.doesNotMatch(courseCard(empty), /View my courses|href="\/my-courses"/)
+  assert.doesNotMatch(courseCard(empty), /View your courses|href="\/my-courses"/)
   assert.equal(courseCard(empty).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
     'Your courses are not available yet.')
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()
-    // No count and no failure line beside a View my courses that still works.
+    // No count and no failure line beside a View your courses that still works.
     assert.doesNotMatch(courseCard(html), /temporarily unavailable|dashboard-file-tab/)
-    assert.match(courseCard(html), />View my courses</, 'only an empty list loses the link')
+    assert.match(courseCard(html), />View your courses</, 'only an empty list loses the link')
     assert.doesNotMatch(html, FIGURES)
     assert.doesNotMatch(html, /Continue practising/)
   }
@@ -378,7 +381,7 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
     }, courses: [mappedCourse(0, 'ready')], cbtBankSizes: new Map([['course-0', 40]]) }
     const html = await f.html()
     assert.doesNotMatch(courseCard(html), /temporarily unavailable|dashboard-file-tab/)
-    assert.match(courseCard(html), />View my courses</)
+    assert.match(courseCard(html), />View your courses</)
     assert.equal(items(html).length, 0)
     assert.doesNotMatch(html, /Continue practising|practised/)
   }
@@ -410,12 +413,14 @@ test('semantic focus, official C texture and reduced motion have shared owners',
   assert.doesNotMatch(css, /text-decoration: underline|0 -3px 0|Geist|Playfair|Myriad/)
 })
 
-test('course-file CSS restores the reference tab, index, focus and equal-height cards without list styles', () => {
+test('course-file CSS restores the reference tab, focus and equal-height cards without list styles', () => {
   const css = fs.readFileSync(path.join(__dirname, '../../styles/student-app.css'), 'utf8')
   assert.match(css, /\.dashboard-primary-grid \{[^}]*grid-auto-rows: 1fr;[^}]*align-items: stretch;/)
-  for (const selector of ['.dashboard-file-tab', '.dashboard-file-index', '.dashboard-course-file:focus-visible']) {
+  for (const selector of ['.dashboard-file-tab', '.dashboard-course-file:focus-visible']) {
     assert.ok(css.includes(selector), selector)
   }
+  // The card's list of study families and the Practice card's sentence are gone, and so are their styles.
+  assert.doesNotMatch(css, /\.dashboard-file-index|\.dashboard-cbt/)
   assert.doesNotMatch(css, /\.dashboard-course-(?:list|item|heading|code|status|title|progress)\b/)
   assert.ok(css.indexOf('[data-student-app] .dashboard-course-file:focus-visible') >
     css.indexOf('[data-student-app] .student-focus-card:focus-visible'), 'course-file focus overrides the shared card focus')

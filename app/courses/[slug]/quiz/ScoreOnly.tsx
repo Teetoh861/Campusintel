@@ -31,14 +31,17 @@ type Props = {
 /** Scores remain available when the database withholds the answer review. */
 export function ScoreOnly(props: Props) {
   const { attempt } = props
-  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
+  const exam = attempt.mode === 'exam'
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly, exam ? 'exam' : 'practice')
   const reason = attempt.reviewUnavailableReason
+  const copy = accessCopy(props.plansOnSale ?? false)
   const line = reason === 'needs-selection' ? 'Confirm your courses for this semester to see answers.'
-    : reason === 'outside-list' ? 'Answers are available for your courses this semester.'
-      : accessCopy(props.plansOnSale ?? false).answersLine
+    : reason === 'outside-list' ? 'Not in your courses this semester, so answers aren’t shown.'
+      : copy.answersLine
   // Confirm courses comes back to this result after the save.
   const confirmHref = profileSelectionHref(`${props.courseHref}/quiz?attempt=${attempt.id}`)
-  return <StudentPage band={<PageBand title="Practice result" context={<p>{identity.context}</p>} />}>
+  return <StudentPage band={<PageBand title={exam ? PRACTICE_COPY.examResultTitle : PRACTICE_COPY.practiceResultTitle}
+    context={<p>{identity.context}</p>} />}>
     <div className="max-w-[720px] space-y-5">
       <p className="text-2xl font-bold tabular-nums">{attempt.result.score} of {attempt.result.total} correct</p>
       <p>{line}</p>
@@ -46,10 +49,10 @@ export function ScoreOnly(props: Props) {
       {props.starting ? <p role="status" className="student-practice-help">{PRACTICE_COPY.starting}</p> : null}
       <div className="flex flex-wrap gap-3">
         {reason === 'needs-selection' ? <Link href={confirmHref} prefetch={false}
-          className={studentAction(btnNavy, studentFocusDark)}>Confirm courses</Link> : null}
-        {/* The access line names a plan: its page is one tap away. */}
+          className={studentAction(btnNavy, studentFocusDark)}>Confirm your courses</Link> : null}
+        {/* The line names what unlocks the answers; the button to Plan & Access carries the locked course's label. */}
         {reason !== 'needs-selection' && reason !== 'outside-list' ? <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
-          className={studentAction(btnNavy, studentFocusDark)}>{STUDENT_DESTINATIONS.access.label}</Link> : null}
+          className={studentAction(btnNavy, studentFocusDark)}>{copy.lockedAction}</Link> : null}
         {props.canStartNew ? <button type="button" disabled={props.starting} onClick={props.onRetake}
           className={studentAction(btnGhost)}>{wholeBankAttempt(attempt) ? 'Practise again' : 'Retake with new questions'}</button> : null}
         <Link href={props.courseHref} prefetch={false} className={studentAction(btnGhost)}>{PRACTICE_COPY.backToCourse}</Link>

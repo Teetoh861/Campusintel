@@ -33,14 +33,14 @@ const NO_RETURN_FOCUS: ReturnFocus = []
 function refusalFor(status: string, courseHref: string, attemptId: string): AttemptRefusal {
   const here = { label: PRACTICE_COPY.reload, href: attemptHref(courseHref, attemptId) }
   const signIn = { label: PRACTICE_COPY.signIn, href: signInToAttemptHref(courseHref, attemptId) }
-  if (status === 'too-many-tabs') return { text: 'You have too many practice tabs open. Continue in one of your other tabs — nothing you’ve answered there is lost.',
-    timeUpText: 'Time is up.', timeUpAction: { label: 'See your result', href: here.href } }
+  if (status === 'too-many-tabs') return { text: PRACTICE_COPY.otherTab,
+    timeUpText: 'Time is up.', timeUpAction: { label: PRACTICE_COPY.seeResult, href: here.href } }
   if (status === 'session-changed') return { text: PRACTICE_COPY.sessionChangedTitle, action: here,
     timeUpText: PRACTICE_COPY.timeUpSessionChanged, timeUpAction: here }
   if (status === 'signed-out') return { text: 'You’ve been signed out. The timer is still running.', action: signIn,
     timeUpText: PRACTICE_COPY.timeUpSignedOut, timeUpAction: signIn }
   const back = { label: PRACTICE_COPY.backToCourse, href: courseHref }
-  if (status === 'not-found') return { text: 'This attempt is no longer available.', action: back, timeUpText: PRACTICE_COPY.timeUpGone,
+  if (status === 'not-found') return { text: PRACTICE_COPY.examGone, action: back, timeUpText: PRACTICE_COPY.timeUpGone,
     timeUpAction: back }
   return { text: 'Something went wrong.', action: here, timeUpText: PRACTICE_COPY.timeUpRetry, retry: true }
 }
@@ -242,7 +242,7 @@ export function ActiveAttempt(props: Props): ReactElement {
   }, [tab, attempt.id, continuityToken, finish, refuse])
 
   /**
-   * A hand-in the student asks for: Submit practice, or Try again. With time left on this device (or no reading to
+   * A hand-in the student asks for: Submit exam, or Try again. With time left on this device (or no reading to
    * wait on) it goes at once. Once this device's zero has passed it goes with the time-up hand-in below, which waits
    * for the server's deadline: sent before it, the attempt is still open there, so it would be recorded as submitted
    * and its result would not say that time ran out. The clock is read at the tap, not from the countdown shown a
@@ -329,7 +329,7 @@ export function ActiveAttempt(props: Props): ReactElement {
       isMarked={flags.has(question.questionId)} timeLeft={timeLeft}
       isLowTime={timeLeft !== null && timeLeft <= LOW_TIME_SECONDS} canAnswer={canAnswer}
       saveLine={saveLineFor({ timeUp, submitFailing, refusal, clockSynced: clockState === 'synced', clockFailures,
-        save: saveState, answered, answersSafe, submitting: busy && !timeUp, autoRetrying })}
+        save: saveState, answered, submitting: busy && !timeUp, autoRetrying })}
       submitting={busy || awaitingDeadline}
       // Try again resends a submission that did not go through (and, at time up, the hand-in); otherwise the save.
       onRetrySave={() => { if (timeUp || submitFailing || refusal !== null) handIn(); else autosave.current?.retry() }}
@@ -343,7 +343,7 @@ export function ActiveAttempt(props: Props): ReactElement {
       onLeave={focus => { returnFocus.current = focus; setConfirm('exit') }} />
     <AssessmentConfirmation kind="submit" open={confirm === 'submit'} onOpenChange={open => setConfirm(open ? 'submit' : null)}
       answered={answered} unanswered={attempt.questions.length - answered} flagged={flags.size}
-      pending={saveState !== null && saveState !== 'saved'} onConfirm={handIn} onRestoreFocus={restore} />
+      onConfirm={handIn} onRestoreFocus={restore} />
     <AssessmentConfirmation kind="exit" open={confirm === 'exit'} onOpenChange={open => setConfirm(open ? 'exit' : null)}
       body={exitBodyFor(saveState, answered, answersSafe)} unsafe={!answersSafe} onConfirm={exit} onRestoreFocus={restore} />
   </>

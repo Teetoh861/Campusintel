@@ -51,10 +51,10 @@ function MyCoursesBand(props: Omit<Parameters<typeof PageBand>[0], 'title' | 'le
 function MyCoursesError({ state }: { state: ErrorState }): ReactElement {
   return <StudentPage band={<MyCoursesBand />}>
     {state === 'selection-changed'
-      // Unique to this surface: the saved selection moved while the page was composing.
-      ? <Notice title="Your semester selection has changed." action={
-        <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
-      }>Your semester selection changed. Reload to see the latest courses.</Notice>
+      // Unique to this surface: the saved academic details moved while the page was composing.
+      ? <Notice title="Your courses have changed." action={
+        <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Reload</a>
+      } />
       : <ResultNotice state={RESULT_STATE[state]} retryHref={MY_COURSES_PATH} />}
   </StudentPage>
 }
@@ -69,7 +69,7 @@ function SemesterContext({ selection, total, ready }: {
     aside={<div className="student-band-actions">
       {total > 0 && <p className="student-summary">{total} {total === 1 ? 'course' : 'courses'} · {ready} ready to study</p>}
       <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
-        Change<span className="sr-only"> semester selection</span>
+        Change<span className="sr-only"> academic details</span>
       </Link>
     </div>} />
 }
@@ -77,7 +77,7 @@ function SemesterContext({ selection, total, ready }: {
 /** Render only the current session owner's persisted institutional semester. */
 export default async function MyCoursesPage(): Promise<ReactElement> {
   if (!isStudentAuthEnabled()) return <StudentPage band={<MyCoursesBand />}>
-    <Notice title="My Courses isn’t available right now." tone="info">{AUTH_MESSAGES.comingSoon}</Notice>
+    <Notice title={AUTH_MESSAGES.comingSoon} tone="info" />
   </StudentPage>
 
   let verified: {

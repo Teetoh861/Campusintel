@@ -24,7 +24,7 @@ const hanken = Hanken_Grotesk({
 
 const SITE_TITLE = 'CampusIntell'
 const SITE_DESCRIPTION =
-  'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.'
+  'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.'
 
 export const metadata: Metadata = {
   title: SITE_TITLE,

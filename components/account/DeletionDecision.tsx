@@ -19,7 +19,7 @@ export function DeletionDecision({ requestId, continuityToken }: { requestId: st
   }
   return <div className="mt-5 grid gap-3">
     {error && <Feedback tone="error" message={error} />}
-    <button type="button" disabled={pending} aria-busy={pending} onClick={() => decide(true)} className={studentAction(btnNavy)}>Yes, keep my account</button>
-    <button type="button" disabled={pending} aria-busy={pending} onClick={() => decide(false)} className={studentAction(btnGhost)}>No, continue with deletion</button>
+    <button type="button" disabled={pending} aria-busy={pending} onClick={() => decide(true)} className={studentAction(btnNavy)}>Keep your account</button>
+    <button type="button" disabled={pending} aria-busy={pending} onClick={() => decide(false)} className={studentAction(btnGhost)}>Delete your account</button>
   </div>
 }

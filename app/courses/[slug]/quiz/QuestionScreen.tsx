@@ -1,4 +1,4 @@
-// app/courses/[slug]/quiz/QuestionScreen.tsx — The focused attempt: context bar, timer, one question, native answers, navigator.
+// app/courses/[slug]/quiz/QuestionScreen.tsx — The exam itself: context bar, timer, one question, native answers, navigator.
 'use client'
 
 import { useEffect, useId, useRef } from 'react'
@@ -48,7 +48,7 @@ type Props = {
   onLeave: (returnFocusTo: ReadonlyArray<HTMLElement | null>) => void
 }
 
-/** Present exactly one question; the page's only h1 names the practice, never the prompt. */
+/** Present exactly one question; the page's only h1 names the exam, never the prompt. */
 export function QuestionScreen(props: Props): ReactElement {
   const { question, current, total, selected, isMarked, timeLeft, isLowTime, navOpen,
     answeredCount, markedCount, answersMap, markedMap, onCloseNav } = props
@@ -63,10 +63,10 @@ export function QuestionScreen(props: Props): ReactElement {
   const sheetReturnFocus = () => [navTrigger.current, flagControl.current]
   const positionId = `${id}-position`
   const promptId = `${id}-prompt`
-  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly, 'exam')
   const progress = answeredLine(answeredCount, total, markedCount)
   const isLast = current === total - 1
-  const submitLabel = props.submitting ? PRACTICE_COPY.submitting : 'Submit practice'
+  const submitLabel = props.submitting ? PRACTICE_COPY.submitting : PRACTICE_COPY.submitExam
   const navigator = <Navigator total={total} current={current} answersMap={answersMap} markedMap={markedMap} onJump={props.onJump} />
 
   return <Sheet open={sheetOpen} onOpenChange={open => { if (open) props.onOpenNav(); else onCloseNav() }}>

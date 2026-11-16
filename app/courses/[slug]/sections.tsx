@@ -46,14 +46,11 @@ export function overviewShown(overview: ManagedOverview | null | undefined): ove
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
-/** One labelled study section; the kicker carries the same number as the contents rail entry. */
-export function StudySection({ id, number, lede, children }: {
-  id: StudySectionId; number: number; lede?: string; children: ReactNode
-}): ReactElement {
+/** One labelled study section: its name, said once, then its content. The course page still passes each section its
+ * number in the contents (`number`); the contents rail shows it, and the section no longer repeats it above its name. */
+export function StudySection({ id, children }: { id: StudySectionId; children: ReactNode }): ReactElement {
   return <section id={id} aria-labelledby={`${id}-title`} className="student-detail-section">
-    <p className="student-detail-kicker" aria-hidden="true">{pad2(number)} / {STUDY_SECTION_LABELS[id]}</p>
     <h2 id={`${id}-title`} className="student-section-title">{STUDY_SECTION_LABELS[id]}</h2>
-    {lede && <p className="student-meta">{lede}</p>}
     <div className="student-stack student-detail-stack">{children}</div>
   </section>
 }
@@ -155,7 +152,7 @@ export function NoteBody({ note, links, level = 4 }: { note: ManagedNote; links?
   </>
 }
 
-export const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator trick', guide_topic: 'Study guide' } as const
+export const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator trick', guide_topic: 'Notes' } as const
 
 /** One published note, rendered the same wherever a student may read it. */
 export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
@@ -179,10 +176,10 @@ function CardRow({ href, title, line, card = false }: { href: string; title: str
 }
 
 /** Notes on the course page: one compact card that opens the topic list. Each topic is read on its own page. */
-export function NotesCard({ notes, href, number }: {
-  notes: ReadonlyArray<ManagedNote>; href: string; number: number
+export function NotesCard({ notes, href }: {
+  notes: ReadonlyArray<ManagedNote>; href: string; number?: number
 }): ReactElement {
-  return <StudySection id="notes" number={number}>
+  return <StudySection id="notes">
     <CardRow card href={href} title="Open notes" line={countOf(notes.length, 'topic')} />
   </StudySection>
 }
@@ -190,12 +187,12 @@ export function NotesCard({ notes, href, number }: {
 /** Practice on the course page: one card. With topics it offers Practise by topic, whose page lists them (the line
  * says how many there are, or how many the student has practised), and Exam mode. A course without topics offers Exam
  * mode only. */
-export function PracticeCard({ practice, topics, topicsHref, number }: {
-  practice: StudentCoursePractice; topics: ReadonlyArray<Pick<PracticeTopicRow, 'practised'>>; topicsHref: string; number: number
+export function PracticeCard({ practice, topics, topicsHref }: {
+  practice: StudentCoursePractice; topics: ReadonlyArray<Pick<PracticeTopicRow, 'practised'>>; topicsHref: string; number?: number
 }): ReactElement {
   const exam = (card: boolean) => <CardRow card={card} href={`${practice.href}?mode=exam`} title={PRACTICE_COPY.examMode}
     line={`${practice.attemptSize} questions · ${practice.timerSeconds / 60} min`} />
-  return <StudySection id="cbtPractice" number={number}>
+  return <StudySection id="cbtPractice">
     {topics.length === 0 ? exam(true) : <div className="student-topic-card student-topic-choices">
       <CardRow href={topicsHref} title={PRACTICE_COPY.byTopic} line={topicsLine(topics)} />
       {exam(false)}
@@ -204,19 +201,19 @@ export function PracticeCard({ practice, topics, topicsHref, number }: {
 }
 
 /** Theory on the course page: one card that opens theory practice, where every question is read and answered. */
-export function TheoryCard({ questions, href, number }: { questions: number; href: string; number: number }): ReactElement {
-  return <StudySection id="theory" number={number}>
+export function TheoryCard({ questions, href }: { questions: number; href: string; number?: number }): ReactElement {
+  return <StudySection id="theory">
     <CardRow card href={href} title="Start theory practice" line={countOf(questions, 'question')} />
   </StudySection>
 }
 
 /** Published overview context; every block renders only when the managed payload carries it. No list of topics shows
  * here, neither the stored syllabus nor the practice topics: topics are in Notes and on the Practise by topic page. */
-export function OverviewSection({ overview, number }: { overview: ManagedOverview; number: number }): ReactElement {
+export function OverviewSection({ overview }: { overview: ManagedOverview; number?: number }): ReactElement {
   const examFocus = overview.examFocus ?? []
   const keyTakeaways = overview.keyTakeaways ?? [], formulaSheet = overview.formulaSheet ?? []
   const outcomes = overview.outcomes ?? [], assessment = overview.assessment ?? []
-  return <StudySection id="overview" number={number}>
+  return <StudySection id="overview">
     {overview.body.trim() && <p className="student-detail-prose student-reading">{overview.body}</p>}
     {outcomes.length > 0 && <div className="student-detail-group">
       <h3>Course outcomes</h3>
@@ -260,8 +257,8 @@ export function OverviewSection({ overview, number }: { overview: ManagedOvervie
 }
 
 /** Repository-owned textbook metadata; secondary to the study families. */
-export function ReadingList({ textbooks, number }: { textbooks: ReadonlyArray<Textbook>; number: number }): ReactElement {
-  return <StudySection id="reading" number={number} lede="Use these textbooks to deepen your understanding of the course.">
+export function ReadingList({ textbooks }: { textbooks: ReadonlyArray<Textbook>; number?: number }): ReactElement {
+  return <StudySection id="reading">
     <ol className="student-detail-numbered student-surface">
       {textbooks.map((book, index) => <li key={index}>
         <span>{index === 0 ? 'Core' : 'Ref'}</span>

@@ -265,11 +265,11 @@ test('profile edit and reload actions keep shared button hierarchy and focus', a
     }
     assert.equal(actual.has('underline'), false)
   }
-  check(nodes(f.render()).find(node => node.props?.children === 'Back to account'), true)
+  check(nodes(f.render()).find(node => node.props?.children === 'Back to profile'), true)
   check(nodes(f.render()).find(node => node.type === 'button' && node.props.type === 'submit'), false)
   f.respond(async () => response(400, { status: 'invalid-selection' }))
   await f.submit()
-  check(nodes(f.render()).find(node => node.props?.children === 'Reload choices'), true)
+  check(nodes(f.render()).find(node => node.type === 'button' && node.props?.children === 'Reload'), true)
 }, true))
 
 test('selection form stays compact and uses the student surface at phone and tablet widths', async () => fixture(async f => {
@@ -289,11 +289,11 @@ test('selection form stays compact and uses the student surface at phone and tab
 
 test('failed, unavailable, invalid and revoked saves have controlled outcomes', async () => fixture(async f => {
   const cases = [
-    [503, { status: 'unavailable', details: 'private SQL error' }, 'We couldn’t save your changes. Please try again.'],
-    [400, { status: 'invalid-selection' }, 'Review your first name and choices, or reload if a choice is no longer available.'],
-    [409, { status: 'missing-profile' }, 'Your profile could not be found. Help & Support'],
-    [409, { status: 'invariant-failure' }, 'Your profile needs attention. Help & Support'],
-    [400, { status: 'invalid-request' }, 'We couldn’t save your changes. Please try again.'],
+    [503, { status: 'unavailable', details: 'private SQL error' }, 'We couldn’t save your changes. Try again.'],
+    [400, { status: 'invalid-selection' }, 'Check your details and try again.'],
+    [409, { status: 'missing-profile' }, 'We couldn’t find your profile. Help & Support'],
+    [409, { status: 'invariant-failure' }, 'We couldn’t load your profile. Help & Support'],
+    [400, { status: 'invalid-request' }, 'We couldn’t save your changes. Try again.'],
   ]
   for (const [status, body, message] of cases) {
     f.respond(async () => response(status, body))
@@ -310,7 +310,7 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
   }
   f.respond(async () => { throw new Error('private network detail') })
   await f.submit()
-  assert.equal(f.notice(), 'We couldn’t save your changes. Please try again.')
+  assert.equal(f.notice(), 'We couldn’t save your changes. Try again.')
   f.respond(async () => response(401, { status: 'signed-out' }))
   await f.submit()
   assert.deepEqual(f.navigations, [['replace', '/login?next=%2Fprofile-selection']])
@@ -389,7 +389,7 @@ test('conflict blocks stale saves through field edits until explicit reload', as
   await f.submit()
   assert.equal(f.requests.length, 1)
   assert.equal(save().props.disabled, true)
-  const reload = nodes(f.render()).find(node => node.props?.children === 'Reload latest profile')
+  const reload = nodes(f.render()).find(node => node.type === 'button' && node.props?.children === 'Reload')
   assert.ok(reload)
   let focused = 0
   reload.props.ref.current = { focus: () => { focused++ } }
@@ -445,7 +445,7 @@ test('locked with an inactive saved course still sends the saved courses, never 
 
 test('first pick while a plan is running: warned before saving, then the same save', async () => fixture(async f => {
   f.setMode('first-pick'); f.remount()
-  assert.equal(firstPick(f.render()).props.children, 'Your courses will be set for this semester once you save.')
+  assert.equal(firstPick(f.render()).props.children, 'Once you save, you can’t change your department, level or semester until the semester ends.')
   assert.equal(coursesSet(f.render()), false)
   assert.equal(selects(f.render()).length, 3)
   f.choose('department', f.ids.department); f.choose('academic-level', f.ids.level); f.choose('academic-period', f.ids.period)
@@ -508,7 +508,7 @@ test('locked: a refusal about a choice that is not on screen shows in the genera
   assert.equal(nodes(tree).filter(node => node.type?.name === 'Feedback').length, 1, 'said once')
   assert.equal(nodes(tree).find(node => node.props?.id === 'academic-period-error'), undefined, 'not as the error of a field that is not shown')
   assert.equal(f.input().props['aria-invalid'], false, 'and not as an error in the name')
-  const reload = nodes(tree).find(node => node.type === 'button' && node.props.children === 'Reload choices')
+  const reload = nodes(tree).find(node => node.type === 'button' && node.props.children === 'Reload')
   assert.ok(reload, 'the choices come back with a reload')
   reload.props.onClick()
   assert.deepEqual(f.navigations, [['reload']])

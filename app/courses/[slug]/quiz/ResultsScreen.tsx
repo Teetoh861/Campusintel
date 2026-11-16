@@ -1,4 +1,4 @@
-// app/courses/[slug]/quiz/ResultsScreen.tsx — This attempt's score as the server graded it, its feedback band and the
+// app/courses/[slug]/quiz/ResultsScreen.tsx — This exam's score as the server marked it, its feedback band and the
 // next actions the student may take now.
 'use client'
 
@@ -44,7 +44,7 @@ export function minutesUsedOf(attempt: GradedExam): number {
   return Math.min(minutesOf(attempt.durationSeconds), Math.ceil(used / SECONDS_PER_MINUTE))
 }
 
-/** Score this attempt only; no cross-attempt history, mastery or section judgement. */
+/** Score this exam only; no history across exams, mastery or section judgement. */
 export function ResultsScreen(props: Props): ReactElement {
   const { attempt, canStartNew, starting, error } = props
   const { score: correct, total, timedOut } = attempt.result
@@ -52,25 +52,24 @@ export function ResultsScreen(props: Props): ReactElement {
   const incorrect = total - correct - unanswered
   const percent = total === 0 ? 0 : Math.round((correct / total) * 100)
   const toReview = incorrect + unanswered
-  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly, 'exam')
   const timeLine = `${minutesUsedOf(attempt)} of ${minutesOf(attempt.durationSeconds)} minutes used`
-  const lede = timedOut ? `Submitted automatically when time ran out · ${timeLine}` : `Submitted · ${timeLine}`
+  const lede = timedOut ? `Time ran out · ${timeLine}` : `Submitted · ${timeLine}`
   const wholeBank = wholeBankAttempt(attempt)
   // Results is entered by transition or by URL; the screen hands focus to its heading exactly once when it mounts.
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [])
 
-  return <StudentPage band={<PageBand title="Practice result" lede={lede} context={<p>{identity.context}</p>} titleRef={heading} />}>
-    {timedOut ? <div className="mb-6 max-w-[720px]">
-      <Notice tone="info" title={PRACTICE_COPY.timedOutTitle}>
-        {PRACTICE_COPY.timedOutBody}{props.unsentAtDeadline ? ` ${PRACTICE_COPY.unsentAtDeadline}` : ''}
-      </Notice>
+  return <StudentPage band={<PageBand title={PRACTICE_COPY.examResultTitle} lede={lede} context={<p>{identity.context}</p>} titleRef={heading} />}>
+    {/* Time running out is in the line under the title; a notice only when it cost the student answers. */}
+    {timedOut && props.unsentAtDeadline ? <div className="mb-6 max-w-[720px]">
+      <Notice tone="info" title={PRACTICE_COPY.unsentAtDeadline} />
     </div> : null}
     {error ? <div className="mb-6 max-w-[720px]"><ProblemNotice problem={error} busy={starting} onRetry={props.onRetry} /></div> : null}
     {starting ? <p role="status" className="student-practice-help mb-6">{PRACTICE_COPY.starting}</p> : null}
     <div className="student-practice-results">
       <section aria-labelledby="student-practice-score-heading">
-        <h2 id="student-practice-score-heading" className="sr-only">Score for this attempt</h2>
+        <h2 id="student-practice-score-heading" className="sr-only">Your score</h2>
         <div className="student-practice-score">
           <span className="student-practice-score-pct">{percent}%</span>
           <span className="student-practice-score-of">{correct} of {total} correct</span>

@@ -49,7 +49,7 @@ test('one course stays one row without a fabricated second course', () => {
 test('long/untrusted course identity remains escaped text with one focusable ready target', () => {
   const html = renderToStaticMarkup(React.createElement(CourseRow, {
     code: 'LAG-BUA-ACADEMIC-REGISTER-203', title: '<script>Not executable</script> & institutional title',
-    href: '/courses/approved-course', learningTypes: ['Notes', 'CBT practice'],
+    href: '/courses/approved-course', learningTypes: ['Notes', 'Practice'],
   }))
   assert.match(html, /&lt;script&gt;Not executable&lt;\/script&gt;/)
   assert.match(html, /href="\/courses\/approved-course"/)
@@ -98,7 +98,7 @@ test('a trailing action is a sibling of the course target, never nested inside t
 
 test('repository-only identity shows the shared label instead of a code and never fabricates one', () => {
   const html = renderToStaticMarkup(React.createElement(CourseRow, { repositoryOnly: true, title: 'Business Statistics',
-    href: '/courses/business-statistics', learningTypes: ['CBT practice'] }))
+    href: '/courses/business-statistics', learningTypes: ['Practice'] }))
   assert.match(html, /<p class="student-course-row-code" data-identity="repository">Additional study material<\/p>/)
   assert.match(html, /Business Statistics/)
   assert.doesNotMatch(html, /undefined|null/)
@@ -108,7 +108,7 @@ test('repository-only identity shows the shared label instead of a code and neve
 
 test('locked row text follows the access reason without changing ordinary plan locks',()=>{
   for(const [reason,text] of [[undefined,'Included with full access.'],['outside-list','Not in your courses this semester.'],
-    ['needs-selection','Confirm your courses for this semester.'],['selection-locked','Your courses are set for another semester.']]) {
+    ['needs-selection','Confirm your courses for this semester.'],['selection-locked','Not in your courses this semester.']]) {
     const html=renderToStaticMarkup(React.createElement(CourseRow,{code:'BUA202',title:'Business',href:'/courses/business',locked:true,lockReason:reason}))
     assert.ok(html.includes(text))
     assert.match(html,/student-course-row-locked/)

@@ -151,7 +151,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   // Approved desktop frame: a contents rail beside one bounded reading column, both inside the shared workspace.
   assert.match(html, /class="student-workspace student-page-workspace student-detail-workspace"><aside class="student-detail-rail"><nav aria-label="Study sections" class="student-detail-nav"><p class="student-detail-kicker student-detail-nav-label">Contents<\/p><ol>/)
   assert.deepEqual([...html.matchAll(/student-detail-nav-number">(\d\d)<\/span>([^<]+)</g)].map(match => [match[1], match[2]]),
-    [['01', 'Notes'], ['02', 'CBT practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
+    [['01', 'Notes'], ['02', 'Practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
   assert.match(html, /<\/aside><div class="student-detail-reading">/)
   assert.ok(html.indexOf('student-detail-rail') < html.indexOf('id="notes"'), 'the rail precedes the reading column')
 }))
@@ -311,7 +311,7 @@ test('a locked course keeps its identity, renders no study content or reading li
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
-  assert.match(text(html), /Included with full access\. Notes · CBT practice See how to unlock/)
+  assert.match(text(html), /Included with full access\. Notes · Practice See how to unlock/)
   assert.doesNotMatch(html, /GST|open fully|open when you subscribe/, 'one line: what the course has, no repetition, no GST')
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
@@ -435,7 +435,7 @@ test('outside-list detail shows the support lock without asking for a pass or re
 test('course detail gives each selection recovery one notice and never asks for a pass', async () => fixture(async f => {
   for (const [reason, title, action] of [
     ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
-    ['selection-locked', 'Your courses are set for another semester.', 'Message us'],
+    ['selection-locked', 'Not in your courses this semester.', 'Message us'],
   ]) {
     f.calls.length = 0
     f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason }), learning: null, practice: null }

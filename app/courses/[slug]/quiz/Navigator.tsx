@@ -20,7 +20,7 @@ export function Navigator({ total, current, answersMap, markedMap, onJump }: Pro
       const answered = answersMap[index] !== undefined
       const flagged = Boolean(markedMap[index])
       const isCurrent = index === current
-      const label = `Question ${index + 1}, ${answered ? 'answered' : 'not answered'}${flagged ? ', flagged' : ''}${isCurrent ? ', current' : ''}`
+      const label = `Question ${index + 1}, ${answered ? 'answered' : 'unanswered'}${flagged ? ', flagged' : ''}${isCurrent ? ', current' : ''}`
       return <li key={index}>
         <button type="button" className="student-practice-cell student-focus-control" aria-label={label}
           aria-current={isCurrent ? 'step' : undefined} data-answered={answered ? 'true' : undefined}
@@ -35,7 +35,7 @@ export function Navigator({ total, current, answersMap, markedMap, onJump }: Pro
 /** The visual key for the cells; the cell names already carry the same facts. */
 export function NavigatorLegend(): ReactElement {
   return <ul className="student-practice-legend" aria-hidden="true">
-    <li><span className="student-practice-mini" />Not answered</li>
+    <li><span className="student-practice-mini" />Unanswered</li>
     <li><span className="student-practice-mini" data-answered="true" />Answered</li>
     <li><span className="student-practice-mini"><Flag strokeWidth={2} /></span>Flagged</li>
     <li><span className="student-practice-mini" data-current="true" />Current</li>

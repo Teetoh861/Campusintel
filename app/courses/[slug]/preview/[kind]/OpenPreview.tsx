@@ -13,11 +13,11 @@ import type { ReactElement } from 'react'
 type OpenCommand = Extract<DiscoveryCommand, { action: 'open' | 'open-topic' }>
 
 const REFUSAL: Partial<Record<DiscoveryResult['status'], string>> = {
-  'nothing-to-preview': 'This isn’t available on this course yet. Nothing was used, so you can choose another course.',
+  'nothing-to-preview': 'This isn’t available on this course yet. Choose another course.',
   'expired': 'Your free pass has ended.',
   'no-pass': 'You need a free pass to open this.',
   'used-elsewhere': 'You’ve already used this on another course.',
-  'not-enough-time': 'There isn’t enough time left on your pass for the whole exam. Nothing was used.',
+  'not-enough-time': 'There isn’t enough time left on your free pass for the whole exam. Nothing was used.',
   'not-found': 'This course isn’t part of the free pass. Nothing was used.',
   'session-changed': SIGNED_IN_ON_ANOTHER_TAB,
   'signed-out': 'You’ve been signed out.',

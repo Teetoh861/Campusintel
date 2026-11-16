@@ -1,4 +1,4 @@
-// app/courses/[slug]/quiz/ReviewScreen.tsx — Paged answer review for this attempt, reset on every entry.
+// app/courses/[slug]/quiz/ReviewScreen.tsx — Paged answer review for this exam, reset on every entry.
 'use client'
 
 import { useId, useRef, useState } from 'react'
@@ -47,7 +47,7 @@ export function ReviewScreen(props: Props): ReactElement {
   if (open.length !== expanded.length) setExpanded(open)
   const rangeHeading = useRef<HTMLHeadingElement>(null)
   const id = useId()
-  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly, 'exam')
 
   const items = questions.map((question, index) => ({ question, index, status: reviewStatus(question) }))
   const total = items.length
@@ -68,9 +68,8 @@ export function ReviewScreen(props: Props): ReactElement {
   const last = Math.min(current * pageSize, filtered.length)
   const rangeLine = `Questions ${first}–${last} of ${filtered.length}`
   const unansweredCount = items.filter(item => item.status === 'unanswered').length
-  const note = filter === 'to-review' ? `${toReview - unansweredCount} incorrect and ${unansweredCount} unanswered.`
-    : filter === 'correct' ? `${correctCount} questions answered correctly.`
-    : 'Every question in this attempt, in the order you saw them.'
+  // The filter names what it shows and how many; only To review has more to say (how the count splits).
+  const note = filter === 'to-review' ? `${toReview - unansweredCount} incorrect and ${unansweredCount} unanswered.` : ''
 
   const changeFilter = (next: ReviewFilter) => { setFilter(next); setPage(1); setExpanded([]) }
   const changePage = (next: number) => { setPage(next); setExpanded([]) }
@@ -80,7 +79,7 @@ export function ReviewScreen(props: Props): ReactElement {
   })
   const labels: Record<ReviewFilter, string> = { all: `All ${total}`, 'to-review': `To review ${toReview}`, correct: `Correct ${correctCount}` }
 
-  return <StudentPage band={<PageBand title="Answer review" lede={`${correctCount} of ${total} correct in this attempt`} context={<p>{identity.context}</p>} />}>
+  return <StudentPage band={<PageBand title="Answer review" lede={`${correctCount} of ${total} correct`} context={<p>{identity.context}</p>} />}>
     <div className="max-w-[760px]">
       <div className="student-practice-filters">
         <fieldset className="student-practice-choice">
@@ -95,9 +94,9 @@ export function ReviewScreen(props: Props): ReactElement {
       <p className="student-practice-help" aria-live="polite">{note}</p>
     </div>
     {filtered.length === 0 ? <div className="mt-5 max-w-[760px]">
-      <EmptyState title={filter === 'correct' ? 'No correct answers in this attempt.' : 'Nothing to review.'}
+      <EmptyState title={filter === 'correct' ? 'No correct answers.' : 'Every answer correct.'}
         actions={<button type="button" className={studentAction(btnGhost, 'bg-student-surface')} onClick={() => changeFilter('all')}>Show all questions</button>}>
-        {filter === 'correct' ? 'Every question in this attempt was answered incorrectly or left unanswered.' : 'Every question in this attempt was answered correctly.'}
+        {null}
       </EmptyState>
     </div> : <>
       <h2 ref={rangeHeading} tabIndex={-1} className="sr-only">{rangeLine}</h2>
