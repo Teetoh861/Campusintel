@@ -10,11 +10,11 @@ import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction } from '@/components/student/ui'
+import { opensCampusBot, readCampusBotCourses } from '@/lib/ai-practice/campus-bot-courses'
 import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
 import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { isAiPracticeEligible } from '@/lib/ai-practice/student-flow'
 import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supabase-env'
-import { getCourseAccessForVerifiedStudent } from '@/lib/courses/access'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLockedStudentCourse }
   from '@/lib/courses/read-model'
@@ -60,12 +60,11 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
     </StudentPage>
   }
   const { course } = result
-  const access = await getCourseAccessForVerifiedStudent(client, [course.institutionalCourseId])
-  const decision = access.status === 'ok' ? access.decisions.get(course.institutionalCourseId) : undefined
-  const scoped = decision !== undefined && (decision.on_list || (decision.team_added && decision.allowed))
+  // The link on a course row is shown by this same read and rule, so it never leads to the redirect below.
+  const scoped = (await readCampusBotCourses(client, context.user, [course])).has(course.institutionalCourseId)
   // Already generated personal sets remain the owner's when course or AI access ends.
   const sets = await listPersonalSetsForCourse(client, context.user.id, course.institutionalCourseId)
-  if (!scoped && sets.length === 0) redirect(STUDENT_DESTINATIONS.myCourses.href)
+  if (!opensCampusBot(scoped, sets.length > 0)) redirect(STUDENT_DESTINATIONS.myCourses.href)
   const enabled = isAiPracticeAvailable()
   if (!enabled && sets.length === 0) {
     return <Unavailable title="Campus Bot is unavailable." message="You can still browse your courses for available study materials." />

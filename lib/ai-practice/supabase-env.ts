@@ -96,6 +96,20 @@ export async function listPersonalSetsForCourse(client: StudentClient, userId: s
   })
 }
 
+/** Which of these courses the student still has a question set for, as the Campus Bot page itself would find them. */
+export async function listCoursesWithPersonalSets(client: StudentClient, userId: string, courseIds: readonly string[]):
+  Promise<ReadonlySet<string>> {
+  // One light read names the courses with a stored set; only those are then read the way the page reads them.
+  const { data, error } = await client.from('ai_practice_generations').select('institutional_course_id')
+    .eq('user_id', userId).eq('status', 'generated').gt('expires_at', new Date().toISOString())
+  const stored = z.object({ institutional_course_id: uuid }).array().safeParse(data)
+  if (error || !stored.success) return new Set()
+  const made = new Set(stored.data.map(row => row.institutional_course_id))
+  const asked = courseIds.filter(id => made.has(id))
+  const sets = await Promise.all(asked.map(id => listPersonalSetsForCourse(client, userId, id)))
+  return new Set(asked.filter((_, index) => sets[index].length > 0))
+}
+
 export function createSupabaseAiPracticeEnv(client: StudentClient, userId: string, sessionId: string,
   service: () => ServiceClient = createAiPracticeServiceClient): AiPracticeEnv {
   const config = readAiPracticeConfig()
