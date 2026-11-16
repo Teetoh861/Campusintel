@@ -23,13 +23,13 @@ function External({ href, className = LINK, children }: { href: string; classNam
   )
 }
 
-/** "WhatsApp us" and the community button render only when their settings are configured. */
+/** "WhatsApp us" and the Community column render only when their settings are configured. */
 export function LandingFooter({ whatsAppUrl, communityUrl, year }: {
   whatsAppUrl: string | null; communityUrl: string | null; year: number
 }): ReactElement {
   return (
     <footer className={styles.footer}>
-      <div className={`app-container ${styles.footerGrid}`}>
+      <div className={`app-container ${styles.footerGrid} ${communityUrl ? styles.footerGridWide : ''}`}>
         <div>
           <Image src={brand.logo.src} width={brand.logo.width} height={brand.logo.height} alt={brand.logo.alt}
             sizes="132px" className={styles.footerLogo} />
@@ -37,7 +37,7 @@ export function LandingFooter({ whatsAppUrl, communityUrl, year }: {
         </div>
         <nav aria-labelledby="footer-product">
           <h2 id="footer-product">{footer.productHeading}</h2>
-          <ul>{footer.product.map(link => <li key={link.href}><Link href={link.href} className={LINK}>{link.label}</Link></li>)}</ul>
+          <ul>{footer.product.map(link => <li key={link.href}><Link href={link.href} prefetch={false} className={LINK}>{link.label}</Link></li>)}</ul>
         </nav>
         <div>
           <h2>{footer.contactHeading}</h2>
@@ -53,13 +53,14 @@ export function LandingFooter({ whatsAppUrl, communityUrl, year }: {
             <li><External href={X_URL}>{footer.x}</External></li>
           </ul>
         </div>
-        <div>
-          <h2>{footer.communityHeading}</h2>
-          {communityUrl && <External href={communityUrl} className={COMMUNITY_BUTTON}>
-            <BrandIcon name="whatsapp" />{finalCta.community}
-          </External>}
-          <p className={styles.footerText}>{footer.newsletter}</p>
-        </div>
+        {communityUrl && (
+          <div>
+            <h2>{footer.communityHeading}</h2>
+            <External href={communityUrl} className={COMMUNITY_BUTTON}>
+              <BrandIcon name="whatsapp" />{finalCta.community}
+            </External>
+          </div>
+        )}
       </div>
       <div className={`app-container ${styles.copyLine}`}>
         <span>{fillTemplate(footer.copyright, { year })}</span>

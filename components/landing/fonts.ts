@@ -1,17 +1,10 @@
-// components/landing/fonts.ts — Landing-only typefaces, self-hosted by next/font; the app keeps Hanken Grotesk.
-import { Playfair_Display, Source_Sans_3 } from 'next/font/google'
+// components/landing/fonts.ts — The landing display typeface, self-hosted by next/font. Body text uses the app's own
+// Hanken Grotesk from the root layout, so the page loads two font files: this one and the app's.
+import { Playfair_Display } from 'next/font/google'
 
 export const landingDisplay = Playfair_Display({
   subsets: ['latin'],
-  weight: ['600', '700', '800'],
-  style: ['normal', 'italic'],
+  weight: ['700', '800'],
   display: 'swap',
   variable: '--landing-display',
-})
-
-export const landingBody = Source_Sans_3({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-  variable: '--landing-body',
 })

@@ -1,7 +1,9 @@
-// lib/supabase/proxy.ts — Refresh account cookies without changing authorization decisions.
+// lib/supabase/proxy.ts — Refresh account cookies without changing authorization decisions, and send a signed-in
+// student from the public landing page to their home.
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
+import { STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
 import { CHROME_STATE_HEADER, STUDENT_RENDER_PATH_HEADER } from '@/lib/auth/chrome-state'
 import { canonicalizeStudentSessionCookieHeaderForDownstream,
@@ -12,9 +14,14 @@ import type { NextRequest } from 'next/server'
 import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
 
+// The landing page is built once for every visitor and never reads the session, so its signed-in redirect lives here.
+const LANDING_PATH = '/'
+
 /** Return the same response carrying cookie writes and all SSR cache-safety headers.
  * Claims are refresh plumbing only; callers authenticate through getStudentSessionUser.
  * Keep lifecycle routing here: client navigations can reuse the root layout without rendering it again.
+ * The landing page redirects on the same live answer the chrome uses: an active account with a session the database
+ * still holds. A session ended elsewhere, an unclear answer or a failed check all see the landing page.
  */
 export async function refreshStudentSession(request: NextRequest): Promise<NextResponse> {
   const requestHeaders = new Headers(request.headers)
@@ -71,12 +78,16 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
     requestHeaders.set('cookie', namespace.mode === 'invalid' ? downstreamCookieHeader ?? '' : request.cookies.toString())
   }
   requestHeaders.set(CHROME_STATE_HEADER, chrome)
-  const response = restricted
-    ? NextResponse.redirect(new URL(ACCOUNT_DELETION_PATH, request.url))
-    : NextResponse.next({ request: { headers: requestHeaders } })
+  // A restricted account goes to its deletion page first, from the landing page too.
+  const home = !restricted && chrome === 'signed-in' && request.nextUrl.pathname === LANDING_PATH
+  const redirectPath = restricted ? ACCOUNT_DELETION_PATH : home ? STUDENT_HOME_PATH : null
+  const response = redirectPath === null
+    ? NextResponse.next({ request: { headers: requestHeaders } })
+    : NextResponse.redirect(new URL(redirectPath, request.url))
   for (const { name, value, options } of writes) response.cookies.set(name, value, getStudentCookieOptions(options))
   refreshHeaders.forEach((value, name) => response.headers.set(name, value))
-  if (restricted || (failed && !response.headers.has('Cache-Control'))) {
+  // A redirect is one student's answer; it must never be stored and replayed to a signed-out visitor.
+  if (redirectPath !== null || (failed && !response.headers.has('Cache-Control'))) {
     response.headers.set('Cache-Control', 'private, no-store')
   }
   return response
