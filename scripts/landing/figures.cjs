@@ -14,7 +14,9 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 /** The hand-written migrations that change the departments, the course registry or the catalogue, and what each one
  *  means for these figures. figures.test.cjs fails when another migration starts writing those tables, so the figures
- *  are looked at again whenever the catalogue changes. Official bank migrations are generated and counted from IMPORTS. */
+ *  are looked at again whenever the catalogue changes. Official bank migrations are generated and counted from IMPORTS.
+ *  A study guide import that creates its course is generated too, and is listed here: it writes through
+ *  private.study_guide, and a course created for its guide has no question bank. */
 const CATALOGUE_MIGRATIONS = {
   '20260918190000_profile_reference_data.sql': 'the departments',
   '20260923100000_course_registry.sql': 'the seeded courses',
@@ -23,6 +25,8 @@ const CATALOGUE_MIGRATIONS = {
   '20261002110000_operator_content_editor.sql': 'operator functions only; nothing changes when it is applied',
   '20261020100000_bua_300l_catalogue_correction.sql': 'more catalogue courses',
   '20261025120000_link_first_semester_courses.sql': 'three more content links',
+  '20261113090000_study_guide_imports.sql': 'study guide functions only; nothing changes when it is applied',
+  '20261113100200_study_guide_acc121.sql': 'ACC 121 and its content link: notes and theory, no question bank, so it is not counted',
 }
 const CATALOGUE_COURSES = ['20260923160000_institutional_course_catalogue.sql', '20260930100000_master_course_catalog_v1_1.sql',
   '20261020100000_bua_300l_catalogue_correction.sql']
