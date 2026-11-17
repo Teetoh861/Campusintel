@@ -84,7 +84,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
       </section>
       {(showPlans || freeMonth !== null) && <section aria-labelledby="plans-heading" className="min-w-0 desktop:col-span-8">
         <h2 id="plans-heading" className="student-section-title">{PLAN_COPY.heading}</h2>
-        {/* The free month is the first plan card, beside the paid plans while they are on sale. */}
+        {/* The free month is the first plan card; the Semester | Session switch sits with the paid plans it changes. */}
         <div className="mt-3"><PlanChooser plans={showPlans ? entitlement.plans : []}
           first={freeMonth !== null ? <FreeMonthPlanCard {...freeMonth} /> : undefined} /></div>
         {showPlans && <div className="mt-4 grid gap-1.5 text-sm text-student-text-secondary">

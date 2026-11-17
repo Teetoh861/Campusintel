@@ -121,24 +121,45 @@ test('outside a First Semester only Semester plans are sold: no switch and no pr
   })
 })
 
-test('the free month card is the first plan card, before Standard and Plus, and the only one when no paid plan is on sale', async () => {
+test('the free month card comes first; the Semester | Session switch sits directly above Standard and Plus, the only cards it changes', async () => {
   const first = React.createElement('li', { 'data-plan': 'free-month' }, 'Free month ₦0')
-  const cards = markup => [...markup.matchAll(/<li[^>]* data-plan="([^"]+)"/g)].map(match => match[1])
-  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue, first }, async ({ html }) => {
+  // What follows what, on a phone and for a screen reader: each plan card by its plan, and the switch.
+  const order = markup => [...markup.matchAll(/data-plan="([^"]+)"|<fieldset class="student-plan-switch/g)]
+    .map(match => match[1] ?? 'switch')
+  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue, first }, async ({ render, html }) => {
     const markup = html()
-    assert.deepEqual(cards(markup), ['free-month', 'standard_semester', 'plus_semester'])
-    assert.match(markup, /<ul class="grid gap-4 tablet:grid-cols-2 desktop:grid-cols-3"/, 'three cards side by side on a desktop')
-    assert.match(markup, /Billing period/, 'the period switch belongs to the paid plans and stays')
+    assert.deepEqual(order(markup), ['free-month', 'switch', 'standard_semester', 'plus_semester'])
+    // On a desktop the three cards stand side by side and level, and the switch has a row of its own over the two paid
+    // cards: the free month starts in the second row, beside them.
+    assert.match(markup, /^<div class="grid gap-4 desktop:grid-cols-3">/)
+    assert.match(markup, /<ul class="grid gap-4 tablet:grid-cols-2 desktop:grid-cols-1 desktop:col-start-1 desktop:row-start-2"><li data-plan="free-month">/)
+    assert.match(markup, /<fieldset class="student-plan-switch desktop:col-span-2 desktop:col-start-2 desktop:row-start-1">/)
+    assert.match(markup, /<ul class="grid gap-4 tablet:grid-cols-2 desktop:col-span-2 desktop:col-start-2 desktop:row-start-2" aria-live="polite"><li class="student-surface flex h-full flex-col" data-plan="standard_semester">/)
+    // The switch changes the paid plans and leaves the free month as it is.
+    find(render(), node => node.type === 'input' && node.props.value === 'session').props.onChange()
+    assert.deepEqual(order(html()), ['free-month', 'switch', 'standard_session', 'plus_session'])
   })
+  // Semester plans only (outside a First Semester): no switch, and no row is left empty above the cards.
+  const semesterOnly = catalogue.filter(plan => plan.period === 'semester')
+  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: semesterOnly, first }, async ({ html }) => {
+    const markup = html()
+    assert.deepEqual(order(markup), ['free-month', 'standard_semester', 'plus_semester'])
+    assert.doesNotMatch(markup, /row-start|Billing period/)
+    assert.match(markup, /^<div class="grid gap-4 desktop:grid-cols-3">/, 'still side by side')
+  })
+  // No paid plan on sale: the free month alone, at the width of one plan card, and no empty list for paid plans.
   await drive('./PlanChooser.tsx', 'PlanChooser', { plans: [], first }, async ({ html }) => {
     const markup = html()
-    assert.deepEqual(cards(markup), ['free-month'])
-    assert.doesNotMatch(markup, /Billing period|desktop:grid-cols-3|Pay ₦/)
+    assert.deepEqual(order(markup), ['free-month'])
+    assert.match(markup, /^<div class="grid gap-4"><ul class="grid gap-4 tablet:grid-cols-2"><li data-plan="free-month">/)
+    assert.equal(markup.match(/<ul\b/g).length, 1)
+    assert.doesNotMatch(markup, /Billing period|desktop:|Pay ₦/)
   })
+  // Without the free month: the switch above the two paid cards, as before.
   await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue }, async ({ html }) => {
     const markup = html()
-    assert.deepEqual(cards(markup), ['standard_semester', 'plus_semester'], 'without it, the two paid cards as before')
-    assert.doesNotMatch(markup, /desktop:grid-cols-3/)
+    assert.deepEqual(order(markup), ['switch', 'standard_semester', 'plus_semester'])
+    assert.doesNotMatch(markup, /desktop:/)
   })
 })
 

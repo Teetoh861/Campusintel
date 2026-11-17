@@ -1,7 +1,7 @@
 'use client'
-// app/access/PlanChooser.tsx — The plans: a Semester | Session switch above a Standard and a Plus card, with the free
-// month as the first card while this student can claim it. Prices come from the catalogue through the server; Pay
-// always opens Confirm courses first. Choosing Semester first offers the Session.
+// app/access/PlanChooser.tsx — The plans: the free month first while this student can claim it, then a Semester |
+// Session switch directly above the Standard and Plus cards, the only ones it changes. Prices come from the catalogue
+// through the server; Pay always opens Confirm courses first. Choosing Semester first offers the Session.
 import Link from 'next/link'
 import { useState } from 'react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -24,17 +24,25 @@ export function PlanChooser({ plans, first }: {
   const [prompt, setPrompt] = useState<PlanTier | null>(null)
   const shown = sessionOffered ? period : 'semester'
   const prompted = prompt === null ? null : tierPrices(plans, prompt)
-  return <div className="grid gap-4">
-    {sessionOffered && <fieldset className="student-plan-switch">
+  // The free month comes first and the switch sits directly above the paid plans it changes. On a desktop the free month
+  // stands beside them, level with their cards, and the switch has a row of its own over the two paid cards. A free
+  // month card on its own (no paid plan on sale) keeps the width of one plan card.
+  const paid = plans.length > 0
+  const beside = first !== undefined && paid
+  const level = beside && sessionOffered ? ' desktop:row-start-2' : ''
+  return <div className={'grid gap-4' + (beside ? ' desktop:grid-cols-3' : '')}>
+    {first !== undefined && <ul className={'grid gap-4 tablet:grid-cols-2' +
+      (beside ? ' desktop:grid-cols-1 desktop:col-start-1' + level : '')}>{first}</ul>}
+    {sessionOffered && <fieldset className={'student-plan-switch' +
+      (beside ? ' desktop:col-span-2 desktop:col-start-2 desktop:row-start-1' : '')}>
       <legend className="sr-only">{PLAN_COPY.periodSwitchLabel}</legend>
       {(['semester', 'session'] as const).map(value => <label key={value} className="student-plan-switch-option">
         <input type="radio" name="plan-period" value={value} checked={shown === value} onChange={() => setPeriod(value)} />
         <span>{PLAN_PERIOD_NAME[value]}</span>
       </label>)}
     </fieldset>}
-    <ul className={'grid gap-4 tablet:grid-cols-2' + (first !== undefined && plans.length > 0 ? ' desktop:grid-cols-3' : '')}
+    {paid && <ul className={'grid gap-4 tablet:grid-cols-2' + (beside ? ' desktop:col-span-2 desktop:col-start-2' + level : '')}
       aria-live="polite">
-      {first}
       {PLAN_TIERS.map(tier => {
         const prices = tierPrices(plans, tier)
         const plan = shown === 'session' ? prices.session : prices.semester
@@ -56,7 +64,7 @@ export function PlanChooser({ plans, first }: {
           </div>
         </li>
       })}
-    </ul>
+    </ul>}
     <Dialog open={prompt !== null} onOpenChange={open => { if (!open) setPrompt(null) }}>
       {prompt !== null && prompted?.semester && prompted.session && <DialogContent className="student-plan-dialog">
         <DialogTitle className="text-left text-xl font-bold text-student-text-primary">{planName(prompt, 'session')}</DialogTitle>
