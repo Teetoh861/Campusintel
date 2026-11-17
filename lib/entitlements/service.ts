@@ -38,7 +38,7 @@ export const claimRow = z.discriminatedUnion('state', [
 export type ClaimRow = z.infer<typeof claimRow>
 
 /** early_access_claim_eligibility(): whether this student can claim now and, if so, when that month would end and when
- *  the claim closes (20261117120000). */
+ *  the claim closes (20261116130000). */
 export const freeMonthEligibilityRow = z.object({ eligible: z.boolean(), ends_at: timestamp.optional(),
   closes_at: timestamp.optional() })
 

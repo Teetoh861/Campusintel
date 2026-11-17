@@ -1,4 +1,4 @@
--- supabase/migrations/20261117120000_free_month_review_fixes.sql — Review findings on the free month claim
+-- supabase/migrations/20261116130000_free_month_review_fixes.sql — Review findings on the free month claim
 -- (20261116120000_early_access_claim.sql).
 -- 1. The claim window cannot reopen. The instant the claim closes is recorded when the actual launch is, and every
 --    reader takes that stored instant. Changing the claim days or the cutoff afterwards moves nothing, and the operator's
@@ -12,7 +12,7 @@
 -- ---------------------------------------------------------------------------
 alter table private.entitlement_policy add column early_access_claim_closes_at timestamptz;
 comment on column private.entitlement_policy.early_access_claim_closes_at is
-  'When the free month claim closes: the earlier of the actual launch plus early_access_enrollment_days and early_access_claim_cutoff, fixed when the actual launch is recorded (20261117120000). Changing the days or the cutoff afterwards does not move it.';
+  'When the free month claim closes: the earlier of the actual launch plus early_access_enrollment_days and early_access_claim_cutoff, fixed when the actual launch is recorded (20261116130000). Changing the days or the cutoff afterwards does not move it.';
 -- A database that already recorded its launch keeps the window it was given.
 update private.entitlement_policy
   set early_access_claim_closes_at = least(actual_launch_at + make_interval(days => early_access_enrollment_days),
