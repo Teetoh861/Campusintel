@@ -223,8 +223,9 @@ function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }
     'ended': <>Your Early Access month has ended.</>,
     'enrollment-closed': <>Early Access enrollment closed
       {early.enrollment_closes_at !== null && <> on {formatAccessDate(early.enrollment_closes_at)}</>}.</>,
-    'unavailable': <>This Early Access place can’t be used by this account. If you think this is a mistake, <Link
-      href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="underline underline-offset-2">contact support</Link>.</>,
+    'unavailable': <>This Early Access place can’t be used by this account. If you think this is a mistake, go to <Link
+      href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
+      {STUDENT_DESTINATIONS.contact.label}</Link>.</>,
     'account-restricted': <>Early Access is not available while this account is scheduled for deletion.</>,
   }
   return <section aria-labelledby="early-access-heading"

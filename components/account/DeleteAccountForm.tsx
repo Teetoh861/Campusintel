@@ -6,6 +6,7 @@ import { Feedback } from '@/components/chrome/Feedback'
 import { btnNavy, btnGhost } from '@/components/chrome/ui'
 import { studentAction } from '@/components/student/ui'
 import { AUTH_API, PASSWORD_MAX_LENGTH } from '@/lib/auth/constants'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@/lib/account/constants'
 import type { FormEvent } from 'react'
 
@@ -41,7 +42,7 @@ export function DeleteAccountForm({ continuityToken }: { continuityToken: string
           <p>You will be signed out on every device. Before the {ACCOUNT_DELETION_GRACE_DAYS}-day deadline, sign in and choose “Yes, keep my account” to cancel.</p>
           <p>After the deadline, you can’t sign in or restore your account, even if deletion has not finished. Your profile, bookmarks, practice history and question reports that identify you will be removed.</p>
           <p>If you used a free pass, a protected record of your email address is kept without your account, so the same address cannot start another pass. A used free trial or Early Access place stays used.</p>
-          <p>Our service providers may retain some records and backups under their policies or legal obligations. Contact support for details.</p>
+          <p>Our service providers may retain some records and backups under their policies or legal obligations. Ask {STUDENT_DESTINATIONS.contact.label} for details.</p>
         </div>
         <FormField id="delete-current-password" name="password" label="Current password" type="password"
           autoComplete="current-password" required maxLength={PASSWORD_MAX_LENGTH} disabled={pending} aria-describedby="deletion-details" autoFocus />

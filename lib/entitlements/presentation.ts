@@ -306,7 +306,7 @@ export const TERMS_COPY = {
 // ---------------------------------------------------------------------------------------------------------------------
 export function accessCopy(onSale: boolean) {
   return onSale ? {
-    lockedTitle: 'Included when you subscribe',
+    lockedTitle: 'Included when you subscribe.',
     lockedAction: 'Subscribe',
     studyLocked: 'Included when you subscribe.',
     previewOthers: (code: string) => `The other topics in ${code} are included when you subscribe.`,
@@ -314,7 +314,7 @@ export function accessCopy(onSale: boolean) {
     aiNotEntitled: 'Campus Bot is included when you subscribe.',
     aiSection: 'Campus Bot practice from your own notes is included when you subscribe.',
   } as const : {
-    lockedTitle: 'Included with full access',
+    lockedTitle: 'Included with full access.',
     lockedAction: 'See how to unlock',
     studyLocked: 'Included with full access.',
     previewOthers: (code: string) => `The other topics in ${code} come with full access.`,
@@ -395,14 +395,14 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     if (left > 0 && left <= noticeWindow && !continues) {
       const name = access.source === 'paid' && summary.paid !== null ? paidPlanName(summary.paid)
         : ACCESS_SOURCE_LABEL[access.source]
-      return { id: 'access-ending', tone: 'info', title: access.source === 'paid' ? 'Your plan ends soon' : 'Your full access ends soon',
+      return { id: 'access-ending', tone: 'info', title: access.source === 'paid' ? 'Your plan ends soon.' : 'Your full access ends soon.',
         body: `Your ${name} ends ${formatAccessDate(access.ends_at)}. ` +
           'Department courses lock after that. GST courses stay free.', action: 'View your plan' }
     }
   }
   if (early.status === 'awaiting-launch') {
     // No date is promised: the month starts when CampusIntell actually launches, never on the planned date.
-    return { id: 'early-access-awaiting-launch', tone: 'info', title: 'You’re on the Early Access list',
+    return { id: 'early-access-awaiting-launch', tone: 'info', title: 'You’re on the Early Access list.',
       body: 'Your free month of full access starts automatically when CampusIntell launches publicly. ' +
         'There is nothing to claim, and a later launch never shortens your month.', action: 'View your plan' }
   }
@@ -411,13 +411,13 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     const left = msUntil(summary, trial.ends_at)
     // A pass shows its end time only: no allowances or per-course limits.
     return { id: left <= noticeWindow ? 'discovery-ending' : 'discovery-active', tone: 'info',
-      title: left <= noticeWindow ? `Your ${DISCOVERY_PASS_NOUN} ends soon` : `Your ${DISCOVERY_PASS_NOUN} is active`,
+      title: left <= noticeWindow ? `Your ${DISCOVERY_PASS_NOUN} ends soon.` : `Your ${DISCOVERY_PASS_NOUN} is active.`,
       body: `It ends ${formatAccessDate(trial.ends_at)}.`, action: 'View your plan' }
   }
   if (trial.status === 'ended') {
     const since = -msUntil(summary, trial.ends_at)
     if (since >= 0 && since <= ENDED_NOTICE_DAYS * DAY_MS) {
-      return { id: 'trial-ended', tone: 'info', title: `Your ${trialLabel(summary)} has ended`,
+      return { id: 'trial-ended', tone: 'info', title: `Your ${trialLabel(summary)} has ended.`,
         body: 'GST courses stay free, and your saved bookmarks and results are kept.', action: 'View your plan' }
     }
     return null

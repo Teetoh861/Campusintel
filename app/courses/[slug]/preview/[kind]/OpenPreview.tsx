@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import { postDiscoveryCommand } from '@/lib/entitlements/client'
 import type { DiscoveryCommand, DiscoveryResult } from '@/lib/entitlements/discovery-contract'
 import type { ReactElement } from 'react'
@@ -18,7 +19,7 @@ const REFUSAL: Partial<Record<DiscoveryResult['status'], string>> = {
   'used-elsewhere': 'You’ve already used this on another course.',
   'not-enough-time': 'There isn’t enough time left on your pass for the whole exam. Nothing was used.',
   'not-found': 'This course isn’t part of the free pass. Nothing was used.',
-  'session-changed': 'You signed in on another tab.',
+  'session-changed': SIGNED_IN_ON_ANOTHER_TAB,
   'signed-out': 'You’ve been signed out.',
 }
 const RETRY = 'We couldn’t open it. Nothing was used.'

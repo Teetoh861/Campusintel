@@ -1,5 +1,6 @@
 'use client'
 // app/courses/ai-practice/[courseId]/AiPracticeClient.tsx — Upload notes, follow progress, then practise the personal set.
+import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { FileUp, LoaderCircle } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -9,14 +10,15 @@ import { UPLOAD_ACCEPT_ATTRIBUTE, approximateWords } from '@/lib/ai-practice/upl
 import type { AllowanceSummary, PersonalSetView } from '@/lib/ai-practice/upload-contract'
 import { NEUTRAL_TRIAL_WORDING } from '@/lib/entitlements/presentation'
 import type { TrialWording } from '@/lib/entitlements/presentation'
-import { NOT_ENTITLED_TITLE, createGenerationRequests, generateFromDocument, grantName, notEntitledMessage,
+import { NOT_ENTITLED_TITLE, createGenerationRequests, freePassAction, generateFromDocument, grantName, notEntitledMessage,
   runUploadJourney, setDateLabel } from './journey'
 import type { JourneyOutcome, JourneyPhase } from './journey'
 import { PersonalDisclaimer, PersonalPractice } from './PersonalPractice'
 import type { ReactElement } from 'react'
 
 const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
-  uploading: { title: 'Uploading your file', detail: '' },
+  // Only the upload needs the page: it goes straight from this device, and leaving the page stops it.
+  uploading: { title: 'Uploading your file', detail: 'Keep this page open while your file uploads.' },
   reading: { title: 'Reading your notes', detail: 'Preparing your notes for practice questions.' },
   generating: { title: 'Writing five questions', detail: 'This may take a moment.' },
 }
@@ -39,7 +41,7 @@ export function JourneyProgress({ phase }: { phase: JourneyPhase }): ReactElemen
   return <div className="ai-practice-progress" role="status" aria-live="polite">
     <LoaderCircle aria-hidden="true" size={20} strokeWidth={1.75} className="animate-spin" />
     <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}</p>
-      {PHASE_COPY[phase].detail ? <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p> : null}</div>
+      <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p></div>
   </div>
 }
 
@@ -101,6 +103,7 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
   const busy = phase !== null
   const line = allowanceLine(allowance, trial)
   const entitled = canGenerate && allowance?.state !== 'not-entitled'
+  const freePass = freePassAction(trial, plansOnSale)
 
   return <div className="ai-practice-workspace">
     <PersonalDisclaimer />
@@ -109,7 +112,9 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
         ? 'Uploads are available for your courses this semester. Your saved sets are still here.'
         : 'Uploads are paused for now. Your saved sets are still here.'}
     </p> : null}
-    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info">{notEntitledMessage(trial, plansOnSale)}</Notice>}
+    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info" action={freePass === null ? undefined
+      : <Link href={freePass.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>{freePass.label}</Link>}>
+      {notEntitledMessage(trial, plansOnSale)}</Notice>}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
       <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter

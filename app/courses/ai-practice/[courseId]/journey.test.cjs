@@ -79,8 +79,8 @@ test('unsupported, empty and oversized files never leave the device', async () =
 test('upload transport failures and storage size refusals are explained', async () => {
   const reserved = { status: 200, json: { status: 'upload-reserved', documentId: DOC, uploadUrl: 'https://s/u' } }
   assert.match((await runUploadJourney(file(), harness([reserved, { status: 413 }]).deps)).message, /5 MB/)
-  assert.equal((await runUploadJourney(file(), harness([{ ...reserved }, { status: 500 }]).deps)).title, 'Upload failed')
-  assert.equal((await runUploadJourney(file(), harness([{ ...reserved }, new Error('offline')]).deps)).title, 'Upload failed')
+  assert.equal((await runUploadJourney(file(), harness([{ ...reserved }, { status: 500 }]).deps)).title, 'Upload failed.')
+  assert.equal((await runUploadJourney(file(), harness([{ ...reserved }, new Error('offline')]).deps)).title, 'Upload failed.')
 })
 
 test('a rejected file shows the specific reason and stops before generation', async () => {
@@ -123,8 +123,8 @@ test('a busy reply keeps the request id until the running generation is recorded
   const server = ledger()
   const replies = [{ running: true }, { running: true }, {}]
   const { deps, requests } = harness(body => server.generate(body.requestId, replies.shift()))
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Still preparing your questions')
-  assert.equal((await generateFromDocument(DOC, deps)).title, 'Still preparing your questions')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Still preparing your questions.')
+  assert.equal((await generateFromDocument(DOC, deps)).title, 'Still preparing your questions.')
   assert.equal((await generateFromDocument(DOC, deps)).kind, 'generated')
   assert.deepEqual(requests.map(request => request.body.requestId), ['r1', 'r1', 'r1'])
   assert.deepEqual(server.state, { providerCalls: 1, charged: 1 })
@@ -168,7 +168,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
   assert.equal(describeResult({ status: 'session-changed', allowance: null }).signedOut, true)
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
-  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot isn’t included in your account', 'none', 'info'])
+  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot isn’t included in your account.', 'none', 'info'])
   // Regression F4: a trial grant is named by the policy the student's own grant was issued under, from the plan
   // summary, never by whether the database could issue a Discovery Pass. A historical seven-day trial stays a free
   // trial on a database from before the pass and on one that offers it; a pass is offered only to an account that
@@ -204,7 +204,12 @@ test('every server result has student-safe copy; unknown or broken replies degra
   const eligible = trialWording({ ...entitlementSummarySchema.parse({ ...post, trial: { status: 'available', policy: null,
     starts_at: null, ends_at: null, available_from: null } }), discovery_eligible: true })
   assert.deepEqual(eligible, { policy: null, passAvailable: true }, 'an eligible student can start a pass')
-  assert.match(describeResult({ status: 'not-entitled' }, eligible).message, /a free pass or Early Access/)
+  assert.equal(describeResult({ status: 'not-entitled' }, eligible).message, 'Campus Bot opens with a free pass or Early Access.')
+  assert.deepEqual(describeResult({ status: 'not-entitled' }, eligible).link, { label: 'Get your free pass', href: '/access' },
+    'the button names the pass the message offers')
+  assert.deepEqual(describeResult({ status: 'not-entitled' }, eligible, true).link, { label: 'Plan & Access', href: '/access' },
+    'once plans are on sale the message offers no pass')
+  assert.deepEqual(describeResult({ status: 'not-entitled' }, offered).link, { label: 'Plan & Access', href: '/access' })
   assert.doesNotMatch(JSON.stringify([expired(pass), exhausted(pass)]), /Discovery/, 'the pass is called a free pass')
   assert.doesNotMatch(describeResult({ status: 'not-entitled' }, offered).message, /Discovery|pass/i, 'an ineligible student is not offered one')
   const neutral = trialWording(null)
@@ -220,7 +225,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
       'Campus Bot is included when you subscribe.')
   }
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)
-  assert.equal(broken.title, 'Something went wrong')
+  assert.equal(broken.title, 'Something went wrong.')
 })
 
 test('Campus Bot limits replace the generic allowance message: session, week and undelivered, with reset times', () => {

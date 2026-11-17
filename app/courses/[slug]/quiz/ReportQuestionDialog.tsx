@@ -7,27 +7,34 @@ import { Textarea } from '@/components/ui/textarea'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
+import { AUTH_CONTINUITY_HEADER, SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import { REPORT_NOTE_MAX_CHARACTERS, clampNote, noteLength } from '@/lib/question-reports/note-limit'
+import { PRACTICE_COPY } from './practice-presentation'
 import type { ReportTarget } from './types'
 import type { ReactElement } from 'react'
 
 export const REPORT_ENDPOINT = '/api/question-reports'
 type Outcome = 'reported' | 'already-reported' | 'limited'
-type Phase = { kind: 'idle' | 'busy' } | { kind: 'error'; session: boolean } | { kind: 'done'; outcome: Outcome }
+/** Why a report was not sent: the sign-in (signed out, or replaced by a newer one), or anything else. */
+type Refused = 'signed-out' | 'session-changed' | 'failed'
+type Phase = { kind: 'idle' | 'busy' } | { kind: 'error'; reason: Refused } | { kind: 'done'; outcome: Outcome }
 
 export const REPORT_COPY = {
   title: 'Report a question',
   label: 'What’s wrong with it?',
   help: 'For example: the marked answer is wrong, or the question is unclear.',
-  errorTitle: 'Your report couldn’t be sent.',
-  errorBody: 'Your note is kept. Try again in a moment.',
-  sessionTitle: 'Your sign-in changed.',
-  sessionBody: 'Reload this page and sign in again before reporting. Your note is kept here until you leave.',
+  // A report that was not sent, by why: each says what happened in the words every other screen uses for it.
+  refused: {
+    failed: { title: 'Your report couldn’t be sent.', body: 'Your note is kept. Try again in a moment.' },
+    'signed-out': { title: PRACTICE_COPY.signedOutTitle,
+      body: 'Reload this page and sign in again before reporting. Your note is kept here until you leave.' },
+    'session-changed': { title: SIGNED_IN_ON_ANOTHER_TAB,
+      body: 'Reload this page before reporting. Your note is kept here until you leave.' },
+  },
   done: {
-    reported: { title: 'Report sent', body: 'Thanks. The CampusIntell team will check this question.' },
-    'already-reported': { title: 'You’ve already reported this question', body: 'You don’t need to send another report.' },
-    limited: { title: 'Report not sent', body: 'You’ve sent several reports recently. Try again later.' },
+    reported: { title: 'Report sent.', body: 'Thanks. The CampusIntell team will check this question.' },
+    'already-reported': { title: 'You’ve already reported this question.', body: 'You don’t need to send another report.' },
+    limited: { title: 'Report not sent.', body: 'You’ve sent several reports recently. Try again later.' },
   },
 } as const
 
@@ -37,7 +44,7 @@ function formatCount(value: number): string {
 
 /** Resolve the backend's outcome; anything unreadable is a plain failure the student can retry. */
 export async function sendQuestionReport(target: ReportTarget, note: string, continuityToken: string,
-  request: typeof fetch = fetch): Promise<Outcome | 'session' | 'failed'> {
+  request: typeof fetch = fetch): Promise<Outcome | Refused> {
   try {
     const response = await request(REPORT_ENDPOINT, {
       method: 'POST', credentials: 'same-origin',
@@ -48,7 +55,7 @@ export async function sendQuestionReport(target: ReportTarget, note: string, con
     const body: unknown = await response.json().catch(() => null)
     const status = typeof body === 'object' && body !== null && 'status' in body ? body.status : null
     if (status === 'reported' || status === 'already-reported' || status === 'limited') return status
-    if (status === 'signed-out' || status === 'session-changed') return 'session'
+    if (status === 'signed-out' || status === 'session-changed') return status
     return 'failed'
   } catch { return 'failed' }
 }
@@ -75,7 +82,7 @@ export function ReportQuestionDialog({ target, questionNumber, continuityToken, 
     if (busy) return
     setPhase({ kind: 'busy' })
     const outcome = await sendQuestionReport(target, note, continuityToken)
-    if (outcome === 'failed' || outcome === 'session') { setPhase({ kind: 'error', session: outcome === 'session' }); return }
+    if (outcome === 'failed' || outcome === 'signed-out' || outcome === 'session-changed') { setPhase({ kind: 'error', reason: outcome }); return }
     if (outcome !== 'limited') onReported(target.questionId)
     setPhase({ kind: 'done', outcome })
   }
@@ -104,9 +111,7 @@ export function ReportQuestionDialog({ target, questionNumber, continuityToken, 
           className="student-focus-control mt-3 min-h-[120px] rounded-[11px] border-student-control-border bg-student-surface text-[15px] text-student-text-primary" />
         <p className="student-practice-count-chars" aria-live="off">{formatCount(count)} / {formatCount(REPORT_NOTE_MAX_CHARACTERS)}</p>
         {phase.kind === 'error' ? <div className="mt-3">
-          <Notice title={phase.session ? REPORT_COPY.sessionTitle : REPORT_COPY.errorTitle}>
-            {phase.session ? REPORT_COPY.sessionBody : REPORT_COPY.errorBody}
-          </Notice>
+          <Notice title={REPORT_COPY.refused[phase.reason].title}>{REPORT_COPY.refused[phase.reason].body}</Notice>
         </div> : null}
         <div className="student-practice-foot">
           <button type="button" className={studentAction(btnGhost)} disabled={busy} onClick={onClose}>Cancel</button>

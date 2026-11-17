@@ -3,7 +3,8 @@
 // prompts and options; the database fixed the deadline at start, keeps the sheet saved before it and grades it once,
 // and only then returns correct options and explanations. The rules are the Discovery exam's, shared:
 // ExamClock supplies trusted time; ExamAutosave sends sequenced deltas under the persistent exam-tab identity.
-// At zero the server grades only answers it received in time. Exit warns when pending choices have no durable copy.
+// At zero the answers lock and every hand-in, automatic or tapped, waits for the server's deadline; the server grades
+// only answers it received in time. Exit warns when pending choices have no durable copy.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
 import { ExamClock } from '@/lib/entitlements/exam-clock'
@@ -75,6 +76,8 @@ export function ActiveAttempt(props: Props): ReactElement {
   const [save, setSave] = useState<AutosaveSnapshot | null>(null)
   const [answersSafe, setAnswersSafe] = useState(true)
   const [busy, setBusy] = useState(false)
+  // Time is up here and the hand-in is waiting for the server's deadline (the buttons say Submitting… meanwhile).
+  const [awaitingDeadline, setAwaitingDeadline] = useState(false)
   const [submitFailing, setSubmitFailing] = useState(false)
   const [confirm, setConfirm] = useState<'submit' | 'exit' | null>(null)
   const [refusal, setRefusal] = useState<AttemptRefusal | null>(null)
@@ -238,21 +241,54 @@ export function ActiveAttempt(props: Props): ReactElement {
     return true
   }, [tab, attempt.id, continuityToken, finish, refuse])
 
-  // At zero the attempt submits itself at once and keeps asking while the network is down; after the last automatic
-  // try the line offers Try again, and coming back online tries once more.
+  /**
+   * A hand-in the student asks for: Submit practice, or Try again. With time left on this device (or no reading to
+   * wait on) it goes at once. Once this device's zero has passed it goes with the time-up hand-in below, which waits
+   * for the server's deadline: sent before it, the attempt is still open there, so it would be recorded as submitted
+   * and its result would not say that time ran out. The clock is read at the tap, not from the countdown shown a
+   * moment ago, so a tap just after zero waits too; the countdown is brought up to date, which starts that hand-in.
+   */
+  const handIn = useCallback((): void => {
+    const left = examClock.current?.remaining() ?? null
+    if (left === null || left > 0 || Math.max(0, examClock.current?.untilPassed() ?? 0) === 0) { void submit(); return }
+    setRemaining(remainingMs())
+  }, [submit, remainingMs])
+
+  // At this device's zero the answers lock and anything unsaved is sent. The hand-in waits until the deadline has
+  // passed on the server too: this device's zero can come up to one clock exchange early, and an attempt handed in
+  // then is still open there, so it would be recorded as submitted and its result would not say that time ran out.
+  // While it waits the buttons say Submitting… (a tap joins this hand-in, see handIn). It keeps asking while the
+  // network is down; after the last automatic try the line offers Try again, and coming back online tries once more.
   useEffect(() => {
     if (!timeUp || graded.current) return
     let cancelled = false
+    let timer: number | null = null
+    const untilDue = (): number => Math.max(0, examClock.current?.untilPassed() ?? 0)
     async function attemptSubmit(): Promise<void> {
-      if (cancelled || await submit()) return
+      timer = null
+      if (cancelled) return
+      const wait = untilDue()
+      if (wait > 0) {
+        setAwaitingDeadline(true)
+        timer = window.setTimeout(() => { void attemptSubmit() }, wait)
+        return
+      }
+      setAwaitingDeadline(false)
+      if (await submit() || cancelled) return
       if (autoRetries.current >= MAX_AUTO_RETRIES) { setAutoRetrying(false); return }
       autoRetries.current += 1
-      window.setTimeout(() => { void attemptSubmit() }, RETRY_MS)
+      timer = window.setTimeout(() => { void attemptSubmit() }, RETRY_MS)
     }
+    void autosave.current?.flush()
     void attemptSubmit()
-    const online = () => { void submit() }
+    const online = () => { if (untilDue() === 0) void submit() }
     window.addEventListener('online', online)
-    return () => { cancelled = true; window.removeEventListener('online', online) }
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+      setAwaitingDeadline(false)
+      window.removeEventListener('online', online)
+    }
   }, [timeUp, submit])
 
   const question = attempt.questions[current]!
@@ -294,9 +330,9 @@ export function ActiveAttempt(props: Props): ReactElement {
       isLowTime={timeLeft !== null && timeLeft <= LOW_TIME_SECONDS} canAnswer={canAnswer}
       saveLine={saveLineFor({ timeUp, submitFailing, refusal, clockSynced: clockState === 'synced', clockFailures,
         save: saveState, answered, answersSafe, submitting: busy && !timeUp, autoRetrying })}
-      submitting={busy}
+      submitting={busy || awaitingDeadline}
       // Try again resends a submission that did not go through (and, at time up, the hand-in); otherwise the save.
-      onRetrySave={() => { if (timeUp || submitFailing || refusal !== null) void submit(); else autosave.current?.retry() }}
+      onRetrySave={() => { if (timeUp || submitFailing || refusal !== null) handIn(); else autosave.current?.retry() }}
       navOpen={navOpen} answeredCount={answered} markedCount={flags.size} answersMap={answersMap} markedMap={markedMap}
       onSelectOption={choose} onToggleMark={toggleFlag}
       onPrev={() => setCurrent(index => Math.max(0, index - 1))}
@@ -307,7 +343,7 @@ export function ActiveAttempt(props: Props): ReactElement {
       onLeave={focus => { returnFocus.current = focus; setConfirm('exit') }} />
     <AssessmentConfirmation kind="submit" open={confirm === 'submit'} onOpenChange={open => setConfirm(open ? 'submit' : null)}
       answered={answered} unanswered={attempt.questions.length - answered} flagged={flags.size}
-      pending={saveState !== null && saveState !== 'saved'} onConfirm={() => { void submit() }} onRestoreFocus={restore} />
+      pending={saveState !== null && saveState !== 'saved'} onConfirm={handIn} onRestoreFocus={restore} />
     <AssessmentConfirmation kind="exit" open={confirm === 'exit'} onOpenChange={open => setConfirm(open ? 'exit' : null)}
       body={exitBodyFor(saveState, answered, answersSafe)} unsafe={!answersSafe} onConfirm={exit} onRestoreFocus={restore} />
   </>

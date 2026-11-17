@@ -1,4 +1,5 @@
 // app/access/trial-flow.ts — What the student is told after the free pass (Discovery Pass) activation command.
+import { SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import type { EntitlementResult } from '@/lib/entitlements/contract'
 
 export type FlowMessage = { tone: 'error' | 'info' | 'success'; text: string }
@@ -24,8 +25,8 @@ export function describeResult(result: EntitlementResult): { message: FlowMessag
       text: 'Too many attempts. Please wait a few minutes and try again.' } }
     case 'capacity': return { next: 'stay', message: { tone: 'error',
       text: 'Passes can’t be started right now because of high demand. Please try again later.' } }
-    case 'signed-out':
-    case 'session-changed': return { next: 'refresh', message: { tone: 'error', text: 'Your sign-in has changed.' } }
+    case 'signed-out': return { next: 'refresh', message: { tone: 'error', text: 'You’ve been signed out.' } }
+    case 'session-changed': return { next: 'refresh', message: { tone: 'error', text: SIGNED_IN_ON_ANOTHER_TAB } }
     // The courses changed in another tab: the page loads again, so the student sees which courses a pass would set.
     case 'selection-changed': return { next: 'refresh', message: { tone: 'error', text: 'Your courses were just updated.' } }
     case 'invalid-request': return { next: 'stay', message: { tone: 'error', text: 'Something went wrong. Please try again.' } }
