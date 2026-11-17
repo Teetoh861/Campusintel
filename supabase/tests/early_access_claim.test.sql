@@ -112,10 +112,12 @@ create function pg_temp.rev(n integer) returns bigint language sql stable securi
 create function pg_temp.email(n integer) returns text language sql stable security definer as
   $$ select email::text from auth.users where id = pg_temp.u(n) $$;
 -- The two calls as the server makes them: the session, the hashes of the session's address, the revision on the page.
+-- An account without a profile (an unconfirmed one) has no revision to show; the request still names one, as every
+-- claim must, so it is sent as 0 and the database answers for the session.
 create function pg_temp.can_claim(n integer) returns jsonb language sql as
   $$ select public.early_access_claim_eligibility(pg_temp.s(n), pg_temp.hashes(pg_temp.email(n))) $$;
 create function pg_temp.claim(n integer) returns jsonb language sql as
-  $$ select public.claim_early_access(pg_temp.s(n), pg_temp.hashes(pg_temp.email(n)), pg_temp.rev(n)) $$;
+  $$ select public.claim_early_access(pg_temp.s(n), pg_temp.hashes(pg_temp.email(n)), coalesce(pg_temp.rev(n), 0)) $$;
 create function pg_temp.months(n integer) returns integer language sql stable security definer as
   $$ select count(*)::integer from public.entitlement_grants where user_id = pg_temp.u(n) and source = 'early_access' $$;
 create function pg_temp.month_end(p_start timestamptz) returns timestamptz language sql immutable as
@@ -335,6 +337,10 @@ select is(public.early_access_claim_eligibility(null, pg_temp.hashes('month-10@e
   'no session is not eligible');
 select is(public.early_access_claim_eligibility(pg_temp.s(10), '[]'::jsonb), '{"eligible":false}'::jsonb,
   'malformed hashes are not eligible, without an error');
+-- A claim always names the profile revision the page showed: without one it is an invalid request, and nothing starts.
+select throws_ok($$ select public.claim_early_access(pg_temp.s(10), pg_temp.hashes('month-10@example.test'), null) $$,
+  '22023', 'Invalid claim request', 'a claim without a profile revision is refused as invalid');
+select is(pg_temp.months(10), 0, 'and starts no month');
 reset role;
 select is((select jsonb_object_agg(step, result) from outcome where step like 'no-%'), '{
   "no-unconfirmed":{"read":false,"claim":"signed-out"},

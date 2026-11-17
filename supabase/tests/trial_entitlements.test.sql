@@ -412,8 +412,10 @@ update private.entitlement_policy set planned_launch_at = now() - interval '3 da
 create function pg_temp.rev(p_user uuid) returns bigint language sql stable security definer as
   $$ select revision from public.profiles where id = p_user $$;
 -- The claim as the server sends it: the session, the hashes of its address and the profile revision on the page.
+-- An account without a profile (an unconfirmed one) has no revision to show; the claim still names one, as every claim
+-- must, so it is sent as 0 and the database answers for the session.
 create function pg_temp.month(p_user uuid, p_session uuid, p_email text) returns jsonb language sql as
-  $$ select public.claim_early_access(p_session, pg_temp.claim(p_email), pg_temp.rev(p_user)) $$;
+  $$ select public.claim_early_access(p_session, pg_temp.claim(p_email), coalesce(pg_temp.rev(p_user), 0)) $$;
 create function pg_temp.month_end(p_start timestamptz) returns timestamptz language sql immutable as
   $$ select ((p_start at time zone 'Africa/Lagos') + interval '1 month') at time zone 'Africa/Lagos' $$;
 grant execute on function pg_temp.rev(uuid), pg_temp.month(uuid, uuid, text), pg_temp.month_end(timestamptz)
@@ -506,9 +508,17 @@ reset role;
 update auth.users set email_confirmed_at = now() where id = '61000000-0000-4000-8000-000000000009';
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009'),
   'confirming the email starts nothing by itself');
+-- The profile confirmation creates has no courses yet: a month needs them set first.
 set local role service_role;
 select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4000-8000-000000000009', 'unconfirmed-u@example.test')->>'state',
-  'claimed', 'once confirmed, U claims');
+  'needs-selection', 'once confirmed, U is asked to set courses before claiming');
+reset role;
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id = '61000000-0000-4000-8000-000000000009';
+set local role service_role;
+select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4000-8000-000000000009', 'unconfirmed-u@example.test')->>'state',
+  'claimed', 'with courses set, U claims');
 select is(pg_temp.month('61000000-0000-4000-8000-000000000011', '62000000-0000-4000-8000-000000000011', 'ent-h@example.test')->>'state',
   'claimed', 'and so does H');
 reset role;
