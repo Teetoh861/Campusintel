@@ -18,7 +18,7 @@ import { listPersonalSetsForCourse, readAllowance } from '@/lib/ai-practice/supa
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getStudentCourseByIdForVerifiedStudent, isActionableStudentCourse, isLockedStudentCourse }
   from '@/lib/courses/read-model'
-import { formatFreeMonthDay, trialWording } from '@/lib/entitlements/presentation'
+import { freeMonthClaim, trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readProfileRevision } from '@/lib/profile/course-selection'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -82,8 +82,7 @@ async function AiPracticeCourse({ courseId, continuityToken }: { courseId: strin
     readProfileRevision(client, context.user.id)])
   const entitlement = plan !== null && plan.status === 'ok' ? plan.entitlement : null
   const trial = trialWording(entitlement)
-  const freeMonth = entitlement !== null && entitlement.free_month !== null && profileRevision !== null
-    ? { continuityToken, profileRevision, endsOn: formatFreeMonthDay(entitlement.free_month.endsAt) } : null
+  const freeMonth = entitlement === null ? null : freeMonthClaim(entitlement, continuityToken, profileRevision)
   return <StudentPage band={<PageBand title="Practise from your notes"
     context={<p className="ai-practice-context"><b>{course.code}</b> · {course.title}</p>} />}>
     {/* Keyed by what Campus Bot currently allows, so a month claimed here opens the upload form on the next read. */}

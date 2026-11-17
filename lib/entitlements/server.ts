@@ -121,8 +121,9 @@ async function askFreeMonthOffer(client: StudentClient): Promise<FreeMonthOffer 
     const { data, error } = await createServiceRoleClient().rpc('early_access_claim_eligibility', {
       p_session_id: identity.sessionId, p_claim_hashes: identity.hashes })
     const parsed = freeMonthEligibilityRow.safeParse(data)
-    if (error || !parsed.success || !parsed.data.eligible || parsed.data.ends_at === undefined) return null
-    return { endsAt: parsed.data.ends_at }
+    if (error || !parsed.success || !parsed.data.eligible || parsed.data.ends_at === undefined
+      || parsed.data.closes_at === undefined) return null
+    return { endsAt: parsed.data.ends_at, closesAt: parsed.data.closes_at }
   } catch {
     return null
   }

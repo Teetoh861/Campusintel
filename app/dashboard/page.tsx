@@ -20,7 +20,7 @@ import { AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
 import { homeCoursesFrom } from '@/lib/dashboard/home-courses'
-import { FREE_MONTH_COPY, accessNotice, formatFreeMonthDay } from '@/lib/entitlements/presentation'
+import { FREE_MONTH_COPY, accessNotice, formatFreeMonthDay, freeMonthClaim } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readPracticeProgress } from '@/lib/practice/progress'
 import { readProfileRevision } from '@/lib/profile/course-selection'
@@ -76,8 +76,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
   const plan = entitlement.status === 'ok' ? entitlement.entitlement : null
   // The free month card, only when the database says this student can claim it now. Without the revision the month
   // could set courses the student did not see (D7), so nothing is offered.
-  const freeMonth = plan !== null && plan.free_month !== null && profileRevision !== null
-    ? { continuityToken, profileRevision, endsOn: formatFreeMonthDay(plan.free_month.endsAt) } : null
+  const freeMonth = plan === null ? null : freeMonthClaim(plan, continuityToken, profileRevision)
   // A free month that is running, by the day the database says it ends. In its last hours the notice below says when it
   // ends, to the minute, so the line is not said twice.
   const running = plan !== null && plan.paid === null && plan.access?.source === 'early_access'

@@ -14,7 +14,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
-import { CHECKOUT_PROBLEM, CONFIRM_COPY, FREE_MONTH_COPY, RETURN_COPY, formatAccessDay, formatAccessLastDay, formatFreeMonthDay,
+import { CHECKOUT_PROBLEM, CONFIRM_COPY, FREE_MONTH_COPY, RETURN_COPY, formatAccessDay, formatAccessLastDay, freeMonthClaim,
   naira, paidPlanName, planName, planOf }
   from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
@@ -100,8 +100,7 @@ async function ConfirmCourses({ plan, continuityToken, here }: { plan: PlanKey; 
   // A free month already running, by the day the database says it ends.
   const early = entitlement.access?.source === 'early_access' ? entitlement.access.ends_at : null
   // A free month this student could claim instead of paying, only when the database says so now.
-  const freeMonth = entitlement.free_month === null ? null
-    : { continuityToken, profileRevision: revision, endsOn: formatFreeMonthDay(entitlement.free_month.endsAt) }
+  const freeMonth = freeMonthClaim(entitlement, continuityToken, revision)
   return <StudentPage band={band(lede)}>
     <div className="mx-auto grid w-full max-w-[680px] gap-6">
       <ConfirmAndPay plan={plan} priceKobo={onSale.price_kobo} expectedRevision={revision}

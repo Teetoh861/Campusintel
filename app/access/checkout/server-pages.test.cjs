@@ -127,7 +127,7 @@ test('a free month already running continues first: the plan keeps courses open 
 })
 
 test('a student who can claim a free month is offered it in one line above Pay; paying stays possible', async () => {
-  const { html, readOptions } = await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00' } })
+  const { html, readOptions } = await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-12T12:00:00+00:00' } })
   assert.deepEqual(readOptions, [{ discoveryEligibility: false, freeMonth: true }], 'the page asks the database whether it can be claimed')
   const offer = html.match(/<free-month-instead[^>]*>/)[0]
   assert.match(offer, /data-token="page-token" data-revision="7" data-ends-on="16 December"/,
@@ -137,7 +137,7 @@ test('a student who can claim a free month is offered it in one line above Pay; 
   assert.match(html, /<checkout-form/, 'paying stays possible')
   // Nobody else sees it: not while the read says no, and not without the revision the claim would be bound to.
   assert.doesNotMatch((await confirm('standard_semester', {})).html, /free-month-instead/)
-  assert.doesNotMatch((await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00' }, revision: null })).html,
+  assert.doesNotMatch((await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-12T12:00:00+00:00' }, revision: null })).html,
     /free-month-instead|checkout-form/)
 })
 

@@ -56,8 +56,10 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid 
       'resolve_early_access_duplicates', 'reconcile_early_access_on_confirmation'))), 0,
   'no function imports, changes, sweeps or auto-enrols a list any more');
 select hasnt_function('private', 'lock_early_access_accounts', array['text'], 'nor locks accounts by a list email');
-select hasnt_function('public', 'admin_activate_public_launch', array['text', 'text', 'integer'],
-  'the launch no longer takes a sweep batch size');
+select has_function('public', 'admin_activate_public_launch', array['text', 'text', 'integer'],
+  'the old launch signature stays for callers built before the claim (its batch size is ignored)');
+select has_function('public', 'admin_activate_public_launch', array['text', 'text', 'boolean'],
+  'beside the form that can allow a short window');
 select ok(not exists (select 1 from pg_trigger where tgrelid = 'auth.users'::regclass
   and tgname = 'early_access_reconcile_on_confirmation'), 'confirming an email starts nothing');
 
@@ -210,6 +212,50 @@ select is((select count(*)::integer from public.entitlement_grants where source 
   'the launch grants nothing, to a student on the retired list or anyone else');
 select is((select count(*)::integer from private.entitlement_events where event = 'operator.public-launch'
   and actor = 'operator:founder'), 1, 'and is audited once, with the founder as actor');
+-- The closing instant is stored with the launch, and nothing changes it afterwards.
+select is((select early_access_claim_closes_at from private.entitlement_policy),
+  (select (result->>'claim_closes_at')::timestamptz from outcome where step = 'launch'),
+  'the instant the claim closes is stored with the launch');
+set local role service_role;
+insert into outcome values ('configure-days', public.admin_configure_early_access(null, 30, null, 'ops', 'longer claim'));
+insert into outcome values ('configure-same', public.admin_configure_early_access(null, 10, null, 'ops', 'same days'));
+reset role;
+select is((select jsonb_build_object('state', result->>'state',
+    'closes', (result->>'claim_closes_at')::timestamptz = (select (result->>'claim_closes_at')::timestamptz from outcome where step = 'launch'))
+  from outcome where step = 'configure-days'), '{"state":"claim-window-fixed","closes":true}'::jsonb,
+  'after launch the operator cannot change the claim days, and is told when the claim closes');
+select is((select early_access_enrollment_days from private.entitlement_policy), 10, 'the days are unchanged');
+select ok(not exists (select 1 from private.entitlement_events where event = 'operator.early-access-policy'
+  and detail->>'reason' = 'longer claim'), 'and the refused change is not recorded as a change');
+select is((select result->>'state' from outcome where step = 'configure-same'), 'changed',
+  'a call that leaves the days as they are still goes through');
+-- Even a direct change to the days or the cutoff moves nothing: the claim still closes at the stored instant.
+update private.entitlement_policy set early_access_enrollment_days = 30, early_access_claim_cutoff = now() + interval '90 days';
+select is(private.early_access_claim_closes_at(), (select (result->>'claim_closes_at')::timestamptz from outcome where step = 'launch'),
+  'raising the days or the cutoff after launch does not move the closing instant');
+select is((select array_agg(private.early_access_claim_open(at) order by at) from unnest(array[
+    (select (result->>'claim_closes_at')::timestamptz from outcome where step = 'launch') - interval '1 second',
+    (select (result->>'claim_closes_at')::timestamptz from outcome where step = 'launch'),
+    (select (result->>'claim_closes_at')::timestamptz from outcome where step = 'launch') + interval '5 days']) at),
+  array[true, false, false], 'so the claim cannot reopen: it closes at the stored instant');
+update private.entitlement_policy set early_access_enrollment_days = 10, early_access_claim_cutoff = now() + interval '60 days';
+
+-- Both launch signatures: the boolean form needs its third argument; the old (text, text, integer) form remains, with
+-- its old privileges, and never allows a short window.
+select is((select pronargdefaults::integer from pg_proc where oid = 'public.admin_activate_public_launch(text, text, boolean)'::regprocedure),
+  0, 'the boolean form has no default, so a two-argument call is not ambiguous');
+select is((select pronargdefaults::integer from pg_proc where oid = 'public.admin_activate_public_launch(text, text, integer)'::regprocedure),
+  1, 'the old form keeps its default limit');
+select is((select array_agg(has_function_privilege(r, f, 'execute') order by r, f) from unnest(array['anon', 'authenticated', 'service_role']) r,
+    unnest(array['public.admin_activate_public_launch(text, text, integer)', 'public.admin_activate_public_launch(text, text, boolean)']) f),
+  array[false, false, false, false, true, true], 'both forms are for the service role only');
+set local role service_role;
+insert into outcome values ('old-form', public.admin_activate_public_launch('founder', 'again, old form', 500));
+insert into outcome values ('two-args', public.admin_activate_public_launch('founder', 'again, two arguments'));
+reset role;
+select is((select jsonb_object_agg(step, result->>'state') from outcome where step in ('old-form', 'two-args')),
+  '{"old-form":"already-launched","two-args":"already-launched"}'::jsonb,
+  'the old form and a two-argument call reach the same launch, which is recorded once');
 
 -- 3. Nothing is automatic: not a plan read, a course read or a confirmation -----------------------------------------
 set local role authenticated;
@@ -499,6 +545,7 @@ delete from private.entitlement_events where event = 'operator.public-launch';
 set local role service_role;
 insert into outcome values ('report-before', public.admin_early_access_report());
 insert into outcome values ('short-refused', public.admin_activate_public_launch('founder', 'late launch', false));
+insert into outcome values ('short-old-form', public.admin_activate_public_launch('founder', 'late launch', 200));
 insert into outcome values ('short-allowed', public.admin_activate_public_launch('founder', 'late launch', true));
 reset role;
 select is((select jsonb_build_object('full', result->'if_launched_now'->'full_window',
@@ -506,10 +553,14 @@ select is((select jsonb_build_object('full', result->'if_launched_now'->'full_wi
   jsonb_build_object('full', false, 'closes', now() + interval '3 days'),
   'before launching, the report says what the window would be');
 select is((select result->>'state' from outcome where step = 'short-refused'), 'short-claim-window', 'the short window is refused first');
+select is((select result->>'state' from outcome where step = 'short-old-form'), 'short-claim-window',
+  'the old form never allows a short window');
 select is((select jsonb_build_object('state', result->>'state', 'short', result->'short_window',
     'closes', (result->>'claim_closes_at')::timestamptz) from outcome where step = 'short-allowed'),
   jsonb_build_object('state', 'launched', 'short', true, 'closes', now() + interval '3 days'),
   'told to proceed, the launch is recorded and the claim closes at the cutoff');
+select is((select early_access_claim_closes_at from private.entitlement_policy), now() + interval '3 days',
+  'and the stored closing instant is the cutoff');
 select is((select count(*)::integer from private.entitlement_events where event = 'operator.public-launch'
   and (detail->>'short_window')::boolean), 1, 'the short window is on the audit trail');
 

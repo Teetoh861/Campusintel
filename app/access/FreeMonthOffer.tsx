@@ -3,8 +3,9 @@
 // plan card on Plan & Access, the line above Pay on checkout, and the button on a locked course and on Campus Bot. Each
 // opens the same confirmation. The request names the action and the profile revision the page showed and nothing else:
 // no date and no time. The end date on screen is text the server made from the database's own answer, and this file
-// never reads the device clock.
-import { useRef, useState } from 'react'
+// never reads the device clock: the page is read again when the claim closes (a delay the server worked out from the
+// database's clock), when the student comes back to it, and after the server says the offer has ended.
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Feedback } from '@/components/chrome/Feedback'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -14,23 +15,22 @@ import { FREE_MONTH_COPY } from '@/lib/entitlements/presentation'
 import { OfferConfirm } from './OfferConfirm'
 import { describeFreeMonthResult } from './trial-flow'
 import type { FlowMessage } from './trial-flow'
+import type { FreeMonthClaim } from '@/lib/entitlements/presentation'
 import type { ReactElement } from 'react'
 
-/** What every place that offers the month needs from its page. */
-export type FreeMonthClaim = {
-  continuityToken: string
-  /** The profile revision the page showed, so the month sets exactly those courses (D7). */
-  profileRevision: number
-  /** The day the month would end, as the server wrote it from the database's answer ("16 December"). */
-  endsOn: string
-}
+export type { FreeMonthClaim }
+
+// The longest delay a timer takes (about 24.8 days); a claim open longer is refreshed when the page is next visited.
+const MAX_TIMER_MS = 2_147_483_647
+// After "This offer has ended." the page is read again once the student has had time to read the line.
+const ENDED_REFRESH_MS = 5_000
 
 /**
  * The button and its confirmation. When the offer is over on this page (the month started, the claim closed, or it is
  * not available on this account), `onOver` lets the caller remove its own offer text; without it, the button gives way
  * to the message, or to nothing once the month has started.
  */
-export function FreeMonthStart({ continuityToken, profileRevision, endsOn, quiet = false, wide = false, onOver }:
+export function FreeMonthStart({ continuityToken, profileRevision, endsOn, closesInMs, quiet = false, wide = false, onOver }:
   FreeMonthClaim & {
     /** A secondary button, beside a primary action that stays (Pay). */
     quiet?: boolean
@@ -47,6 +47,22 @@ export function FreeMonthStart({ continuityToken, profileRevision, endsOn, quiet
   const [message, setMessage] = useState<FlowMessage | null>(null)
   const [over, setOver] = useState(false)
 
+  // An open page does not keep offering a month the database no longer gives: it is read again when the claim closes,
+  // and whenever the student comes back to it. The server refuses a late claim regardless.
+  useEffect(() => {
+    const refresh = (): void => router.refresh()
+    const timer = closesInMs <= MAX_TIMER_MS ? window.setTimeout(refresh, closesInMs) : undefined
+    const onVisible = (): void => { if (document.visibilityState === 'visible') refresh() }
+    const onShow = (event: PageTransitionEvent): void => { if (event.persisted) refresh() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('pageshow', onShow)
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pageshow', onShow)
+    }
+  }, [router, closesInMs])
+
   async function claim(): Promise<void> {
     if (sending.current) return
     sending.current = true
@@ -62,8 +78,10 @@ export function FreeMonthStart({ continuityToken, profileRevision, endsOn, quiet
       setOpen(false)
       onOver?.(next)
     }
-    // The page is read again: it shows the month and its end date, or the student's current state.
+    // The page is read again: it shows the month and its end date, or the student's current state. After the offer has
+    // ended, once the line has been read, so the rest of the page catches up (the free pass returns, for example).
     if (step === 'started' || step === 'refresh') router.refresh()
+    if (result.status === 'offer-ended') window.setTimeout(() => router.refresh(), ENDED_REFRESH_MS)
   }
 
   if (over) return message && !onOver ? <Feedback tone={message.tone} message={message.text} /> : null

@@ -123,10 +123,12 @@ test('the Campus Bot link on a free course without materials opens Campus Bot, n
 }))
 
 test('a student who can claim the free month is offered it here, bound to the revision and end day the server read', async () => fixture(async f => {
-  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00' }, { plans_on_sale: true, plans: [] })
+  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' }, { plans_on_sale: true, plans: [] })
   f.state.revision = 7
   const props = await f.workspace()
-  assert.deepEqual(props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December' })
+  // closesInMs: 25 Nov 08:00 less the database's now, 16 Nov 12:00.
+  assert.deepEqual(props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December',
+    closesInMs: (8 * 24 + 20) * 3_600_000 })
   assert.deepEqual(f.planReads.at(-1), { freeMonth: true }, 'the page asks whether this student can claim now')
   assert.equal(props.plansOnSale, true, 'what else the page could say is still handed over; the month comes first')
 }))
@@ -134,7 +136,7 @@ test('a student who can claim the free month is offered it here, bound to the re
 test('no free month here when the database offers none, or the plan or the revision cannot be read', async () => fixture(async f => {
   f.state.plan = plan(null)
   assert.equal((await f.workspace()).freeMonth, null, 'the database offers none')
-  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00' })
+  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
   f.state.revision = null
   assert.equal((await f.workspace()).freeMonth, null, 'a month must be bound to the courses the student saw (D7)')
   f.state.revision = 7

@@ -19,7 +19,8 @@ import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
-import { formatFreeMonthDay, trialWording } from '@/lib/entitlements/presentation'
+import { freeMonthClaim, trialWording } from '@/lib/entitlements/presentation'
+import type { FreeMonthClaim } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { readProfileRevision } from '@/lib/profile/course-selection'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
@@ -28,7 +29,6 @@ import { BookmarkButton } from './BookmarkButton'
 import { CourseViewTracker } from './CourseViewTracker'
 import { readTopicRows } from './practice/load'
 import { NotesCard, OverviewSection, PracticeCard, ReadingList, StudyNav, TheoryCard, studySections } from './sections'
-import type { FreeMonthClaim } from '@/app/access/FreeMonthOffer'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
 import type { PracticeTopicRow } from '@/lib/practice/topics'
@@ -105,8 +105,7 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
         context === null ? null : readProfileRevision(client, context.user.id)])
       const entitlement = read.status === 'ok' ? read.entitlement : null
       passHours = entitlement !== null && trialWording(entitlement).passAvailable ? entitlement.trial_hours : null
-      freeMonth = entitlement !== null && entitlement.free_month !== null && profileRevision !== null
-        ? { continuityToken, profileRevision, endsOn: formatFreeMonthDay(entitlement.free_month.endsAt) } : null
+      freeMonth = entitlement === null ? null : freeMonthClaim(entitlement, continuityToken, profileRevision)
       pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
     }

@@ -11,7 +11,8 @@
 //       The launch, when the claim closes (or would close if launch were activated now) and the months claimed.
 //   node scripts/entitlements/ops.cjs configure-early-access [--planned-launch <ISO>] [--enrollment-days <n>]
 //       --actor <name> --reason <text>
-//       --enrollment-days is how long after launch a month can be claimed; 0 closes the claim at once.
+//       --enrollment-days is how long after launch a month can be claimed. It is fixed once the launch is recorded
+//       (the closing instant is stored then): after launch a change is refused and nothing is changed.
 //       --trial-after-early-access is retired (20261023120000): no account that has had Early Access gets a pass.
 //   node scripts/entitlements/ops.cjs activate-launch --confirm-public-launch [--allow-short-claim-window]
 //       --actor <name> --reason <text>
@@ -136,10 +137,15 @@ async function run(args, env = process.env, transport = fetch, write = text => p
         throw new Error('--trial-after-early-access is retired: no account that has had Early Access gets a Discovery Pass')
       }
       // Null leaves the retired setting as the migration pinned it (false).
-      return print(await rpc('admin_configure_early_access', {
+      const configured = await rpc('admin_configure_early_access', {
         p_planned_launch_at: opts['planned-launch'] ? isoTime(opts['planned-launch'], '--planned-launch') : null,
         p_enrollment_days: opts['enrollment-days'] !== undefined ? integer(opts, 'enrollment-days') : null,
-        p_trial_after_early_access: null, ...note() }))
+        p_trial_after_early_access: null, ...note() })
+      if (configured.state === 'claim-window-fixed') {
+        throw new Error(`NOT changed: the claim days are fixed once the launch is recorded; the free month claim closes on ` +
+          `${lagos(configured.claim_closes_at)}`)
+      }
+      return print(configured)
     }
     case 'activate-launch': {
       // Irreversible: the launch is recorded once, and the claim opens at that instant.

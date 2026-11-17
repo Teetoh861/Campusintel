@@ -12,7 +12,7 @@ const { withTsx } = require('../../lib/test/tsx-loader.cjs')
 const { SIGNED_IN_ON_ANOTHER_TAB } = require('../../lib/auth/constants.ts')
 
 const text = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-const CLAIM = { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December' }
+const CLAIM = { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December', closesInMs: 3_600_000 }
 const ENDS = '2026-12-16T13:30:00+00:00'
 
 /**
@@ -24,6 +24,21 @@ async function drive(exportName, props, run, { answers = [] } = {}) {
   return withTsx(async () => {
     const original = Module._load
     const posts = [], refreshes = []
+    // The browser around the component: timers it sets, and the page events it listens to.
+    const timers = [], listeners = []
+    const savedWindow = global.window, savedDocument = global.document
+    const target = name => ({
+      addEventListener: (type, handler) => listeners.push({ on: name, type, handler }),
+      removeEventListener: (type, handler) => {
+        const at = listeners.findIndex(item => item.on === name && item.type === type && item.handler === handler)
+        if (at >= 0) listeners.splice(at, 1)
+      } })
+    global.window = { ...target('window'), setTimeout: (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length },
+      clearTimeout: id => { if (timers[id - 1]) timers[id - 1].live = false } }
+    global.document = { ...target('document'), visibilityState: 'visible' }
+    const fire = (on, type, event = {}) => listeners.filter(item => item.on === on && item.type === type)
+      .forEach(item => item.handler(event))
+    const router = { refresh: () => refreshes.push('refresh') }
     let active = null
     const emulated = {
       useState: init => {
@@ -34,6 +49,13 @@ async function drive(exportName, props, run, { answers = [] } = {}) {
       },
       useRef: init => { const owner = active, n = owner.index++; if (!(n in owner.slots)) owner.slots[n] = { current: init }
         return owner.slots[n] },
+      // Effects run after the render, again only when a dependency changed, and their cleanup runs first.
+      useEffect: (effect, deps) => {
+        const owner = active, n = owner.index++, prior = owner.slots[n]
+        if (!prior || deps.some((dep, i) => !Object.is(dep, prior.deps[i]))) {
+          owner.effects.push(() => { prior?.cleanup?.(); owner.slots[n] = { deps, cleanup: effect() } })
+        }
+      },
     }
     // The driven component uses the emulated hooks; anything React renders below it uses React's.
     const hooks = Object.fromEntries(Object.entries(emulated).map(([name, hook]) =>
@@ -43,7 +65,7 @@ async function drive(exportName, props, run, { answers = [] } = {}) {
     try {
       Module._load = function(name, ...args) {
         if (name === 'react') return { ...React, ...hooks }
-        if (name === 'next/navigation') return { useRouter: () => ({ refresh: () => refreshes.push('refresh') }) }
+        if (name === 'next/navigation') return { useRouter: () => router }
         if (name === '@/components/ui/dialog') return { Dialog, DialogContent: pass('section'), DialogTitle: pass('h2'),
           DialogDescription: pass('p') }
         if (name === '@/lib/entitlements/client') return { postEntitlementCommand: async (command, token) => {
@@ -54,14 +76,22 @@ async function drive(exportName, props, run, { answers = [] } = {}) {
         return original.call(this, name, ...args)
       }
       const Component = require('./FreeMonthOffer.tsx')[exportName]
-      const instance = { slots: [], index: 0 }
+      const instance = { slots: [], index: 0, effects: [] }
       const render = () => {
-        instance.index = 0; active = instance
-        try { return Component(props) } finally { active = null }
+        instance.index = 0; instance.effects = []; active = instance
+        let tree
+        try { tree = Component(props) } finally { active = null }
+        for (const effect of instance.effects) effect()
+        return tree
       }
       const html = () => renderToStaticMarkup(render())
-      await run({ render, html, posts, refreshes })
-    } finally { Module._load = original }
+      const unmount = () => instance.slots.forEach(slot => slot?.cleanup?.())
+      await run({ render, html, posts, refreshes, timers, listeners, fire, unmount })
+    } finally {
+      Module._load = original
+      if (savedWindow === undefined) delete global.window; else global.window = savedWindow
+      if (savedDocument === undefined) delete global.document; else global.document = savedDocument
+    }
   })
 }
 
@@ -217,4 +247,57 @@ test('the line above Pay: one sentence and a quiet button, gone once the offer i
     start(render()).props.onOver(null)
     assert.equal(html(), '')
   })
+})
+
+test('an open offer is read again when the claim closes, using the delay the server worked out', async () => {
+  await drive('FreeMonthStart', CLAIM, async ({ render, refreshes, timers, unmount, listeners }) => {
+    render()
+    assert.deepEqual(timers.filter(timer => timer.live).map(timer => timer.ms), [3_600_000], 'one timer, at the closing instant')
+    render()
+    assert.equal(timers.length, 1, 'drawing the page again sets no second timer')
+    timers[0].fn()
+    assert.deepEqual(refreshes, ['refresh'], 'when the claim closes the page is read again, so the offer goes')
+    unmount()
+    assert.equal(timers[0].live, false, 'leaving the page clears the timer')
+    assert.equal(listeners.length, 0, 'and stops listening')
+  })
+  // A claim that stays open longer than a timer can wait is read again when the student next comes back instead.
+  await drive('FreeMonthStart', { ...CLAIM, closesInMs: 30 * 24 * 3_600_000 }, async ({ render, timers }) => {
+    render()
+    assert.equal(timers.length, 0)
+  })
+})
+
+test('coming back to the page reads it again: switching back to the tab, or returning with Back', async () => {
+  await drive('FreeMonthStart', CLAIM, async ({ render, refreshes, fire }) => {
+    render()
+    global.document.visibilityState = 'hidden'
+    fire('document', 'visibilitychange')
+    assert.deepEqual(refreshes, [], 'leaving the tab does nothing')
+    global.document.visibilityState = 'visible'
+    fire('document', 'visibilitychange')
+    assert.deepEqual(refreshes, ['refresh'], 'coming back to it reads the page again')
+    fire('window', 'pageshow', { persisted: false })
+    fire('window', 'pageshow', { persisted: true })
+    assert.deepEqual(refreshes, ['refresh', 'refresh'], 'and so does a page restored by Back, not a fresh load')
+  })
+})
+
+test('after "This offer has ended." the page is read again once the line has been read', async () => {
+  await drive('FreeMonthStart', CLAIM, async ({ render, html, refreshes, timers }) => {
+    button(render(), 'Claim your free month').props.onClick()
+    await tapStart(render)
+    assert.equal(text(html()), 'This offer has ended.')
+    assert.deepEqual(refreshes, [], 'the line shows first')
+    const pause = timers.find(timer => timer.ms === 5_000)
+    assert.ok(pause, 'a refresh is set five seconds on')
+    pause.fn()
+    assert.deepEqual(refreshes, ['refresh'], 'then the page catches up, and the free pass can return')
+  }, { answers: [{ status: 'offer-ended' }] })
+  // Other refusals stay as they are: nothing about the claim changed.
+  await drive('FreeMonthStart', CLAIM, async ({ render, timers }) => {
+    button(render(), 'Claim your free month').props.onClick()
+    await tapStart(render)
+    assert.equal(timers.filter(timer => timer.ms === 5_000).length, 0)
+  }, { answers: [{ status: 'offer-unavailable' }] })
 })

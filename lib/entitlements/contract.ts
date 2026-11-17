@@ -83,8 +83,9 @@ const summaryWire = z.object({
 })
 
 /** The free month this student can claim now. `endsAt` is the end the database would give a month started at its
- *  read, on its own clock; the claim fixes the real end the same way when the student confirms. */
-export type FreeMonthOffer = { endsAt: string }
+ *  read, on its own clock; the claim fixes the real end the same way when the student confirms. `closesAt` is the
+ *  instant the claim closes, stored with the launch. */
+export type FreeMonthOffer = { endsAt: string; closesAt: string }
 
 /**
  * The summary every page reads. `trial.policy` is null until a trial exists; a database from before the Discovery Pass

@@ -27,7 +27,7 @@ const preDiscoveryDatabase = { now: NOW, planned_launch_at: '2026-10-24T23:00:00
 // profile revision; `current` the student's course list; `usage` get_my_campus_bot_usage() as read by
 // lib/ai-practice/campus-bot-usage.ts; `reads` collects what the page asked the entitlement read for.
 const myCourses = { status: 'ok', courses: [{ isFree: true }, { isFree: false }, { isFree: false }, { isFree: false }] }
-const MONTH = { endsAt: '2026-12-16T13:30:00+00:00' }
+const MONTH = { endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-08T12:00:00+00:00' }
 async function render(wire, eligible = true, { revision = 4, current = myCourses, usage = { state: 'units' },
   freeMonth = null, reads = [] } = {}) {
   return withTsx(async () => {

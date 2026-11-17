@@ -348,10 +348,11 @@ const planRead = freeMonth => ({ status: 'ok', entitlement: { ...entitlementSumm
 
 test('a locked course on the student\'s list offers the free month when the database says they can claim it now', async () => fixture(async f => {
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
-  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00' })
+  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
   f.state.revision = 7
   const hub = await f.granted()
-  assert.deepEqual(hub.props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December' },
+  assert.deepEqual(hub.props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December',
+    closesInMs: (8 * 24 + 20) * 3_600_000 },
     'bound to the page token, the profile revision the page read and the end day the database gave')
   assert.deepEqual(f.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')
   const html = renderToStaticMarkup(hub)
@@ -370,7 +371,7 @@ test('no free month on a locked course when the database offers none, or the rev
   f.state.plan = planRead(null)
   assert.equal((await f.granted()).props.freeMonth, null)
   assert.match(text(await f.html()), /Included with a plan\. Notes · CBT practice See how to unlock /)
-  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00' })
+  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
   f.state.revision = null
   assert.equal((await f.granted()).props.freeMonth, null, 'a month must be bound to the courses the student saw (D7)')
   assert.doesNotMatch(await f.html(), /free month|data-free-month-start/i)
@@ -380,7 +381,7 @@ test('no free month on a locked course when the database offers none, or the rev
 }))
 
 test('the free month is never read or offered for a course off the list, with courses unconfirmed, or with nothing published', async () => fixture(async f => {
-  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00' })
+  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
   for (const reason of ['outside-list', 'needs-selection', 'selection-locked']) {
     f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason }), learning: null, practice: null }
     const html = await f.html()

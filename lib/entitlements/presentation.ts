@@ -62,6 +62,29 @@ export function formatFreeMonthDay(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : MONTH_DAY_FORMAT.format(date)
 }
 
+/** What every place that offers the free month needs from its page. */
+export type FreeMonthClaim = {
+  continuityToken: string
+  /** The profile revision the page showed, so the month sets exactly those courses (D7). */
+  profileRevision: number
+  /** The day the month would end, as the server wrote it from the database's answer ("16 December"). */
+  endsOn: string
+  /** How long the claim stays open after this page was read, from the database's own clock (its `now` and the stored
+   *  closing instant): the open page lets the offer go then, without reading the device's clock. */
+  closesInMs: number
+}
+
+/** The free month offer for this page, or null: only when the database says this student can claim it now, and never
+ *  without the profile revision the month would be bound to (D7). */
+export function freeMonthClaim(summary: EntitlementSummary, continuityToken: string, profileRevision: number | null):
+  FreeMonthClaim | null {
+  const offer = summary.free_month
+  if (offer === null || profileRevision === null) return null
+  const closesInMs = Date.parse(offer.closesAt) - Date.parse(summary.now)
+  return { continuityToken, profileRevision, endsOn: formatFreeMonthDay(offer.endsAt),
+    closesInMs: Number.isFinite(closesInMs) ? Math.max(0, closesInMs) : 0 }
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Plans and payment (part 3). Every plan string a student reads lives here so the owner can adjust it in one place.
 // No token numbers or itemised limits are ever shown.

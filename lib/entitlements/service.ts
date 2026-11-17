@@ -37,8 +37,10 @@ export const claimRow = z.discriminatedUnion('state', [
 ])
 export type ClaimRow = z.infer<typeof claimRow>
 
-/** early_access_claim_eligibility(): whether this student can claim now and, if so, when that month would end. */
-export const freeMonthEligibilityRow = z.object({ eligible: z.boolean(), ends_at: timestamp.optional() })
+/** early_access_claim_eligibility(): whether this student can claim now and, if so, when that month would end and when
+ *  the claim closes (20261117120000). */
+export const freeMonthEligibilityRow = z.object({ eligible: z.boolean(), ends_at: timestamp.optional(),
+  closes_at: timestamp.optional() })
 
 export type EntitlementEnv = {
   /** The per-account request limit (the requester address is monitored, never a barrier). `limited` means the

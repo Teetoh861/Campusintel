@@ -188,7 +188,8 @@ A student who has used a free pass can still claim. A student who cannot claim i
 **When the claim is open.** `private.entitlement_policy` holds `actual_launch_at` (null until the founder activates
 launch), `early_access_enrollment_days` (**10**) and `early_access_claim_cutoff` (**1 December 2026 00:00
 Africa/Lagos**, the end of 30 November). The claim opens at the actual launch and closes at whichever comes first: 10
-days after launch, or the cutoff. A month that starts before the cutoff ends within 2026. The full 10 days need a
+days after launch, or the cutoff. That instant is stored with the launch (`early_access_claim_closes_at`,
+20261117120000) and every check reads it: changing the days or the cutoff afterwards moves nothing. A month that starts before the cutoff ends within 2026. The full 10 days need a
 launch by the end of 20 November 2026 (Lagos).
 
 **What the student gets.** One `entitlement_grants` row with `source = 'early_access'`: their courses from the claim
@@ -214,13 +215,16 @@ months (claimed, running, ended, revoked) and of address records. `retired_list_
 list table, which nothing reads.
 
 `activate-launch` records `actual_launch_at` once, from the database clock, and opens the claim. It enrols nobody and
-cannot be undone. It prints the launch time and the time the claim closes, in Lagos time. If launching now would give
+cannot be undone. It prints the launch time and the time the claim closes, in Lagos time, and stores that closing instant. If launching now would give
 a window shorter than the configured days (the cutoff comes first), it **records nothing** and says by when launch
 would have given the full window. To launch anyway, repeat it with `--allow-short-claim-window`. Running it again
-after launch changes nothing and prints the recorded times.
+after launch changes nothing and prints the recorded times. The database also keeps the old signature,
+`admin_activate_public_launch(actor, reason, limit)`, for callers built before the claim: it ignores the limit and never
+allows a short window. The script always calls the three-argument form with `p_allow_short_window` set.
 
-`configure-early-access --enrollment-days <n>` changes how long after launch a month can be claimed (0 closes the claim
-at once); the cutoff still applies. `import-early-access`, `member` and `reconcile-early-access` are retired: the tool
+`configure-early-access --enrollment-days <n>` sets how long after launch a month can be claimed. It can be changed
+only before launch: `activate-launch` stores the instant the claim closes, and after that a change to the days is refused
+(`claim-window-fixed`, nothing changed) and the stored instant does not move, so the claim cannot reopen. `import-early-access`, `member` and `reconcile-early-access` are retired: the tool
 refuses them, points here and sends nothing.
 
 ### One per account and per address

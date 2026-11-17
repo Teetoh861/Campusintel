@@ -17,7 +17,7 @@ import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
 import { discoveryOffered } from '@/lib/entitlements/contract'
 import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, FREE_MONTH_COPY, FREE_PASS_COPY, PLAN_COPY, RECEIPT_STATUS_LINE,
-  accessCopy, formatAccessDay, formatAccessLastDay, formatFreeMonthDay, naira, paidPlanName, paymentReference, planName,
+  accessCopy, formatAccessDay, formatAccessLastDay, formatFreeMonthDay, freeMonthClaim, naira, paidPlanName, paymentReference, planName,
   planOf, trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { PAYMENT_TERMS_PATH, RECEIPTS_PATH } from '@/lib/payments/paths'
@@ -71,8 +71,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
   const showPlans = onSale && entitlement.paid === null && entitlement.plans.length > 0
   // The free month, only when the database says this student can claim it now. Without the revision the month could
   // set courses the student did not see (D7), so nothing is offered.
-  const freeMonth = entitlement.free_month !== null && profileRevision !== null
-    ? { continuityToken, profileRevision, endsOn: formatFreeMonthDay(entitlement.free_month.endsAt) } : null
+  const freeMonth = freeMonthClaim(entitlement, continuityToken, profileRevision)
   // The database offers no pass while the month can be claimed; the page never shows the two together either.
   const passOffered = entitlement.free_month === null && trialWording(entitlement).passAvailable && discoveryOffered(entitlement)
   return <StudentPage band={band}><PassOfferScope>

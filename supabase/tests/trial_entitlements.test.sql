@@ -525,17 +525,24 @@ reset role;
 select ok((select starts_at between now() and clock_timestamp() and ends_at = pg_temp.month_end(starts_at)
   from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009' and source = 'early_access'),
   'five days after launch U still gets a full month, from the claim');
--- The claim closes after the configured days; the days are the operator's to change.
+-- The claim closes after the configured days, at the instant stored with the launch; after launch the days are fixed.
 update private.entitlement_policy set actual_launch_at = now() - interval '11 days';
 set local role service_role;
 select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
   '{"state":"closed"}'::jsonb, 'after the claim window nobody new can claim');
 select throws_ok($$ select public.admin_configure_early_access(null, 30, null, 'ops', '') $$, '22023', null,
   'a policy change needs a reason');
-select is(public.admin_configure_early_access(null, 30, null, 'ops', 'owner extended the claim')->>'state', 'changed',
-  'the window is configurable');
+select is(public.admin_configure_early_access(null, 30, null, 'ops', 'owner extended the claim')->>'state', 'claim-window-fixed',
+  'after launch the claim days cannot be changed');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
+  '{"state":"closed"}'::jsonb, 'so the claim does not reopen');
+reset role;
+select is((select early_access_enrollment_days from private.entitlement_policy), 10, 'and the days are unchanged');
+-- Inside the window, A, whose free pass ended, can still claim.
+update private.entitlement_policy set actual_launch_at = now() - interval '1 day';
+set local role service_role;
 select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test')->>'state',
-  'claimed', 'A, whose free pass ended, then claims: a used pass does not cost a student their month');
+  'claimed', 'A, whose free pass ended, claims while the claim is open: a used pass does not cost a student their month');
 reset role;
 -- Expiry: the month ends on its own date and is never renewed.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'

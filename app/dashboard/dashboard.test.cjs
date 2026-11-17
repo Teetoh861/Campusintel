@@ -150,7 +150,7 @@ test('academic identity owns a full-width band outside the bounded course/action
   assert.match(html, /class="student-workspace student-page-workspace dashboard-workspace"/)
 }))
 
-const MONTH = { endsAt: '2026-11-26T08:30:00+00:00' }
+const MONTH = { endsAt: '2026-11-26T08:30:00+00:00', closesAt: '2026-11-05T08:00:00+00:00' }
 const words = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 
 test('a student who can claim the free month sees one card at the top of the Dashboard: title, one line and the button', async () => fixture(async f => {
@@ -160,7 +160,9 @@ test('a student who can claim the free month sees one card at the top of the Das
   const tree = await f.page(), shell = tree.props.children[1]
   const [offer, month] = shell.props.children
   assert.equal(offer.type.name, 'FreeMonthCard')
-  assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '26 November' },
+  // closesInMs: 5 Nov 08:00 less the database's now, 27 Oct 09:00.
+  assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '26 November',
+    closesInMs: (8 * 24 + 23) * 3_600_000 },
     'bound to the page token, the profile revision the page read and the end day the database gave')
   assert.equal(month, false)
   assert.deepEqual(f.state.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')

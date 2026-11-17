@@ -110,17 +110,24 @@ test('a launch that would leave fewer than the full claim days is refused, with 
   assert.deepEqual([printed.claim_closes, printed.short_window], ['Tue, 1 Dec 2026, 00:00 (Lagos)', true])
 })
 
-test('policy changes keep the claim days configurable; the post-Early-Access trial is retired', async () => {
+test('policy changes set the claim days before launch; the post-Early-Access trial is retired', async () => {
   const h = harness(() => ({ state: 'changed' }))
   for (const value of ['true', 'false', 'maybe']) {
     await assert.rejects(h.run(['configure-early-access', '--trial-after-early-access', value, '--actor', 'o', '--reason', 'r']),
       /retired/)
   }
   assert.equal(h.requests.length, 0, 'a retired flag never reaches the database')
-  // 0 days closes the claim at once: the operator's brake.
-  await h.run(['configure-early-access', '--enrollment-days', '0', '--actor', 'owner', '--reason', 'close the claim'])
-  assert.deepEqual(h.requests.at(-1).body, { p_planned_launch_at: null, p_enrollment_days: 0,
-    p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'close the claim' })
+  await h.run(['configure-early-access', '--enrollment-days', '12', '--actor', 'owner', '--reason', 'longer claim'])
+  assert.deepEqual(h.requests.at(-1).body, { p_planned_launch_at: null, p_enrollment_days: 12,
+    p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'longer claim' })
+})
+
+test('after launch a change to the claim days is refused, and the operator is told when the claim closes', async () => {
+  const h = harness(() => ({ state: 'claim-window-fixed', actual_launch_at: '2026-11-20T08:00:00+00:00',
+    claim_closes_at: '2026-11-30T08:00:00+00:00' }))
+  await assert.rejects(h.run(['configure-early-access', '--enrollment-days', '30', '--actor', 'owner', '--reason', 'longer']),
+    /NOT changed: the claim days are fixed once the launch is recorded; the free month claim closes on Mon, 30 Nov 2026, 09:00 \(Lagos\)/)
+  assert.equal(h.requests.length, 1)
 })
 
 test('the report is one read and prints what the database answered', async () => {
