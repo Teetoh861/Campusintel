@@ -5,6 +5,7 @@ import { useRef } from 'react'
 import { Check, ChevronDown, Info, X } from 'lucide-react'
 import { btnGhost } from '@/components/chrome/ui'
 import { studentAction } from '@/components/student/ui'
+import { ExplainPanel } from './ExplainPanel'
 import { optionLetter } from './practice-presentation'
 import type { ReturnFocus } from './focus-return'
 import type { GradedQuestion, ReviewStatus } from './types'
@@ -20,7 +21,13 @@ type Props = {
   // The report trigger first; the disclosure stands in once a sent report replaces that trigger with "Reported".
   // Refs, not nodes: the dialog reads them when it closes, after any re-paging this item survived.
   onReport: (returnFocusTo: ReturnFocus) => void
+  // Campus Bot's Explain, or null when it is switched off.
+  explain?: ExplainWiring | null
 }
+
+/** What Explain needs besides the question: the attempt it is in and where its links lead. */
+export type ExplainWiring = { attemptId: string; continuityToken: string; courseHref: string; signInHref: string
+  reloadHref: string }
 
 const STATUS = {
   correct: { label: 'Correct', Icon: Check },
@@ -35,7 +42,7 @@ export function reviewStatus(question: GradedQuestion): ReviewStatus {
 }
 
 /** The heading is the disclosure; the collapsed stem stays readable and truncation is visual only. */
-export function ReviewCard({ question, n, status, open, reported, onToggle, onReport }: Props): ReactElement {
+export function ReviewCard({ question, n, status, open, reported, onToggle, onReport, explain = null }: Props): ReactElement {
   const your = question.selected
   const panelId = `student-practice-review-${n}`
   const { label, Icon } = STATUS[status]
@@ -75,6 +82,8 @@ export function ReviewCard({ question, n, status, open, reported, onToggle, onRe
         <p className="student-practice-eyebrow">Explanation</p>
         <p>{question.explanation}</p>
       </div> : null}
+      {/* The exam is graded, so every question may be explained, answered or left out. */}
+      {explain ? <ExplainPanel {...explain} questionId={question.questionId} /> : null}
       <div className="student-practice-review-foot">
         {reported ? <span className="student-practice-reported"><Check aria-hidden="true" size={16} strokeWidth={2.25} />Reported</span>
           : <button ref={reportTrigger} type="button" className={studentAction(btnGhost, 'border-transparent')} aria-haspopup="dialog"

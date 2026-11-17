@@ -4,11 +4,16 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost } from '@/components/chrome/ui'
+import { CampusBotArea } from '@/components/student/CampusBotArea'
 import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction } from '@/components/student/ui'
+import { AUTH_PATHS } from '@/lib/auth/constants'
+import { readCampusBotFeatures } from '@/lib/campus-bot/features'
+import { createClient } from '@/lib/supabase/server'
 import { NoteUseTracker } from '../../NoteUseTracker'
 import { NoteBody } from '../../sections'
+import { AskCampusBot } from '../AskCampusBot'
 import { theoryQuestionHref } from '../../theory/presentation'
 import { notesBlocked, resolve } from '../shared'
 import type { ReactElement } from 'react'
@@ -37,6 +42,9 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
   if (!note) return notFound()
   const previous = notes[index - 1], next = notes[index + 1]
   const guide = 'noteType' in note && note.noteType === 'guide_topic' ? note : null
+  // Ask Campus Bot about this topic, when the team has it switched on. A failed read offers nothing.
+  const ask = (await readCampusBotFeatures(await createClient()).catch(() => null))?.ask === true
+  const path = `/courses/${slug}/notes/${topic}`
   const theoryId = guide?.theory?.itemId
   return <StudentPage band={<PageBand title={note.title}
     context={<p>{course.code} · Topic {index + 1} of {notes.length}</p>}
@@ -47,6 +55,12 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
           ...(practiceHref ? { practiceHref } : {}),
           ...(theoryId && theoryItems.has(theoryId) ? { theoryHref: theoryQuestionHref(course.href, theoryId) } : {}) }} />
       </article>
+      {/* Under the topic's own practice buttons: what Campus Bot does with this topic. */}
+      {ask ? <CampusBotArea>
+        <AskCampusBot courseSlug={course.slug} itemId={note.itemId} topicTitle={note.title}
+          continuityToken={continuityToken} signInHref={`${AUTH_PATHS.login}?next=${encodeURIComponent(path)}`}
+          reloadHref={path} />
+      </CampusBotArea> : null}
       <nav aria-label="Topics" className="student-guide-pager">
         {previous ? <Link href={`${course.href}/notes/${index}`} prefetch={false} className="student-topic-row student-focus-control">
           <span className="student-topic-text"><span>Previous topic</span><b>{previous.title}</b></span>

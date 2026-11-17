@@ -205,6 +205,43 @@ test('campus-bot-refill: one student, or everyone only with --confirm; ai-limits
   assert.equal(h.requests.length, 5, 'refused commands send nothing')
 })
 
+test('Campus Bot Explain and Ask: switches, limits, the checker, calculation courses and saved explanations', async () => {
+  const h = harness()
+  await h.run(['campus-bot-feature', '--feature', 'explain', '--state', 'on', ...NOTE])
+  await h.run(['campus-bot-feature', '--feature', 'ask', '--state', 'off', ...NOTE])
+  await h.run(['campus-bot-feature', '--feature', 'topic-sets', '--state', 'on', ...NOTE])
+  await h.run(['campus-bot-reply-limits', '--pass-explanations', '6', '--daily-messages', '12000', ...NOTE])
+  await h.run(['campus-bot-checker', '--model', 'sonnet', ...NOTE])
+  await h.run(['campus-bot-course', '--course', 'business-mathematics', '--calculation', 'on', ...NOTE])
+  await h.run(['campus-bot-cap', '--step', 'explain-check', '--written', '2500', ...NOTE])
+  await h.run(['campus-bot-clear-explanations', '--course', 'business-statistics', '--confirm', ...NOTE])
+  await h.run(['campus-bot-status'])
+  await h.run(['campus-bot-explanations', '--course', 'business-statistics', '--limit', '20'])
+  const said = { p_actor: 'ops', p_reason: 'support ticket 42' }
+  assert.deepEqual(h.requests, [
+    { fn: 'admin_set_campus_bot_feature', body: { p_feature: 'explain', p_enabled: true, ...said } },
+    { fn: 'admin_set_campus_bot_feature', body: { p_feature: 'ask', p_enabled: false, ...said } },
+    { fn: 'admin_set_campus_bot_feature', body: { p_feature: 'topic-sets', p_enabled: true, ...said } },
+    { fn: 'admin_set_campus_bot_reply_limits', body: { p_pass_explanations: 6, p_pass_chat_messages: null,
+      p_daily_explanations: null, p_daily_chat_messages: 12000, p_undelivered_per_day: null, ...said } },
+    { fn: 'admin_set_campus_bot_checker', body: { p_model: 'sonnet', ...said } },
+    { fn: 'admin_set_campus_bot_course', body: { p_content_key: 'business-mathematics', p_calculation: true, ...said } },
+    { fn: 'admin_set_campus_bot_request_cap', body: { p_step: 'explain-check', p_read_tokens_max: null,
+      p_written_tokens_max: 2500, ...said } },
+    { fn: 'admin_clear_campus_bot_explanations', body: { p_content_key: 'business-statistics', ...said } },
+    { fn: 'admin_campus_bot_status', body: {} },
+    { fn: 'admin_campus_bot_explanations', body: { p_content_key: 'business-statistics', p_limit: 20 } },
+  ])
+  await assert.rejects(h.run(['campus-bot-feature', '--feature', 'sets', '--state', 'on', ...NOTE]), /--feature is required/)
+  await assert.rejects(h.run(['campus-bot-feature', '--feature', 'ask', '--state', 'yes', ...NOTE]), /--state is required/)
+  await assert.rejects(h.run(['campus-bot-feature', '--feature', 'ask', '--state', 'on']), /--actor is required/)
+  await assert.rejects(h.run(['campus-bot-reply-limits', ...NOTE]), /needs --pass-explanations/)
+  await assert.rejects(h.run(['campus-bot-course', '--course', 'Business Maths', '--calculation', 'on', ...NOTE]), /--course is required/)
+  await assert.rejects(h.run(['campus-bot-clear-explanations', '--course', 'business-statistics', ...NOTE]), /add --confirm/)
+  await assert.rejects(h.run(['campus-bot-cap', '--step', 'reply', '--read', '1', ...NOTE]), /--step is required/)
+  assert.equal(h.requests.length, 10, 'refused commands send nothing')
+})
+
 test('card excess is refused before refund_order, even on a dry run; a transfer excess is allowed', async () => {
   const card = harness({ admin_payment_status: orderStatus({ payments: [payment('card')] }) })
   for (const extra of [[], ['--request', REQUEST, '--confirm']]) {

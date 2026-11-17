@@ -5,13 +5,16 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { CampusBotArea } from '@/components/student/CampusBotArea'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { AUTH_PATHS } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { readCampusBotFeatures } from '@/lib/campus-bot/features'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { examSecondsFor, readDiscoveryPreview } from '@/lib/entitlements/discovery'
 import { kindFromSegment, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
@@ -20,6 +23,7 @@ import { DISCOVERY_PASS_LABEL, DISCOVERY_PASS_NOUN, accessCopy, formatAccessDate
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
+import { AskCampusBot } from '../../notes/AskCampusBot'
 import { NoteArticle } from '../../sections'
 import { DiscoveryExam } from './DiscoveryExam'
 import { OpenPreview } from './OpenPreview'
@@ -84,12 +88,21 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   const offered = plan.status === 'ok' && trialWording(plan.entitlement).passAvailable
   const examQuestions = plan.status === 'ok' && discoveryOffered(plan.entitlement) ? plan.entitlement.discovery.cbt_questions : null
   const endsAt = 'endsAt' in result ? result.endsAt : null
+  // Ask Campus Bot about the topic this pass pinned, when the team has it switched on.
+  const pinned = result.status === 'ready' && result.preview.kind === 'study_guide' ? result.preview.items[0] ?? null : null
+  const ask = pinned !== null && (await readCampusBotFeatures(client).catch(() => null))?.ask === true
   const band = <PageBand title={TITLE[kind]} lede={`${course.code} · ${course.title}`}
     context={endsAt !== null && <p>{DISCOVERY_PASS_LABEL} · ends {formatAccessDate(endsAt)}</p>} />
   return <StudentPage band={band}>
     <div className="grid min-w-0 max-w-3xl gap-4">
       <PreviewBody result={result} kind={kind} course={course} examQuestions={examQuestions} offered={offered}
         continuityToken={continuityToken} plansOnSale={plansOnSale} />
+      {/* The topic this pass pinned: the same Campus Bot area as a notes topic. */}
+      {ask && pinned !== null ? <CampusBotArea>
+        <AskCampusBot courseSlug={course.slug} itemId={pinned.item_id} topicTitle={pinned.note.title}
+          continuityToken={continuityToken} signInHref={`${AUTH_PATHS.login}?next=${encodeURIComponent(returnPath)}`}
+          reloadHref={returnPath} />
+      </CampusBotArea> : null}
       <Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
         Back to {course.code}
       </Link>

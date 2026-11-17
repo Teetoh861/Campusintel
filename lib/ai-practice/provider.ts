@@ -3,6 +3,7 @@
 // parses questions, decides outcomes or touches student data beyond the prompt it is given.
 
 export type ProviderId = 'anthropic' | 'openai'
+export type ProviderEffort = 'low' | 'medium' | 'high'
 
 export type ProviderRequest = {
   system: string
@@ -11,6 +12,9 @@ export type ProviderRequest = {
   maxOutputTokens: number
   /** The model for this request, when the database chose one at admission; otherwise the adapter's configured model. */
   model?: string
+  /** How hard the model works on this request; the adapter's own default (medium) when left out. Thinking counts as
+   *  written tokens, so short Campus Bot replies ask for less (lib/campus-bot/model-call.ts). */
+  effort?: ProviderEffort
   /** The service's overall deadline. Adapters must pass it to their transport. */
   signal: AbortSignal
 }

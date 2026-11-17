@@ -114,11 +114,18 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | `open-sales --actor --reason` / `close-sales --actor --reason` | The sales switch. |
 | `reconcile-now` | A bounded reconcile run now. Asks Bachs. |
 | `campus-bot-model --model <name> --weight <n> --actor --reason` | A model's price weight (Haiku = 1). Pending owner approval. |
-| `campus-bot-cap --step writing\|check [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. |
+| `campus-bot-cap --step writing\|check\|explain\|explain-check\|chat [--read <n>] [--written <n>] --actor --reason` | Per-request token caps. Pending owner approval. `explain`, `explain-check` and `chat` are Explain, its check and Ask Campus Bot ([Campus Bot Explain and Ask](campus-bot-explain-ask.md)). |
 | `campus-bot-writer --model <name> --actor --reason` | The model that writes Campus Bot sets (Haiku at launch). Each request records the model and weights it is charged at, so a change applies to new sets only. |
 | `campus-bot-refill --user <uuid> --actor --reason` | Gives one student fresh Campus Bot limits: new session and week windows start at their next request. Nothing is deleted. |
 | `campus-bot-refill --everyone --confirm --actor --reason` | The same for every student. |
 | `ai-limits [--daily <n>] [--paid-reserve <n>] [--undelivered-per-day <n>] --actor --reason` | The platform's AI sets per UTC day (500 at launch; raise it as paying students grow), how many of them only paying students may use (150), and each student's undelivered tries per day (10). Unnamed settings stay as they are. |
+| `campus-bot-feature --feature explain\|ask\|topic-sets --state on\|off --actor --reason` | Switches Explain, Ask Campus Bot or topic sets on or off for every student. All three are off until the human review signs off ([Campus Bot Explain and Ask](campus-bot-explain-ask.md)). |
+| `campus-bot-reply-limits [--pass-explanations <n>] [--pass-messages <n>] [--daily-explanations <n>] [--daily-messages <n>] [--undelivered-per-day <n>] --actor --reason` | A free pass's explanations (5) and messages (10), the platform's explanations (3,000) and messages (10,000) per UTC day, and each student's undelivered replies per day (20). |
+| `campus-bot-checker --model <name> --actor --reason` | The model that checks explanations on calculation courses (Sonnet at launch), charged at the writer's weight. |
+| `campus-bot-course --course <course key> --calculation on\|off --actor --reason` | Puts a course on or off the calculation list. Putting it on removes its explanations that were never checked. |
+| `campus-bot-clear-explanations --course <course key> --confirm --actor --reason` | Removes every saved explanation of a course; each is written again the next time a student asks for it. |
+| `campus-bot-status` | Explain and Ask settings, caps, models, the calculation list, today's requests and what is saved. |
+| `campus-bot-explanations --course <course key> [--limit <n>]` | Saved explanations of a course with their questions, newest first, for review. |
 
 `--requested-at` is when the student asked (default now). It must lie between the payment and now. The 48-hour window
 is judged at that time; use is counted from the payment until the refund is processed, so use after asking counts.

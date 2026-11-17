@@ -144,7 +144,9 @@ select is((select jsonb_agg(jsonb_build_array(tier,session_hours,session_tokens,
   'Campus Bot budgets: 7-day week, 5-hour session half of it, written tokens weighted 5');
 select is((select jsonb_agg(jsonb_build_array(model,price_weight) order by model) from private.campus_bot_models),
   '[["haiku",1],["sonnet",20]]'::jsonb,'model price weights, Haiku = 1');
-select is((select jsonb_agg(jsonb_build_array(step,read_tokens_max,written_tokens_max) order by step) from private.campus_bot_request_caps),
+-- The sets' two steps. Explain and Ask Campus Bot have their own (campus_bot_explain_ask.test.sql).
+select is((select jsonb_agg(jsonb_build_array(step,read_tokens_max,written_tokens_max) order by step) from private.campus_bot_request_caps
+    where step in ('writing','check')),
   '[["check",3000,1500],["writing",20000,8000]]'::jsonb,'per-request caps: writing 20,000/8,000, check 3,000/1,500');
 select is((select jsonb_build_array(sales_open,checkout_minutes,sales_close_days,refund_window_hours,refunds_per_student,
   refund_campus_bot_replies_allowed,refund_exams_allowed,refund_practice_answers_allowed,refund_notes_topics_allowed)

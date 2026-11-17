@@ -11,6 +11,7 @@ import { studentAction } from '@/components/student/ui'
 import { useIsDesktop } from '@/components/ui/use-mobile'
 import { ReviewCard, reviewStatus } from './ReviewCard'
 import { practiceIdentity } from './practice-presentation'
+import type { ExplainWiring } from './ReviewCard'
 import type { ReturnFocus } from './focus-return'
 import type { GradedQuestion, ReviewFilter } from './types'
 import type { ReactElement } from 'react'
@@ -30,6 +31,8 @@ type Props = {
   reporting: number | null
   onReport: (index: number, returnFocusTo: ReturnFocus) => void
   onBack: () => void
+  // Campus Bot's Explain for this attempt's questions, or null when it is switched off.
+  explain?: ExplainWiring | null
 }
 
 /** Filter, page and disclosure live here, so leaving and re-entering review always starts at All, page 1, collapsed. */
@@ -104,7 +107,8 @@ export function ReviewScreen(props: Props): ReactElement {
       <ol className="student-practice-review">
         {visible.map(item => <ReviewCard key={item.index} question={item.question} n={item.index + 1}
           status={item.status} open={open.includes(item.index)} reported={Boolean(reported[item.question.questionId])}
-          onToggle={() => toggle(item.index)} onReport={returnFocusTo => props.onReport(item.index, returnFocusTo)} />)}
+          onToggle={() => toggle(item.index)} onReport={returnFocusTo => props.onReport(item.index, returnFocusTo)}
+          explain={props.explain ?? null} />)}
       </ol>
       <Pagination page={current} totalPages={totalPages} onPageChange={changePage} label="Review pages" scrollTarget={rangeHeading} />
       {totalPages > 1 ? <p className="student-practice-help max-w-[760px] text-center">{rangeLine}</p> : null}
