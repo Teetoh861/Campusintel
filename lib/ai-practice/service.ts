@@ -1,13 +1,15 @@
 // lib/ai-practice/service.ts — Bounded generation of a personal, unverified practice set from extracted text.
 import 'server-only'
 import { AI_PRACTICE_LIMITS, AI_PRACTICE_PROMPT_VERSION, generationRequestSchema } from './contract'
-import type { FailureReason, GenerationOutcome, UsageReport } from './contract'
+import type { FailureReason, GenerationConfidence, GenerationOutcome, PersonalPracticeQuestion, UsageReport }
+  from './contract'
 import { estimateCostUsd, PRICED_ANTHROPIC_MODELS } from './pricing'
 import { buildGenerationPrompt } from './prompt'
 import { ProviderError } from './provider'
 import { AiDeadlineError, withAiDeadline } from './lifetime'
 import type { ProviderErrorCode, ProviderResponse, QuestionGenerationProvider } from './provider'
 import { prepareSource } from './source'
+import type { PreparedSource } from './source'
 import { modelOutputSchema, validateQuestions } from './validate'
 
 export type GenerationDependencies = {
@@ -39,12 +41,39 @@ const PROVIDER_FAILURES: Record<ProviderErrorCode, FailureReason> = {
 }
 
 /** At least half of the requested questions must survive validation, or the set is not worth showing. */
-function minimumAccepted(requested: number): number {
+export function minimumAccepted(requested: number): number {
   return Math.max(AI_PRACTICE_LIMITS.minQuestions, Math.ceil(requested / 2))
 }
 
 function parseJson(text: string): unknown {
   try { return JSON.parse(text) } catch { return undefined }
+}
+
+/** What a model's reply to a set request is worth: the questions that survive, or why there is no set. */
+export type AssessedQuestions =
+  | { kind: 'accepted'; questions: PersonalPracticeQuestion[]; rejectedCount: number; confidence: GenerationConfidence }
+  | { kind: 'insufficient-source'; reason: 'low-confidence' }
+  | { kind: 'flagged-for-review'; reason: 'inappropriate' | 'unrelated-to-course' }
+  | { kind: 'failed'; reason: 'invalid-output' }
+
+/**
+ * Judge a set reply, for uploads and notes topics alike: its own assessment first, then every question's grounding in
+ * the cited passage (validate.ts). Fewer than half of the requested questions surviving is a failure, never a thin set.
+ */
+export function assessGeneratedQuestions(json: unknown, source: PreparedSource, documentId: string,
+  questionCount: number, previousPrompts: ReadonlyArray<string> = []): AssessedQuestions {
+  const output = modelOutputSchema.safeParse(json)
+  if (!output.success) return { kind: 'failed', reason: 'invalid-output' }
+  const { assessment, questions } = output.data
+  if (!assessment.appropriate) return { kind: 'flagged-for-review', reason: 'inappropriate' }
+  if (!assessment.relatedToCourse) return { kind: 'flagged-for-review', reason: 'unrelated-to-course' }
+  // Low confidence discards whatever was written: the PRD prefers an honest signal to thin questions.
+  if (!assessment.sufficientMaterial || assessment.confidence === 'low') {
+    return { kind: 'insufficient-source', reason: 'low-confidence' }
+  }
+  const { accepted, rejected } = validateQuestions(questions, source, documentId, questionCount, previousPrompts)
+  if (accepted.length < minimumAccepted(questionCount)) return { kind: 'failed', reason: 'invalid-output' }
+  return { kind: 'accepted', questions: accepted, rejectedCount: rejected.length, confidence: assessment.confidence }
 }
 
 /**
@@ -88,20 +117,11 @@ export async function generatePracticeSet(input: unknown, deps: GenerationDepend
   if (response.kind === 'refused') return { status: 'flagged-for-review', reason: 'provider-refusal', usage }
   if (response.kind === 'truncated') return { status: 'failed', reason: 'truncated-output', usage }
 
-  const output = modelOutputSchema.safeParse(parseJson(response.text))
-  if (!output.success) return { status: 'failed', reason: 'invalid-output', usage }
-  const { assessment, questions } = output.data
-  if (!assessment.appropriate) return { status: 'flagged-for-review', reason: 'inappropriate', usage }
-  if (!assessment.relatedToCourse) return { status: 'flagged-for-review', reason: 'unrelated-to-course', usage }
-  // Low confidence discards whatever was written: the PRD prefers an honest signal to thin questions.
-  if (!assessment.sufficientMaterial || assessment.confidence === 'low') {
-    return { status: 'insufficient-source', reason: 'low-confidence', usage }
-  }
-  const { accepted, rejected } = validateQuestions(questions, source, request.source.documentId,
+  const assessed = assessGeneratedQuestions(parseJson(response.text), source, request.source.documentId,
     request.questionCount)
-  if (accepted.length < minimumAccepted(request.questionCount)) {
-    return { status: 'failed', reason: 'invalid-output', usage }
-  }
+  if (assessed.kind === 'insufficient-source') return { status: 'insufficient-source', reason: assessed.reason, usage }
+  if (assessed.kind === 'flagged-for-review') return { status: 'flagged-for-review', reason: assessed.reason, usage }
+  if (assessed.kind === 'failed') return { status: 'failed', reason: assessed.reason, usage }
   return { status: 'generated', usage, set: {
     formatVersion: 1,
     origin: 'ai-generated',
@@ -110,11 +130,11 @@ export async function generatePracticeSet(input: unknown, deps: GenerationDepend
     course: request.course,
     source: { documentId: request.source.documentId, fileName: request.source.fileName,
       sha256: source.sha256, charCount: source.charCount, passageCount: source.passages.length },
-    questions: accepted,
+    questions: assessed.questions,
     generation: {
       provider: provider.id, model: response.model, promptVersion: AI_PRACTICE_PROMPT_VERSION,
-      generatedAt: new Date(now()).toISOString(), confidence: assessment.confidence,
-      requestedQuestionCount: request.questionCount, rejectedQuestionCount: rejected.length,
+      generatedAt: new Date(now()).toISOString(), confidence: assessed.confidence,
+      requestedQuestionCount: request.questionCount, rejectedQuestionCount: assessed.rejectedCount,
     },
   } }
 }

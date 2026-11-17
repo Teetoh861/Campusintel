@@ -95,9 +95,9 @@ select public.admin_set_sales_open(true,'Ops','2b test');
 -- Settings, and the retired per-semester set count.
 -- ---------------------------------------------------------------------------
 select is((select jsonb_build_array(writing_model,check_model,check_enabled) from private.campus_bot_settings),
-  '["haiku",null,false]','Haiku writes; the check step is off until the Campus Bot test');
+  '["haiku","sonnet",false]','Haiku writes; Sonnet checks topic sets on calculation courses only (20261117110000)');
 select is((select jsonb_build_array(global_daily_generations,paid_daily_reserve,undelivered_per_day) from private.ai_practice_policy),
-  '[500,150,10]','platform: 500 a day, 150 kept for paying students, 10 undelivered tries a day');
+  '[2000,150,10]','platform: 2,000 newly written sets a day, 150 kept for paying students, 10 undelivered tries a day');
 select is((select provider_model from private.campus_bot_models where model='haiku'),'claude-haiku-5-5','each model names its provider id');
 select is((select count(*)::int from private.plan_catalogue where ai_sets_per_term<>0),0,'no plan carries a per-semester set count');
 select is((select set_max from private.campus_bot_writing(5)),60000::bigint,

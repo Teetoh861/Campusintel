@@ -38,7 +38,8 @@ const acceptedQuestion = z.object({
   correctOptionIndex: z.number().int().min(0).max(LIMITS.optionCount - 1),
   explanation: text(LIMITS.maxExplanationChars),
   section: text(LIMITS.maxSectionChars),
-  sourcePassageId: z.string().regex(/^P[1-9]\d*$/),
+  // P1, P2, ... in an upload; N1, N2, ... in CampusIntell's notes (lib/campus-bot/notes-context.ts).
+  sourcePassageId: z.string().regex(/^[PN][1-9]\d*$/),
   sourceQuote: z.string().min(LIMITS.minQuoteChars).max(LIMITS.maxQuoteChars),
 })
 
@@ -108,13 +109,17 @@ function questionId(sourceSha256: string, question: z.infer<typeof acceptedQuest
   return `ai_${digest.slice(0, 24)}`
 }
 
-/** Keep only well-formed, distinct questions whose quote appears verbatim in the cited passage. */
+/**
+ * Keep only well-formed, distinct questions whose quote appears verbatim in the cited passage. A question that repeats
+ * one in `previousPrompts` (the student's own earlier questions on the same notes) counts as a duplicate.
+ */
 export function validateQuestions(
   raw: ReadonlyArray<RawQuestion>, source: PreparedSource, documentId: string, limit: number,
+  previousPrompts: ReadonlyArray<string> = [],
 ): { accepted: PersonalPracticeQuestion[]; rejected: { index: number; reason: RejectionReason }[] } {
   const accepted: PersonalPracticeQuestion[] = []
   const rejected: { index: number; reason: RejectionReason }[] = []
-  const seenPrompts = new Set<string>()
+  const seenPrompts = new Set<string>(previousPrompts.map(canonicalForComparison))
   raw.forEach((candidate, index) => {
     if (accepted.length >= limit) return
     const parsed = acceptedQuestion.safeParse(candidate)

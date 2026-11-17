@@ -314,6 +314,38 @@ a fact, not as proof that the key is invalid.
   every question, is still required, and needs the owner's approval for any
   billable call.
 
+## Quiz me on this topic (sets from a notes topic)
+
+A second source for the same sets: one of CampusIntell's published notes topics instead of an upload
+(`20261117110000_campus_bot_topic_sets.sql`, owner decisions of 16 November 2026). Its button sits in the topic's
+Campus Bot area beside "Ask a question" (`app/courses/[slug]/notes/QuizMe.tsx`), on the notes topic page and on the
+free pass page for the topic a pass pinned. Each tap writes a new set.
+
+1. The page offers the quiz when the team's switch is on (`get_campus_bot_features().topic_sets`), a provider is
+   configured, and the note has at least 150 words (`topic-source.ts noteWords`, never more than the database counts).
+2. The tap sends `generate-topic` (course slug, topic item id, request id) to `POST /api/ai-practice`, with the same
+   request checks as the upload commands. The browser keeps the request id per topic for the tab until an outcome is
+   recorded (`topic-client.ts`), so a lost answer, a reload or a second tap replays the same request.
+3. `begin_campus_bot_topic_set` admits it as a set is admitted (locks, windows, undelivered tries, one set in flight,
+   the platform's day, a free pass's one set) and returns the topic's passages through Campus Bot's topic rule
+   (`private.campus_bot_topic_context`: a readable note, or the pass's pinned topic as pinned), the writing model and
+   its input and output caps, the check (model and caps) on a calculation course, and the student's last ten questions
+   on the topic. A retry of a request is answered only after every check a new quiz passes.
+4. `topic-set.ts` writes the set through Campus Bot's request shape (`lib/campus-bot/model-call.ts`, steps `writing`
+   and `check` from `lib/campus-bot/steps.ts`), judges it with the sets' own checks (`service.ts`
+   `assessGeneratedQuestions`: quotes verbatim in the cited passage, now `N1`, `N2`, ... from the notes helper), and on
+   a calculation course has the checking model confirm each question; unconfirmed questions are removed. Each whole
+   prompt stays within its admitted input cap: the writer gets as much of the topic as fits from its start
+   (`fitNotesPrompt`; the set records exactly those passages), the check its cited passages shortened from their ends
+   (`checkPromptWithin`); a prompt that cannot fit is never sent.
+5. `finish_campus_bot_topic_set` settles both steps from the provider's reports (the check at the writer's weight,
+   neither past its reservation) for a delivered set only, and delivers only while the topic and the grant that funds
+   it still hold. The set opens on its own page, `app/courses/[slug]/campus-bot/[setId]`, on the same set screen with
+   the label "Made by Campus Bot from this topic’s notes."
+
+Results reach the browser from the service-role functions, never from the student's own read: the generations policy
+shows a student unfinished rows only where uploads apply. The upload page's set lists keep to upload sets.
+
 ## Tests
 
 ```bash
@@ -326,6 +358,9 @@ supabase test db --local
 # Real concurrent sessions: 8 parallel claims and admissions, and the scheduling lock race (local stack)
 AI_PRACTICE_DB_TEST=1 AI_PRACTICE_DB_CONTAINER=supabase_db_<project> \
   node -r ./lib/auth/test-loader.cjs scripts/dev-workflow/run-tests.cjs lib/ai-practice/admission.database.test.cjs
+# Quiz me on this topic under real concurrent sessions (local, isolated stack)
+CAMPUS_BOT_DB_TEST=1 CAMPUS_BOT_DB_CONTAINER=supabase_db_<project> \
+  node -r ./lib/auth/test-loader.cjs scripts/dev-workflow/run-tests.cjs lib/ai-practice/topic-set.database.test.cjs
 # Real Storage limits, policies, late signed uploads and the Account worker against a LOCAL stack with Storage
 AI_IT_URL=http://127.0.0.1:54321 AI_IT_PUBLISHABLE_KEY=… AI_IT_SECRET_KEY=… AI_IT_DB_CONTAINER=supabase_db_<project> \
   node -r ./lib/auth/test-loader.cjs scripts/ai-practice/storage-integration.cjs

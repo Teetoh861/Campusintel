@@ -242,6 +242,16 @@ test('Campus Bot Explain and Ask: switches, limits, the checker, calculation cou
   assert.equal(h.requests.length, 10, 'refused commands send nothing')
 })
 
+test('Quiz me on this topic: the model that checks a topic set on a calculation course', async () => {
+  const h = harness()
+  await h.run(['campus-bot-set-checker', '--model', 'sonnet', ...NOTE])
+  assert.deepEqual(h.requests, [{ fn: 'admin_set_campus_bot_set_checker',
+    body: { p_model: 'sonnet', p_actor: 'ops', p_reason: 'support ticket 42' } }])
+  await assert.rejects(h.run(['campus-bot-set-checker', '--model', 'GPT 5', ...NOTE]))
+  await assert.rejects(h.run(['campus-bot-set-checker', '--model', 'sonnet']), 'every change names its actor and reason')
+  assert.equal(h.requests.length, 1, 'refused commands send nothing')
+})
+
 test('card excess is refused before refund_order, even on a dry run; a transfer excess is allowed', async () => {
   const card = harness({ admin_payment_status: orderStatus({ payments: [payment('card')] }) })
   for (const extra of [[], ['--request', REQUEST, '--confirm']]) {

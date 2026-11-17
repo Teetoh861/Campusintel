@@ -8,12 +8,16 @@ import { CampusBotArea } from '@/components/student/CampusBotArea'
 import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction } from '@/components/student/ui'
+import { AI_PRACTICE_LIMITS } from '@/lib/ai-practice/contract'
+import { readQuizPassLine } from '@/lib/ai-practice/quiz-pass'
+import { noteWords } from '@/lib/ai-practice/topic-source'
 import { AUTH_PATHS } from '@/lib/auth/constants'
 import { readCampusBotFeatures } from '@/lib/campus-bot/features'
 import { createClient } from '@/lib/supabase/server'
 import { NoteUseTracker } from '../../NoteUseTracker'
 import { NoteBody } from '../../sections'
 import { AskCampusBot } from '../AskCampusBot'
+import { QuizMe } from '../QuizMe'
 import { theoryQuestionHref } from '../../theory/presentation'
 import { notesBlocked, resolve } from '../shared'
 import type { ReactElement } from 'react'
@@ -42,9 +46,15 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
   if (!note) return notFound()
   const previous = notes[index - 1], next = notes[index + 1]
   const guide = 'noteType' in note && note.noteType === 'guide_topic' ? note : null
-  // Ask Campus Bot about this topic, when the team has it switched on. A failed read offers nothing.
-  const ask = (await readCampusBotFeatures(await createClient()).catch(() => null))?.ask === true
+  // Ask Campus Bot about this topic, and a quiz on it, when the team has each switched on. A failed read offers nothing.
+  const client = await createClient()
+  const features = await readCampusBotFeatures(client).catch(() => null)
+  const ask = features?.ask === true
+  // A quiz needs enough notes for five fair questions; a free pass with its set unused is told it has one.
+  const quiz = features?.topicSets === true && noteWords(note) >= AI_PRACTICE_LIMITS.minSourceWords
+  const passLine = quiz ? await readQuizPassLine(client) : null
   const path = `/courses/${slug}/notes/${topic}`
+  const signInHref = `${AUTH_PATHS.login}?next=${encodeURIComponent(path)}`
   const theoryId = guide?.theory?.itemId
   return <StudentPage band={<PageBand title={note.title}
     context={<p>{course.code} · Topic {index + 1} of {notes.length}</p>}
@@ -56,10 +66,11 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
           ...(theoryId && theoryItems.has(theoryId) ? { theoryHref: theoryQuestionHref(course.href, theoryId) } : {}) }} />
       </article>
       {/* Under the topic's own practice buttons: what Campus Bot does with this topic. */}
-      {ask ? <CampusBotArea>
-        <AskCampusBot courseSlug={course.slug} itemId={note.itemId} topicTitle={note.title}
-          continuityToken={continuityToken} signInHref={`${AUTH_PATHS.login}?next=${encodeURIComponent(path)}`}
-          reloadHref={path} />
+      {ask || quiz ? <CampusBotArea>
+        {ask ? <AskCampusBot courseSlug={course.slug} itemId={note.itemId} topicTitle={note.title}
+          continuityToken={continuityToken} signInHref={signInHref} reloadHref={path} /> : null}
+        {quiz ? <QuizMe courseSlug={course.slug} itemId={note.itemId} passLine={passLine}
+          continuityToken={continuityToken} signInHref={signInHref} reloadHref={path} /> : null}
       </CampusBotArea> : null}
       <nav aria-label="Topics" className="student-guide-pager">
         {previous ? <Link href={`${course.href}/notes/${index}`} prefetch={false} className="student-topic-row student-focus-control">

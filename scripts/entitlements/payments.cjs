@@ -167,6 +167,10 @@ function paymentCommand(command, opts, ctx) {
     }
     case 'campus-bot-checker': return async () => ctx.rpc('admin_set_campus_bot_checker', {
       p_model: required(opts, 'model', /^[a-z][a-z0-9-]{0,39}$/), ...note() })
+    // Quiz me on this topic (20261117110000_campus_bot_topic_sets.sql): the model that checks a topic set on a
+    // calculation course. Its switch is campus-bot-feature --feature topic-sets.
+    case 'campus-bot-set-checker': return async () => ctx.rpc('admin_set_campus_bot_set_checker', {
+      p_model: required(opts, 'model', /^[a-z][a-z0-9-]{0,39}$/), ...note() })
     case 'campus-bot-course': return async () => ctx.rpc('admin_set_campus_bot_course', {
       p_content_key: required(opts, 'course', COURSE_KEY),
       p_calculation: required(opts, 'calculation', /^(on|off)$/) === 'on', ...note() })

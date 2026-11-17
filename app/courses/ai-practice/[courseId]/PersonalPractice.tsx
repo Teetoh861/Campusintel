@@ -11,10 +11,16 @@ import type { ReactElement } from 'react'
 
 const optionLetter = (index: number) => String.fromCharCode(65 + index)
 
-/** The one label every Campus Bot set carries. */
-export function PersonalDisclaimer(): ReactElement {
-  return <p className="ai-practice-disclaimer">{PERSONAL_PRACTICE_DISCLAIMER}</p>
+/** The one label a Campus Bot set carries: from the student's own notes, unless the set says otherwise. */
+export function PersonalDisclaimer({ label = PERSONAL_PRACTICE_DISCLAIMER }: { label?: string }): ReactElement {
+  return <p className="ai-practice-disclaimer">{label}</p>
 }
+
+/** The words a set's screen uses for its source. A set from an upload keeps the defaults; a set written from a notes
+ *  topic names the topic in its page title and passes its own label (lib/campus-bot/copy.ts quiz). */
+export type PracticeCopy = { heading: string; headingHidden?: boolean; label: string; quoteLead: string }
+const UPLOAD_COPY: PracticeCopy = { heading: 'Practise from your notes', label: PERSONAL_PRACTICE_DISCLAIMER,
+  quoteLead: 'From your notes:' }
 
 /** Count answered and correct questions for the summary line. */
 export function personalScore(set: PersonalSetView, answers: Readonly<Record<string, number>>):
@@ -24,7 +30,8 @@ export function personalScore(set: PersonalSetView, answers: Readonly<Record<str
     correct: answered.filter(question => answers[question.id] === question.correctOption).length }
 }
 
-export function PersonalPractice({ set, onClose }: { set: PersonalSetView; onClose(): void }): ReactElement {
+export function PersonalPractice({ set, onClose, copy = UPLOAD_COPY }: { set: PersonalSetView; onClose(): void
+  copy?: PracticeCopy }): ReactElement {
   const id = useId()
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [current, setCurrent] = useState(0)
@@ -36,10 +43,10 @@ export function PersonalPractice({ set, onClose }: { set: PersonalSetView; onClo
 
   return <section className="ai-practice-run" aria-labelledby={`${id}-heading`}>
     <div className="ai-practice-run-head">
-      <h2 id={`${id}-heading`} className="ai-practice-run-title">Practise from your notes</h2>
+      <h2 id={`${id}-heading`} className={copy.headingHidden ? 'sr-only' : 'ai-practice-run-title'}>{copy.heading}</h2>
       <p className="ai-practice-run-meta">Question {current + 1} of {set.questions.length} · {score.correct} correct so far</p>
     </div>
-    <PersonalDisclaimer />
+    <PersonalDisclaimer label={copy.label} />
     <p className="ai-practice-section">{question.section}</p>
     <p className="student-practice-prompt" id={`${id}-prompt`}>{question.prompt}</p>
     <fieldset className="student-practice-options" aria-labelledby={`${id}-prompt`}>
@@ -62,7 +69,7 @@ export function PersonalPractice({ set, onClose }: { set: PersonalSetView; onClo
       <p className="ai-practice-feedback-verdict">{chosen === question.correctOption ? 'Correct.' :
         `Not quite. The answer is ${optionLetter(question.correctOption)}.`}</p>
       <p>{question.explanation}</p>
-      <blockquote className="ai-practice-quote"><span>From your notes:</span> “{question.sourceQuote}”</blockquote>
+      <blockquote className="ai-practice-quote"><span>{copy.quoteLead}</span> “{question.sourceQuote}”</blockquote>
     </div>}
     <div className="student-practice-steps">
       <button type="button" className={studentAction(btnGhost)} disabled={current === 0}

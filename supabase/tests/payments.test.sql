@@ -147,7 +147,7 @@ select is((select jsonb_agg(jsonb_build_array(model,price_weight) order by model
 -- The sets' two steps. Explain and Ask Campus Bot have their own (campus_bot_explain_ask.test.sql).
 select is((select jsonb_agg(jsonb_build_array(step,read_tokens_max,written_tokens_max) order by step) from private.campus_bot_request_caps
     where step in ('writing','check')),
-  '[["check",3000,1500],["writing",20000,8000]]'::jsonb,'per-request caps: writing 20,000/8,000, check 3,000/1,500');
+  '[["check",10000,3000],["writing",20000,8000]]'::jsonb,'per-request caps: writing 20,000/8,000, check 10,000/3,000 (20261117110000)');
 select is((select jsonb_build_array(sales_open,checkout_minutes,sales_close_days,refund_window_hours,refunds_per_student,
   refund_campus_bot_replies_allowed,refund_campus_bot_messages_allowed,refund_exams_allowed,
   refund_practice_answers_allowed,refund_notes_topics_allowed)
@@ -601,7 +601,7 @@ select is(jsonb_build_array(public.admin_set_campus_bot_model('sonnet',15,'Ops',
     public.admin_set_campus_bot_model('opus',5,'Ops','unknown')->>'state'),
   '[15,2500,"not-found"]'::jsonb,'model weights and per-request caps are settings');
 select public.admin_set_campus_bot_model('sonnet',20,'Ops','restore');
-select public.admin_set_campus_bot_request_cap('check',3000,1500,'Ops','restore');
+select public.admin_set_campus_bot_request_cap('check',10000,3000,'Ops','restore');
 select is((select jsonb_build_array(amount_kobo,ai_sets,campus_bot_session_tokens,campus_bot_week_tokens)
   from private.payment_orders where id=(select pg_temp.oid(a) from t1)),'[400000,0,350000,700000]','existing order keeps its price and allowances');
 select is((select jsonb_build_array(ai_units,campus_bot_session_tokens,campus_bot_week_tokens) from public.entitlement_grants
