@@ -83,7 +83,7 @@ export const PLAN_COPY = {
   } satisfies Record<PlanTier, string>,
   perPeriod: { semester: 'a semester', session: 'a session' } satisfies Record<PlanPeriod, string>,
   payment: 'Pay by card or bank transfer.',
-  refund: 'Full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan.',
+  refund: 'Full refund within 48 hours of paying, as long as you haven’t made a Campus Bot question set or used a large part of your plan.',
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
   keepSemester: 'Keep Semester',
@@ -298,8 +298,11 @@ export const TERMS_COPY = {
       'when it resets.' },
     { heading: 'Your account', body: 'Your plan is just for you, and you can be signed in on one device at a time.' },
     { heading: 'Refunds', body: 'Changed your mind? You can get a full refund within 48 hours of paying, as long as you ' +
-      'haven’t used Campus Bot or a large part of your plan. Just message us, and please don’t use your plan while we ' +
-      'process it. Refunds go back to the card or account you paid with, and your plan ends once the refund is made.' },
+      'haven’t started an exam, made a Campus Bot question set, answered more than 10 practice questions, opened more ' +
+      'than 3 notes topics or had more than 10 Campus Bot replies. GST courses don’t count, and you can get one refund ' +
+      'this way. Just message us, and please don’t use your plan while we process it. Refunds go back to the card or ' +
+      'account you paid with, and your plan ends once the refund is made. If a problem on our side stops you from ' +
+      'using your plan, we’ll refund you.' },
     { heading: 'Wrong amount', body: 'Paid too much? Your plan starts and we refund the extra. Paid too little? It’s ' +
       'refunded in full.' },
     { heading: 'Changes', body: 'Prices may change for future plans. A plan you’ve already paid for keeps its price and end date.' },

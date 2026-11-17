@@ -123,18 +123,15 @@ with a scripted stand-in. `CAMPUS_BOT_FAKE_SCRIPT=<file.json>` chooses what it d
 example `{"explain":"not-covered","check":"fail","chat":"outside"}` (also `timeout`, `refused`, `invalid`, `long`,
 `wrong-option`). Every `next build` / `next start` and every hosted deployment ignores both variables.
 
-## Refund rule (owner to decide)
+## Refunds
 
-Today one delivered Campus Bot reply on a paid course (`refund_campus_bot_replies_allowed = 0`) ends the 48-hour refund
-right, and practice sets, explanations (including saved ones read) and chat replies all count as `campus-bot-reply`
-plan use. The smallest change that ends it after the **first set or 10 replies**, with no new plan-use kind and no
-change to existing rows:
-
-1. `private.payment_policy`: add `refund_campus_bot_sets_allowed integer not null default 0`, and set
-   `refund_campus_bot_replies_allowed = 9`.
-2. `private.refund_assessment`: count `campus-bot-reply` events whose `ref` starts with `explain:` or `chat:` as
-   replies, and the others (practice sets, whose `ref` is the set's id) as sets; refuse when either count is above its
-   allowance.
+Owner decision of 17 Nov 2026: a paid student's 48-hour standard refund ends once they have more than 10 Campus Bot
+replies (Explain and notes chat together) on paid courses; any delivered Campus Bot question set still ends it. Each
+delivered explanation or chat reply on a paid course is plan use of kind `campus-bot-message`, dated when it was asked
+for: a chat reply once per request (`chat:<request id>`), an explanation once per explanation shown
+(`explain:<item>:<revision>:<option>`), so a retry, a reread or a saved explanation shown again never counts twice.
+Sets keep `campus-bot-reply`. The allowance is `payment_policy.refund_campus_bot_messages_allowed` (10); the refund
+check shows `campus_bot_sets` and `campus_bot_messages` apart ([Payments operations](payments-operations.md)).
 
 ## For "Practise this topic"
 

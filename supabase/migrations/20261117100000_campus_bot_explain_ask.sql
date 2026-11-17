@@ -681,7 +681,7 @@ begin
   if v_saved.item_id is not null then
     -- No provider call and no charge. Reading an explanation is still Campus Bot use on a paid course.
     if v_saved.outcome = 'explained' then
-      perform private.mark_plan_use(v_user, 'campus-bot-reply', v_attempt.course_id,
+      perform private.mark_plan_use(v_user, 'campus-bot-message', v_attempt.course_id,
         private.campus_bot_explanation_ref(v_question.item_id, v_question.content_revision, v_chosen), v_now);
     end if;
     return jsonb_build_object('state', 'saved') || private.campus_bot_explanation_view(v_saved);
@@ -885,7 +885,7 @@ begin
     returning * into v_saved;
   if v_outcome = 'explained' then
     -- A delivered explanation is plan use for refunds, at the time it was admitted. Free courses are never recorded.
-    perform private.mark_plan_use(p_user_id, 'campus-bot-reply', v_reply.course_id,
+    perform private.mark_plan_use(p_user_id, 'campus-bot-message', v_reply.course_id,
       private.campus_bot_explanation_ref(v_saved.item_id, v_saved.revision, v_saved.chosen_option), v_reply.reserved_at);
   end if;
   return jsonb_build_object('state', 'finished') || private.campus_bot_explanation_view(v_saved);
@@ -1095,8 +1095,9 @@ begin
       reply_expires_at = case when v_outcome = 'answered' then v_now + make_interval(secs => v_keep) end
     where id = p_reply_id;
   if v_outcome = 'answered' then
-    perform private.mark_plan_use(p_user_id, 'campus-bot-reply', v_reply.course_id, 'chat:' || p_reply_id::text,
-      v_reply.reserved_at);
+    -- One reply per request: a retry of the same request never counts twice.
+    perform private.mark_plan_use(p_user_id, 'campus-bot-message', v_reply.course_id,
+      'chat:' || v_reply.request_id::text, v_reply.reserved_at);
   end if;
   return jsonb_build_object('state', 'finished', 'outcome', v_outcome);
 end;
@@ -1354,6 +1355,115 @@ language sql stable security definer set search_path = '' as $$
         'passages', (select coalesce(jsonb_agg(jsonb_build_object('heading', p.heading, 'body', p.body) order by p.place),
           '[]'::jsonb) from private.note_topic_passages(t.id, 36000) p)) order by t.number)
       from topics t where t.number <= least(greatest(coalesce(p_topics, 2), 0), 20)), '[]'::jsonb));
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Refunds (owner decision of 17 Nov 2026). A delivered Explain or notes-chat reply on a paid course is plan use of its
+-- own kind, 'campus-bot-message', with its own allowance: a standard refund ends once a student has more than 10. A
+-- delivered set stays 'campus-bot-reply', whose allowance stays 0. Additive: no kind or column is renamed and no row
+-- changes. A reply is recorded at the time it was asked for, once per order, course and reference (a chat message by
+-- its request id, an explanation by the explanation shown), so a retry, a reread or a replay never counts twice, and a
+-- reply asked for before a payment never counts toward it.
+-- ---------------------------------------------------------------------------
+alter table private.plan_use_events drop constraint plan_use_events_kind_check,
+  add constraint plan_use_events_kind_check
+    check (kind in ('notes-topic', 'theory-reveal', 'campus-bot-reply', 'campus-bot-message'));
+alter table private.payment_policy add column refund_campus_bot_messages_allowed integer not null default 10
+  check (refund_campus_bot_messages_allowed between 0 and 1000);
+
+-- Part 1's mark_plan_use, with one change: the new kind.
+create or replace function private.mark_plan_use(p_user uuid, p_kind text, p_course_id uuid, p_ref text,
+  p_at timestamptz default clock_timestamp()) returns integer
+language plpgsql security definer set search_path = '' as $$
+declare v_count integer;
+begin
+  if p_user is null or p_kind is null
+      or p_kind not in ('notes-topic', 'theory-reveal', 'campus-bot-reply', 'campus-bot-message')
+      or p_ref is null or char_length(p_ref) not between 1 and 200 or p_at is null then
+    raise exception 'Invalid plan use' using errcode = '22023';
+  end if;
+  if private.payment_course_is_free(p_course_id) then return 0; end if;
+  insert into private.plan_use_events (order_id, user_id, kind, course_id, ref, occurred_at)
+    select distinct g.order_id, p_user, p_kind, p_course_id, p_ref, p_at from public.entitlement_grants g
+    where g.user_id = p_user and g.order_id is not null and g.revoked_at is null and g.starts_at <= p_at
+      and coalesce(private.grant_effective_end(g), g.starts_at) > p_at
+    on conflict do nothing;
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+-- The refund assessment of 20261102200000, with Campus Bot sets and replies counted apart: sets ('campus-bot-reply')
+-- against refund_campus_bot_replies_allowed (reason 'campus-bot'), replies ('campus-bot-message') against
+-- refund_campus_bot_messages_allowed (reason 'campus-bot-messages'). Its counts and allowances name them
+-- campus_bot_sets and campus_bot_messages, so a set is never read as a reply.
+create or replace function private.refund_assessment(p_order private.payment_orders, p_payment private.payment_fulfilments,
+  p_identity_hashes text[], p_requested_at timestamptz) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_policy private.payment_policy;
+  v_paid timestamptz := p_order.paid_at;
+  v_now timestamptz := clock_timestamp();
+  v_excess bigint := case when p_payment.outcome = 'fulfilled' and p_payment.currency = p_order.currency
+    and p_payment.amount_kobo > p_order.amount_kobo then p_payment.amount_kobo - p_order.amount_kobo else 0 end;
+  v_sets integer := 0; v_messages integer := 0; v_exams integer := 0; v_answers integer := 0; v_reveals integer := 0;
+  v_topics integer := 0;
+  v_used integer;
+  v_reasons text[] := '{}';
+  v_classes text[];
+begin
+  select * into strict v_policy from private.payment_policy;
+  if p_payment.outcome = 'fulfilled' then
+    -- Card excess goes through Bachs support, so only a bank-transfer excess is offered here.
+    v_classes := array['standard', 'our-fault']
+      || case when v_excess > 0 and p_payment.method <> 'card' then array['excess'] else '{}'::text[] end;
+    select count(*) filter (where kind = 'campus-bot-reply'), count(*) filter (where kind = 'campus-bot-message'),
+        count(*) filter (where kind = 'theory-reveal'),
+        count(distinct coalesce(course_id::text, '') || ':' || ref) filter (where kind = 'notes-topic')
+      into v_sets, v_messages, v_reveals, v_topics
+      from private.plan_use_events u
+      where u.order_id = p_order.id and u.occurred_at >= v_paid and u.occurred_at <= v_now
+        and not private.payment_course_is_free(u.course_id);
+    select count(*) into v_exams from public.quiz_attempts q
+      where q.user_id = p_order.user_id and q.mode = 'exam' and q.created_at >= v_paid
+        and q.created_at <= v_now and not private.payment_course_is_free(q.course_id);
+    select count(*) into v_answers from public.quiz_attempt_answers a join public.quiz_attempts q on q.id = a.attempt_id
+      where q.user_id = p_order.user_id and q.mode is distinct from 'exam' and a.answered_at >= v_paid
+        and a.answered_at <= v_now and not private.payment_course_is_free(q.course_id);
+    v_answers := v_answers + v_reveals;
+    if p_requested_at > v_paid + make_interval(hours => v_policy.refund_window_hours) then
+      v_reasons := v_reasons || 'window'::text;
+    end if;
+    if v_sets > v_policy.refund_campus_bot_replies_allowed then v_reasons := v_reasons || 'campus-bot'::text; end if;
+    if v_messages > v_policy.refund_campus_bot_messages_allowed then
+      v_reasons := v_reasons || 'campus-bot-messages'::text;
+    end if;
+    if v_exams > v_policy.refund_exams_allowed then v_reasons := v_reasons || 'exam'::text; end if;
+    if v_answers > v_policy.refund_practice_answers_allowed then v_reasons := v_reasons || 'practice'::text; end if;
+    if v_topics > v_policy.refund_notes_topics_allowed then v_reasons := v_reasons || 'notes'::text; end if;
+  else
+    v_classes := array['our-fault', 'duplicate'];
+    v_reasons := array['no-plan'];
+  end if;
+  select count(*) into v_used from private.payment_refunds r
+    where r.refund_class = 'standard' and r.status <> 'failed'
+      and ((p_order.user_id is not null and r.user_id = p_order.user_id) or r.identity_hashes && p_identity_hashes);
+  if p_payment.outcome = 'fulfilled' and v_used >= v_policy.refunds_per_student then
+    v_reasons := v_reasons || 'limit'::text;
+  end if;
+  return jsonb_build_object('classes_allowed', to_jsonb(v_classes),
+    'standard_allowed', cardinality(v_reasons) = 0, 'standard_refused', to_jsonb(v_reasons),
+    'requested_at', p_requested_at, 'window_ends_at', v_paid + make_interval(hours => v_policy.refund_window_hours),
+    'use_counted_until', v_now, 'excess_kobo', v_excess,
+    'counts', jsonb_build_object('campus_bot_sets', v_sets, 'campus_bot_messages', v_messages,
+      'exams_started', v_exams, 'practice_answers', v_answers, 'notes_topics', v_topics),
+    'allowed', jsonb_build_object('campus_bot_sets', v_policy.refund_campus_bot_replies_allowed,
+      'campus_bot_messages', v_policy.refund_campus_bot_messages_allowed,
+      'exams_started', v_policy.refund_exams_allowed, 'practice_answers', v_policy.refund_practice_answers_allowed,
+      'notes_topics', v_policy.refund_notes_topics_allowed),
+    'refunds_used', v_used, 'refund_limit', v_policy.refunds_per_student,
+    'amount_kobo', p_payment.amount_kobo, 'currency', p_payment.currency, 'method', p_payment.method);
+end;
 $$;
 
 -- ---------------------------------------------------------------------------

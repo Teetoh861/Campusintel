@@ -175,12 +175,18 @@ and token-request row are released at 0. A live server finishes or times out bef
 The standard refund rules count use from the payment until the refund is processed. Exams started and practice answers
 come from the attempt tables. The rest is recorded as it happens, once per order, course and item: a notes topic the
 student opens, a theory answer revealed (recorded before
-the answer is shown; if it cannot be recorded, the answer is not shown), and a Campus Bot set delivered. GST courses
+the answer is shown; if it cannot be recorded, the answer is not shown), a Campus Bot set delivered (kind
+`campus-bot-reply`) and a Campus Bot reply delivered: an Explain explanation or a notes-chat reply (kind
+`campus-bot-message`). Sets and replies are counted apart. Sets are `campus_bot_sets` against
+`refund_campus_bot_replies_allowed` (0: one set ends the standard refund; reason `campus-bot`). Replies are
+`campus_bot_messages` against `refund_campus_bot_messages_allowed` (10: the 11th ends it; reason
+`campus-bot-messages`). A chat reply is recorded once per request and an explanation once per explanation shown, so a
+retry, a reread or a saved explanation shown again never counts twice. GST courses
 are never counted. `refund` dry runs show every count. Ordinary student published-content reads return theory
 prompts and feedback availability, with no model answers or rubrics. The theory route gets feedback through the
 service-only `reveal_theory_feedback` RPC, which rechecks the published revision and course access and records
-`record_plan_use` in the same transaction before returning any answer. A set requested before a payment does not
-count toward that payment's refund, even if delivered after the payment.
+`record_plan_use` in the same transaction before returning any answer. A set or reply requested before a payment does
+not count toward that payment's refund, even if delivered after the payment.
 
 A notes topic counts as opened only once it has been on screen for 30 seconds in one visit to the course page. On
 screen means 60% of the note in view, or the note filling at least 60% of the screen (so long topics on a phone count
@@ -211,8 +217,9 @@ don't use your plan while we process it: using it before the refund is processed
 Then record when they asked; that time is the `--requested-at` below.
 
 1. Dry run first: `refund --order <id> --class standard --actor <you> --reason "<ticket>" --requested-at <when the
-   student asked>`. It shows the window, each use count (Campus Bot replies, exams, practice answers and theory
-   reveals, notes topics) against its allowance, and the standard refunds already used by this person.
+   student asked>`. It shows the window, each use count against its allowance (`counts` and `allowed`: Campus Bot sets
+   as `campus_bot_sets`, Campus Bot replies as `campus_bot_messages`, `exams_started`, `practice_answers` with theory
+   reveals, `notes_topics`), and the standard refunds already used by this person.
 2. If allowed, run it again with `--request <new uuid> --confirm`. Access ends immediately, before the money moves.
 3. Card payments are refunded through Bachs only; the refund settles when Bachs reports it (`refund.paid`). Bank
    transfers cannot be refunded through Bachs. Open the payment in the Bachs dashboard and note the sender's account.

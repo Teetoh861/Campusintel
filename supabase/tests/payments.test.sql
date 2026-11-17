@@ -149,8 +149,9 @@ select is((select jsonb_agg(jsonb_build_array(step,read_tokens_max,written_token
     where step in ('writing','check')),
   '[["check",3000,1500],["writing",20000,8000]]'::jsonb,'per-request caps: writing 20,000/8,000, check 3,000/1,500');
 select is((select jsonb_build_array(sales_open,checkout_minutes,sales_close_days,refund_window_hours,refunds_per_student,
-  refund_campus_bot_replies_allowed,refund_exams_allowed,refund_practice_answers_allowed,refund_notes_topics_allowed)
-  from private.payment_policy),'[false,60,3,48,1,0,0,10,3]'::jsonb,'policy defaults: sales closed, 60-minute checkout, 48 h');
+  refund_campus_bot_replies_allowed,refund_campus_bot_messages_allowed,refund_exams_allowed,
+  refund_practice_answers_allowed,refund_notes_topics_allowed)
+  from private.payment_policy),'[false,60,3,48,1,0,10,0,10,3]'::jsonb,'policy defaults: sales closed, 60-minute checkout, 48 h');
 select pg_temp.student(1);
 select is(pg_temp.buy(1,'standard_semester',pg_temp.req(1))->>'state','sales-closed','nothing is sold while sales are closed');
 select is(public.admin_set_sales_open(true,'Ops','launch test')->>'state','changed','an operator opens sales');
@@ -408,7 +409,7 @@ create temporary table o30 as select pg_temp.paid(30) id;
 select pg_temp.paid_ago(id,interval '23 hours') from o30;
 select is((select jsonb_build_array(e->'standard_allowed',e->'counts',e->'refunds_used') from
   (select pg_temp.elig((select id from o30),pg_temp.ids(30)) e) x),
-  '[true,{"campus_bot_replies":0,"exams_started":0,"practice_answers":0,"notes_topics":0},0]'::jsonb,
+  '[true,{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":0,"notes_topics":0},0]'::jsonb,
   'unused at 23 h: a standard refund is allowed, with every count shown');
 create temporary table rf30 as select pg_temp.refund((select id from o30),'standard',pg_temp.req(300),pg_temp.ids(30)) res;
 select is((select res->>'state' from rf30),'refund-pending','row 21: recorded');
@@ -442,7 +443,7 @@ select pg_temp.student(n) from generate_series(31,36) n;
 create temporary table o3x as select n, pg_temp.paid(n) id from generate_series(31,36) n;
 select pg_temp.paid_ago(id,interval '1 hour') from o3x;
 -- 31: one Campus Bot set.
-select is(private.mark_plan_use(pg_temp.u(31),'campus-bot-reply',null,'reply-1'),1,'a Campus Bot reply is recorded');
+select is(private.mark_plan_use(pg_temp.u(31),'campus-bot-reply',null,'reply-1'),1,'a Campus Bot set is recorded');
 -- 32: one exam started.
 insert into public.quiz_attempts(id,user_id,course_id,question_count,status,mode,deadline_at,duration_seconds,intent,bank_size)
   values(gen_random_uuid(),pg_temp.u(32),pg_temp.r('BUA201'),5,'in_progress','exam',clock_timestamp()+interval '30 minutes',
@@ -470,12 +471,12 @@ select is((select count(*)::int from private.plan_use_events where user_id=pg_te
 select is((select jsonb_build_array(e->'standard_allowed',e->'standard_refused',e->'counts') from
   (select pg_temp.elig(id,pg_temp.ids(n)) e from o3x where o3x.n=x.n) y),expected,label)
 from (values
-  (31,'[false,["campus-bot"],{"campus_bot_replies":1,"exams_started":0,"practice_answers":0,"notes_topics":0}]'::jsonb,'one Campus Bot reply blocks'),
-  (32,'[false,["exam"],{"campus_bot_replies":0,"exams_started":1,"practice_answers":0,"notes_topics":0}]','one exam started blocks'),
-  (33,'[false,["practice"],{"campus_bot_replies":0,"exams_started":0,"practice_answers":11,"notes_topics":0}]','11 practice answers block'),
-  (34,'[false,["practice"],{"campus_bot_replies":0,"exams_started":0,"practice_answers":11,"notes_topics":0}]','10 answers + a theory reveal block'),
-  (35,'[true,[],{"campus_bot_replies":0,"exams_started":0,"practice_answers":10,"notes_topics":3}]','10 answers, 3 topics and GST use are allowed'),
-  (36,'[false,["notes"],{"campus_bot_replies":0,"exams_started":0,"practice_answers":0,"notes_topics":4}]','4 topics block (a notes page counts as one)')
+  (31,'[false,["campus-bot"],{"campus_bot_sets":1,"campus_bot_messages":0,"exams_started":0,"practice_answers":0,"notes_topics":0}]'::jsonb,'one Campus Bot set blocks'),
+  (32,'[false,["exam"],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":1,"practice_answers":0,"notes_topics":0}]','one exam started blocks'),
+  (33,'[false,["practice"],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":11,"notes_topics":0}]','11 practice answers block'),
+  (34,'[false,["practice"],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":11,"notes_topics":0}]','10 answers + a theory reveal block'),
+  (35,'[true,[],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":10,"notes_topics":3}]','10 answers, 3 topics and GST use are allowed'),
+  (36,'[false,["notes"],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":0,"notes_topics":4}]','4 topics block (a notes page counts as one)')
 ) x(n,expected,label);
 select is(pg_temp.refund((select id from o3x where n=33),'standard',gen_random_uuid(),pg_temp.ids(33))->>'state','refused',
   'a refused standard refund changes nothing');
@@ -489,6 +490,51 @@ update private.payment_policy set refund_practice_answers_allowed=11;
 select is((pg_temp.elig((select id from o3x where n=34),pg_temp.ids(34))->>'standard_allowed')::boolean,true,
   'raising the practice allowance allows 11');
 update private.payment_policy set refund_practice_answers_allowed=10;
+
+-- Campus Bot replies (owner decision of 17 Nov 2026): a delivered Explain or notes-chat reply on a paid course is
+-- counted apart from sets, once per reply, and more than 10 block a standard refund; a delivered set still blocks at once.
+select pg_temp.student(n) from generate_series(42,46) n;
+create temporary table o4x as select n, pg_temp.paid(n) id from generate_series(42,46) n;
+select pg_temp.paid_ago(id,interval '1 hour') from o4x where n<>46;
+-- 42: ten replies, one of them recorded twice; 43: eleven; 44: one set and ten replies; 45: eleven on GST 111.
+select is((select sum(private.mark_plan_use(pg_temp.u(42),'campus-bot-message',pg_temp.r('BUA201'),'chat:'||i))::int
+  from generate_series(1,10) i),10,'ten Campus Bot replies are recorded');
+select is(private.mark_plan_use(pg_temp.u(42),'campus-bot-message',pg_temp.r('BUA201'),'chat:3'),0,
+  'the same reply recorded again is not');
+select private.mark_plan_use(pg_temp.u(43),'campus-bot-message',pg_temp.r('BUA201'),'explain:'||i)
+  from generate_series(1,11) i;
+select private.mark_plan_use(pg_temp.u(44),'campus-bot-reply',pg_temp.r('BUA201'),'set-1');
+select private.mark_plan_use(pg_temp.u(44),'campus-bot-message',pg_temp.r('BUA201'),'chat:'||i)
+  from generate_series(1,10) i;
+select is((select sum(private.mark_plan_use(pg_temp.u(45),'campus-bot-message',pg_temp.r('GST111'),'chat:'||i))::int
+  from generate_series(1,11) i),0,'replies on a GST course are never recorded');
+-- 46: eleven replies asked for a minute before the payment was confirmed (and delivered after it).
+select is((select sum(private.mark_plan_use(pg_temp.u(46),'campus-bot-message',pg_temp.r('BUA201'),'chat:'||i,
+    (select paid_at from private.payment_orders where id=(select id from o4x where n=46))-interval '1 minute'))::int
+  from generate_series(1,11) i),0,'a reply asked for before the payment is not recorded for it');
+select is((select jsonb_build_array(e->'standard_allowed',e->'standard_refused',e->'counts') from
+  (select pg_temp.elig(id,pg_temp.ids(n)) e from o4x where o4x.n=x.n) y),expected,label)
+from (values
+  (42,'[true,[],{"campus_bot_sets":0,"campus_bot_messages":10,"exams_started":0,"practice_answers":0,"notes_topics":0}]'::jsonb,
+    '10 Campus Bot replies are allowed, a reply recorded twice counting once'),
+  (43,'[false,["campus-bot-messages"],{"campus_bot_sets":0,"campus_bot_messages":11,"exams_started":0,"practice_answers":0,"notes_topics":0}]',
+    'the 11th reply blocks'),
+  (44,'[false,["campus-bot"],{"campus_bot_sets":1,"campus_bot_messages":10,"exams_started":0,"practice_answers":0,"notes_topics":0}]',
+    'one Campus Bot set still blocks'),
+  (45,'[true,[],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":0,"notes_topics":0}]',
+    'replies on a GST course never count'),
+  (46,'[true,[],{"campus_bot_sets":0,"campus_bot_messages":0,"exams_started":0,"practice_answers":0,"notes_topics":0}]',
+    'replies asked for before the payment never count')
+) x(n,expected,label);
+select is(pg_temp.elig((select id from o4x where n=42),pg_temp.ids(42))->'allowed',
+  '{"campus_bot_sets":0,"campus_bot_messages":10,"exams_started":0,"practice_answers":10,"notes_topics":3}'::jsonb,
+  'the allowances name sets and replies apart');
+update private.payment_policy set refund_campus_bot_messages_allowed=11;
+select is((pg_temp.elig((select id from o4x where n=43),pg_temp.ids(43))->>'standard_allowed')::boolean,true,
+  'the reply allowance is a setting: raising it allows 11');
+update private.payment_policy set refund_campus_bot_messages_allowed=10;
+select throws_ok($$update private.payment_policy set refund_campus_bot_messages_allowed=1001$$,'23514',null,
+  'and it stays between 0 and 1,000');
 
 -- Change 4: judged at the time the student asked.
 select pg_temp.student(37);

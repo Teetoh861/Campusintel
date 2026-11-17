@@ -2,7 +2,8 @@
 -- (20261117100000_campus_bot_explain_ask.sql): settings and switches; the notes as passages and the search over them;
 -- the attempt check; explanations saved once for everyone and reused free; the calculation check, charged at the
 -- writer's weight; funding, limits and charging only what is delivered; the shared topic rule, the free pass's pinned
--- topic and kept chat replies; corrections and republished notes; operator functions and privileges.
+-- topic and kept chat replies; corrections and republished notes; operator functions and privileges; replies on a paid
+-- course as plan use for refunds.
 -- The provider is never called: each result is reported to the finish functions as the server reports it. Time is
 -- simulated by moving timestamps (every decision reads clock_timestamp()). Everything rolls back.
 begin;
@@ -741,6 +742,60 @@ select is((select count(*)::integer from private.campus_bot_explanations where c
     and state = 'done'), 0, 'none is left');
 select ok((select count(*) from private.entitlement_events where event like 'campus-bot.%' and actor = 'operator:Ops') >= 10,
   'every operator change is audited with its actor');
+
+-- 14. Plan use for refunds ----------------------------------------------------------------------------------------------
+-- Owner decision of 17 Nov 2026: a delivered Explain or notes-chat reply on a paid course is plan use of its own kind,
+-- 'campus-bot-message', dated when it was asked for, once per reply: a chat message by its request id, an explanation by
+-- the explanation shown, so neither a retry nor a reread counts again. Student 9 buys Standard for BUA 200 (the running
+-- First Semester began 100 days ago).
+delete from private.academic_term_extensions;
+delete from private.academic_terms where session_label <> '2026/2027';
+update private.academic_terms set resumes_on = (now() at time zone 'Africa/Lagos')::date - 100;
+select pg_temp.student(9);
+update public.profiles set first_name = 'Ada', department_id = '10000000-0000-4000-8000-000000000002',
+  academic_level_id = '20000000-0000-4000-8000-000000000002', academic_period_id = '30000000-0000-4000-8000-000000000001'
+  where id = pg_temp.u(9);
+select public.admin_set_sales_open(true, 'Ops', 'plan use test');
+create temporary table o9 on commit drop as select (public.create_payment_order(pg_temp.s(9), 'standard_semester',
+    (select revision from public.profiles where id = pg_temp.u(9)), gen_random_uuid(), '/access', 'fake')
+  -> 'order' ->> 'id')::uuid as id;
+select public.attach_payment_checkout(id, 'fake', 'chk_' || replace(id::text, '-', ''),
+  'https://checkout.example.test/c/' || id, clock_timestamp() + interval '1 hour') from o9;
+select public.fulfil_payment(id, 'fake', 'ch_' || replace(id::text, '-', ''), 'succeeded', 400000, 'NGN', 'card',
+  clock_timestamp(), 'webhook', 'test') from o9;
+select public.admin_set_campus_bot_feature(f, true, 'Ops', 'plan use test') from unnest(array['explain', 'ask']) f;
+set local role service_role;
+insert into outcome values ('paid-chat', pg_temp.chat(9, 20, pg_temp.f('bua-1'), pg_temp.f('bua')));
+insert into outcome values ('paid-chat-answered', pg_temp.answer(9, pg_temp.o('paid-chat')));
+insert into outcome values ('paid-chat-retry', pg_temp.chat(9, 20, pg_temp.f('bua-1'), pg_temp.f('bua')));
+insert into outcome values ('paid-start', pg_temp.istart(9, 20, 'Introduction to Business and Management', '02'));
+insert into outcome values ('paid-pick', pg_temp.pick(9, 20, pg_temp.qn(20, 1), false));
+insert into outcome values ('paid-explain', pg_temp.explain(9, 20, pg_temp.qn(20, 1)));
+insert into outcome values ('paid-explained', pg_temp.settle(9, pg_temp.o('paid-explain'), 'explained', pg_temp.f('bua-1')));
+insert into outcome values ('paid-reread', pg_temp.explain(9, 20, pg_temp.qn(20, 1)));
+reset role;
+select is(jsonb_build_array(pg_temp.o('paid-chat') ->> 'state', pg_temp.o('paid-chat-answered') ->> 'state',
+    pg_temp.o('paid-chat-retry') ->> 'state', pg_temp.o('paid-explain') ->> 'state',
+    pg_temp.o('paid-explained') ->> 'outcome', pg_temp.o('paid-reread') ->> 'state'),
+  '["started","finished","answered","started","explained","saved"]'::jsonb,
+  'a paid student asks about a topic of a paid course, has a question explained and reads it again');
+select is((select jsonb_agg(jsonb_build_array(kind, ref, course_id) order by ref) from private.plan_use_events
+    where user_id = pg_temp.u(9)),
+  jsonb_build_array(
+    jsonb_build_array('campus-bot-message', 'chat:' || pg_temp.r(20), pg_temp.f('bua')),
+    jsonb_build_array('campus-bot-message', (select private.campus_bot_explanation_ref(q.item_id, q.content_revision,
+        pg_temp.opt(20, q.question_id, false)) from public.quiz_attempt_questions q
+      where q.attempt_id = pg_temp.a(20) and q.question_id = pg_temp.qn(20, 1)), pg_temp.f('bua'))),
+  'each delivered reply is one Campus Bot message, the chat by its request id and the explanation by itself; '
+    || 'neither the retry nor the reread counts again');
+select is((select bool_and(u.occurred_at = r.reserved_at) from private.plan_use_events u
+    join private.campus_bot_replies r on r.user_id = u.user_id and r.state = 'consumed'
+      and r.feature = case when u.ref like 'chat:%' then 'chat' else 'explain' end
+    where u.user_id = pg_temp.u(9)), true, 'each dated when it was asked for');
+select is((select jsonb_build_array(e -> 'standard_allowed', e -> 'counts' -> 'campus_bot_messages',
+    e -> 'counts' -> 'campus_bot_sets') from (select public.refund_eligibility((select id from o9), null,
+    clock_timestamp()) e) x), '[true, 2, 0]'::jsonb,
+  'the refund check counts them as replies, not sets, and two leave the standard refund open');
 
 select * from finish();
 rollback;
