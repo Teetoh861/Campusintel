@@ -54,7 +54,7 @@ test('open selection recovery has one confirmation action and no plan or contact
 test('locked semester mismatch has one team-contact action using the existing change message',()=>{
   for(const number of ['2349012345678','']) {
     const html=render(number,{reason:'selection-locked',passHours:72,backHref:'/courses',backLabel:'Back'})
-    assert.match(html,/Your courses are set for another semester\./)
+    assert.match(html,/Not in your courses this semester\./)
     assert.match(html,/>Message us</)
     assert.equal((html.match(/<a\b/g)||[]).length,1)
     assert.ok(html.includes(number ? encodeURIComponent(COURSE_CHANGE_MESSAGE) : 'href="/contact"'))
@@ -70,7 +70,7 @@ const links = html => [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([^<]*)<\/
 test('a locked course is one notice: what it has and one button to Plan & Access, named for what the student finds there', () => {
   const html = render('2349012345678', { passHours: 72, has: SOME })
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'no second notice linking to the same page')
-  assert.match(html, /<h2 class="student-notice-title">Included with full access\.<\/h2><p class="student-notice-text">Notes · CBT practice<\/p>/)
+  assert.match(html, /<h2 class="student-notice-title">Included with full access\.<\/h2><p class="student-notice-text">Notes · Practice<\/p>/)
   assert.deepEqual(links(html), [['/access', 'Get your free pass']], 'a student who can still get a free pass: that, and no second button to the same page')
   assert.doesNotMatch(html, /GST|open fully|Try your department courses|CBT exam|study guide|one per|preview them first|Discovery|See how to unlock/i,
     'no repetition, no GST line, and what the pass includes stays in the modal')

@@ -45,15 +45,14 @@ const REFUSAL: Record<string, string> = {
   'expired': 'Your free pass has ended, so this exam’s result can no longer be shown.',
   // This tab identity cannot save on this exam (the exam already takes changes from as many tabs as it allows).
   // Saving stops in this tab only; every other tab, and everything already saved, is untouched.
-  'too-many-tabs': 'You have too many exam tabs open. Continue in one of your existing tabs — nothing you’ve answered there is lost.',
+  'too-many-tabs': 'This exam is open in another tab. Continue there.',
   'session-changed': SIGNED_IN_ON_ANOTHER_TAB,
   'signed-out': 'You’ve been signed out. Sign in before time runs out.',
 }
 const RETRY = 'We couldn’t send your answers. They’re still here.'
-// A submission that did not go through with time left: what was confirmed stays saved, the rest stays on this device.
-// The submit button right above the line is the way on.
-const SUBMIT_RETRY_SAVED = 'Your answers are saved. Submission didn’t go through.'
-const SUBMIT_RETRY_UNSAVED = 'Your answers are kept on this device. Submission didn’t go through.'
+// A submission that did not go through with time left: what was confirmed stays saved, the rest stays on this page,
+// so the one thing to do is keep it open. The submit button right above the line is the way on.
+const SUBMIT_RETRY = 'We couldn’t submit your answers. Keep this page open and try again.'
 
 /** One line under the exam and where it came from: a sync problem goes once a later sync succeeds, a submission problem
  * stays until the next submission. Signing in or loading the page again comes back to this exam. */
@@ -65,7 +64,6 @@ function refusalLine(status: string, from: ExamLine['from']): ExamLine {
   return { text: REFUSAL[status] ?? RETRY, from, action }
 }
 const SUBMITTING = 'Submitting…'
-const DEADLINE_RULE = 'Only answers saved before time runs out count.'
 const CHECKING_CLOCK = 'Checking the time left…'
 const RECONNECTING = 'Reconnecting… Answers can’t be changed until the connection is back.'
 
@@ -100,20 +98,19 @@ function store(key: string, sheet: UnsentSheet): void {
 
 /** What the student is told about their sheet right now. */
 function saveLine(save: AutosaveSnapshot | null, timeUp: boolean): { text: string; retry: boolean } {
-  if (save === null) return { text: 'Answers save automatically as you go.', retry: false }
+  if (save === null) return { text: '', retry: false }
   if (timeUp || save.state === 'closed') {
     return { text: save.revision === 0 ? 'No answers were chosen before time ran out.'
       : save.savedRevision >= save.revision ? 'Your answers were saved before time ran out.'
         : 'Your last change may not have been saved before time ran out.', retry: false }
   }
   switch (save.state) {
-    case 'saved': return { text: save.savedRevision === 0 ? 'Answers save automatically as you go.' : 'All answers saved.',
-      retry: false }
+    case 'saved': return { text: save.savedRevision === 0 ? '' : 'All answers saved.', retry: false }
     case 'saving': return { text: 'Saving…', retry: false }
     case 'unsaved': return { text: save.attempts > 0 ? 'Not saved yet. Retrying…' : 'Not saved yet.', retry: false }
     case 'failed': return save.refusal !== null
       ? { text: REFUSAL[save.refusal] ?? 'Your answers can’t be saved any more. Submit to see what was marked.', retry: false }
-      : { text: 'Your answers couldn’t be saved. Check your connection.', retry: true }
+      : { text: 'We couldn’t save your answers. Check your connection.', retry: true }
   }
 }
 
@@ -298,7 +295,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     setBusy(false)
     setConfirming(false)
     if (outcome.status === 'unavailable') {
-      setMessage({ text: autosave.current?.snapshot().state === 'saved' ? SUBMIT_RETRY_SAVED : SUBMIT_RETRY_UNSAVED, from: 'submit' })
+      setMessage({ text: SUBMIT_RETRY, from: 'submit' })
       return false
     }
     setMessage(refusalLine(outcome.status, 'submit'))
@@ -377,7 +374,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
         : 'text-student-text-primary'}`}>{timeUp ? 'Time is up' : clock(remaining)}</p>
       <p className="student-meta">{answered} of {questions.length} answered</p>
       <p className="student-meta" role="status" data-save-state={save?.state ?? 'idle'}>
-        {clockLine ?? saving.text} {DEADLINE_RULE}
+        {clockLine ?? saving.text}
       </p>
       {saving.retry && <div><button type="button" onClick={() => autosave.current?.retry()}
         className={studentAction(btnGhost, 'bg-student-surface')}>Save now</button></div>}
@@ -407,7 +404,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       <ol className="grid grid-cols-8 gap-1.5 tablet:grid-cols-10">
         {questions.map((item, position) => <li key={item.item_id}>
           <button type="button" onClick={() => setIndex(position)} aria-current={position === index ? 'step' : undefined}
-            aria-label={`Question ${position + 1}${answers[item.item_id] === undefined ? ', not answered' : ', answered'}`}
+            aria-label={`Question ${position + 1}${answers[item.item_id] === undefined ? ', unanswered' : ', answered'}`}
             className={`h-9 w-full rounded-md border text-sm font-semibold tabular-nums student-focus-control ${
               position === index ? 'border-student-primary text-student-primary'
                 : answers[item.item_id] !== undefined ? 'border-transparent bg-student-brand-surface text-student-text-primary'
@@ -419,7 +416,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       {confirming && !timeUp
         ? <>
           <p className="text-sm text-student-text-primary" role="status">
-            {unanswered === 1 ? '1 question is' : `${unanswered} questions are`} not answered. You can only submit once.
+            {unanswered === 1 ? '1 question is' : `${unanswered} questions are`} unanswered. You can only submit once.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setConfirming(false)} className={studentAction(btnGhost, 'bg-student-surface')}>
@@ -431,7 +428,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
         : <button type="button" disabled={handingIn}
           onClick={() => { if (unanswered > 0 && !timeUp) setConfirming(true); else handIn() }}
           className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:w-auto')}>
-          {handingIn ? SUBMITTING : timeUp ? 'See my result' : 'Submit exam'}
+          {handingIn ? SUBMITTING : timeUp ? 'See your result' : 'Submit exam'}
         </button>}
       {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message.text}
         {message.action ? <> <a href={message.action.href} className={studentAction(btnGhost, 'border-transparent px-2')}>
@@ -444,7 +441,7 @@ function ExamReview({ result, plansOnSale }: { result: SampleResult; plansOnSale
   return <div className="grid gap-4">
     <section className="student-surface" aria-label="Exam result">
       <p className="text-xs font-bold uppercase tracking-[0.08em] text-student-text-secondary">Your score</p>
-      <p className="mt-2 text-5xl font-extrabold tabular-nums text-student-text-primary">{result.score}/{result.total}</p>
+      <p className="mt-2 text-2xl font-bold tabular-nums text-student-text-primary">{result.score} of {result.total} correct</p>
       {result.timed_out ? <p className="mt-2 text-student-text-secondary">Time ran out.</p> : null}
     </section>
     <section className="student-surface grid gap-4 bg-student-brand-surface" aria-label="Answers">

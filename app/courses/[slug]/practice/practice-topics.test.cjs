@@ -85,7 +85,7 @@ test('the topics in order, each with its count before practice and its progress 
   const rows = anchors(html).filter(link => link.includes('student-topic-row'))
     .map(link => [link.match(/href="([^"]+)"/)[1].replace(/&amp;/g, '&'), text(link)])
   assert.deepEqual(rows, [
-    ['/courses/central-route/quiz?topic=Configured%20first', '1 Configured first 8 of 12 questions practised · Last score 6/8'],
+    ['/courses/central-route/quiz?topic=Configured%20first', '1 Configured first 8 of 12 questions practised · Last score 6 of 8 correct'],
     ['/courses/central-route/quiz?topic=Ratios%20%26%20Returns', '2 Ratios & Returns 1 question'],
     ['/courses/central-route/quiz?topic=Third', '3 Third 3 of 20 questions practised'],
   ], 'number, title and one line; the count before practice, the progress after, never both')
@@ -130,7 +130,7 @@ test('a locked course shows the one unlock notice; signed-out, unknown and unrea
   f.state.result = institutional({ state: 'locked' }, null)
   const locked = await f.html()
   assert.match(locked, /<h1[^>]*>Practise by topic<\/h1>/)
-  assert.match(text(locked), /Included with full access\. Notes · CBT practice See how to unlock Back to course$/)
+  assert.match(text(locked), /Included with full access\. Notes · Practice See how to unlock Back to course$/)
   assert.equal((locked.match(/class="student-notice"/g) || []).length, 1)
   assert.doesNotMatch(locked, /student-topic-list|Configured first/)
   assert.equal(f.calls.some(call => Array.isArray(call) && call[0] === 'topics'), false, 'no topic is read for a locked course')

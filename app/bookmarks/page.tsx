@@ -13,7 +13,6 @@ import { courses } from '@/lib/data/courses'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarksClient } from './BookmarksClient'
-import { BOOKMARKS_LEDE } from './presentation'
 import type { RepositoryOnlyCourse, RoutedStudentCourse } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
 
@@ -55,7 +54,7 @@ async function Bookmarks(): Promise<ReactElement> {
     }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'signed-out') redirectForStudentState('signed-out', BOOKMARKS_PATH)
-  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.bookmarks.label} lede={BOOKMARKS_LEDE} />}>
+  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.bookmarks.label} />}>
     {result.status === 'ok'
       ? <BookmarksClient catalog={result.courses.map(course => ({
         // Legacy device aliases come from the shelved route; presentation comes from the shared adapter.

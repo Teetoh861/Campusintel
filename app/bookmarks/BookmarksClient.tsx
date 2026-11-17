@@ -163,7 +163,7 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
     {unavailable && !holding && <Notice title={BOOKMARKS_COPY.unavailable} action={
       <button type="button" className={studentAction(btnGhost, 'bg-student-surface')} onClick={retry}>Try again</button>
     } />}
-    {shown && total === 0 && <EmptyState headingRef={emptyHeading} title="You haven’t bookmarked any courses yet."
+    {shown && total === 0 && <EmptyState headingRef={emptyHeading} title="No bookmarks yet."
       icon={<Bookmark aria-hidden="true" size={22} strokeWidth={1.75} />} actions={<>
         <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
           Browse {STUDENT_DESTINATIONS.courses.label}
@@ -171,9 +171,7 @@ export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<Bookmarkab
         <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false} className={studentAction(btnGhost)}>
           {STUDENT_DESTINATIONS.myCourses.label}
         </Link>
-      </>}>
-      Bookmark a course from {STUDENT_DESTINATIONS.courses.label} or its course page and it will appear here.
-    </EmptyState>}
+      </>}>{null}</EmptyState>}
     {shown && total > 0 && <>
       <CourseRegister label="Bookmarked courses" columns="single">
         {visible.map(course => <CourseRow key={course.contentKey} {...course.row}

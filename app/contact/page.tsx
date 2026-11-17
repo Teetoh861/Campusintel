@@ -11,6 +11,7 @@ import type { ReactElement } from 'react'
 
 // Per-request, so a signed-in student's header is right from the first render.
 export const dynamic = 'force-dynamic'
+export const metadata = { title: `${STUDENT_DESTINATIONS.contact.label} | CampusIntell` }
 
 const WRAP = 'app-container'
 
@@ -35,9 +36,8 @@ export default function ContactPage(): ReactElement {
     <>
       <BlueCover
         crumbs={[{ label: 'Home', href: '/' }, { label: STUDENT_DESTINATIONS.contact.label }]}
-        kicker="Student support"
-        title="Get in touch"
-        lede="Need study materials, have a question or spotted an error? Contact us by WhatsApp, phone or email. WhatsApp is usually fastest."
+        title={STUDENT_DESTINATIONS.contact.label}
+        lede="Questions, missing materials or an error to report?"
       />
 
       <section className="bg-ci-paper student-page" data-screen-label="Contact methods">
@@ -81,7 +81,7 @@ export default function ContactPage(): ReactElement {
           </div>
 
           <p className="mx-auto mt-6 max-w-[680px] text-[14px] text-ci-gray-600">
-            Typical response · within a day on WhatsApp · Mon to Sat, 9:00 to 18:00 WAT
+            We reply within a day, Monday to Saturday, 9 am to 6 pm.
           </p>
         </div>
       </section>

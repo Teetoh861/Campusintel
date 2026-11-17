@@ -10,9 +10,9 @@ export const STUDENT_DESTINATIONS = {
   bookmarks: { id: 'bookmarks', href: '/bookmarks', label: 'Bookmarks' },
   tutors: { id: 'tutors', href: '/tutors', label: 'Tutors' },
   contact: { id: 'contact', href: '/contact', label: 'Help & Support' },
-  account: { id: 'account', href: '/account', label: 'Account' },
-  materials: { id: 'materials', href: '/materials', label: 'Request Material' },
-  // Contextual only (Account, Dashboard, locked courses); the locked navigation groups do not list it.
+  account: { id: 'account', href: '/account', label: 'Profile' },
+  materials: { id: 'materials', href: '/materials', label: 'Request material' },
+  // Contextual only (Profile, Dashboard, locked courses); the locked navigation groups do not list it.
   access: { id: 'access', href: '/access', label: 'Plan & Access' },
 } as const satisfies {
   [Id in StudentDestinationId]: { readonly id: Id; readonly href: `/${string}`; readonly label: string }
@@ -32,7 +32,7 @@ export const STUDENT_FOOTER_GROUPS = {
   explore: [
     { destination: STUDENT_DESTINATIONS.myCourses, label: STUDENT_DESTINATIONS.myCourses.label },
     { destination: STUDENT_DESTINATIONS.courses, label: STUDENT_DESTINATIONS.courses.label },
-    { destination: STUDENT_DESTINATIONS.tutors, label: 'Tutoring' },
+    { destination: STUDENT_DESTINATIONS.tutors, label: STUDENT_DESTINATIONS.tutors.label },
     { destination: STUDENT_DESTINATIONS.bookmarks, label: STUDENT_DESTINATIONS.bookmarks.label },
   ],
   support: [STUDENT_DESTINATIONS.contact],

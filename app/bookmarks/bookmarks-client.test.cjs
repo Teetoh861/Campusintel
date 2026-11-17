@@ -8,7 +8,7 @@ const { fixture } = require('../../components/student/control-fixture.cjs')
 
 const LONG_TITLE = 'Actuarial Mathematics and Contingencies: Life Insurance Models, Annuities and Applications '.repeat(3).trim()
 const ready = (n, extra = {}) => ({ code: `BUA${String(n).padStart(3, '0')}`, title: `Course ${n}`, href: `/courses/course-${n}`,
-  learningTypes: ['Notes', 'CBT practice'], ...extra })
+  learningTypes: ['Notes', 'Practice'], ...extra })
 const entry = (n, row = ready(n)) => ({ slug: `course-${n}`, code: row.code ?? `REPO${n}`, contentKey: `key-${n}`, row })
 const catalogOf = count => Array.from({ length: count }, (_, i) => entry(i + 1))
 const keysOf = count => Array.from({ length: count }, (_, i) => `key-${i + 1}`)
@@ -213,8 +213,7 @@ test('the final removal leaves the success feedback mounted, renders EmptyState 
     assert.equal(f.count(), '0 courses')
     assert.equal(f.feedback(), 'removed')
     assert.match(html, /Removed from bookmarks/)
-    assert.match(html, /You haven’t bookmarked any courses yet\./)
-    assert.match(html, /tabindex="-1">You haven’t bookmarked any courses yet\.</)
+    assert.match(html, /tabindex="-1">No bookmarks yet\.</)
     assert.ok(html.indexOf('student-bookmark-feedback') < html.indexOf('student-empty-state'), 'feedback stays beside the count line')
     assert.deepEqual(f.focused, ['empty-heading'])
     assert.doesNotMatch(html, /class="student-pagination"|aria-pressed/)
@@ -231,7 +230,7 @@ test('a failed removal keeps the row, keeps the toggle pressed, keeps focus ther
     const html = f.html()
     assert.equal((html.match(/We couldn’t remove this bookmark\./g) || []).length, 1)
     assert.match(html, /<div class="student-course-row-problem" role="alert">[\s\S]*?We couldn’t remove this bookmark\.<\/span><button type="button"[^>]*>Try again<\/button><\/div>/)
-    assert.doesNotMatch(html, /Could not update bookmarks/)
+    assert.doesNotMatch(html, /couldn’t update your bookmarks|Could not update bookmarks/)
     const toggle = f.toggles().find(element => element.props.label === `Bookmark ${titleOf(2)}`)
     assert.deepEqual([toggle.props.pressed, toggle.props.busy], [true, false])
     assert.deepEqual(f.focused, [`Bookmark ${titleOf(2)}`])
@@ -333,7 +332,7 @@ test('each row is a course link and a sibling toggle: two independent targets, n
       assert.match(row, /<button type="button" aria-label="Bookmark Course \d" aria-pressed="true"/)
       assert.doesNotMatch(row, /Free|credits|Difficulty|Exam-critical|Tracked|View course|Open course|data-level/)
     }
-    assert.match(html, /Notes · CBT practice/)
+    assert.match(html, /Notes · Practice/)
     assert.equal((html.match(/<h1\b/g) || []).length, 0, 'the band owns the one h1; the register adds none')
     for (const file of ['BookmarksClient.tsx', 'page.tsx', 'presentation.ts']) {
       const source = fs.readFileSync(path.join(__dirname, file), 'utf8')
@@ -363,7 +362,7 @@ test('repository-only rows present the shared label, never a code, and name the 
     assert.doesNotMatch(html, /REPO1|undefined/)
     assert.ok(html.includes(LONG_TITLE), 'long titles stay complete')
     assert.doesNotMatch(html, /line-clamp|truncate|text-ellipsis/)
-  }, { catalog: [entry(1, { repositoryOnly: true, title: 'Business Statistics', href: '/courses/business-statistics', learningTypes: ['CBT practice'] }),
+  }, { catalog: [entry(1, { repositoryOnly: true, title: 'Business Statistics', href: '/courses/business-statistics', learningTypes: ['Practice'] }),
     entry(2, { code: 'ACT301', title: LONG_TITLE, href: '/courses/course-2', learningTypes: ['Notes'] })],
   snapshot: { mode: 'account', keys: keysOf(2) } }))
 
@@ -385,8 +384,8 @@ test('loading, unavailable and empty states come from the shared owners with rea
   }, { snapshot: { mode: 'unavailable', keys: [] } })
   await bookmarks(async f => {
     const html = f.html()
-    assert.match(html, /You haven’t bookmarked any courses yet\./)
-    assert.match(html, /Bookmark a course from All Courses or its course page and it will appear here\./)
+    assert.match(html, />No bookmarks yet\.</)
+    assert.doesNotMatch(html, /student-empty-text|it will appear here/, 'the title says it all: no second line')
     assert.match(html, /lucide-bookmark/)
     const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(match => [match[1], match[2].replace(/<[^>]+>/g, '').trim()])
     assert.deepEqual(links, [['/courses', 'Browse All Courses'], ['/my-courses', 'My Courses']])

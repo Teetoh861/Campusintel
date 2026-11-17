@@ -89,15 +89,15 @@ test('public and student auth actions independently retain compact sizes and out
 
 }))
 
-test('desktop and Sheet consume the locked breakpoint groups; Account remains an ordinary destination', async () => fixture(async f => {
+test('desktop and Sheet consume the locked breakpoint groups; Profile remains an ordinary destination', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
   const expected = [['All Courses', '/courses'], ['Tutors', '/tutors'],
-    ['Help & Support', '/contact'], ['Account', '/account']]
+    ['Help & Support', '/contact'], ['Profile', '/account']]
   const desktop = nodes(f.nav()).find(node => node.props?.className === 'ml-auto hidden items-center gap-1 desktop:flex')
   assert.deepEqual(links(desktop), expected)
   const content = nodes(f.nav()).find(node => node.type === f.sheet.SheetContent)
   assert.deepEqual(links(content), [['Dashboard', '/dashboard'], ...expected])
-  assert.doesNotMatch(renderToStaticMarkup(content), /Log out|href="\/(my-courses|bookmarks|materials)"/)
+  assert.doesNotMatch(renderToStaticMarkup(content), /Sign out|Log out|href="\/(my-courses|bookmarks|materials)"/)
   assert.equal(nodes(f.nav()).find(node => node.props?.['aria-label'] === 'CampusIntell home').props.href, '/dashboard')
   assert.deepEqual(accountControls(f).filter(node => node.props?.href), [])
 }))
@@ -105,8 +105,8 @@ test('desktop and Sheet consume the locked breakpoint groups; Account remains an
 test('logout lives in Account and authenticated shared chrome contains no session action', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
   assert.equal(accountControls(f).length, 0)
-  assert.doesNotMatch(renderToStaticMarkup(f.nav()), /Log out/)
-  assert.doesNotMatch(renderToStaticMarkup(f.footer()), /Log out/)
+  assert.doesNotMatch(renderToStaticMarkup(f.nav()), /Sign out|Log out/)
+  assert.doesNotMatch(renderToStaticMarkup(f.footer()), /Sign out|Log out/)
   assert.match(fs.readFileSync(path.join(__dirname, '../../app/account/page.tsx'), 'utf8'), /<LogoutButton continuityToken=\{continuityToken\}\s*\/>/)
   const source = fs.readFileSync(path.join(__dirname, '../auth/AuthNavActions.tsx'), 'utf8')
   assert.doesNotMatch(source, /STUDENT_HOME_PATH|STUDENT_DESTINATIONS|STUDENT_NAVIGATION_GROUPS|AUTH_PATHS\.account|\/dashboard|\/account|\bDashboard\b/)

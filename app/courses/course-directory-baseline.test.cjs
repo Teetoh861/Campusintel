@@ -84,7 +84,8 @@ test('gated server page reads the full central catalogue once on its verified cl
   assert.equal(directory.props.items[0].row.props.course, shared)
   assert.equal(directory.props.items[0].row.type, f.StudentCourseRow, 'rows come from the shared owner')
   const html = f.html(tree)
-  assert.match(html, /Course catalogue/)
+  assert.match(html, /<h1[^>]*>All Courses<\/h1>/)
+  assert.doesNotMatch(html, /Course catalogue|student-page-band-context/, 'the page has one name')
   assert.match(html, /2 courses/)
   assert.match(html, /LAG-BUA210 institutional title/)
   assert.equal((html.match(/<li\b/g) || []).length, 2)
@@ -140,7 +141,7 @@ test('validation failure is sanitized and empty catalogue remains a genuine empt
 
 test('loading follows the shared Student register pattern and is inert without fabricated identities', async () => fixture(async f => {
   const html = f.html(require('./loading.tsx').default())
-  assert.match(html, /All Courses|Course catalogue/)
+  assert.match(html, /All Courses/)
   assert.match(html, /aria-busy="true"|Loading institutional courses\./)
   assert.match(html, /student-course-register/)
   assert.doesNotMatch(html, /<a\b|<button\b|<input\b|<select\b|animate-pulse|Business Administration|\d+ courses/)

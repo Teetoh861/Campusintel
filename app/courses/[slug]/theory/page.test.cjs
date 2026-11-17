@@ -160,7 +160,7 @@ test('loading announces once and contains no answer fields or unverified course 
 test('theory selection recovery renders the matching single action without a plan or answers', async () => fixture(async f => {
   for (const [reason, title, action] of [
     ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
-    ['selection-locked', 'Your courses are set for another semester.', 'Message us'],
+    ['selection-locked', 'Not in your courses this semester.', 'Message us'],
   ]) {
     f.state.result = { status: 'locked', reason, course: { slug, code: 'INST201', title: 'Institutional theory title' } }
     const tree = await f.workspace()

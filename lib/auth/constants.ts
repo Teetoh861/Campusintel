@@ -36,22 +36,23 @@ export const RECOVERY_FAILURE = { invalidCode: 'RECOVERY_CODE_INVALID', restart:
 export const EMAIL_CONFIRMATION_REQUIRED = 'EMAIL_CONFIRMATION_REQUIRED'
 // The provider's password rule refused a new password: one line for Create account and Change password.
 const STRONGER_PASSWORD = 'Choose a stronger password.'
-/** The one wording, on every screen, for a page whose sign-in was replaced by a newer one in this browser. */
-export const SIGNED_IN_ON_ANOTHER_TAB = 'You signed in on another tab.'
+/** The one wording, on every screen, for a page whose sign-in was replaced by a newer one in this browser. It says
+ * what to do, never why. The name is from the earlier wording; other files import it. */
+export const SIGNED_IN_ON_ANOTHER_TAB = 'Reload this page to continue.'
 export const AUTH_MESSAGES = {
-  unavailable: 'Something went wrong. Please try again.',
-  sessionChanged: `${SIGNED_IN_ON_ANOTHER_TAB} Reload this page before continuing.`,
-  recoveryCode: 'Invalid or expired code.',
+  unavailable: 'Something went wrong. Try again.',
+  sessionChanged: SIGNED_IN_ON_ANOTHER_TAB,
+  recoveryCode: 'That code is wrong or has expired.',
   recoveryRestart: 'Request a new code to continue.',
-  comingSoon: 'Student accounts are currently unavailable. Please try again later.',
+  comingSoon: 'CampusIntell isn’t available right now. Please try again later.',
   confirmationRequired: 'Email confirmation is required before signing in.',
   confirmationSignIn: 'Your email is confirmed. Sign in to continue.',
   signupPassword: STRONGER_PASSWORD,
   samePassword: 'Choose a different password.',
   weakPassword: STRONGER_PASSWORD,
-  invalid: 'Check the information entered and try again.',
+  invalid: 'Check your details and try again.',
   credentials: 'Incorrect email or password.',
-  code: 'Invalid or expired code.',
+  code: 'That code is wrong or has expired.',
   limited: 'Too many attempts. Please try again later.',
   deletionPassword: ACCOUNT_MESSAGES.passwordInvalid,
   deletionExcluded: ACCOUNT_MESSAGES.excluded,

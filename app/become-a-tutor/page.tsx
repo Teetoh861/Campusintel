@@ -8,6 +8,7 @@ import type { ReactElement } from 'react'
 
 // Per-request, so a signed-in student's header is right from the first render.
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Apply to tutor | CampusIntell' }
 
 const WRAP = 'app-container'
 
@@ -17,7 +18,7 @@ export default function BecomeTutorPage(): ReactElement {
     <>
       <BlueCover
         crumbs={[{ label: 'Tutors', href: '/tutors' }, { label: 'Apply' }]}
-        kicker="Recruitment · 300L and above"
+        kicker="For 300 Level and above"
         title="Apply to tutor"
         lede="Help other students understand courses you know well. Tell us what you can teach."
       />

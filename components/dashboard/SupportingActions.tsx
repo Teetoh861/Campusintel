@@ -15,25 +15,25 @@ export function SupportingActions(): ReactElement {
       <div className="dashboard-material-grid">
         <Link href={destinations.bookmarks.href} prefetch={false}
           className={`dashboard-material-card dashboard-bookmark-card student-interactive-card ${studentFocusCard}`}>
-          <h3>{destinations.bookmarks.label}</h3><p>Return to your bookmarked courses.</p>
+          <h3>{destinations.bookmarks.label}</h3>
           <span className="dashboard-action-label">Open bookmarks</span>
         </Link>
         <Link href={destinations.courses.href} className={`dashboard-material-card student-interactive-card ${studentFocusCard}`}>
-          <h3>{destinations.courses.label}</h3><p>Explore the course library.</p>
-          <span className="dashboard-action-label">Browse the library</span>
+          <h3>{destinations.courses.label}</h3>
+          <span className="dashboard-action-label">Browse all courses</span>
         </Link>
         <Link href={destinations.materials.href} className={`dashboard-material-card dashboard-request-card student-interactive-card ${studentFocusCard}`}>
-          <h3>{destinations.materials.label}</h3><p>Missing a course resource? Let us know.</p>
-          <span className="dashboard-action-label">Request course material</span>
+          <h3>{destinations.materials.label}</h3>
+          <span className="dashboard-action-label">Send a request</span>
         </Link>
       </div>
     </section>
     <section aria-labelledby="utilities-title" className="dashboard-section student-enter student-enter-4">
-      <h2 id="utilities-title" className="dashboard-section-heading">Help and account</h2>
+      <h2 id="utilities-title" className="dashboard-section-heading">Help and profile</h2>
       <div className="dashboard-utility-group">
         <Link href={destinations.tutors.href} className={`dashboard-utility-row ${studentFocusRow}`}>
           <UsersRound aria-hidden="true" size={20} className="dashboard-utility-icon" />
-          <div><h3>{destinations.tutors.label} <StatusRail status="waitlist">Waitlist</StatusRail></h3><p>Join the tutoring waitlist.</p></div>
+          <div><h3>{destinations.tutors.label} <StatusRail status="waitlist">Waitlist</StatusRail></h3></div>
         </Link>
         <Link href={destinations.contact.href} className={`dashboard-utility-row ${studentFocusRow}`}>
           <LifeBuoy aria-hidden="true" size={20} className="dashboard-utility-icon" />
@@ -41,7 +41,7 @@ export function SupportingActions(): ReactElement {
         </Link>
         <Link href={destinations.account.href} prefetch={false} className={`dashboard-utility-row ${studentFocusRow}`}>
           <UserRound aria-hidden="true" size={20} className="dashboard-utility-icon" />
-          <div><h3>{destinations.account.label}</h3><p>Profile and academic settings.</p></div>
+          <div><h3>{destinations.account.label}</h3></div>
         </Link>
       </div>
     </section>

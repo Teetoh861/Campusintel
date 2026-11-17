@@ -13,7 +13,7 @@ export type BookmarkFeedbackState = 'added' | 'removed' | 'error' | null
 export const BOOKMARK_FEEDBACK_COPY = {
   added: 'Added to bookmarks',
   removed: 'Removed from bookmarks',
-  error: 'Could not update bookmarks. Try again.',
+  error: 'We couldn’t update your bookmarks.',
 } as const
 
 const SUCCESS_DISMISS_MS = 3000

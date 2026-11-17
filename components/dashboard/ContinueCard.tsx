@@ -8,8 +8,9 @@ import type { ReactElement } from 'react'
 
 export function ContinueCard({ next }: { next: ContinuePractice }): ReactElement {
   const label = next.kind === 'resume'
+    // Only an exam has a clock: with time left it is an exam to resume, without one a topic's practice.
     ? next.minutesLeft === null ? `Resume practice: ${next.code}`
-      : `Resume practice: ${next.code}, ${formatTimeLeft(next.minutesLeft)}`
+      : `Resume exam: ${next.code}, ${formatTimeLeft(next.minutesLeft)}`
     : `Continue practising ${next.code}`
   return <Link href={next.href} prefetch={false}
     className={`dashboard-continue student-interactive-card student-enter ${studentFocusCard}`} data-continue={next.kind}>

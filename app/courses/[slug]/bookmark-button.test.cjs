@@ -35,9 +35,9 @@ test('a failed mutation followed by a lost recovery state, then a successful ret
   f.store.toggleResult = null
   await f.control().props.onClick()
   assert.equal(f.feedback(), 'error', 'the failed mutation is announced')
-  assert.match(f.html(), /Could not update bookmarks\. Try again\./)
+  assert.match(f.html(), /We couldn’t update your bookmarks\./)
   f.store.snapshot = { mode: 'unavailable', keys: [] }
-  assert.equal(f.control().props.label, 'Retry bookmarks')
+  assert.equal(f.control().props.label, 'Try again')
   assert.equal(f.feedback(), 'error', 'the failure is still visible while recovery is unavailable')
   f.store.afterRefresh = { mode: 'account', keys: ['central-key'] }
   await f.control().props.onClick()
@@ -54,7 +54,7 @@ test('a retry that fails again shows the current failure, and clears as soon as 
   f.store.snapshot = { mode: 'unavailable', keys: [] }
   f.store.afterRefresh = { mode: 'unavailable', keys: [] }
   await f.control().props.onClick()
-  assert.equal(f.control().props.label, 'Retry bookmarks')
+  assert.equal(f.control().props.label, 'Try again')
   assert.equal(f.feedback(), 'error', 'a failed retry is announced as the current failure')
   f.store.afterRefresh = { mode: 'local', keys: ['BUA204'] }
   const pending = f.control().props.onClick()
@@ -81,6 +81,7 @@ test('the course control keeps a stable name and truthful pressed state across a
   f.store.snapshot = { mode: 'unavailable', keys: [] }
   html = f.html()
   assert.match(html, /aria-pressed="false"/)
-  assert.match(html, /Retry bookmarks/)
+  assert.match(html, /aria-label="Try again"/)
+  assert.doesNotMatch(html, /Retry bookmarks/)
   assert.doesNotMatch(html, /Bookmarked|this device/, 'a lost session never claims a device fallback')
 }))

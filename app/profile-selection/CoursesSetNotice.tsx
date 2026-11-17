@@ -7,7 +7,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { courseChangeContact } from '@/lib/whatsapp'
 import type { ReactElement } from 'react'
 
-export const COURSES_SET_MESSAGE = 'Your courses are set for this semester. Need a change?'
+export const COURSES_SET_MESSAGE = 'Your department, level and semester can’t be changed this semester. Need a change?'
 
 export function CoursesSetNotice(): ReactElement {
   const contact = courseChangeContact(STUDENT_DESTINATIONS.contact.href)

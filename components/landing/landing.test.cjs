@@ -201,10 +201,13 @@ test('landing copy claims only what the product does', async () => {
 test('the page title and description say CampusIntell and describe the product', async () => {
   const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8')
   const metadata = layout.slice(layout.indexOf('const SITE_TITLE'), layout.indexOf('export const viewport'))
-  // The site's own title and description, shared with every page: the description is the hero's sentence.
+  // The site's own title and description, shared with every page: the description is the hero's sentence, with the
+  // app's one name for notes. The hero itself (lib/landing/content.ts) still says "study guides" until it takes the
+  // same word; this holds before and after that change.
   match(metadata, /const SITE_TITLE = 'CampusIntell'\n/)
-  match(metadata, /Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students\./)
-  assert.ok(metadata.includes(`'${(await content()).hero.lead}'`), 'the description is the hero lead')
+  match(metadata, /Verified past questions, notes and timed exam practice for UNILAG Management Sciences students\./)
+  assert.ok(metadata.includes(`'${(await content()).hero.lead.replace('study guides', 'notes')}'`),
+    'the description is the hero lead, naming notes as the app does')
   match(metadata, /siteName: 'CampusIntell'/)
   noMatch(metadata, /CampusIntel(?!l)|inside track|Academic [Ii]ntelligence|decoded exam patterns/)
   assert.equal(count(metadata, /title: SITE_TITLE/g), 3, 'page, Open Graph and X share one title')

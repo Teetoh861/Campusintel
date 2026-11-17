@@ -121,10 +121,8 @@ export function Nav({ variant = 'blue' }: Props): ReactElement {
         className="z-[80] h-dvh w-full max-w-sm overflow-y-auto overscroll-contain border-student-border bg-student-surface px-5 py-6 text-student-text shadow-ci-card"
         overlayClassName="z-[70] bg-student-scrim"
         closeClassName={cx('right-3 top-3 flex h-11 w-11 items-center justify-center rounded-ci-btn-sm text-student-primary opacity-100 hover:bg-student-brand-surface focus:ring-0', studentFocusControl)}>
-        <SheetTitle className="pr-12 text-xl font-bold text-student-text-primary">Navigation</SheetTitle>
-        <SheetDescription className="mt-2 pr-10 text-sm text-student-text-secondary">
-          Your study space and account.
-        </SheetDescription>
+        <SheetTitle className="pr-12 text-xl font-bold text-student-text-primary">Menu</SheetTitle>
+        <SheetDescription className="sr-only">Your pages and profile.</SheetDescription>
         <div className="mt-6">
           {STUDENT_NAVIGATION_GROUPS.menu.map(drawerLink)}
         </div>

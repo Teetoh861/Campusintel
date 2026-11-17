@@ -6,10 +6,9 @@ export const INSTANT_COPY = {
   correct: 'Correct',
   yourAnswer: 'Your answer',
   correctAnswer: 'Correct answer',
-  locked: 'Locked',
   why: 'Why',
   next: 'Next',
-  seeResult: 'See result',
+  seeResult: 'See your result',
   exit: 'Exit',
   checking: 'Checking your answer…',
   offline: 'No connection. Your answer is kept and will be checked when you’re back online.',
@@ -39,7 +38,7 @@ export function optionMarkOf(index: number, feedback: PickFeedback | undefined):
   return null
 }
 
-/** "7 of 10 right": correct out of the questions answered. */
+/** "7 of 10 correct": correct out of the questions answered. */
 /** Practise again only on a topic the course still has: a topic retired since the run offers no button, rather than
  *  an error after the tap. An empty list (topics not read) offers it on no topic either. */
 export function canPractiseTopicAgain(topic: string | null, topics: ReadonlyArray<string>): boolean {
@@ -47,7 +46,7 @@ export function canPractiseTopicAgain(topic: string | null, topics: ReadonlyArra
 }
 
 export function instantScoreLine(score: number, answered: number): string {
-  return answered === 0 ? 'No questions answered' : `${score} of ${answered} right`
+  return answered === 0 ? 'No questions answered' : `${score} of ${answered} correct`
 }
 
 // Right: one 10 ms pulse. Wrong: two 10 ms pulses 60 ms apart.

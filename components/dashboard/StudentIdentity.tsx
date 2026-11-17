@@ -18,17 +18,17 @@ export function StudentIdentity({ profile }: { profile: Profile }): ReactElement
     <CBrandTexture tone="navy" />
     <div className="student-workspace dashboard-identity-layout relative">
       <div>
-        <p className="dashboard-eyebrow">University of Lagos <span className="font-medium">· Your study space</span></p>
-        <h1 className="dashboard-greeting">Welcome back, {profile.firstName}</h1>
+        <p className="dashboard-eyebrow">University of Lagos</p>
+        <h1 className="dashboard-greeting">Hi, {profile.firstName}</h1>
       </div>
-      <section aria-label="Your academic identity" className="dashboard-record">
+      <section aria-label="Your academic details" className="dashboard-record">
         <dl className="dashboard-record-fields">
           <div className="dashboard-department"><dt>Department</dt><dd>{selection.department.label}</dd></div>
           <div><dt>Level</dt><dd>{selection.academicLevel.label}</dd></div>
           <div><dt>Semester</dt><dd>{selection.academicPeriod.label}</dd></div>
         </dl>
         <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'dashboard-change')}>
-          Change<span className="sr-only"> first name and academic selection</span>
+          Change<span className="sr-only"> first name and academic details</span>
         </Link>
       </section>
       {inactive && <p className="mt-2 text-sm text-student-text-secondary">{INACTIVE_SELECTION_COPY.sentence}</p>}

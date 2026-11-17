@@ -42,8 +42,8 @@ export function BookmarkButton({ slug, code, contentKey, catalog }: {
   return <>
     <BookmarkToggle pressed={isSaved} onClick={() => { void onToggle() }}
       disabled={snapshot.mode === 'loading'}
-      label={unavailable ? 'Retry bookmarks' : `Bookmark ${code}`}
-      text={unavailable ? 'Retry bookmarks' : 'Bookmark'} />
+      label={unavailable ? 'Try again' : `Bookmark ${code}`}
+      text={unavailable ? 'Try again' : 'Bookmark'} />
     <BookmarkFeedback state={feedback} onDismiss={() => showFeedback(null)} />
   </>
 }

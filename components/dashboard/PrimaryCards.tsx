@@ -6,7 +6,6 @@ import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
 import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
 import { isActionableStudentCourse } from '@/lib/courses/read-model'
 import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
-import { STUDY_FAMILIES } from '@/components/student/study-families'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { StudentCourse } from '@/lib/courses/read-model'
 import type { ReactElement } from 'react'
@@ -27,11 +26,7 @@ function CourseFile({ courses }: { courses: ReadonlyArray<StudentCourse> | null 
       <div className="dashboard-file-content">
         {empty ? <p className="dashboard-primary-copy">{EMPTY_COURSES_MESSAGE}</p> : <>
           <h2 id="my-courses-title">{STUDENT_DESTINATIONS.myCourses.label}</h2>
-          <div className="dashboard-file-index" aria-hidden="true">
-            {['Overview', ...STUDY_FAMILIES.map(family => family.label)].map((label, index) =>
-              <span key={label}><span>{String(index + 1).padStart(2, '0')}</span>{label}</span>)}
-          </div>
-          <span className="dashboard-primary-action">View my courses</span>
+          <span className="dashboard-primary-action">View your courses</span>
         </>}
       </div>
     </div>
@@ -54,17 +49,12 @@ export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse
           {['A', 'B', 'C', 'D'].map(letter => <span key={letter}>{letter}</span>)}
         </div>
       </div>
-      <div className="dashboard-cbt">
-        <p>Choose a course to practise.</p>
-      </div>
       <section aria-labelledby="upload-practice-title" className="dashboard-upload">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="upload-practice-title">Practise from your notes</h3>
-          {!aiAvailable && <StatusRail status="unavailable">Currently unavailable</StatusRail>}
+          {!aiAvailable && <StatusRail status="unavailable">Unavailable right now</StatusRail>}
         </div>
-        <p>{aiAvailable
-          ? 'Upload notes for courses without study materials, and Campus Bot turns them into practice questions.'
-          : 'Campus Bot practice from your notes is unavailable right now.'}</p>
+        {aiAvailable && <p>Campus Bot turns your notes into practice questions.</p>}
       </section>
       <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
         className={`dashboard-practice-action ${studentFocusControl}`}>

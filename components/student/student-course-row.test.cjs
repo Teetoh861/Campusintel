@@ -23,8 +23,8 @@ const render = async item => renderToStaticMarkup(React.createElement((await sub
 
 test('study families keep the locked product order and exact availability copy', async () => {
   const { STUDY_FAMILIES, STUDY_COPY, getStudyFamilyLabels } = await subject()
-  assert.deepEqual(STUDY_FAMILIES.map(family => family.label), ['Notes', 'CBT practice', 'Theory'])
-  assert.deepEqual(getStudyFamilyLabels(study({ theory: true, notes: true, cbtPractice: true })), ['Notes', 'CBT practice', 'Theory'])
+  assert.deepEqual(STUDY_FAMILIES.map(family => family.label), ['Notes', 'Practice', 'Theory'])
+  assert.deepEqual(getStudyFamilyLabels(study({ theory: true, notes: true, cbtPractice: true })), ['Notes', 'Practice', 'Theory'])
   assert.deepEqual(getStudyFamilyLabels(study({ theory: true, overview: true })), ['Theory'])
   assert.deepEqual(getStudyFamilyLabels(study({ overview: true })), [], 'overview is never a study family')
   assert.equal(STUDY_COPY.notYetAvailable, 'Study materials are not available.')
@@ -37,15 +37,15 @@ test('ready rows are one canonical link and advertise only existing families in 
   assert.ok(anchors(html)[0].includes('href="/courses/resolved-slug"'))
   assert.match(html, /student-focus-row/)
   assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /Notes · CBT practice · Theory/)
+  assert.match(html, /Notes · Practice · Theory/)
   assert.doesNotMatch(html, /Open course|Available:|Overview|Practice quiz|<button\b/)
   for (const [flags, expected] of [
     [{ notes: true, overview: false }, 'Notes'],
     [{ theory: true, overview: true }, 'Theory'],
-    [{ cbtPractice: true, overview: true }, 'CBT practice'],
-    [{ notes: true, cbtPractice: true }, 'Notes · CBT practice'],
+    [{ cbtPractice: true, overview: true }, 'Practice'],
+    [{ notes: true, cbtPractice: true }, 'Notes · Practice'],
     [{ notes: true, theory: true }, 'Notes · Theory'],
-    [{ theory: true, cbtPractice: true, overview: true }, 'CBT practice · Theory'],
+    [{ theory: true, cbtPractice: true, overview: true }, 'Practice · Theory'],
   ]) {
     const partial = await render({ ...ready, content: { ...ready.content, study: study(flags) } })
     assert.ok(partial.includes(`<p>${expected}</p>`), expected)
@@ -83,7 +83,7 @@ const repositoryTitle = course => ({ ...course, repository: { ...course.reposito
 test('the serializable presentation adapter is the one derivation every consumer composes', async () => {
   const { presentStudentCourseRow } = await subject()
   assert.deepEqual(presentStudentCourseRow(ready), { code: 'BUA201', title: 'BUA201 institutional title',
-    href: '/courses/resolved-slug', learningTypes: ['Notes', 'CBT practice', 'Theory'] })
+    href: '/courses/resolved-slug', learningTypes: ['Notes', 'Practice', 'Theory'] })
   assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'BUA203', title: 'BUA203 institutional title', unavailable: 'missing' })
   assert.deepEqual(presentStudentCourseRow(unshelved), { code: 'BUA205', title: 'BUA205 institutional title', unavailable: 'temporary' })
   assert.deepEqual(presentStudentCourseRow(noLearning), { code: 'BUA207', title: 'BUA207 institutional title', unavailable: 'missing' })
@@ -94,7 +94,7 @@ test('repository-only courses present honestly: shelved AND ready links, otherwi
   const { presentStudentCourseRow } = await subject()
   const readyRepo = repositoryTitle(repositoryOnly('repo-slug', { state: 'ready', study: study({ cbtPractice: true }) }))
   assert.deepEqual(presentStudentCourseRow(readyRepo), { repositoryOnly: true, title: 'Shelved repository title',
-    href: '/courses/repo-slug', learningTypes: ['CBT practice'] })
+    href: '/courses/repo-slug', learningTypes: ['Practice'] })
   const html = await render(readyRepo)
   assert.equal(anchors(html).length, 1)
   assert.match(html, /data-identity="repository">Additional study material</)
@@ -119,13 +119,13 @@ test('StudentCourseRow forwards a trailing action beside the row target without 
   assert.match(html, /student-course-row-action"><button/)
 })
 
-test('a locked row links to its course page, says it is included with full access, and offers no AI fallback', async () => {
+test('a locked row links to its course page, says it is included with a plan, and offers no AI fallback', async () => {
   const locked = course('BUA211', shelved('locked-slug'), { state: 'locked' })
   const html = await render(locked)
   assert.equal(anchors(html).length, 1)
   assert.ok(anchors(html)[0].includes('href="/courses/locked-slug"'))
-  assert.match(html, /Included with full access\./)
-  assert.doesNotMatch(html, /Notes|CBT practice|Theory|Practise from your own notes|temporarily unavailable/)
+  assert.match(html, /Included with a plan\./)
+  assert.doesNotMatch(html, /Notes|Practice|Theory|Practise from your notes|temporarily unavailable/)
   const { presentStudentCourseRow } = await subject()
   assert.deepEqual(presentStudentCourseRow(locked), { code: 'BUA211', title: 'BUA211 institutional title',
     href: '/courses/locked-slug', locked: true })
@@ -136,7 +136,7 @@ test('the student row adapter preserves outside-list and both selection recovery
   for (const [reason, copy] of [
     ['outside-list', 'Not in your courses this semester.'],
     ['needs-selection', 'Confirm your courses for this semester.'],
-    ['selection-locked', 'Your courses are set for another semester.'],
+    ['selection-locked', 'Not in your courses this semester.'],
   ]) {
     const locked = course('BUA202', shelved('locked-slug'), { state: 'locked', reason })
     const { presentStudentCourseRow } = await subject()
@@ -146,7 +146,7 @@ test('the student row adapter preserves outside-list and both selection recovery
     assert.ok(html.includes(copy))
     assert.equal(anchors(html).length, 1)
     assert.match(html, /student-course-row-locked/)
-    assert.doesNotMatch(html, /Included with full access|Practise from your own notes|CBT practice/)
+    assert.doesNotMatch(html, /Included with a plan|Practise from your notes|Practice/)
   }
 })
 
@@ -155,5 +155,5 @@ test('repository-only not-available rows stay inert and offer neither a plan nor
   const html = await render(unavailable)
   assert.match(html, /Shelved repository title|Additional study material/)
   assert.match(html, /Study materials are not available./)
-  assert.doesNotMatch(html, /<a\b|<button\b|Included with full access|Message us|Practise from your own notes/)
+  assert.doesNotMatch(html, /<a\b|<button\b|Included with a plan|Message us|Practise from your notes/)
 })
