@@ -61,7 +61,7 @@ test('open selection recovery has one confirmation action and no plan or contact
 test('locked semester mismatch has one team-contact action using the existing change message',()=>{
   for(const number of ['2349012345678','']) {
     const html=render(number,{reason:'selection-locked',passHours:72,backHref:'/courses',backLabel:'Back'})
-    assert.match(html,/Your courses are set for another semester\./)
+    assert.match(html,/Not in your courses this semester\./)
     assert.match(html,/>Message us</)
     assert.equal((html.match(/<a\b/g)||[]).length,1)
     assert.ok(html.includes(number ? encodeURIComponent(COURSE_CHANGE_MESSAGE) : 'href="/contact"'))

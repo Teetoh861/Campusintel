@@ -69,7 +69,7 @@ test('BookmarkFeedback is one persistent live region with exact copy and a 44px 
   const { BookmarkFeedback, BOOKMARK_FEEDBACK_COPY } = await withTsx(() => require('./BookmarkFeedback.tsx'))
   const render = state => renderToStaticMarkup(React.createElement(BookmarkFeedback, { state }))
   assert.deepEqual(BOOKMARK_FEEDBACK_COPY, { added: 'Added to bookmarks', removed: 'Removed from bookmarks',
-    error: 'Could not update bookmarks. Try again.' })
+    error: 'We couldn’t update your bookmarks.' })
   const idle = render(null)
   assert.match(idle, /role="status" aria-live="polite" aria-atomic="true" class="student-bookmark-feedback" data-state="idle"/)
   assert.doesNotMatch(idle, /<span|<a\b/)
@@ -78,7 +78,7 @@ test('BookmarkFeedback is one persistent live region with exact copy and a 44px 
   const link = anchors(added)[0]
   assert.ok(link.includes('href="/bookmarks"') && link.includes('View bookmarks') && link.includes('min-h-11'), link)
   assert.doesNotMatch(render('removed'), /<a\b/)
-  assert.match(render('error'), /data-state="error"[\s\S]*Could not update bookmarks\. Try again\./)
+  assert.match(render('error'), /data-state="error"[\s\S]*We couldn’t update your bookmarks\./)
   assert.doesNotMatch(render('error'), /<a\b/)
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'BookmarkFeedback.tsx'), 'utf8'), /fixed|z-\[|toast|sonner/)
 })

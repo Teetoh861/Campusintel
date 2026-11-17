@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { getCourseByContentKey } from '@/lib/data/courses'
 import { DISCOVERY_KINDS, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
-import { DISCOVERY_PASS_LABEL, DISCOVERY_PREVIEW_LABEL, formatAccessDate } from '@/lib/entitlements/presentation'
+import { DISCOVERY_PASS_LABEL, formatAccessDate } from '@/lib/entitlements/presentation'
 import { studentAction, studentFocusDark } from './ui'
 import type { DiscoverySummary } from '@/lib/entitlements/contract'
 import type { DiscoveryKind } from '@/lib/entitlements/discovery-contract'
@@ -18,12 +18,14 @@ type Offer =
   | { state: 'used-elsewhere'; courseCode: string | null }
 
 function startLabel(kind: DiscoveryKind, pass: DiscoveryPass): string {
-  return kind === 'cbt' ? `Take a ${pass.discovery.cbt_questions}-question CBT exam` : 'Choose a study guide topic'
+  return kind === 'cbt' ? `Take a ${pass.discovery.cbt_questions}-question CBT exam` : 'Choose a notes topic'
 }
 
 const OPENED_LABEL: Record<DiscoveryKind, string> = {
-  cbt: 'Continue your CBT exam', study_guide: 'Open your study guide topic',
+  cbt: 'Continue your CBT exam', study_guide: 'Open your notes topic',
 }
+// What was used on another course, mid-sentence ("Your … was used on ACC 101.").
+const USED_LABEL: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'notes topic' }
 
 function offerFor(kind: DiscoveryKind, pass: DiscoveryPass, contentKey: string, courseHref: string): Offer {
   const used = pass.discovery.previews.find(preview => preview.kind === kind)
@@ -42,17 +44,14 @@ export function DiscoveryOffer({ pass, contentKey, courseHref }: {
   const endsAt = pass.endsAt
   return <section aria-labelledby="discovery-offer-title" className="student-surface student-surface-raised"
     data-discovery-offer="">
-    <h2 id="discovery-offer-title" className="student-section-title">Preview this course</h2>
-    <p className="student-meta mt-1">
-      {DISCOVERY_PASS_LABEL}{endsAt !== null && <> · ends {formatAccessDate(endsAt)}</>}. You get one CBT exam and one
-      study guide topic, each on a course you choose.
-    </p>
+    <h2 id="discovery-offer-title" className="student-section-title">Try this course</h2>
+    <p className="student-meta mt-1">{DISCOVERY_PASS_LABEL}{endsAt !== null && <> · ends {formatAccessDate(endsAt)}</>}.</p>
     <ul className="mt-4 grid gap-2">
       {DISCOVERY_KINDS.map(kind => {
         const offer = offerFor(kind, pass, contentKey, courseHref)
         if (offer.state === 'used-elsewhere') {
           return <li key={kind} className="text-sm text-student-text-muted" data-preview-state={offer.state}>
-            Your {DISCOVERY_PREVIEW_LABEL[kind]} was used{offer.courseCode !== null && <> on {offer.courseCode}</>}.
+            Your {USED_LABEL[kind]} was used{offer.courseCode !== null && <> on {offer.courseCode}</>}.
           </li>
         }
         const label = offer.state === 'available' ? startLabel(kind, pass)

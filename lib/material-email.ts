@@ -11,7 +11,7 @@ export function buildMaterialRequestEmailUrl(
 ): string {
   return buildMaterialEmailUrl(
     `${courseContext} — ${requestedMaterial} request`,
-    `Hi, I'd like to request ${requestedMaterial} for ${courseContext}.`,
+    `Hi, I’d like to request ${requestedMaterial} for ${courseContext}.`,
   )
 }
 
@@ -19,6 +19,6 @@ export function buildMaterialRequestEmailUrl(
 export function buildMaterialShareEmailUrl(courseContext: string): string {
   return buildMaterialEmailUrl(
     `${courseContext} — material to share`,
-    `Hi, I'd like to share study material for ${courseContext}.`,
+    `Hi, I’d like to share study material for ${courseContext}.`,
   )
 }

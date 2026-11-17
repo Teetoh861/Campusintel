@@ -4,7 +4,7 @@ import { THEORY_QUESTION_PATH } from '@/lib/auth/redirect'
 export const PROFILE_SELECTION_PATH = '/profile-selection'
 
 /** The profile page's one title: while it loads, in every state of the form, and when it can't be shown. */
-export const PROFILE_TITLE = 'Your profile'
+export const PROFILE_TITLE = 'Edit profile'
 
 // Where a saved selection may send the student back to: only Confirm courses, a practice result and a theory question
 // on our own site, never a client-chosen destination. The theory question has the strict shape signing in returns to.

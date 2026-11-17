@@ -102,5 +102,5 @@ test('a selected reference removed by refreshed data stays explicit instead of m
   const unavailable = f.nodes(select).find(node => node.type === 'option' && node.props.value === 'formerly-present')
   assert.equal(select.props.value, 'formerly-present')
   assert.equal(unavailable.props.disabled, true)
-  assert.equal(unavailable.props.children, 'Selection no longer available')
+  assert.equal(unavailable.props.children, 'No longer available')
 }))

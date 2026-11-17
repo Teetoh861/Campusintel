@@ -102,9 +102,9 @@ export const UPLOAD_REJECTION_MESSAGES: Record<UploadRejection, string> = {
   'missing-upload': 'The file did not finish uploading. Choose it again.',
   'too-large': 'This file is larger than 5 MB. Upload a smaller file or split your notes.',
   'unsupported-type': 'Upload a PDF, Word (.docx) or plain text (.txt) file. Older .doc files are not supported.',
-  'corrupt': 'We could not read this file. It may be damaged, or a scanned image without selectable text.',
+  'corrupt': 'We couldn’t read this file. It may be damaged, or a scanned image without selectable text.',
   'encrypted': 'This file is password-protected. Remove the password and upload it again.',
-  'empty': 'We could not find any text in this file. Upload a file with selectable text; scanned images are not supported.',
+  'empty': 'We couldn’t find any text in this file. Upload a file with selectable text; scanned images are not supported.',
   'too-short': 'There is not enough text here to write fair questions. Upload fuller notes (at least about 150 words).',
   'too-much-text': 'This file has more text than we can use at once. Upload one topic or chapter at a time.',
   // One wording wherever this refusal shows: the pass's upload allowance is a policy setting, so no number is named.

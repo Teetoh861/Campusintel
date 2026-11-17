@@ -23,7 +23,7 @@ async function controls(run) {
   })
 }
 
-test('mandatory decision makes no request on mount, and only Yes cancels with the original rendered request/session', async () => controls(async f => {
+test('mandatory decision makes no request on mount, and only Keep your account cancels with the original rendered request/session', async () => controls(async f => {
   const { DeletionDecision } = require('./DeletionDecision.tsx')
   const requestId = randomUUID(), view = f.mount(DeletionDecision, { requestId, continuityToken: 'rendered-A' })
   let tree = view.render()
@@ -31,7 +31,7 @@ test('mandatory decision makes no request on mount, and only Yes cancels with th
   view.props = { requestId: randomUUID(), continuityToken: 'rendered-B' }
   tree = view.render()
   const buttons = f.nodes(tree).filter(node => node.type === 'button')
-  assert.deepEqual(buttons.map(node => node.props.children), ['Yes, keep my account', 'No, continue with deletion'])
+  assert.deepEqual(buttons.map(node => node.props.children), ['Keep your account', 'Delete your account'])
   await buttons[0].props.onClick()
   assert.equal(f.calls[0][0], '/api/auth/cancel-deletion')
   assert.deepEqual(f.calls[0][1], { requestId })

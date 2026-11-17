@@ -1,4 +1,4 @@
-// app/courses/[slug]/quiz/ReportQuestionDialog.tsx — Report the exact item and revision a completed attempt showed.
+// app/courses/[slug]/quiz/ReportQuestionDialog.tsx — Report the exact item and revision a finished exam showed.
 'use client'
 
 import { useId, useState } from 'react'
@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { AUTH_CONTINUITY_HEADER, SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
+import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
 import { REPORT_NOTE_MAX_CHARACTERS, clampNote, noteLength } from '@/lib/question-reports/note-limit'
 import { PRACTICE_COPY } from './practice-presentation'
 import type { ReportTarget } from './types'
@@ -23,18 +23,17 @@ export const REPORT_COPY = {
   title: 'Report a question',
   label: 'What’s wrong with it?',
   help: 'For example: the marked answer is wrong, or the question is unclear.',
-  // A report that was not sent, by why: each says what happened in the words every other screen uses for it.
+  // A report that was not sent, by why. The note lives only in this dialog, so a way on that leaves the page says to
+  // copy it first.
   refused: {
-    failed: { title: 'Your report couldn’t be sent.', body: 'Your note is kept. Try again in a moment.' },
-    'signed-out': { title: PRACTICE_COPY.signedOutTitle,
-      body: 'Reload this page and sign in again before reporting. Your note is kept here until you leave.' },
-    'session-changed': { title: SIGNED_IN_ON_ANOTHER_TAB,
-      body: 'Reload this page before reporting. Your note is kept here until you leave.' },
+    failed: { title: 'We couldn’t send your report.', body: 'Your note is kept. Try again in a moment.' },
+    'signed-out': { title: PRACTICE_COPY.signedOutTitle, body: 'Copy your note, then sign in again.' },
+    'session-changed': { title: 'We couldn’t send your report.', body: 'Copy your note, then reload this page.' },
   },
   done: {
     reported: { title: 'Report sent.', body: 'Thanks. The CampusIntell team will check this question.' },
-    'already-reported': { title: 'You’ve already reported this question.', body: 'You don’t need to send another report.' },
-    limited: { title: 'Report not sent.', body: 'You’ve sent several reports recently. Try again later.' },
+    'already-reported': { title: 'You’ve already reported this question.', body: '' },
+    limited: { title: 'Report not sent.', body: 'Try again later.' },
   },
 } as const
 
@@ -92,7 +91,7 @@ export function ReportQuestionDialog({ target, questionNumber, continuityToken, 
       <DialogHeader>
         <DialogTitle className="text-left text-[20px] font-bold text-student-primary">{REPORT_COPY.title}</DialogTitle>
         <DialogDescription className="text-left text-[15px] leading-[1.5] text-student-text-secondary">
-          Question {questionNumber}, exactly as it appeared in this attempt.
+          Question {questionNumber}
         </DialogDescription>
       </DialogHeader>
       {phase.kind === 'done' ? <>
@@ -116,7 +115,7 @@ export function ReportQuestionDialog({ target, questionNumber, continuityToken, 
         <div className="student-practice-foot">
           <button type="button" className={studentAction(btnGhost)} disabled={busy} onClick={onClose}>Cancel</button>
           <button type="submit" className={studentAction(btnNavy, studentFocusDark)} disabled={busy} aria-busy={busy || undefined}>
-            {busy ? 'Sending report' : phase.kind === 'error' ? 'Try again' : 'Submit report'}
+            {busy ? 'Sending…' : phase.kind === 'error' ? 'Try again' : 'Submit report'}
           </button>
         </div>
       </form>}

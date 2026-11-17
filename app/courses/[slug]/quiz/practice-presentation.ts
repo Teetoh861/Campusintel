@@ -3,27 +3,30 @@ import { AUTH_PATHS, SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 
 export const PRACTICE_COPY = {
+  // Practice is topic practice, which has no timer. The timed exam is Exam mode on every screen, start to result.
   title: 'Practice',
-  lede: 'Test your knowledge with timed multiple-choice questions.',
   backToCourse: 'Back to course',
   // The course page's Practice card: its two ways in. Practise by topic is also the title of the page it opens, and
-  // All topics is the way back to that page from a topic's practice.
+  // All topics is the way back to that page from a topic's practice. Exam mode is also the title of the exam's screens.
   byTopic: 'Practise by topic',
   examMode: 'Exam mode',
   allTopics: 'All topics',
   topicsFailedTitle: 'We couldn’t load the topics.',
-  notBuiltTitle: 'CBT practice isn’t available for this course.',
-  notBuiltBody: 'Check the course page for other study materials, or request the material you need.',
+  notBuiltTitle: 'Practice isn’t available for this course.',
   loadFailedTitle: 'We couldn’t load the practice questions.',
-  temporaryBody: 'Your saved results are unaffected.',
+  examLoadFailedTitle: 'We couldn’t load the exam.',
   loading: 'Loading practice.',
+  loadingExam: 'Loading your exam.',
   starting: 'Starting…',
+  startExam: 'Start exam',
+  submitExam: 'Submit exam',
   timerRule: 'Once you start, the timer keeps running, even if you leave or lose connection.',
   // Start and resume problems: the title says what happened, and the notice's one button is the way on.
   noConnectionTitle: 'No connection.',
   noConnectionBody: '',
   startRefusedTitle: 'We couldn’t start your practice.',
-  resumeFailedTitle: 'We couldn’t open your practice.',
+  examStartRefusedTitle: 'We couldn’t start your exam.',
+  resumeFailedTitle: 'We couldn’t open your exam.',
   tryAgainBody: '',
   signedOutTitle: 'You’ve been signed out.',
   signedOutBody: '',
@@ -31,38 +34,44 @@ export const PRACTICE_COPY = {
   sessionChangedTitle: SIGNED_IN_ON_ANOTHER_TAB,
   reload: 'Reload',
   tryAgain: 'Try again',
-  changedTitle: 'Your practice details have changed.',
-  changedBody: 'Review them and confirm you’re ready to start.',
-  // Exit never ends the attempt: the timer is the server's and keeps running.
-  exitTitle: 'Exit practice?',
+  // The number of questions or the time changed between the brief and the start: the brief shows the new ones.
+  changedTitle: 'The exam has changed.',
+  changedBody: 'Check the questions and time, then start.',
+  // Exit never ends the exam: the timer is the server's and keeps running.
+  exitTitle: 'Exit exam?',
   exitUnsafe: 'Some answers aren’t saved yet. If you leave now, they’ll be lost.',
   exitSaved: 'Your answers are saved and the timer keeps running. Come back to this page before time runs out to continue.',
   exitNothing: 'The timer keeps running. Come back to this page before time runs out to continue.',
-  exitSaving: 'Some answers are still saving on this device. The timer keeps running — come back to this page before time runs out to continue.',
-  submitTitle: 'Submit practice?',
-  submitBody: 'Submitting ends this attempt. You won’t be able to change your answers.',
-  submitPending: 'Your latest answers will be sent with your submission.',
-  // Save lines when neither the server nor this device holds the latest answers.
-  submitUnsaved: 'Submission didn’t go through, and some answers are only on this page.',
-  saveFailedUnsaved: 'Your answers couldn’t be saved, and some are only on this page.',
+  exitSaving: 'Some answers are still saving. The timer keeps running, so come back before time runs out.',
+  submitTitle: 'Submit exam?',
+  submitBody: 'You won’t be able to change your answers.',
+  // A submission or a save that did not go through. Each line sits beside its Try again button, which finishes the
+  // sentence; what the student has to do meanwhile is keep the page open.
+  submitFailed: 'We couldn’t submit your answers. Keep this page open.',
+  saveFailed: 'We couldn’t save your answers. Keep this page open.',
   submitting: 'Submitting…',
-  resumeTitle: 'Practice in progress',
-  resumeAction: 'Continue practice',
+  resumeTitle: 'Exam in progress',
+  resumeAction: 'Continue exam',
   timeUp: 'Time is up. Getting your result…',
   timeUpOffline: 'Time is up. We’ll show your result as soon as you’re back online.',
   // The hand-in at time up was not answered after every automatic try, or was refused: never "Getting your result…" for good.
   timeUpRetry: 'Time is up. We couldn’t get your result.',
   timeUpSignedOut: 'Time is up. Sign in to see your result.',
-  timeUpGone: 'Time is up. This attempt is no longer available.',
+  timeUpGone: 'Time is up. This exam is no longer available.',
   timeUpSessionChanged: `Time is up. ${SIGNED_IN_ON_ANOTHER_TAB}`,
-  timedOutTitle: 'Time is up. Your attempt has been submitted.',
-  timedOutBody: 'Only answers saved before time ran out count. Unanswered questions count as missed.',
-  unsentAtDeadline: 'Some answers on this device didn’t reach us before time ran out, so they weren’t counted.',
+  // On the result of an exam that ran out of time, only when this device still held answers the server never got.
+  unsentAtDeadline: 'Some answers weren’t saved in time, so they don’t count.',
   lastResult: 'See your last result',
-  resultMissingTitle: 'This practice result isn’t available.',
+  seeResult: 'See your result',
+  examResultTitle: 'Exam result',
+  practiceResultTitle: 'Practice result',
+  resultMissingTitle: 'This result isn’t available.',
+  examGone: 'This exam is no longer available.',
+  practiceGone: 'This practice is no longer available.',
+  // Open in more tabs than an exam takes changes from: this tab stops saving, and the others carry on.
+  otherTab: 'This exam is open in another tab. Continue there.',
   // Practice by topic waits while an exam is open in the course, so no answer is marked during it.
   examOpenTitle: 'Finish your exam first.',
-  examOpenBody: 'Practice opens again once your exam is submitted or its time runs out.',
   resumeExam: 'Resume exam',
 } as const
 
@@ -95,21 +104,20 @@ const TEN_MINUTES = 10 * SECONDS_PER_MINUTE
 
 export type PracticeIdentity = {
   context: string
-  lede: string
   barCode: string
   barTitle: string
   heading: string
 }
 
-/** Institutional code and title win; a repository-only course is named as repository identity, never as an owner. */
-export function practiceIdentity(code: string, title: string, repositoryOnly: boolean): PracticeIdentity {
+/** Institutional code and title win; a repository-only course is named as repository identity, never as an owner.
+ * `mode` names the screen: Exam mode for the timed exam, Practice for a topic's practice. */
+export function practiceIdentity(code: string, title: string, repositoryOnly: boolean,
+  mode: 'practice' | 'exam' = 'practice'): PracticeIdentity {
+  const name = mode === 'exam' ? PRACTICE_COPY.examMode : PRACTICE_COPY.title
   if (repositoryOnly) {
-    return { context: `Additional study material · ${title}`,
-      lede: 'CBT practice · Check that this material matches your course and syllabus',
-      barCode: title, barTitle: 'Practice', heading: `Practice — ${title}` }
+    return { context: `Additional study material · ${title}`, barCode: title, barTitle: name, heading: `${name} — ${title}` }
   }
-  return { context: `${code} · ${title}`, lede: 'CBT practice · One timed attempt',
-    barCode: code, barTitle: `${title} · Practice`, heading: `Practice — ${code} ${title}` }
+  return { context: `${code} · ${title}`, barCode: code, barTitle: `${title} · ${name}`, heading: `${name} — ${code} ${title}` }
 }
 
 type Resolved = Extract<StudentCourseLookupResult, { status: 'ok' | 'repository-only' }>
@@ -121,11 +129,11 @@ export function practiceContext(result: Resolved): PracticeIdentity & { code: st
     ...practiceIdentity(course.code, course.title, result.status === 'repository-only') }
 }
 
-/** This attempt's feedback band; thresholds are the locked design's, not an institutional grade. */
-export function practiceBand(percent: number): 'Strong attempt' | 'Practice target met' | 'Keep reviewing' {
-  if (percent >= PRACTICE_BAND_THRESHOLDS.strong) return 'Strong attempt'
-  if (percent >= PRACTICE_BAND_THRESHOLDS.target) return 'Practice target met'
-  return 'Keep reviewing'
+/** This exam's feedback band; thresholds are the locked design's, not an institutional grade. */
+export function practiceBand(percent: number): 'Great work' | 'Good progress' | 'Keep practising' {
+  if (percent >= PRACTICE_BAND_THRESHOLDS.strong) return 'Great work'
+  if (percent >= PRACTICE_BAND_THRESHOLDS.target) return 'Good progress'
+  return 'Keep practising'
 }
 
 const pad = (value: number): string => String(value).padStart(2, '0')
@@ -174,11 +182,11 @@ export function optionLetter(index: number): string {
   return OPTION_LETTERS[index] ?? String(index + 1)
 }
 
-/** What the attempt screen says about time and this tab's answers: one line, and never "saved" before the server
+/** What the exam screen says about time and this tab's answers: one line, and never "saved" before the server
  * confirmed this tab's latest change. Earlier conditions win. */
 export function saveLineFor(state: {
   timeUp: boolean; submitFailing: boolean; refusal: AttemptRefusal | null; clockSynced: boolean; clockFailures: number
-  save: 'saved' | 'saving' | 'unsaved' | 'failed' | 'closed' | null; answered: number; answersSafe?: boolean
+  save: 'saved' | 'saving' | 'unsaved' | 'failed' | 'closed' | null; answered: number
   // A submission on its way; and, once time is up, whether the automatic tries are still going.
   submitting?: boolean; autoRetrying?: boolean
 }): { text: string; retry: boolean; action?: { label: string; href: string } } | null {
@@ -190,17 +198,10 @@ export function saveLineFor(state: {
   }
   if (state.refusal !== null) return { text: state.refusal.text, retry: false, action: state.refusal.action }
   if (state.submitting) return { text: PRACTICE_COPY.submitting, retry: false }
-  // A submission that did not go through with time left: what the server confirmed stays saved, the rest stays here.
-  // Try again sends the submission again.
-  if (state.submitFailing) {
-    if (state.answersSafe === false) return { text: PRACTICE_COPY.submitUnsaved, retry: true }
-    return { text: state.save === 'saved' || state.save === null
-      ? 'Your answers are saved. Submission didn’t go through.'
-      : 'Your answers are kept on this device. Submission didn’t go through.', retry: true }
-  }
-  if (state.save === 'failed') return { text: state.answersSafe === false
-    ? PRACTICE_COPY.saveFailedUnsaved
-    : 'Your answers couldn’t be saved. They’re still on this device.', retry: true }
+  // A submission that did not go through with time left: what the server confirmed stays saved, the rest stays on
+  // this page, so the one thing to do is keep it open. Try again sends the submission again.
+  if (state.submitFailing) return { text: PRACTICE_COPY.submitFailed, retry: true }
+  if (state.save === 'failed') return { text: PRACTICE_COPY.saveFailed, retry: true }
   if (!state.clockSynced) {
     return { text: state.clockFailures > 0 ? 'Reconnecting… Answers can’t be changed until the connection is back.'
       : 'Checking the time left…', retry: false }

@@ -60,7 +60,7 @@ const hasPractised = (progress: TopicProgress | undefined): progress is TopicPro
 export function topicLine(bankSize: number, progress: TopicProgress | undefined): string {
   if (!hasPractised(progress)) return questions(bankSize)
   const done = `${progress.practised} of ${questions(bankSize)} practised`
-  return progress.lastScore === null ? done : `${done} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
+  return progress.lastScore === null ? done : `${done} · Last score ${progress.lastScore.score} of ${progress.lastScore.total} correct`
 }
 
 export function topicRowsOf(topics: ReadonlyArray<PracticeTopic>, progress: ReadonlyMap<string, TopicProgress> | null):

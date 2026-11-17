@@ -8,7 +8,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { View } from './QuizClient'
 import type { PracticeProblem } from './practice-presentation'
 
-const REVIEW_FAILED: PracticeProblem = { title: "Couldn't open the review. Try again.", body: '', retry: true }
+const REVIEW_FAILED: PracticeProblem = { title: 'We couldn’t open the review.', body: '', retry: true }
 
 /** Signed out while reviewing: sign in, then come back to this result (an allow-listed return path). */
 export function signInAndReturn(attemptId: string, location: Pick<Location, 'pathname' | 'assign'> = window.location): void {

@@ -27,7 +27,7 @@ type Notice = { message: string; reload?: boolean; field?: Field; support?: bool
 /** open: courses can change; first-pick: a plan is running, so this first save sets them; locked: set for the semester. */
 export type CourseSelectionMode = 'open' | 'first-pick' | 'locked'
 
-export const FIRST_PICK_WARNING = 'Your courses will be set for this semester once you save.'
+export const FIRST_PICK_WARNING = 'Once you save, you can’t change your department, level or semester until the semester ends.'
 export const CHANGED_ELSEWHERE = 'Your courses were just updated. Check them and try again.'
 
 const FIELD_ERRORS: Record<Field, { id: string; message: string }> = {
@@ -180,16 +180,16 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', 
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'semester-not-running') {
         setNotice({ message: 'That semester isn’t running now. Choose the current semester.', field: 'academicPeriodId' })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invalid-selection') {
-        setNotice({ message: 'Review your first name and choices, or reload if a choice is no longer available.', reload: true })
+        setNotice({ message: 'Check your details and try again.', reload: true })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'missing-profile') {
-        setNotice({ message: 'Your profile could not be found.', support: true })
+        setNotice({ message: 'We couldn’t find your profile.', support: true })
       } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invariant-failure') {
-        setNotice({ message: 'Your profile needs attention.', support: true })
+        setNotice({ message: 'We couldn’t load your profile.', support: true })
       } else {
-        setNotice({ message: 'We couldn’t save your changes. Please try again.' })
+        setNotice({ message: 'We couldn’t save your changes. Try again.' })
       }
     } catch {
-      setNotice({ message: 'We couldn’t save your changes. Please try again.' })
+      setNotice({ message: 'We couldn’t save your changes. Try again.' })
     } finally {
       if (!navigating) { lock.current = false; setPending(false) }
     }
@@ -197,16 +197,19 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', 
 
   if (!choicesAvailable) return <div className="student-surface student-surface-raised space-y-3">
     {initial.status === 'complete' && <div className="space-y-2">
-      <h2 className="font-semibold text-student-text-primary">Current selection</h2>
+      <h2 className="font-semibold text-student-text-primary">Academic details</h2>
       <SelectionSummary selection={initial.selection} />
     </div>}
     <Feedback tone="error" message="We couldn’t load your academic details. Please try again later." />
-    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to account</Link>}
+    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to profile</Link>}
   </div>
 
   return <form noValidate onSubmit={save} className="student-surface student-surface-raised grid gap-4">
-    {initial.status === 'complete' && <section aria-labelledby="current-selection-heading" className="space-y-2">
-      <h2 id="current-selection-heading" className="font-semibold text-student-text-primary">Current selection</h2>
+    {/* The fields below show the saved details. They are listed here only when the fields cannot: once they can no
+        longer be changed, or when a saved choice is no longer offered (its field then starts empty). */}
+    {initial.status === 'complete' && (locked || [initial.selection.department, initial.selection.academicLevel,
+      initial.selection.academicPeriod].some(option => !option.isActive)) && <section aria-labelledby="academic-details-heading" className="space-y-2">
+      <h2 id="academic-details-heading" className="font-semibold text-student-text-primary">Academic details</h2>
       <SelectionSummary selection={initial.selection} />
     </section>}
     {locked && <CoursesSetNotice />}
@@ -272,24 +275,24 @@ export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', 
     {stale && <div className="space-y-1">
       <Feedback compact tone="error" message={CHANGED_ELSEWHERE} />
       <button ref={reloadRef} type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}
-        onClick={() => window.location.reload()}>Reload latest profile</button>
+        onClick={() => window.location.reload()}>Reload</button>
     </div>}
     {/* What belongs to no one field shows here; a field's own error sits under it. So does the error of a field that
         is not on screen, with the reload that brings the choices back once they can change. */}
     {notice && (!notice.field || offScreen) && <div className="space-y-1">
       <Feedback compact tone="error" message={notice.support ? <>{notice.message} <Link href={STUDENT_DESTINATIONS.contact.href}
         prefetch={false} className="whitespace-nowrap underline underline-offset-2">{STUDENT_DESTINATIONS.contact.label}</Link></> : notice.message} />
-      {(notice.reload || offScreen) && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload choices</button>}
+      {(notice.reload || offScreen) && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload</button>}
     </div>}
     {mode === 'first-pick' && !locked && <p className="text-sm text-student-text-secondary" data-first-pick="">{FIRST_PICK_WARNING}</p>}
     <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
       <button type="submit" disabled={!ready || pending || stale} aria-busy={pending}
         className={buttonClassName(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', studentFocusDark)}>
-        {pending ? 'Saving…' : locked ? 'Save name' : 'Save selection'}
+        {pending ? 'Saving…' : locked ? 'Save name' : 'Save'}
       </button>
       {initial.status === 'complete' && <Link href={AUTH_PATHS.account}
         className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>
-        Back to account
+        Back to profile
       </Link>}
     </div>
   </form>

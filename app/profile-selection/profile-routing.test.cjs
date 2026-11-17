@@ -84,7 +84,8 @@ test('signed-out entry points retain Auth redirects without reading the account 
 test('incomplete account reaches selection; completed account stays and offers intentional editing', async () => fixture(async f => {
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   let page = await f.selectionPage()
-  assert.equal(page.props.title, 'Your profile')
+  assert.equal(page.props.title, 'Edit profile')
+  assert.equal(page.props.description, 'Set up your profile to see your courses.', 'a new student is told what the form is for, once')
   assert.equal(page.props.children[1].type.name, 'ProfileSelectionForm')
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
@@ -94,7 +95,8 @@ test('incomplete account reaches selection; completed account stays and offers i
   const link = nodes(account).find(node => node.props?.children === 'Edit')
   assert.equal(link.props.href, '/profile-selection')
   page = await f.selectionPage()
-  assert.equal(page.props.title, 'Your profile', 'one title whatever the account state')
+  assert.equal(page.props.title, 'Edit profile', 'one title whatever the account state')
+  assert.equal(page.props.description, undefined, 'the labelled fields need no line above them')
   assert.equal(page.props.children[1].props.initial.status, 'complete')
 }))
 
@@ -111,7 +113,7 @@ test('account and profile error links use shared secondary button focus', async 
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   check(nodes(await f.account()).find(node => node.props?.children === 'Edit'))
   f.state.profile = { status: 'unavailable' }
-  check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to account'))
+  check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to profile'))
 }))
 
 test('auth and selection redirects terminate, including a completed student opening the change path', async () => fixture(async f => {
@@ -120,7 +122,7 @@ test('auth and selection redirects terminate, including a completed student open
   assert.equal((await f.selectionPage()).props.children[1].props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   assert.equal(nodes(await f.account()).find(node => node.type?.name === 'StudentPage').props.band.props.title, 'Profile')
-  assert.equal((await f.selectionPage()).props.title, 'Your profile')
+  assert.equal((await f.selectionPage()).props.title, 'Edit profile')
   const { getSafeReturnPath } = require('../../lib/auth/redirect.ts')
   assert.equal(getSafeReturnPath('/profile-selection'), '/profile-selection')
   const { unstable_doesMiddlewareMatch } = require('next/experimental/testing/server')
@@ -128,14 +130,14 @@ test('auth and selection redirects terminate, including a completed student open
 }))
 
 test('missing, invariant, unavailable and disabled states remain controlled', async () => fixture(async f => {
-  // The account page says each in the app's own words ("We couldn’t …"); the profile page keeps its wording.
-  for (const [status, onAccount, onProfile] of [
-    ['missing-profile', 'We couldn’t find your profile. Help & Support', 'could not be found'],
-    ['invariant-failure', 'We couldn’t load your profile. Help & Support', 'needs attention'],
+  // Both pages say it in the app's one way ("We couldn’t …"); the Profile page adds the way to Help & Support.
+  for (const [status, onAccount, onForm] of [
+    ['missing-profile', 'We couldn’t find your profile. Help & Support', 'We couldn’t find your profile'],
+    ['invariant-failure', 'We couldn’t load your profile. Help & Support', 'We couldn’t load your profile'],
     ['unavailable', 'Something went wrong', 'Something went wrong'],
   ]) {
     f.state.profile = { status }
-    for (const [page, expected] of [[await f.account(), onAccount], [await f.selectionPage(), onProfile]]) {
+    for (const [page, expected] of [[await f.account(), onAccount], [await f.selectionPage(), onForm]]) {
       const message = nodes(page).find(node => node.type?.name === 'Feedback').props.message
       assert.ok(textOf(message).includes(expected), `${status}: ${textOf(message)}`)
       // A profile only support can fix links to support, in the message itself.
@@ -198,11 +200,11 @@ test('Profile selection uses the student workspace for incomplete, complete and 
   let page = await f.selectionPage()
   let frame = page.type(page.props)
   assert.match(frame.props.className, /app-container student-workspace student-page/)
-  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Your profile')
+  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Edit profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   page = await f.selectionPage()
-  assert.equal(page.props.title, 'Your profile')
+  assert.equal(page.props.title, 'Edit profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.selection, selection)
   f.state.profile = { status: 'unavailable' }
   page = await f.selectionPage()
@@ -236,12 +238,12 @@ test('an unknown plan cannot allow a first pick without knowing whether it will 
     'a known active plan still shows the first-pick warning')
 }))
 
-test('locked courses have a title and description for the name edit only', async () => fixture(async f => {
+test('locked courses keep the one title, with no line under it, and the form in its locked mode', async () => fixture(async f => {
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   f.state.courses = { state: 'locked', locked: true, lastDay: '2027-03-08' }
   const page = await f.selectionPage()
-  assert.equal(page.props.title, 'Your profile')
-  assert.equal(page.props.description, 'Update your first name.')
+  assert.equal(page.props.title, 'Edit profile')
+  assert.equal(page.props.description, undefined)
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.mode, 'locked')
 }))
 

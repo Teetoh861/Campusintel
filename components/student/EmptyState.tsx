@@ -8,7 +8,8 @@ export function EmptyState({ id, icon, title, children, actions, headingRef }: {
   id?: string
   icon?: ReactNode | null
   title: string
-  children: ReactNode
+  // A title that says it all needs no second line.
+  children?: ReactNode
   actions: ReactNode
   // A list that empties by mutation can own its heading as the programmatic focus destination.
   headingRef?: Ref<HTMLHeadingElement>
@@ -19,7 +20,7 @@ export function EmptyState({ id, icon, title, children, actions, headingRef }: {
   return <section className="student-empty-state" aria-labelledby={headingId}>
     {mark !== null && <span className="student-empty-icon">{mark}</span>}
     <h2 id={headingId} className="student-empty-title" ref={headingRef} tabIndex={headingRef ? -1 : undefined}>{title}</h2>
-    <p className="student-empty-text">{children}</p>
+    {children === undefined || children === null || children === '' ? null : <p className="student-empty-text">{children}</p>}
     <div className="student-empty-actions">{actions}</div>
   </section>
 }

@@ -17,6 +17,7 @@ const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
 // Account-gated per student; never prerender or share across viewers.
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Request material | CampusIntell', robots: { index: false, follow: false } }
 
 /** Cross the student account boundary before the course request surface renders. */
 export default async function CourseMaterialsPage({ params }: PageProps) {
@@ -60,9 +61,6 @@ function CourseMaterials({ slug }: { slug: string }) {
           <h1 className="mt-3 max-w-[20ch] text-balance text-[clamp(36px,7vw,56px)] font-extrabold leading-none tracking-[-0.035em]">
             {course.title}
           </h1>
-          <p className="mt-5 max-w-[54ch] text-[17px] leading-[1.6] text-ci-blue-200 min-[900px]:text-[19px]">
-            Request study material privately for this course, or email notes and past questions of your own.
-          </p>
         </div>
       </header>
 
@@ -73,9 +71,9 @@ function CourseMaterials({ slug }: { slug: string }) {
               <a
                 className={cx(btnBase, btnAccent, 'w-full')}
                 href={requestUrl}
-                aria-label={`Request study material privately for ${course.code} by email`}
+                aria-label={`Request study material for ${course.code} by email`}
               >
-                Request material privately
+                Request material
               </a>
               <a
                 className={cx(btnBase, btnNavy, 'w-full')}

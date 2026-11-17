@@ -10,7 +10,7 @@ const PLACEHOLDER_ROWS = 3
 
 /** Practice supplies only the placeholder composition; the shared owner announces loading once. */
 export default function Loading(): ReactElement {
-  return <StudentPage band={<PageBand title={PRACTICE_COPY.title} lede={PRACTICE_COPY.lede}
+  return <StudentPage band={<PageBand title={PRACTICE_COPY.title}
     context={<Skeleton aria-hidden="true" className="h-4 w-40 max-w-full animate-none" />} />}>
     <StudentLoadingState message={PRACTICE_COPY.loading}>
       <div className="student-stack">

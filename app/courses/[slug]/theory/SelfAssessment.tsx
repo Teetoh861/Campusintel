@@ -49,7 +49,7 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
     <div className="grid min-w-0 gap-6 desktop:grid-cols-2">
       <section aria-labelledby={`${id}-yours`} className="min-w-0">
         <h3 id={`${id}-yours`} className="mb-3 font-semibold text-student-primary">Your answer</h3>
-        <p className={theoryProse}>{answer || 'You submitted an empty answer.'}</p>
+        <p className={theoryProse}>{answer || 'You didn’t write an answer.'}</p>
       </section>
       <section aria-labelledby={`${id}-model`} className="min-w-0">
         <h3 id={`${id}-model`} className="mb-3 font-semibold text-student-primary">Suggested answer</h3>
@@ -77,7 +77,7 @@ export function SelfAssessment({ feedback, answer, courseSlug, onRetry }: {
           </select>
         </fieldset>)}
         <p role="status" className="student-meta">
-          {counts.covered} got it · {counts.partly} partly · {counts['not-yet']} not yet · {counts.reviewed} of {counts.total} points rated.
+          {counts.reviewed} of {counts.total} rated
         </p>
       </> : null}
       <div>

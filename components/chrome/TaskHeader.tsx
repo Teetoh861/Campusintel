@@ -4,7 +4,8 @@ import type { ReactElement } from 'react'
 
 type Props = {
   title: string
-  description: string
+  // A title that says it all needs no second line.
+  description?: string
   label: string
   count?: string
   meta?: string
@@ -28,9 +29,9 @@ export function TaskHeader({ title, description, label, count, meta, crumbs }: P
         <h1 className="student-title text-student-navigation-text">{title}</h1>
         {count && <span className="text-sm font-semibold text-student-navigation-text-muted">{count}</span>}
       </div>
-      <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-student-navigation-text-muted tablet:text-base">
+      {description && <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-student-navigation-text-muted tablet:text-base">
         {description}
-      </p>
+      </p>}
       {meta && <p className="mt-3 text-xs leading-relaxed text-student-navigation-text-muted tablet:text-sm">{meta}</p>}
     </div>
   </header>
