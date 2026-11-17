@@ -99,7 +99,6 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
 
   // No order id in the address is the same answer: there is no payment of ours to look for.
   if (read.kind === 'not-found' || orderId === null) return <Outcome icon="alert" title={RETURN_COPY.notFoundTitle}
-    body={RETURN_COPY.notFoundBody}
     actions={<Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
       className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.accessLink}</Link>} />
   // The spinner runs while the page is still asking on its own; after two minutes only Check again asks.
@@ -109,7 +108,7 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
   const support = (label: string = RETURN_COPY.messageUs) => <a href={buildWhatsAppUrl(paymentSupportMessage(order.order_id))}
     target="_blank" rel="noopener noreferrer" className={studentAction(btnGhost, 'bg-student-surface')}>{label}</a>
   const courses = <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
-    className={studentAction(btnNavy, studentFocusDark)}>Go to my courses</Link>
+    className={studentAction(btnNavy, studentFocusDark)}>Go to your courses</Link>
 
   switch (order.state) {
     case 'confirming': {
@@ -140,7 +139,6 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
           className="flex items-start gap-2.5 text-sm text-student-text-primary">
           <Check aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-student-primary" /><span>{item}</span></li>)}</ul>
       </div>}
-      <p className="text-sm text-student-text-secondary">{RETURN_COPY.setNow}</p>
       <div className="grid gap-2 tablet:flex">
         <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
           className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.startStudying}</Link>
@@ -162,7 +160,7 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
     case 'paid-duplicate': return <Outcome icon="check" title={RETURN_COPY.alreadyTitle} body={RETURN_COPY.duplicateBody}
       order={order} actions={courses} />
     case 'refund-pending': return <Outcome icon="check" title={RETURN_COPY.refundPendingTitle}
-      body={`Your refund of ${naira(order.amount_kobo)} is being processed. Your plan has ended. GST courses stay free.`}
+      body={`${naira(order.amount_kobo)} is on its way back to you. Your plan has ended, and GST courses stay free.`}
       order={order} actions={back} />
     case 'refunded': return <Outcome icon="check" title={RETURN_COPY.refundedTitle}
       body="Your plan has ended. GST courses stay free." order={order} actions={back} />

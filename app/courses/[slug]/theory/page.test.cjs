@@ -144,7 +144,7 @@ test('a locked course renders the unlock notice and no question, prompt or attem
   const html = await f.html()
   assert.match(html, /<p>INST201 · Institutional theory title<\/p>/, 'the course name, as on the ready page')
   assert.doesNotMatch(html, /Explain management|data-practice|textarea/)
-  assert.match(html, /Included with full access/)
+  assert.match(html, /Included with a plan/)
   assert.match(html, /href="\/access"/)
   assert.doesNotMatch(html, /GST/)
 }))
@@ -159,7 +159,7 @@ test('loading announces once and contains no answer fields or unverified course 
 
 test('theory selection recovery renders the matching single action without a plan or answers', async () => fixture(async f => {
   for (const [reason, title, action] of [
-    ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
+    ['needs-selection', 'Confirm your courses for this semester.', 'Confirm your courses'],
     ['selection-locked', 'Not in your courses this semester.', 'Message us'],
   ]) {
     f.state.result = { status: 'locked', reason, course: { slug, code: 'INST201', title: 'Institutional theory title' } }
@@ -169,7 +169,7 @@ test('theory selection recovery renders the matching single action without a pla
     assert.ok(html.includes(title))
     assert.ok(html.includes('>' + action + '</a>'))
     assert.equal((html.match(/<a\b/g) || []).length, 1)
-    assert.doesNotMatch(html, /Included with full access|Discovery|data-practice|textarea|Explain management/)
+    assert.doesNotMatch(html, /Included with a plan|Discovery|data-practice|textarea|Explain management/)
     if (reason === 'needs-selection') assert.ok(html.includes('href="/profile-selection"'))
   }
 }))
@@ -178,6 +178,6 @@ test('unavailable repository theory has the existing unavailable copy with no ad
   f.state.result = { status: 'unavailable', notAvailable: true }
   const html = await f.html()
   assert.match(html, /Study materials are not available./)
-  assert.doesNotMatch(html, /Message us|Included with full access|See how to unlock|data-practice|textarea/)
+  assert.doesNotMatch(html, /Message us|Included with a plan|See how to unlock|data-practice|textarea/)
   assert.ok(!html.includes('href="/access"'))
 }))

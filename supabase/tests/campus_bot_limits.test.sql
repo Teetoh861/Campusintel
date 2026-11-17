@@ -318,6 +318,7 @@ select is((select count(*)::int from private.entitlement_events where event='ai.
 -- No free pass after any paid grant; buying keeps an open free-pass exam.
 -- ---------------------------------------------------------------------------
 delete from private.discovery_pass_claims;
+delete from private.early_access_claims;
 delete from private.discovery_claim_keys;
 insert into private.discovery_claim_keys(key_version,key_check) values(999,repeat('f',64));
 select pg_temp.student(26);

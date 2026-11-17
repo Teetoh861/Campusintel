@@ -19,7 +19,7 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
 /** Lagos time, the timezone every student is in. Server-side only, so client hydration stays deterministic. */
 export function formatAccessDate(iso: string): string {
   const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? '' : `${DATE_FORMAT.format(date)} (Lagos)`
+  return Number.isNaN(date.getTime()) ? '' : DATE_FORMAT.format(date)
 }
 
 // The Discovery Pass, as students see it.
@@ -32,6 +32,7 @@ const DAY_FORMAT = new Intl.DateTimeFormat('en-GB', {
 })
 const TIME_FORMAT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', hour12: false })
 const WEEKDAY_FORMAT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', weekday: 'long' })
+const MONTH_DAY_FORMAT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'long' })
 
 /** A Lagos calendar day without a time ("Mon 8 Mar 2027"). */
 export function formatAccessDay(iso: string): string {
@@ -53,6 +54,35 @@ export function formatAccessTime(iso: string): string {
 export function formatAccessWeekday(iso: string): string {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? '' : WEEKDAY_FORMAT.format(date)
+}
+/** The Lagos day a free month ends, as students read it ("16 December"). Every free month ends within the year it
+ *  starts, so the year is not shown. The instant is always the database's; pages format it on the server. */
+export function formatFreeMonthDay(iso: string): string {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? '' : MONTH_DAY_FORMAT.format(date)
+}
+
+/** What every place that offers the free month needs from its page. */
+export type FreeMonthClaim = {
+  continuityToken: string
+  /** The profile revision the page showed, so the month sets exactly those courses (D7). */
+  profileRevision: number
+  /** The day the month would end, as the server wrote it from the database's answer ("16 December"). */
+  endsOn: string
+  /** How long the claim stays open after this page was read, from the database's own clock (its `now` and the stored
+   *  closing instant): the open page lets the offer go then, without reading the device's clock. */
+  closesInMs: number
+}
+
+/** The free month offer for this page, or null: only when the database says this student can claim it now, and never
+ *  without the profile revision the month would be bound to (D7). */
+export function freeMonthClaim(summary: EntitlementSummary, continuityToken: string, profileRevision: number | null):
+  FreeMonthClaim | null {
+  const offer = summary.free_month
+  if (offer === null || profileRevision === null) return null
+  const closesInMs = Date.parse(offer.closesAt) - Date.parse(summary.now)
+  return { continuityToken, profileRevision, endsOn: formatFreeMonthDay(offer.endsAt),
+    closesInMs: Number.isFinite(closesInMs) ? Math.max(0, closesInMs) : 0 }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -78,7 +108,7 @@ export const PLAN_COPY = {
   heading: 'Choose a plan',
   periodSwitchLabel: 'Billing period',
   cardLine: {
-    standard: 'Your courses this semester: notes, practice, exams and Campus Bot.',
+    standard: 'Your courses: notes, practice, exams and Campus Bot.',
     plus: 'Everything in Standard, with twice the Campus Bot use.',
   } satisfies Record<PlanTier, string>,
   perPeriod: { semester: 'a semester', session: 'a session' } satisfies Record<PlanPeriod, string>,
@@ -115,7 +145,7 @@ export function planOf(plan: PlanKey): { tier: PlanTier; period: PlanPeriod } {
 
 /** A receipt's state beside its date, when it is not simply paid. */
 export const RECEIPT_STATUS_LINE: Record<Receipt['status'], string | null> = {
-  'paid': null, 'paid-duplicate': 'Extra payment, being refunded', 'refund-pending': 'Refund in progress', 'refunded': 'Refunded',
+  'paid': null, 'paid-duplicate': 'Paid twice, extra being refunded', 'refund-pending': 'Refund in progress', 'refunded': 'Refunded',
 }
 
 /** The student's own paid plan, as Plan & Access names it. */
@@ -123,17 +153,21 @@ export function paidPlanName(paid: PaidPlan): string {
   return planName(paid.tier, paid.period)
 }
 
+/** What a student is told before a plan, a free pass or a free month fixes their courses for the semester. */
+export const COURSES_FIXED_LINE = 'You can’t change your department, level or semester until the semester ends.'
+
 export const CONFIRM_COPY = {
   title: 'Confirm your courses',
   change: 'Change',
   coursesHeading: (count: number) => `Your ${count} ${count === 1 ? 'course' : 'courses'}`,
-  setAfterPaying: 'After you pay, your Department, Level and Semester are set until the semester ends.',
+  // The one sentence before any commitment that fixes the student's courses (a plan, a free pass, a free month).
+  setAfterPaying: COURSES_FIXED_LINE,
   pay: (priceKobo: number) => `Confirm and pay ${naira(priceKobo)}`,
   opening: 'Opening payment…',
   notNow: 'Not now',
   free: 'Free',
   needsSelection: 'Confirm your courses for this semester to choose a plan.',
-  confirmMyCourses: 'Confirm my courses',
+  confirmCourses: 'Confirm your courses',
 } as const
 
 /** Why the payment page could not open, by the reason the checkout route sent back (never a promise about charges). */
@@ -145,7 +179,7 @@ export const CHECKOUT_PROBLEM: Record<string, string> = {
   'sales-closed': 'Plans aren’t on sale right now.',
   'plan-unavailable': 'That plan isn’t available right now.',
   'account-restricted': 'Plans can’t be bought while this account is scheduled for deletion.',
-  'session-changed': 'Your session changed. Try again.',
+  'session-changed': 'We couldn’t open the payment page. Try again.',
   'invalid-request': 'Something went wrong. Try again.',
 }
 
@@ -164,19 +198,17 @@ export const RETURN_COPY = {
   failedTitle: 'Your payment didn’t go through',
   failedBody: 'No plan was added. If money left your account, message us with the time you paid and we’ll sort it out.',
   cancelledTitle: 'Payment not completed',
-  cancelledBody: 'You left checkout before paying. No plan was added.',
+  cancelledBody: 'No plan was added.',
   alreadyTitle: 'You’re already subscribed',
   duplicateBody: 'We received two payments for this plan. We’ll refund the extra one. You don’t need to do anything.',
   refundPendingTitle: 'Your refund is being processed',
   refundedTitle: 'Your payment was refunded',
   notFoundTitle: 'We couldn’t find that payment',
-  notFoundBody: 'Check Plan & Access for your current plan.',
   // Our order couldn't be read. Never worded as a missing payment: nothing is known about it yet.
   unavailableTitle: 'We couldn’t check your payment right now',
   mismatchTitle: 'Payment didn’t match the plan price',
   mismatchBody: 'We’ll refund the full amount. You can then pay for your plan again.',
   nowOpen: (count: number) => count > 0 ? `Now open in your ${count} ${count === 1 ? 'course' : 'courses'}` : 'Now open in your courses',
-  setNow: 'Your Department, Level and Semester are now set until the semester ends.',
   startStudying: 'Start studying',
   viewReceipt: 'View receipt',
   tryAgain: 'Try again',
@@ -235,23 +267,59 @@ export const FREE_PASS_COPY = {
   // and its terms appear only in the modal.
   line: (hours: number) => `Try your department courses free for ${passDays(hours)} days.`,
   start: 'Get your free pass',
-  modalTitle: 'Start your free pass',
-  gives: ['A full timed exam from one of your courses', 'A complete study guide topic from one of your courses',
-    'Campus Bot practice from your own notes'],
+  modalTitle: 'Your free pass',
+  gives: ['A full exam from one of your courses', 'A complete notes topic from one of your courses',
+    'Practise from your notes'],
   terms: (hours: number) => [`It lasts ${passDays(hours)} days from now.`, 'Each student can have one free pass.',
-    'Starting it sets your courses for this semester.'],
-  confirm: 'Start my free pass',
+    COURSES_FIXED_LINE],
+  confirm: 'Start your free pass',
   cancel: 'Not now',
+  starting: 'Starting…',
   endsAt: (iso: string) => `Ends ${formatAccessDate(iso)}`,
+} as const
+
+// Early Access, as students see it: their free month. "Early Access" itself is never shown to a student.
+export const FREE_MONTH_LABEL = 'Free month'
+/**
+ * Every free month string. Each date a string carries is the database's (the eligibility read's end date before the
+ * claim, the grant's own end after it), formatted on the server with formatFreeMonthDay(); `endsOn` is that text.
+ */
+export const FREE_MONTH_COPY = {
+  // The offer: the Dashboard card, the plan card on Plan & Access and the confirmation's title.
+  title: 'Your free month',
+  line: 'Full access to your courses and Campus Bot for one month.',
+  start: 'Claim your free month',
+  // As a plan card beside the paid plans.
+  planName: FREE_MONTH_LABEL,
+  price: '₦0',
+  // On checkout, above Pay.
+  instead: 'You can get a free month instead.',
+  // The confirmation.
+  gives: ['Full access to your courses, notes and practice', 'Campus Bot included'],
+  terms: (endsOn: string) => [`Starts now and ends on ${endsOn}`, COURSES_FIXED_LINE],
+  confirm: 'Start your free month',
+  cancel: 'Not now',
+  starting: 'Starting…',
+  // Once claimed, and once over.
+  active: (endsOn: string) => `${FREE_MONTH_LABEL} · Ends ${endsOn}`,
+  ended: 'Your free month has ended.',
+  continues: (day: string) => `Your free month continues until ${day}.`,
+  // Where a locked course or Campus Bot offers it.
+  lockedTitle: 'Included in your free month.',
+  campusBot: 'Campus Bot is included in your free month.',
+  // What a student is told when the claim does not start a month.
+  error: 'Couldn’t start your free month. Try again.',
+  offerEnded: 'This offer has ended.',
+  unavailable: 'A free month isn’t available on this account.',
 } as const
 
 export const USAGE_COPY = {
   heading: 'Campus Bot',
-  session: 'This session',
-  week: 'This week',
+  session: '5-hour limit',
+  week: 'Weekly limit',
   sessionResets: (iso: string) => `Resets at ${formatAccessTime(iso)}`,
   weekResets: (iso: string) => `Resets ${formatAccessWeekday(iso)} at ${formatAccessTime(iso)}`,
-  notStarted: 'Starts with your next set',
+  notStarted: 'Not used yet',
 } as const
 
 /** A Campus Bot window in words for its bar: used share (for the bar only) and a phrase, never a number. */
@@ -265,12 +333,14 @@ export function usageLevel(window: { limit: number; used: number; inFlight: numb
   return { key: 'plenty', words: 'Plenty left', usedPercent }
 }
 
-/** The Campus Bot limit states on the AI page. */
+/** The Campus Bot limit states on the AI page: what has run out, then when it comes back. */
 export const CAMPUS_BOT_LIMIT_COPY = {
-  session: (iso: string | null) => `You’ve reached this session’s Campus Bot limit.${iso ? ` It resets at ${formatAccessTime(iso)}.` : ''}`,
-  week: (iso: string | null) => `You’ve reached this week’s Campus Bot limit.${iso
-    ? ` It resets ${formatAccessWeekday(iso)} at ${formatAccessTime(iso)}.` : ''}`,
-  undelivered: 'Campus Bot couldn’t finish your last few sets. Try again tomorrow.',
+  session: { title: 'You’ve used up Campus Bot for now.',
+    line: (iso: string | null) => iso ? `It resets at ${formatAccessTime(iso)}.` : '' },
+  week: { title: 'You’ve used up Campus Bot for this week.',
+    line: (iso: string | null) => iso ? `It resets ${formatAccessWeekday(iso)} at ${formatAccessTime(iso)}.` : '' },
+  undelivered: { title: 'Campus Bot limit reached.',
+    line: () => 'Campus Bot couldn’t finish your last few sets. Try again tomorrow.' },
 } as const
 
 /** The Payment terms page, word for word as the owner approved it (2026-11-05). Prices are the launch catalogue
@@ -307,7 +377,9 @@ export const TERMS_COPY = {
 } as const
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The copy switch (docs/payments-design.md §6): one flag, plans_on_sale. While sales are closed, today's wording stays.
+// The copy switch (docs/payments-design.md §6): one flag, plans_on_sale. Before plans are on sale a locked course is
+// "Included with a plan." (the same words as its row, components/student/study-families.ts) and nothing says
+// "subscribe" or names a price.
 // ---------------------------------------------------------------------------------------------------------------------
 export function accessCopy(onSale: boolean) {
   return onSale ? {
@@ -317,22 +389,22 @@ export function accessCopy(onSale: boolean) {
     previewOthers: (code: string) => `The other topics in ${code} are included when you subscribe.`,
     answersLine: 'Answers and explanations are included when you subscribe.',
     aiNotEntitled: 'Campus Bot is included when you subscribe.',
-    aiSection: 'Campus Bot practice from your own notes is included when you subscribe.',
+    aiSection: 'Practise from your notes is included when you subscribe.',
   } as const : {
-    lockedTitle: 'Included with full access.',
+    lockedTitle: 'Included with a plan.',
     lockedAction: 'See how to unlock',
-    studyLocked: 'Included with full access.',
+    studyLocked: 'Included with a plan.',
     previewOthers: (code: string) => `The other topics in ${code} come with full access.`,
     answersLine: 'Answers and explanations are included with full access.',
-    aiNotEntitled: 'Campus Bot opens with Early Access.',
-    aiSection: 'Campus Bot practice from your own notes comes with Early Access.',
+    aiNotEntitled: 'Campus Bot is included with a plan.',
+    aiSection: 'Practise from your notes is included with a plan.',
   } as const
 }
 
 export const ACCESS_SOURCE_LABEL: Record<AccessSource, string> = {
   // A seven-day trial issued before the Discovery Pass replaced it.
   trial: 'Free trial',
-  early_access: 'Early Access',
+  early_access: FREE_MONTH_LABEL,
   manual: 'Full access',
   // Named by the plan itself where the summary carries it (paidPlanName).
   paid: 'Paid plan',
@@ -373,7 +445,7 @@ export function trialGrantName(policy: TrialPolicy | null): string {
 /** The preview names a student sees, in the order the course page offers them. */
 export const DISCOVERY_PREVIEW_LABEL: Record<DiscoveryKind, string> = {
   cbt: 'CBT exam',
-  study_guide: 'study guide topic',
+  study_guide: 'notes topic',
 }
 
 export type AccessNotice = { id: string; tone: 'info' | 'error'; title: string; body: string; action: string }
@@ -391,33 +463,25 @@ export function unusedPreviews(summary: EntitlementSummary): DiscoveryKind[] {
 
 /** The single most useful access message for this student now, or null when there is nothing to say. */
 export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
-  const { early_access: early, trial, access } = summary
+  const { trial, access } = summary
   const noticeWindow = summary.expiry_notice_hours * HOUR_MS
   if (access !== null) {
     const left = msUntil(summary, access.ends_at)
     // A Session plan whose Second Semester is already set does not end with its first half (design §2.3 F).
     const continues = access.source === 'paid' && summary.paid !== null && summary.paid.second_ends_at !== null
     if (left > 0 && left <= noticeWindow && !continues) {
-      const name = access.source === 'paid' && summary.paid !== null ? paidPlanName(summary.paid)
-        : ACCESS_SOURCE_LABEL[access.source]
-      return { id: 'access-ending', tone: 'info', title: access.source === 'paid' ? 'Your plan ends soon.' : 'Your full access ends soon.',
-        body: `Your ${name} ends ${formatAccessDate(access.ends_at)}. ` +
-          'Department courses lock after that. GST courses stay free.', action: 'View your plan' }
+      // The free month by its name; every other full access is the student's plan.
+      const what = access.source === 'early_access' ? 'free month' : 'plan'
+      return { id: 'access-ending', tone: 'info', title: `Your ${what} ends ${formatAccessDate(access.ends_at)}.`,
+        body: 'After that, only GST courses stay free.', action: 'View your plan' }
     }
+    return null
   }
-  if (early.status === 'awaiting-launch') {
-    // No date is promised: the month starts when CampusIntell actually launches, never on the planned date.
-    return { id: 'early-access-awaiting-launch', tone: 'info', title: 'You’re on the Early Access list.',
-      body: 'Your free month of full access starts automatically when CampusIntell launches publicly. ' +
-        'There is nothing to claim, and a later launch never shortens your month.', action: 'View your plan' }
-  }
-  if (access !== null) return null
   if (trial.status === 'active' && trial.ends_at !== null) {
     const left = msUntil(summary, trial.ends_at)
-    // A pass shows its end time only: no allowances or per-course limits.
+    // A pass shows its end time only, in one line: no allowances or per-course limits.
     return { id: left <= noticeWindow ? 'discovery-ending' : 'discovery-active', tone: 'info',
-      title: left <= noticeWindow ? `Your ${DISCOVERY_PASS_NOUN} ends soon.` : `Your ${DISCOVERY_PASS_NOUN} is active.`,
-      body: `It ends ${formatAccessDate(trial.ends_at)}.`, action: 'View your plan' }
+      title: `Your ${DISCOVERY_PASS_NOUN} ends ${formatAccessDate(trial.ends_at)}.`, body: '', action: 'View your plan' }
   }
   if (trial.status === 'ended') {
     const since = -msUntil(summary, trial.ends_at)

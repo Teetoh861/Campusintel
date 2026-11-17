@@ -118,6 +118,18 @@
 .dashboard-continue { display: grid; gap: 2px; padding: 14px 18px; border: 1px solid var(--student-border); border-left: 5px solid var(--student-accent); border-radius: 14px; background: var(--student-surface); color: var(--student-primary); text-decoration: none; }
 .dashboard-continue-label { font-size: 17px; font-weight: 800; line-height: 1.3; }
 .dashboard-continue-title { font-size: 14px; color: var(--student-text-secondary); overflow-wrap: anywhere; }
+/* The free month at the top of the Dashboard: the offer card while it can be claimed, then one line while it runs. Both
+   share the Continue card's frame and its gap to what follows. */
+.dashboard-offer,
+.dashboard-offer-over,
+.dashboard-free-month { margin-bottom: var(--dashboard-section-gap); }
+.dashboard-offer,
+.dashboard-free-month { padding: 14px 18px; border: 1px solid var(--student-border); border-left: 5px solid var(--student-accent); border-radius: 14px; background: var(--student-surface); color: var(--student-primary); }
+.dashboard-offer { display: grid; gap: 12px; }
+.dashboard-offer-title,
+.dashboard-free-month { font-size: 17px; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; }
+.dashboard-offer-line { margin-top: 2px; font-size: 14px; color: var(--student-text-secondary); overflow-wrap: anywhere; }
+@media (min-width: 768px) { .dashboard-offer { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; } }
 .dashboard-primary-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin-top: auto; padding: 10px 16px; border-radius: 11px; background: var(--student-accent); color: var(--student-accent-text); font-weight: 700; }
 .dashboard-practice { display: flex; flex-direction: column; min-width: 0; padding: 16px 20px; border-radius: 18px; background: var(--ci-brand-blue); color: var(--student-navigation-text); }
 .dashboard-practice-eyebrow { font-size: 16px; font-weight: 700; }

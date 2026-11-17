@@ -230,7 +230,7 @@ test('practice by topic: a bare visit goes to the course\'s topic list; a topic 
   assert.doesNotMatch(JSON.stringify(route.props), /correct|options|explanation|"prompt"|"question"/i)
   f.publishedState.locked = true
   const html = renderToStaticMarkup(await f.quizRoute(withTopic('Bookkeeping & Errors')))
-  assert.match(html, /Included with full access/, 'a locked course starts no topic')
+  assert.match(html, /Included with a plan/, 'a locked course starts no topic')
 }))
 
 test('switching topics: another topic starts (closing the open run); the same topic reopens it; Exam mode opens its brief; an open exam blocks practice', async () => fixture(validQuiz, async f => {
@@ -253,7 +253,7 @@ test('switching topics: another topic starts (closing the open run); the same to
     'Exam mode shows the brief, not the open topic run')
   f.publishedState.locked = true
   const lockedHtml = renderToStaticMarkup(await f.quizRoute(exam()))
-  assert.match(lockedHtml, /Included with full access/, 'with no exam to start, Exam mode explains why')
+  assert.match(lockedHtml, /Included with a plan/, 'with no exam to start, Exam mode explains why')
   assert.doesNotMatch(lockedHtml, /QuizClient/, 'and never resumes the topic run as if it were the exam')
   f.publishedState.locked = false
   f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: ATTEMPT, mode: 'exam',
@@ -310,7 +310,7 @@ test('managed read unavailability fails closed on the quiz route', async () => f
 test('a locked course with no attempt of the student\'s shows the plan notice', async () => fixture(validQuiz, async f => {
   f.publishedState.locked = true
   const html = renderToStaticMarkup(await f.quizRoute(exam()))
-  assert.match(html, /Included with full access/)
+  assert.match(html, /Included with a plan/)
   assert.match(html, /href="\/access"/)
   assert.doesNotMatch(html, /temporarily unavailable/i)
   assert.equal(f.publishedState.stateReads, 1, 'the student\'s own attempts are read first')

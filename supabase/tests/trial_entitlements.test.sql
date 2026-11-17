@@ -1,12 +1,14 @@
 -- supabase/tests/trial_entitlements.test.sql — Free GST access, one-click Discovery Pass activation (one per account and
--- per confirmed email, no phone number), the shared AI allowance, Early Access, Account deletion and operator recovery,
--- enforced inside the database (PRD v1.4 §4.5, §4.9).
+-- per confirmed email, no phone number), the shared AI allowance, the Early Access month and what it does to the pass
+-- and to AI, Account deletion and operator recovery, enforced inside the database (PRD v1.4 §4.5). How a student
+-- claims the month, and who can, is in early_access_claim.test.sql.
 -- Time is simulated by moving grant timestamps: now() is fixed for the whole transaction.
 begin;
 select no_plan();
 -- Claims and the claim-key registry are global: this transaction starts from an empty ledger (rolled back at the end),
 -- so what other sessions of this database have activated with their own keys cannot change these outcomes.
 delete from private.discovery_pass_claims;
+delete from private.early_access_claims;
 delete from private.discovery_claim_keys;
 
 -- Structure and deny-by-default access ------------------------------------------------------------------------
@@ -34,11 +36,12 @@ select ok(not exists (select 1 from information_schema.columns where table_schem
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
   and p.proname in ('prepare_trial_otp', 'record_trial_otp_delivery', 'verify_trial_otp', 'purge_trial_otp_challenges',
     'admin_release_trial_phone')), 0, 'no phone-code function remains');
-select has_table('private', 'early_access_members', 'trusted Early Access list exists');
+select has_table('private', 'early_access_members', 'the retired Early Access list is left in place, unread');
 select has_table('private', 'entitlement_events', 'audit trail exists');
-select hasnt_function('public', 'claim_early_access', 'there is no manual Early Access claim: enrollment is automatic');
-select is((select early_access_enrollment_days from private.entitlement_policy), 14,
-  'Early Access can be claimed for 14 days after the actual launch');
+select has_function('public', 'claim_early_access', array['uuid', 'jsonb', 'bigint'],
+  'Early Access is claimed by the student: nothing enrols anyone automatically');
+select is((select early_access_enrollment_days from private.entitlement_policy), 10,
+  'Early Access can be claimed for 10 days after the actual launch');
 select is((select actual_launch_at from private.entitlement_policy), null,
   'the actual public launch starts unset; the planned date is never used in its place');
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.entitlement_grants'::regclass,
@@ -54,10 +57,9 @@ select is((select count(*)::integer from unnest(array[
     'public.admin_discovery_claim_keys()',
     'public.admin_entitlement_status(uuid)', 'public.admin_grant_access(uuid,integer,text,text)',
     'public.admin_change_grant(uuid,text,timestamptz,integer,text,text)',
-    'public.admin_add_early_access_member(text,text,text,timestamptz,text,text,text)',
-    'public.admin_change_early_access_member(text,text,text,text,text)', 'public.admin_early_access_report()',
+    'public.claim_early_access(uuid,jsonb,bigint)', 'public.admin_early_access_report()',
     'public.admin_configure_early_access(timestamptz,integer,boolean,text,text)',
-    'public.admin_activate_public_launch(text,text,integer)', 'public.admin_reconcile_early_access(text,text,integer)']) fn
+    'public.admin_activate_public_launch(text,text,boolean)']) fn
   where has_function_privilege('authenticated', fn, 'EXECUTE') or has_function_privilege('anon', fn, 'EXECUTE')
     or not has_function_privilege('service_role', fn, 'EXECUTE')), 0,
   'activation, claims and every recovery function are service-role only');
@@ -66,10 +68,9 @@ select ok(has_function_privilege('authenticated', 'public.get_my_entitlement()',
 select is((select count(*)::integer from unnest(array['private.can_read_course_content(uuid,uuid)',
     'private.has_full_access(uuid)', 'private.effective_ai_window(uuid,text[])', 'private.ai_units_used(uuid,uuid,timestamptz)',
     'private.log_entitlement_event(uuid,uuid,text,text,jsonb)', 'private.early_access_status(uuid)',
-    'private.reconcile_early_access(uuid,text)', 'private.reconcile_all_early_access(text,integer)',
-    'private.early_access_sweep_candidates()', 'private.retire_legacy_ai_windows(text)', 'private.lock_early_access_accounts(text)',
-    'private.lock_early_access_groups(text[],uuid[],boolean)',
-    'private.resolve_early_access_duplicates(uuid,text,text)', 'private.discovery_claim_hashes_valid(jsonb)',
+    'private.reconcile_early_access(uuid,text)', 'private.retire_legacy_ai_windows(text)',
+    'private.lock_early_access_accounts(uuid[])', 'private.lock_early_access_groups(text[],uuid[],boolean)',
+    'private.discovery_claim_hashes_valid(jsonb)',
     'private.discovery_claim_keys_check(jsonb)']) fn,
     unnest(array['anon', 'authenticated', 'service_role']) api_role
   where has_function_privilege(api_role, fn, 'EXECUTE')), 0, 'access helpers are not callable by any API role');
@@ -88,7 +89,7 @@ select is((select string_agg(conrelid::regclass::text || '=' || confdeltype::tex
   'Account purge removes grants, but keeps pass claims, historical phone claims, list claims and audit rows without the account');
 
 -- Fixtures --------------------------------------------------------------------------------------------------------
--- A, B, F, G, H: ordinary students. C: deletion scheduled later. D, E: Early Access list (E duplicates D by phone).
+-- A, B, F, G, H: ordinary students. C: deletion scheduled later. D: claims the Early Access month first.
 -- O: operator. U: unconfirmed email, confirmed after launch.
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -403,66 +404,76 @@ select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000003',
 select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000003', array['trial', 'early_access', 'test'])->>'state', 'active',
   'a verified local test run still can');
 
--- 7. Early Access: automatic, from the actual public launch only ------------------------------------------------------
--- The trusted list is imported before launch. Nothing starts, whatever the planned date says.
-update private.entitlement_policy set planned_launch_at = now() - interval '3 days';
-set local role service_role;
-select is(public.admin_add_early_access_member('Early-D@Example.TEST ', 'Dami Ade', pg_temp.h('phone-d'),
-  now() - interval '30 days', 'import', 'google-form', 'ops')->>'state', 'added', 'an imported member is added, email normalized');
-select is(public.admin_add_early_access_member('early-e@example.test', 'D. Ade', pg_temp.h('phone-d'),
-  now() - interval '20 days', 'import', 'google-form', 'ops')->>'state', 'added-duplicate',
-  'the same phone under another email joins the first member''s group');
-select is(public.admin_add_early_access_member('early-d@example.test', 'Someone else', null,
-  now() - interval '1 day', 'manual', 'whatsapp', 'ops')->>'state', 'existing', 'an existing email is never overwritten');
-select is(public.admin_add_early_access_member('late@example.test', 'Late Joiner', null,
-  now() + interval '1 day', 'manual', 'whatsapp', 'ops')->>'state', 'joined-after-launch', 'a future join date is refused');
-select throws_ok($$ select public.admin_add_early_access_member('x@example.test', 'X', null, now() - interval '1 day',
-  'manual', 'b', 'ops') $$, '22023', null, 'an import needs a batch label');
-reset role;
+-- 7. Early Access: claimed by the student, from the actual public launch only ------------------------------------------
+-- The planned date starts nothing, and neither does anything else until the founder activates the launch. The claim's
+-- cutoff is moved two months away, so these fixtures do not depend on the day the tests run.
+update private.entitlement_policy set planned_launch_at = now() - interval '3 days',
+  early_access_claim_cutoff = now() + interval '60 days';
+create function pg_temp.rev(p_user uuid) returns bigint language sql stable security definer as
+  $$ select revision from public.profiles where id = p_user $$;
+-- The claim as the server sends it: the session, the hashes of its address and the profile revision on the page.
+-- An account without a profile (an unconfirmed one) has no revision to show; the claim still names one, as every claim
+-- must, so it is sent as 0 and the database answers for the session.
+create function pg_temp.month(p_user uuid, p_session uuid, p_email text) returns jsonb language sql as
+  $$ select public.claim_early_access(p_session, pg_temp.claim(p_email), coalesce(pg_temp.rev(p_user), 0)) $$;
+create function pg_temp.month_end(p_start timestamptz) returns timestamptz language sql immutable as
+  $$ select ((p_start at time zone 'Africa/Lagos') + interval '1 month') at time zone 'Africa/Lagos' $$;
+grant execute on function pg_temp.rev(uuid), pg_temp.month(uuid, uuid, text), pg_temp.month_end(timestamptz)
+  to authenticated, service_role;
 select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access'),
   'the planned launch passing three days ago starts nothing');
-select is(private.early_access_status('61000000-0000-4000-8000-000000000004')->>'status', 'awaiting-launch', 'listed members wait for the actual launch');
+set local role service_role;
+select is(pg_temp.month('61000000-0000-4000-8000-000000000004', '62000000-0000-4000-8000-000000000004', 'early-d@example.test'),
+  '{"state":"closed"}'::jsonb, 'before the actual launch nothing can be claimed');
+reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000004"}';
 select is((select jsonb_build_object('status', e->'early_access'->>'status', 'starts', e->'early_access'->'starts_at',
   'launch', e->'actual_launch_at') from public.get_my_entitlement() e),
-  '{"status":"awaiting-launch","starts":null,"launch":null}'::jsonb,
-  'the student sees Early Access waiting for the real launch, with no start date invented');
+  '{"status":"not-listed","starts":null,"launch":null}'::jsonb,
+  'before the real launch the student has no month, and no start date is invented');
 select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000002') $$,
   'CI403', null, 'no department access before the actual launch');
 reset role;
--- The founder activates the actual launch: every eligible confirmed account is enrolled in the same transaction.
+-- The founder activates the actual launch: the claim opens, and nobody is enrolled.
 set local role service_role;
 insert into outcome values ('launch', public.admin_activate_public_launch('founder', 'public launch'));
-select is((select result->>'state' || '/' || (result->>'granted') from outcome where step = 'launch'), 'launched/1',
-  'activation enrolls the one eligible confirmed account; the duplicate identity gets nothing');
+select is((select result->>'state' from outcome where step = 'launch'), 'launched', 'activation records the launch');
 select is(public.admin_activate_public_launch('founder', 'again')->>'state', 'already-launched',
   'the actual launch is recorded once');
 reset role;
-select is((select actual_launch_at from private.entitlement_policy), now(), 'the actual launch is the activation time');
-select is((select jsonb_build_object('starts', starts_at = now(), 'ends', ends_at = now() + interval '1 month', 'ai', ai_terms,
-  'by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access'),
-  '{"starts":true,"ends":true,"ai":"uncapped","by":"operator:founder"}'::jsonb,
-  'the calendar month starts at the actual launch, not the planned date: a delayed launch costs no days');
-select is(private.early_access_status('61000000-0000-4000-8000-000000000005')->>'status', 'unavailable', 'D''s duplicate identity cannot get a second month');
+select ok((select actual_launch_at between now() and clock_timestamp() from private.entitlement_policy),
+  'the actual launch is the activation time, on the database clock');
+select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access'),
+  'the launch enrols nobody: a month starts only when a student claims it');
+set local role service_role;
+insert into outcome values ('d-claim', pg_temp.month('61000000-0000-4000-8000-000000000004',
+  '62000000-0000-4000-8000-000000000004', 'early-d@example.test'));
+reset role;
+select is((select result->>'state' from outcome where step = 'd-claim'), 'claimed', 'D claims the month with one tap');
+select is((select jsonb_build_object('starts', starts_at between now() and clock_timestamp(), 'ends', ends_at = pg_temp.month_end(starts_at),
+  'ai', ai_terms, 'by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access'),
+  '{"starts":true,"ends":true,"ai":"uncapped","by":"student"}'::jsonb,
+  'the calendar month starts at the claim, not at the planned date or the launch: a delayed launch costs no days');
 select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access' and user_id <> '61000000-0000-4000-8000-000000000004'),
-  'unlisted accounts get nothing');
-select ok(exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000004' and event = 'early-access.granted'
-  and actor = 'operator:founder'), 'the enrollment is audited with the founder as actor');
--- Repeated reconciliation, plan reads, sweeps and re-imports never reset or extend a grant.
+  'students who have not claimed get nothing');
+select ok(exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000004' and event = 'early-access.claimed'
+  and actor = 'student'), 'the claim is audited with the student as actor');
+-- Repeated claims and plan reads never reset or extend a grant.
 insert into outcome select 'd-grant', to_jsonb(g) from public.entitlement_grants g where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000004"}';
 select is((select e->>'tier' || '/' || (e->'early_access'->>'status') from public.get_my_entitlement() e), 'full/active',
-  'D has full access with no click and no phone code');
+  'D has full access for the month');
 select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000002')) > 0,
   'the student''s own course is open during the month');
 reset role;
 set local role service_role;
-select is(public.admin_reconcile_early_access('ops', 'recovery sweep')->>'granted', '0', 'a repeated sweep grants nothing new');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000004', '62000000-0000-4000-8000-000000000004', 'early-d@example.test')->>'state',
+  'already-claimed', 'a repeated claim grants nothing new');
 reset role;
 select is((select to_jsonb(g) from public.entitlement_grants g where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access'),
-  (select result from outcome where step = 'd-grant'), 'D''s grant is untouched by plan reads, sweeps and re-imports');
+  (select result from outcome where step = 'd-grant'), 'D''s grant is untouched by plan reads and repeated claims');
 -- No per-student AI cap during the month; the global guards still apply.
 insert into public.ai_usage_events (user_id, feature, state, reserved_at, settled_at, funding_source, funding_grant_id)
   select '61000000-0000-4000-8000-000000000004', 'upload_practice', 'consumed', now(), now(), 'early_access',
@@ -488,128 +499,51 @@ select is(public.begin_ai_practice_generation('62000000-0000-4000-8000-000000000
   'capacity', 'the platform-wide daily AI guard still applies to Early Access');
 reset role;
 update private.ai_practice_policy set global_daily_generations = 500;
--- An account verified after launch gets its own full month from that verification.
+-- An account confirmed after launch claims its own full month, from its claim.
 update private.entitlement_policy set actual_launch_at = now() - interval '5 days';
 set local role service_role;
-select is(public.admin_add_early_access_member('unconfirmed-u@example.test', 'U Member', null, now() - interval '20 days',
-  'import', 'google-form', 'ops')->>'enrollment', null, 'an unconfirmed account is listed but not enrolled');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4000-8000-000000000009', 'unconfirmed-u@example.test')->>'state',
+  'signed-out', 'an unconfirmed account cannot claim');
 reset role;
-select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009'), 'an unconfirmed email is never enrolled');
 update auth.users set email_confirmed_at = now() where id = '61000000-0000-4000-8000-000000000009';
-select is((select (starts_at, ends_at)::text from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009' and source = 'early_access'),
-  (now(), now() + interval '1 month')::text,
-  'confirming the email five days after launch enrolls U with a full month from that moment');
--- A trusted import after launch enrolls an existing confirmed account at once; a post-launch signup does not count.
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009'),
+  'confirming the email starts nothing by itself');
+-- The profile confirmation creates has no courses yet: a month needs them set first.
 set local role service_role;
-select is(public.admin_add_early_access_member('ent-h@example.test', 'H Member', null, now() - interval '25 days',
-  'manual', 'whatsapp-late', 'ops')->>'enrollment', 'granted', 'a later import of a pre-launch signup enrolls at once');
-select is(public.admin_add_early_access_member('post@example.test', 'Post Launch', null, now() - interval '1 day',
-  'manual', 'whatsapp', 'ops')->>'state', 'joined-after-launch', 'a signup after the actual launch is not eligible');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4000-8000-000000000009', 'unconfirmed-u@example.test')->>'state',
+  'needs-selection', 'once confirmed, U is asked to set courses before claiming');
 reset role;
--- The enrollment window is configurable; 28 days is provisional.
-update private.entitlement_policy set actual_launch_at = now() - interval '29 days';
+update public.profiles set first_name='Ada',department_id='10000000-0000-4000-8000-000000000002',
+  academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
+  where id = '61000000-0000-4000-8000-000000000009';
 set local role service_role;
-select is(public.admin_add_early_access_member('ent-a@example.test', 'A Member', null, now() - interval '40 days',
-  'import', 'google-form', 'ops')->>'enrollment', 'enrollment-closed', 'after the enrollment window nobody new is enrolled');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4000-8000-000000000009', 'unconfirmed-u@example.test')->>'state',
+  'claimed', 'with courses set, U claims');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000011', '62000000-0000-4000-8000-000000000011', 'ent-h@example.test')->>'state',
+  'claimed', 'and so does H');
+reset role;
+select ok((select starts_at between now() and clock_timestamp() and ends_at = pg_temp.month_end(starts_at)
+  from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009' and source = 'early_access'),
+  'five days after launch U still gets a full month, from the claim');
+-- The claim closes after the configured days, at the instant stored with the launch; after launch the days are fixed.
+update private.entitlement_policy set actual_launch_at = now() - interval '11 days';
+set local role service_role;
+select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
+  '{"state":"closed"}'::jsonb, 'after the claim window nobody new can claim');
 select throws_ok($$ select public.admin_configure_early_access(null, 30, null, 'ops', '') $$, '22023', null,
   'a policy change needs a reason');
-select is(public.admin_configure_early_access(null, 30, null, 'ops', 'owner extended enrollment')->>'state', 'changed',
-  'the window is configurable');
-select is(public.admin_reconcile_early_access('ops', 'apply extended window')->>'granted', '1', 'a sweep then enrolls A');
-select is(public.admin_change_early_access_member('early-d@example.test', 'mark-duplicate', 'early-e@example.test', 'ops',
-  'circular grouping')->>'state', 'already-grouped',
-  'marking a member as a duplicate of its own duplicate is refused cleanly, not a constraint error');
-select is(public.admin_change_early_access_member('early-e@example.test', 'exclude', null, 'ops', 'duplicate person')->>'state',
-  'changed', 'an operator can exclude a member');
+select is(public.admin_configure_early_access(null, 30, null, 'ops', 'owner extended the claim')->>'state', 'claim-window-fixed',
+  'after launch the claim days cannot be changed');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
+  '{"state":"closed"}'::jsonb, 'so the claim does not reopen');
 reset role;
-select ok((select excluded_at is not null from private.early_access_members where email = 'early-e@example.test'),
-  'the exclusion is recorded');
--- A duplicate merge locks every account it can touch before any grant lock (M5). The merge revokes the other
--- identity's grant and audits it against that grant's owner, whose auth row the audit row references; the deletion
--- worker takes an auth row first and cascades to its grants afterwards, so the owner's account lock must come first.
--- Fixtures are written directly: the import path would take these account locks itself and mask the check.
--- Transaction-scoped advisory locks stay visible in pg_locks until the end of this test transaction.
-create function pg_temp.account_locked(p_account uuid) returns boolean language sql stable as
-  $$ select exists (select 1 from pg_locks where locktype = 'advisory' and pid = pg_backend_pid() and objsubid = 1
-       and ((classid::bigint << 32) | objid::bigint) = hashtextextended('entitlement-account:' || p_account::text, 0)) $$;
-insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now() - interval '40 days',
-  '{"provider":"email","providers":["email"]}', '{}', now() - interval '40 days', now()
-from (values ('61000000-0000-4000-8000-000000000021', 'm5-one@example.test'),
-  ('61000000-0000-4000-8000-000000000022', 'm5-two@example.test'),
-  ('61000000-0000-4000-8000-000000000023', 'm5-three@example.test'),
-  ('61000000-0000-4000-8000-000000000024', 'm5-four@example.test')) m5_users(id, email);
-insert into private.early_access_members (id, email, full_name, joined_at, source, batch, added_by, claimed_at, claimed_by)
-select ('71000000-0000-4000-8000-0000000000' || n)::uuid, 'm5-' || name || '@example.test', 'Same Person',
-  now() - interval '40 days', 'import', 'm5', 'test', now() - interval '2 days', ('61000000-0000-4000-8000-0000000000' || n)::uuid
-from (values ('21', 'one'), ('22', 'two'), ('23', 'three'), ('24', 'four')) m5_members(n, name);
--- One and Three enrolled a day earlier than Two and Four: theirs are the canonical months of each pair.
--- Pre-existing unbound grant fixtures must not acquire the new insert-trigger locks and mask M5.
-alter table public.entitlement_grants disable trigger entitlement_grants_bind_course;
-insert into public.entitlement_grants (user_id, source, starts_at, ends_at, ai_terms, reference, created_by)
-select ('61000000-0000-4000-8000-0000000000' || n)::uuid, 'early_access', now() - make_interval(days => days),
-  now() - make_interval(days => days) + interval '1 month', 'uncapped',
-  jsonb_build_object('member_id', '71000000-0000-4000-8000-0000000000' || n), 'test'
-from (values ('21', 2), ('22', 1), ('23', 2), ('24', 1)) m5_grants(n, days);
-alter table public.entitlement_grants enable trigger entitlement_grants_bind_course;
-select is(pg_temp.account_locked('61000000-0000-4000-8000-000000000022'), false, 'before the merge, Two''s account is not locked here');
+select is((select early_access_enrollment_days from private.entitlement_policy), 10, 'and the days are unchanged');
+-- Inside the window, A, whose free pass ended, can still claim.
+update private.entitlement_policy set actual_launch_at = now() - interval '1 day';
 set local role service_role;
--- Older into newer: One is marked a duplicate of Two. Two's grant is the one revoked, so Two's account must be locked.
-insert into outcome values ('m5-merge-older-into-newer', public.admin_change_early_access_member('m5-one@example.test',
-  'mark-duplicate', 'm5-two@example.test', 'ops', 'one person, two addresses'));
--- Newer into older: Four is marked a duplicate of Three. Four's own grant is revoked; Three's account must be locked too.
-insert into outcome values ('m5-merge-newer-into-older', public.admin_change_early_access_member('m5-four@example.test',
-  'mark-duplicate', 'm5-three@example.test', 'ops', 'one person, two addresses'));
+select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test')->>'state',
+  'claimed', 'A, whose free pass ended, claims while the claim is open: a used pass does not cost a student their month');
 reset role;
-select is((select result from outcome where step = 'm5-merge-older-into-newer'),
-  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":1}'::jsonb, 'the older-into-newer merge revokes one grant');
-select is((select result from outcome where step = 'm5-merge-newer-into-older'),
-  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":1}'::jsonb, 'the newer-into-older merge revokes one grant');
-select is((select array_agg(pg_temp.account_locked(id) order by id) from auth.users where email like 'm5-%@example.test'),
-  array[true, true, true, true], 'every account whose grant or claim the merges touched holds its account lock: the other identity''s too');
-select is((select array_agg(user_id::text order by user_id) from public.entitlement_grants where source = 'early_access'
-  and revoked_at is null and user_id in (select id from auth.users where email like 'm5-%@example.test')),
-  array['61000000-0000-4000-8000-000000000021', '61000000-0000-4000-8000-000000000023'],
-  'each pair keeps its earliest month: one surviving grant per identity');
-select is((select jsonb_build_object('by', revoked_by, 'ended', revoked_at = now(), 'kept', starts_at is not null)
-  from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000022'),
-  '{"by":"system:duplicate-merge","ended":true,"kept":true}'::jsonb, 'the revoked grant keeps its history');
-select is((select count(*)::integer from private.entitlement_events where event = 'early-access.duplicate-revoked'
-  and user_id in ('61000000-0000-4000-8000-000000000022', '61000000-0000-4000-8000-000000000024')), 2,
-  'each revocation is audited against the grant''s owner');
-select is((select array_agg(duplicate_of::text order by email) from private.early_access_members where email in ('m5-one@example.test', 'm5-four@example.test')),
-  array['71000000-0000-4000-8000-000000000023', '71000000-0000-4000-8000-000000000022'], 'the members point at their new roots');
--- M6: exclude, include and clear-duplicate audit against the member's claimed account, which after an Auth email change
--- no longer carries the list email, so no account of the list email exists to lock. The claimed account is locked in the
--- account pass, before the member row, or the audit row would reach its auth row after the member-row lock.
-insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now() - interval '40 days',
-  '{"provider":"email","providers":["email"]}', '{}', now() - interval '40 days', now()
-from (values ('61000000-0000-4000-8000-000000000025', 'm6-five-moved@example.test'),
-  ('61000000-0000-4000-8000-000000000026', 'm6-six-moved@example.test'),
-  ('61000000-0000-4000-8000-000000000027', 'm6-seven-moved@example.test')) m6_users(id, email);
-insert into private.early_access_members (id, email, full_name, joined_at, source, batch, added_by, claimed_at, claimed_by)
-select ('71000000-0000-4000-8000-0000000000' || n)::uuid, 'm6-' || name || '@example.test', 'Moved Person',
-  now() - interval '40 days', 'import', 'm6', 'test', now() - interval '2 days', ('61000000-0000-4000-8000-0000000000' || n)::uuid
-from (values ('25', 'five'), ('26', 'six'), ('27', 'seven')) m6_members(n, name);
-select is((select array_agg(pg_temp.account_locked(id) order by id) from auth.users where email like 'm6-%@example.test'),
-  array[false, false, false], 'before the changes, none of the claimed accounts is locked here');
-set local role service_role;
-select is(public.admin_change_early_access_member('m6-five@example.test', 'exclude', null, 'ops', 'moved person'),
-  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":0}'::jsonb, 'exclude on the list email changes the member');
-select is(public.admin_change_early_access_member('m6-six@example.test', 'include', null, 'ops', 'moved person'),
-  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":0}'::jsonb,
-  'include on the list email changes the member; no account carries that email, so nothing is enrolled');
-select is(public.admin_change_early_access_member('m6-seven@example.test', 'clear-duplicate', null, 'ops', 'moved person'),
-  '{"state":"changed","enrollment":null,"duplicate_grants_revoked":0}'::jsonb, 'clear-duplicate on the list email changes the member');
-reset role;
-select is((select array_agg(pg_temp.account_locked(id) order by id) from auth.users where email like 'm6-%@example.test'),
-  array[true, true, true], 'each change locked the claimed account it audits against, although it carries another email');
-select is((select count(*)::integer from private.entitlement_events where event like 'operator.early-access-%'
-  and user_id in ('61000000-0000-4000-8000-000000000025', '61000000-0000-4000-8000-000000000026', '61000000-0000-4000-8000-000000000027')), 3,
-  'each change is audited against the claimed account');
 -- Expiry: the month ends on its own date and is never renewed.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access';
@@ -660,10 +594,10 @@ set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","r
 select is((select e->'trial'->>'status' from public.get_my_entitlement() e), 'not-offered', 'and the summary says so');
 reset role;
 update private.entitlement_policy set trial_after_early_access = false;
--- Use made during Early Access never draws down a trial's fixed allowance. G started a trial, then got Early Access.
+-- Use made during Early Access never draws down a trial's fixed allowance. G started a trial, then claimed the month.
 set local role service_role;
-select is(public.admin_add_early_access_member('ent-g@example.test', 'G Member', null, now() - interval '40 days',
-  'manual', 'whatsapp', 'ops')->>'enrollment', 'granted', 'G, mid-trial, is enrolled in Early Access');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000008', '62000000-0000-4000-8000-000000000008', 'ent-g@example.test')->>'state',
+  'claimed', 'G, mid-trial, claims Early Access');
 reset role;
 update public.entitlement_grants set starts_at = now() - interval '3 days', ends_at = now() + interval '4 days'
   where user_id = '61000000-0000-4000-8000-000000000008' and source = 'trial';
@@ -767,86 +701,20 @@ delete from auth.users where id = '61000000-0000-4000-8000-000000000012';
 select is((select count(*)::integer from public.ai_usage_events where user_id = '61000000-0000-4000-8000-000000000012')
   + (select count(*)::integer from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000012'), 0, 'account deletion removes the history');
 
--- 7d. Merging duplicate identities keeps one Early Access month (M2) ------------------------------------------------------
--- K and L are imported as different people and both enrolled; K enrolled first. They turn out to be one student.
-insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data,
-  raw_user_meta_data, created_at, updated_at)
-select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now(),
-  '{"provider":"email","providers":["email"]}', '{}', now(), now()
-from (values ('61000000-0000-4000-8000-000000000013', 'ent-k@example.test'), ('61000000-0000-4000-8000-000000000014', 'ent-l@example.test')) people(id, email);
-set local role service_role;
-select is(public.admin_add_early_access_member('ent-k@example.test', 'Kemi A', null, now() - interval '40 days', 'import',
-  'google-form', 'ops')->>'enrollment', 'granted', 'K is enrolled');
-reset role;
-update public.entitlement_grants set starts_at = now() - interval '3 days', ends_at = now() - interval '3 days' + interval '1 month'
-  where user_id = '61000000-0000-4000-8000-000000000013' and source = 'early_access';
-set local role service_role;
-select is(public.admin_add_early_access_member('ent-l@example.test', 'K. Adebayo', null, now() - interval '35 days', 'import',
-  'whatsapp', 'ops')->>'enrollment', 'granted', 'L, not yet known to be K, is enrolled too');
-reset role;
-insert into public.ai_usage_events (user_id, feature, state, reserved_at, settled_at, funding_source, funding_grant_id)
-  select '61000000-0000-4000-8000-000000000014', 'upload_practice', 'consumed', now(), now(), 'early_access', (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000014' and source = 'early_access') from generate_series(1, 2);
-insert into outcome select 'l-grant', jsonb_build_object('id', id) from public.entitlement_grants
-  where user_id = '61000000-0000-4000-8000-000000000014' and source = 'early_access';
-insert into outcome select 'k-grant-before-merge', to_jsonb(g) from public.entitlement_grants g where user_id = '61000000-0000-4000-8000-000000000013' and source = 'early_access';
-set local role service_role;
-select is(public.admin_change_early_access_member('ent-l@example.test', 'mark-duplicate', 'ent-k@example.test', 'ops',
-  'same student, two emails')->>'duplicate_grants_revoked', '1', 'the merge ends exactly one duplicate grant');
-reset role;
-select is((select count(*)::integer from public.entitlement_grants where source = 'early_access' and revoked_at is null and user_id in ('61000000-0000-4000-8000-000000000013', '61000000-0000-4000-8000-000000000014')), 1, 'one identity group, one active Early Access month');
-select is((select revoked_by from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000014' and source = 'early_access'),
-  'system:duplicate-merge', 'the later grant is the duplicate; it is revoked, not deleted');
-select is((select to_jsonb(g) from public.entitlement_grants g where user_id = '61000000-0000-4000-8000-000000000013' and source = 'early_access'),
-  (select result from outcome where step = 'k-grant-before-merge'), 'the canonical (earliest) grant is not restarted or extended');
-select ok(exists (select 1 from private.entitlement_events where event = 'early-access.duplicate-revoked' and user_id = '61000000-0000-4000-8000-000000000014'
-  and (detail->>'canonical_grant_id')::uuid = (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000013' and source = 'early_access')), 'the revocation is audited with the canonical grant');
-select is((select count(*)::integer from public.ai_usage_events where funding_grant_id = (select id from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000014' and source = 'early_access')), 2,
-  'AI the duplicate grant funded stays attributed to it');
-select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000014', array['trial', 'early_access'])->>'state', 'not-entitled',
-  'the duplicate grant admits no further AI, and nothing of its history moves to another entitlement');
-select is(private.reconcile_early_access('61000000-0000-4000-8000-000000000014', 'test')->>'status', 'ended', 'reconciliation never grants L again');
-set local role service_role;
-select is(public.admin_change_grant((select (result->>'id')::uuid from outcome where step = 'l-grant'), 'restore', null, null, 'ops', 'disputed')->>'state', 'duplicate-identity',
-  'an operator cannot restore a second month while the identities are merged');
-select is(public.admin_change_early_access_member('ent-l@example.test', 'clear-duplicate', null, 'ops',
-  'different students after all')->>'state', 'changed', 'the operator separates them again');
-reset role;
-select ok((select revoked_at is not null from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000014' and source = 'early_access'),
-  'separating does not silently restore the revoked month');
-set local role service_role;
-select is(public.admin_change_grant((select (result->>'id')::uuid from outcome where step = 'l-grant'), 'restore', null, null, 'ops', 'confirmed different students')->>'state', 'changed',
-  'once separate, an explicit restore is allowed');
-reset role;
-select is((select count(*)::integer from public.entitlement_grants where source = 'early_access' and revoked_at is null and user_id in ('61000000-0000-4000-8000-000000000013', '61000000-0000-4000-8000-000000000014')), 2, 'two separate people, two months');
-set local role service_role;
-select is(public.admin_change_early_access_member('ent-l@example.test', 'mark-duplicate', 'ent-k@example.test', 'ops',
-  'merged again')->>'duplicate_grants_revoked', '1', 'merging again resolves again');
-reset role;
-select is((select string_agg(user_id::text || ':' || (revoked_at is null)::text, ',' order by user_id) from public.entitlement_grants
-  where source = 'early_access' and user_id in ('61000000-0000-4000-8000-000000000013', '61000000-0000-4000-8000-000000000014')), '61000000-0000-4000-8000-000000000013:true,61000000-0000-4000-8000-000000000014:false',
-  'the earliest grant (K) stays canonical');
--- One lifetime month: an ended canonical grant still counts.
-update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
-  where user_id = '61000000-0000-4000-8000-000000000013' and source = 'early_access';
-set local role service_role;
-select is(public.admin_change_grant((select (result->>'id')::uuid from outcome where step = 'l-grant'), 'restore', null, null, 'ops', 'after K ended')->>'state', 'duplicate-identity',
-  'after the identity''s month has ended, a duplicate cannot be restored to start another');
-reset role;
-
 -- 8. Account deletion ---------------------------------------------------------------------------------------------------
 insert into private.account_deletion_jobs (user_id, requested_at, deadline, retry_at)
   values ('61000000-0000-4000-8000-000000000003', now(), now() + interval '720 hours', now() + interval '720 hours');
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000003', pg_temp.claim('ent-c@example.test'))->>'state', 'signed-out',
   'a deletion-scheduled account cannot start a pass');
-select is(public.admin_add_early_access_member('ent-c@example.test', 'C Member', null, now() - interval '40 days',
-  'import', 'google-form', 'ops')->>'enrollment', 'account-restricted', 'nor be enrolled in Early Access');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000003', '62000000-0000-4000-8000-000000000003', 'ent-c@example.test')->>'state',
+  'signed-out', 'nor claim an Early Access month');
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000003","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000003"}';
 select throws_ok($$ select public.get_my_entitlement() $$, '42501', null, 'a scheduled account has no plan to read');
 reset role;
--- Purging A and D (as the deletion worker does) keeps the email claim and the Early Access place used.
+-- Purging A and D (as the deletion worker does) keeps the pass claim and the month's address record.
 delete from auth.users where id in ('61000000-0000-4000-8000-000000000001', '61000000-0000-4000-8000-000000000004');
 select ok(not exists (select 1 from public.entitlement_grants where user_id in ('61000000-0000-4000-8000-000000000001',
   '61000000-0000-4000-8000-000000000004')), 'grants go with the account');
@@ -854,8 +722,8 @@ select is(private.ai_allowance_admission('61000000-0000-4000-8000-000000000001',
   'not-entitled', 'and so does every AI allowance');
 select is((select user_id from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
   null, 'the pass claim survives without the account');
-select is((select (claimed_by is null and claimed_at is not null) from private.early_access_members
-  where email = 'early-d@example.test'), true, 'the list place stays claimed without the account');
+select is((select user_id from private.early_access_claims where claim_hash = pg_temp.claim('early-d@example.test') -> 0 ->> 'hash'),
+  null, 'the month''s address record survives without the account');
 select ok(exists (select 1 from private.entitlement_events where event = 'discovery.activated' and user_id is null),
   'audit rows stay, de-identified');
 -- A registers again with the same address (in another case), and D does too.
@@ -872,23 +740,28 @@ update public.profiles set first_name='Ada',department_id='10000000-0000-4000-80
   academic_level_id='20000000-0000-4000-8000-000000000002',academic_period_id='30000000-0000-4000-8000-000000000001'
   where id::text like '61000000-%' and selection_confirmed_at is null;
 
+-- While the claim is open the same address cannot claim a second month on its new account.
 set local role service_role;
-select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test')),
-  '{"state":"trial-not-offered"}'::jsonb,
-  'deleting and re-registering the same address does not buy a second pass: A''s list place was claimed (Early Access ever)');
+select is(pg_temp.month('61000000-0000-4000-8000-000000000015', '62000000-0000-4000-8000-000000000015', 'early-d@example.test'),
+  '{"state":"not-available"}'::jsonb, 're-registering does not free the Early Access month for the same confirmed email');
+reset role;
+select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000015'),
+  'nothing is granted');
+-- Once the claim has closed, neither does it buy a second pass: A's address used both its pass and its month.
+update private.entitlement_policy set actual_launch_at = now() - interval '40 days';
+set local role service_role;
+select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test'))->>'state',
+  'already-claimed', 'deleting and re-registering the same address does not buy a second pass');
 reset role;
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000010'),
-  'nothing is granted (the claim-refused audit of a never-Early-Access address is in discovery_pass.test.sql)');
-select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000015')
-  and private.early_access_status('61000000-0000-4000-8000-000000000015')->>'status' = 'unavailable',
-  'nor does re-registering free the Early Access month for the same confirmed email');
--- Retention: an expired claim no longer blocks by itself, but Early Access history still does; expired rows are purged.
--- (A never-Early-Access address starting again after expiry is covered in discovery_pass.test.sql.)
+  'nothing is granted (the claim-refused audit of an address that never had a month is in discovery_pass.test.sql)');
+-- Retention: an expired pass claim no longer blocks by itself, but the address's used month still does; expired rows
+-- are purged. (An address that never had a month starting again after expiry is covered in discovery_pass.test.sql.)
 update private.discovery_pass_claims set claimed_at = now() - interval '61 months', expires_at = now() - interval '1 month'
   where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash';
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test'))->>'state',
-  'trial-not-offered', 'once the claim has expired, A''s Early Access history still refuses the pass');
+  'already-claimed', 'once the pass claim has expired, the month A''s address used still refuses the pass');
 reset role;
 select is((select jsonb_build_object('user', user_id, 'expired', expires_at <= now())
     from private.discovery_pass_claims where claim_hash = pg_temp.claim('ent-a@example.test') -> 0 ->> 'hash'),
@@ -953,50 +826,6 @@ set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000006","r
 select ok((select count(*) from public.read_published_managed_content('40000000-0000-4000-8000-000000000002')) > 0,
   'operators preview every course without a grant');
 reset role;
-
--- 10. Sweep batches cannot be starved (M3-B) --------------------------------------------------------------------------
--- Three deletion-scheduled listed accounts joined first, so they used to fill a batch of two ahead of the eligible E2;
--- a post-launch joiner and an already-enrolled account used to keep "remaining" above zero forever.
-update private.entitlement_policy set actual_launch_at = now() - interval '1 day', early_access_enrollment_days = 30;
-set local role service_role;
-select is(public.admin_reconcile_early_access('ops', 'baseline before starvation probe', 500)->>'remaining', '0',
-  'baseline: nothing enrollable is left from earlier fixtures');
-reset role;
-insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-  raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-select '00000000-0000-0000-0000-000000000000', id::uuid, 'authenticated', 'authenticated', email, 'x', now(),
-  '{"provider":"email","providers":["email"]}', '{}', now(), now()
-from (values ('61000000-0000-4000-8000-0000000000a1', 'starve-x1@example.test'),
-  ('61000000-0000-4000-8000-0000000000a2', 'starve-x2@example.test'),
-  ('61000000-0000-4000-8000-0000000000a3', 'starve-x3@example.test'),
-  ('61000000-0000-4000-8000-0000000000a4', 'starve-late@example.test'),
-  ('61000000-0000-4000-8000-0000000000a5', 'starve-e2@example.test')) accounts(id, email);
-insert into private.account_deletion_jobs (user_id, requested_at, deadline, retry_at)
-  select id::uuid, now(), now() + interval '720 hours', now() + interval '720 hours'
-  from unnest(array['61000000-0000-4000-8000-0000000000a1', '61000000-0000-4000-8000-0000000000a2',
-    '61000000-0000-4000-8000-0000000000a3']) id;
-insert into private.early_access_members (email, full_name, joined_at, source, batch, added_by)
-  values ('starve-x1@example.test', 'X1', now() - interval '50 days', 'import', 'starve', 'test'),
-    ('starve-x2@example.test', 'X2', now() - interval '49 days', 'import', 'starve', 'test'),
-    ('starve-x3@example.test', 'X3', now() - interval '48 days', 'import', 'starve', 'test'),
-    ('starve-late@example.test', 'Late', now(), 'manual', 'starve', 'test'),
-    ('starve-e2@example.test', 'E2', now() - interval '10 days', 'import', 'starve', 'test');
-select is((select count(*)::integer from private.early_access_sweep_candidates()), 1,
-  'only the eligible account is a sweep candidate');
-set local role service_role;
-select is(public.admin_reconcile_early_access('ops', 'starvation probe', 2) - 'state',
-  '{"granted": 1, "remaining": 0, "deferred": 0}'::jsonb,
-  'a batch of two enrolls E2 past three deletion-scheduled accounts and reports nothing left');
-select is(public.admin_reconcile_early_access('ops', 'starvation probe again', 2) - 'state',
-  '{"granted": 0, "remaining": 0, "deferred": 0}'::jsonb, 'the next sweep finds nothing to do');
-reset role;
-select is((select count(*)::integer from public.entitlement_grants where source = 'early_access'
-  and user_id in ('61000000-0000-4000-8000-0000000000a1', '61000000-0000-4000-8000-0000000000a2',
-    '61000000-0000-4000-8000-0000000000a3', '61000000-0000-4000-8000-0000000000a4')), 0,
-  'deletion-scheduled and post-launch accounts are still never enrolled');
-update private.entitlement_policy set actual_launch_at = now() - interval '31 days';
-select is((select count(*)::integer from private.early_access_sweep_candidates()), 0,
-  'after the window closes nothing counts as remaining');
 
 select * from finish();
 rollback;

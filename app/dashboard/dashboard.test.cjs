@@ -1,4 +1,5 @@
-// app/dashboard/dashboard.test.cjs — Personalized course-file navigation and unchanged private Continue behavior.
+// app/dashboard/dashboard.test.cjs — Personalized course-file navigation, unchanged private Continue behavior, and the
+// free month: one card at the top while this student can claim it, then one line with the day it ends.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -8,6 +9,18 @@ const ts = require('typescript')
 const { renderToStaticMarkup } = require('react-dom/server')
 
 const NOW = '2026-10-27T09:00:00.000Z'
+const root = path.join(__dirname, '../..')
+const { entitlementSummarySchema } = require(path.join(root, 'lib/entitlements/contract.ts'))
+// The plan as the server read it, at the database's clock NOW, a day after launch, for a student with no plan.
+// `free_month` is the database's answer to "can this student claim now", with the instant the month would end.
+const planRead = ({ free_month = null, ...overrides } = {}) => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
+  now: NOW, planned_launch_at: '2026-10-25T23:00:00+00:00', actual_launch_at: '2026-10-26T08:00:00+00:00',
+  trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
+  trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
+  discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-05T08:00:00+00:00' },
+  ...overrides }), free_month } })
+const hoursFromNow = hours => new Date(Date.parse(NOW) + hours * 3_600_000).toISOString()
 
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = { ...require.cache }
@@ -19,13 +32,29 @@ async function fixture(run) {
     } }, profileReads: 0, courseReads: 0, current: { status: 'ok',
       selection: { departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period' },
       courses: [], cbtBankSizes: new Map() },
-    progressReads: [], progress: { status: 'ok', now: NOW, open: null, latest: null, courses: new Map() } }
+    progressReads: [], progress: { status: 'ok', now: NOW, open: null, latest: null, courses: new Map() },
+    // What the plan read and the profile revision read answer, and what the page asked the plan read for.
+    plan: { status: 'unavailable' }, revision: 4, planReads: [] }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
     }).outputText, file)
     Module._load = function(name, ...args) {
-      if (name === 'next/navigation') return { redirect: target => { throw Error('redirect:' + target) } }
+      if (name === 'next/navigation') return { redirect: target => { throw Error('redirect:' + target) },
+        // The free month button asks the router to read the page again; these renders mount no router.
+        useRouter: () => ({ refresh() {} }) }
+      if (name === '@/lib/entitlements/server') return {
+        ...load.call(this, path.join(root, 'lib/entitlements/server.ts'), ...args),
+        readEntitlementForVerifiedStudent: async (client, options) => {
+          assert.equal(client, state.client); state.planReads.push(options); return state.plan
+        },
+      }
+      if (name === '@/lib/profile/course-selection') return {
+        ...load.call(this, path.join(root, 'lib/profile/course-selection.ts'), ...args),
+        readProfileRevision: async (client, owner) => {
+          assert.equal(client, state.client); assert.equal(owner, state.context.user.id); return state.revision
+        },
+      }
       if (name === '@/lib/auth/config') return { isStudentAuthEnabled: () => state.enabled }
       if (name === '@/lib/ai-practice/config') return { isAiPracticeAvailable: () => state.aiAvailable }
       if (name === '@/lib/supabase/server') return { createClient: async () => state.client }
@@ -112,13 +141,75 @@ test('academic identity owns a full-width band outside the bounded course/action
   const inner = band.props.children[1]
   assert.ok(inner.props.className.split(' ').includes('student-workspace'), 'only the inner academic content is constrained')
   assert.equal(shell.props.workspaceClassName, 'dashboard-workspace')
-  assert.equal(shell.props.children[0].type.name, 'AccessNotice', 'the plan notice leads the workspace')
-  assert.ok(!shell.props.children[1], 'no Continue card before the student has started')
-  assert.equal(shell.props.children[2].type.name, 'PrimaryCards')
-  assert.equal(shell.props.children[3].type.name, 'SupportingActions')
+  const [offer, month, notice, next, primary, supporting] = shell.props.children
+  assert.deepEqual([offer, month], [false, false], 'no free month card or line unless the database gives one')
+  assert.equal(notice.type.name, 'AccessNotice', 'the plan notice leads the workspace')
+  assert.ok(!next, 'no Continue card before the student has started')
+  assert.equal(primary.type.name, 'PrimaryCards')
+  assert.equal(supporting.type.name, 'SupportingActions')
   const html = await f.html()
   assert.match(html, /class="student-page-root" data-student-app="true"><header class="dashboard-identity/)
   assert.match(html, /class="student-workspace student-page-workspace dashboard-workspace"/)
+}))
+
+const MONTH = { endsAt: '2026-11-26T08:30:00+00:00', closesAt: '2026-11-05T08:00:00+00:00' }
+const words = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+test('a student who can claim the free month sees one card at the top of the Dashboard: title, one line and the button', async () => fixture(async f => {
+  f.state.plan = planRead({ free_month: MONTH })
+  f.state.revision = 7
+  f.state.current.courses = [mappedCourse(0, 'ready')]
+  const tree = await f.page(), shell = tree.props.children[1]
+  const [offer, month] = shell.props.children
+  assert.equal(offer.type.name, 'FreeMonthCard')
+  // closesInMs: 5 Nov 08:00 less the database's now, 27 Oct 09:00.
+  assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '26 November',
+    closesInMs: (8 * 24 + 23) * 3_600_000 },
+    'bound to the page token, the profile revision the page read and the end day the database gave')
+  assert.equal(month, false)
+  assert.deepEqual(f.state.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')
+  const html = await f.html()
+  const card = html.match(/<section aria-labelledby="free-month-title" class="dashboard-offer student-enter" data-free-month="offer">[\s\S]*?<\/section>/)[0]
+  assert.equal(words(card), 'Your free month Full access to your courses and Campus Bot for one month. Claim your free month')
+  assert.equal((card.match(/<button\b/g) || []).length, 1)
+  assert.ok(html.indexOf('data-free-month="offer"') < html.indexOf('my-courses-title'), 'above every other card')
+  assert.equal((html.match(/data-free-month=/g) || []).length, 1, 'offered once: no banner, line or second card')
+  assert.doesNotMatch(html, /Early Access|Free pass|Get your free pass|26 November|data-access-notice/,
+    'no pass beside it, and the end date is in the confirmation')
+}))
+
+test('no free month card when the database offers none, the revision cannot be read, or the plan cannot be read', async () => fixture(async f => {
+  const offered = async () => (await f.page()).props.children[1].props.children[0]
+  f.state.plan = planRead()
+  assert.equal(await offered(), false)
+  f.state.plan = planRead({ free_month: MONTH })
+  f.state.revision = null
+  assert.equal(await offered(), false, 'a month must be bound to the courses the student saw (D7)')
+  f.state.revision = 7
+  f.state.plan = { status: 'unavailable' }
+  assert.equal(await offered(), false)
+  assert.doesNotMatch(await f.html(), /free month|data-free-month/i)
+}))
+
+test('a running free month is one line, "Free month · Ends {day}"; in its last hours the notice gives the time instead', async () => fixture(async f => {
+  const running = endsAt => planRead({ tier: 'full', access: { source: 'early_access', ends_at: endsAt },
+    trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
+    early_access: { status: 'active', starts_at: hoursFromNow(-24), ends_at: endsAt, enrollment_closes_at: null } })
+  f.state.plan = running(hoursFromNow(24 * 20))
+  const html = await f.html()
+  assert.match(html, /<p class="dashboard-free-month student-enter" data-free-month="active">Free month · Ends 16 November<\/p>/)
+  assert.equal((html.match(/free month/gi) || []).length, 1, 'said once')
+  assert.doesNotMatch(html, /data-free-month="offer"|data-access-notice|Early Access|Claim your free month/)
+  // Inside the notice window (12 hours, by the database's clock) the notice says when, to the minute, and the line goes.
+  f.state.plan = running(hoursFromNow(11))
+  const ending = await f.html()
+  assert.doesNotMatch(ending, /data-free-month="active"/)
+  assert.match(ending, /data-access-notice="access-ending"/)
+  assert.match(words(ending), /Your free month ends Tue, 27 Oct 2026, 21:00\. After that, only GST courses stay free\. View your plan/)
+  // Once it has ended, the Dashboard says nothing about it (Plan & Access does, once).
+  f.state.plan = planRead({ trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
+    early_access: { status: 'ended', starts_at: hoursFromNow(-24 * 31), ends_at: hoursFromNow(-1), enrollment_closes_at: null } })
+  assert.doesNotMatch(await f.html(), /free month|data-free-month|data-access-notice/i)
 }))
 
 test('Courses and material retains personal Bookmarks first and quiet icon-led help/account destinations', async () => fixture(async f => {

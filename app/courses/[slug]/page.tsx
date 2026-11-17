@@ -1,6 +1,7 @@
 // app/courses/[slug]/page.tsx — Account-gated Course Detail study hub composed from central one-course truth.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { cache } from 'react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { DiscoveryOffer } from '@/components/student/DiscoveryOffer'
@@ -18,8 +19,10 @@ import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
 import { discoveryOffered } from '@/lib/entitlements/contract'
-import { trialWording } from '@/lib/entitlements/presentation'
+import { freeMonthClaim, trialWording } from '@/lib/entitlements/presentation'
+import type { FreeMonthClaim } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
+import { readProfileRevision } from '@/lib/profile/course-selection'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
@@ -30,6 +33,7 @@ import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
 import type { PracticeTopicRow } from '@/lib/practice/topics'
 import type { StudySectionId } from './sections'
+import type { Metadata } from 'next'
 import type { ReactElement } from 'react'
 
 type PageProps = { params: Promise<{ slug: string }> }
@@ -40,6 +44,33 @@ export const dynamic = 'force-dynamic'
 
 // Legacy local bookmark aliases only; course identity never comes from this list.
 const BOOKMARK_CATALOG = courses.map(({ slug, code, contentKey }) => ({ slug, code, contentKey }))
+
+/**
+ * The one verified course read of a request, shared by the browser tab's title and the page. Course identity is read
+ * only for a live student session, here as everywhere.
+ */
+const readCourse = cache(async (slug: string) => {
+  const client = await createClient()
+  const context = await getStudentSessionContext(undefined, client)
+  const result: StudentCourseLookupResult = context === null ? { status: 'signed-out' }
+    : await getStudentCourseBySlugForVerifiedStudent(client, slug)
+  return { client, context, result }
+})
+
+/** The tab names the course as the page does: the student's own course code and title, never an unverified one. */
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params
+  const robots = { index: false, follow: false }
+  try {
+    const { result } = await readCourse(slug)
+    if (result.status === 'ok') return { title: `${result.course.code} ${result.course.title} | CampusIntell`, robots }
+    if (result.status === 'repository-only') {
+      const { code, title } = result.course.repository.route.course
+      return { title: `${code} ${title} | CampusIntell`, robots }
+    }
+  } catch { /* The page says what went wrong; the tab keeps the site's own title. */ }
+  return { robots }
+}
 
 /** Cross the student account boundary before any course content is read. */
 export default async function CourseDetailPage({ params }: PageProps): Promise<ReactElement> {
@@ -58,19 +89,23 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
   // Mentioned only when this account can still start a pass: the database offers one (a database from before the
   // pass offers none) and the account has not had its one trial.
   let passHours: number | null = null
+  // The free month, only when the database says this student can claim it now (and never without the profile revision
+  // the month would be bound to). Read only for a locked course on the student's own list.
+  let freeMonth: FreeMonthClaim | null = null
   // The copy switch for the lock notice (plans_on_sale), read only for a locked course.
   let plansOnSale = false
   // The course's practice topics with this student's progress. A topic read that fails leaves Exam mode only, never the
   // page unavailable.
   let topics: PracticeTopicRow[] = []
   try {
-    const client = await createClient()
-    const context = await getStudentSessionContext(undefined, client)
-    result = context === null ? { status: 'signed-out' } : await getStudentCourseBySlugForVerifiedStudent(client, slug)
+    const { client, context, result: read } = await readCourse(slug)
+    result = read
     if (result.status === 'ok' && result.course.content.state === 'locked' && result.course.content.reason === undefined && hasActiveCourseOffering(result.course)) {
-      const read = await readEntitlementForVerifiedStudent(client)
+      const [read, profileRevision] = await Promise.all([readEntitlementForVerifiedStudent(client, { freeMonth: true }),
+        context === null ? null : readProfileRevision(client, context.user.id)])
       const entitlement = read.status === 'ok' ? read.entitlement : null
       passHours = entitlement !== null && trialWording(entitlement).passAvailable ? entitlement.trial_hours : null
+      freeMonth = entitlement === null ? null : freeMonthClaim(entitlement, continuityToken, profileRevision)
       pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
         ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
     }
@@ -84,7 +119,7 @@ async function CourseDetail({ slug, continuityToken }: { slug: string; continuit
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'ok' || result.status === 'repository-only') {
     return <CourseStudyHub result={result} pass={pass} passHours={passHours} topics={topics}
-      continuityToken={continuityToken} plansOnSale={plansOnSale} />
+      continuityToken={continuityToken} plansOnSale={plansOnSale} freeMonth={freeMonth} />
   }
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
@@ -109,9 +144,9 @@ function RequestMaterialLink({ href, prominent = false }: { href: string; promin
 }
 
 /** Compose institutional or repository identity, availability and the study families from central truth. */
-function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plansOnSale }: {
+function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plansOnSale, freeMonth }: {
   result: ResolvedCourse; pass: DiscoveryPass | null; passHours: number | null; topics: ReadonlyArray<PracticeTopicRow>
-  continuityToken: string; plansOnSale: boolean
+  continuityToken: string; plansOnSale: boolean; freeMonth: FreeMonthClaim | null
 }): ReactElement {
   const { learning, practice } = result
   const { repository, content } = result.course
@@ -139,11 +174,10 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   </>}>
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
     <div className="student-detail-reading">
-      {!institutional && content.state !== 'not-available' && <Notice tone="info" title={REPOSITORY_COURSE_LABEL}>
-          Check it against your course outline.
-        </Notice>}
+      {!institutional && content.state !== 'not-available'
+        && <Notice tone="info" title="Check this against your course outline." />}
       {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
-        plansOnSale={plansOnSale} has={buildTimeStudy(route.slug)} />
+        plansOnSale={plansOnSale} has={buildTimeStudy(route.slug)} freeMonth={scopeNotice ? null : freeMonth} />
         : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
@@ -151,9 +185,7 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
       </>} />}
       {content.state === 'not-available' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>}
       {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
-        action={<RequestMaterialLink href={materialsHref} prominent />}>
-        Notes, CBT practice and theory questions are not available for this course. You can request study material below.
-      </Notice>}
+        action={<RequestMaterialLink href={materialsHref} prominent />} />}
       {sections.includes('notes') && learning && <NotesCard notes={learning.notes} href={`${route.href}/notes`}
         number={number('notes')} />}
       {sections.includes('cbtPractice') && practice && <PracticeCard practice={practice} topics={topics}

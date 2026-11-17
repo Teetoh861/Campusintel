@@ -1,5 +1,6 @@
-// app/api/entitlements/route.test.cjs — The activation command crosses the real bounded parser, carries the trusted
-// requester address, stays private and maps every service outcome to an explicit HTTP status.
+// app/api/entitlements/route.test.cjs — The two commands (start a free pass, claim a free month) cross the real bounded
+// parser, carry the trusted requester address, stay private and map every service outcome to an explicit HTTP status.
+// Nothing in a command's body or headers is a time: the claim's window and dates are the database's.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const Module = require('node:module')
@@ -69,7 +70,10 @@ test('every outcome maps to an explicit private status', async () => fixture(asy
     [{ status: 'early-access-active', availableFrom: 'a' }, 409], [{ status: 'already-claimed' }, 409],
     [{ status: 'signed-out' }, 401], [{ status: 'session-changed' }, 409], [{ status: 'invalid-request' }, 400],
     [{ status: 'unavailable' }, 503], [{ status: 'capacity' }, 503], [{ status: 'rate-limited' }, 429],
-    [{ status: 'trial-not-offered' }, 403],
+    [{ status: 'trial-not-offered' }, 403], [{ status: 'selection-changed' }, 409],
+    // The free month: started, the claim closed meanwhile, or not available on this account.
+    [{ status: 'month-started', endsAt: '2026-12-16T13:30:00+00:00' }, 200], [{ status: 'offer-ended' }, 409],
+    [{ status: 'offer-unavailable' }, 403],
   ]) {
     f.state.result = result
     const response = await f.post()
@@ -77,4 +81,14 @@ test('every outcome maps to an explicit private status', async () => fixture(asy
     assert.deepEqual(await response.json(), result)
     assert.equal(response.headers.get('cache-control'), 'private, no-store')
   }
+}))
+
+test('the free month claim reaches the service as sent: the action and the revision, with the page token', async () => fixture(async f => {
+  const CLAIM = { action: 'claim-free-month', profileRevision: 7 }
+  f.state.result = { status: 'month-started', endsAt: '2026-12-16T13:30:00+00:00' }
+  // A device that sends its own idea of the time is not listened to: no header reaches the service at all.
+  const response = await f.post(CLAIM, { Date: 'Tue, 01 Dec 2026 10:00:00 GMT', 'X-Client-Time': '2026-11-17T00:00:00Z' })
+  assert.equal(response.status, 200)
+  assert.deepEqual(f.calls, [{ input: CLAIM, token: 'page-token', address: 'local' }])
+  assert.deepEqual(Object.keys(f.calls[0]).sort(), ['address', 'input', 'token'], 'the service is given nothing else')
 }))

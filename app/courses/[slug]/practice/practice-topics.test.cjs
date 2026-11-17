@@ -130,7 +130,7 @@ test('a locked course shows the one unlock notice; signed-out, unknown and unrea
   f.state.result = institutional({ state: 'locked' }, null)
   const locked = await f.html()
   assert.match(locked, /<h1[^>]*>Practise by topic<\/h1>/)
-  assert.match(text(locked), /Included with full access\. Notes · Practice See how to unlock Back to course$/)
+  assert.match(text(locked), /Included with a plan\. Notes · Practice See how to unlock Back to course$/)
   assert.equal((locked.match(/class="student-notice"/g) || []).length, 1)
   assert.doesNotMatch(locked, /student-topic-list|Configured first/)
   assert.equal(f.calls.some(call => Array.isArray(call) && call[0] === 'topics'), false, 'no topic is read for a locked course')

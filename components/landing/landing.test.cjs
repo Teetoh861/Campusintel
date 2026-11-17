@@ -145,7 +145,7 @@ test('the page runs in the agreed order and the retired sections are gone', asyn
   // What you get is four cards; the showcase is two rows; the FAQ has three questions.
   const features = /<section id="features"[\s\S]*?<\/section>/.exec(html)[0]
   assert.deepEqual([...features.matchAll(/<h3>([^<]*)<\/h3>/g)].map(match => match[1]),
-    ['Verified past questions', 'Study guides by topic', 'Exam mode', 'Campus Bot practice from your notes'])
+    ['Verified past questions', 'Notes by topic', 'Exam mode', 'Campus Bot practice from your notes'])
   // The Campus Bot card is its name alone; the other three add one sentence.
   assert.deepEqual([...features.matchAll(/<li class="fcard[^"]*">([\s\S]*?)<\/li>/g)].map(card => count(card[1], /<p>/g)), [1, 1, 1, 0])
   const { showcase, faq } = await content()
@@ -168,46 +168,71 @@ test('landing copy claims only what the product does', async () => {
   noMatch(text, /answers? (?:is|are) checked|checked before/i)
   // No promise of every course or level.
   noMatch(text, /every course|every level|both semesters|100L|300L|100 to 300|exact courses/i)
-  // The free pass is named once, in general terms, for new accounts; GST free is said once.
+  // The free pass is named once, in general terms; GST free is said once.
   assert.equal(count(text, /free pass/gi), 1)
-  match(text, /a new account can start a free pass/)
+  match(text, /a free pass lets you try your department courses/)
   noMatch(text, /3 days|three days|\b\d+ days\b|72 hours/i)
   assert.equal(count(text, /GST courses are free/g), 1)
-  assert.equal(count(text, /\bfree for\b/gi), 1, 'GST free is not repeated in other words')
-  // Theory is practising theory questions with suggested answers: nothing about comparing, marking or scoring.
+  assert.equal(count(text, /\bfree for\b/gi), 0, 'GST free is not repeated in other words')
+  // Theory: the student writes an answer and compares it with the suggested answer themselves. Nothing says the
+  // product marks, scores or compares it for them.
   assert.ok(text.includes('Theory questions with suggested answers.'))
-  assert.ok(text.includes('Practise theory questions and see a suggested answer for each one.'))
-  noMatch(text, /compar|key points|mark yourself|self-mark|marking guide|points you made|theory marking|score yourself|rewrite/i)
+  assert.ok(text.includes('Write your answer, then compare it with the suggested answer.'))
+  noMatch(text, /\bcompares\b|we compare|key points|mark yourself|self-mark|marking guide|points you made|theory marking|score yourself|rewrite/i)
   // Nothing tells the visitor how to use the page.
   noMatch(text, /\btap\b|\bclick\b|flag button|pick an answer|scroll/i)
   // Rule 2 of docs/student-copy.md, on the rendered page.
   noMatch(text, /\bAI\b|model answer|self-assess|unverified|not verified|\bgraded\b/i)
   for (const phrase of ['Practice questions from your own notes.', 'PDF, Word and text files',
     'For a course with no study materials yet, Campus Bot builds practice questions from the notes you upload.',
-    'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.']) {
+    'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.']) {
     assert.ok(text.includes(phrase), phrase)
   }
   // Campus Bot practice is explained once, in the showcase: its card only names it and no FAQ answer repeats it.
   assert.equal(count(text, /Campus Bot builds/g), 1)
   assert.equal(count(text, /no study materials yet|no material yet/g), 1)
-  const { faq, footer, hero } = await content()
+  const { faq, footer } = await content()
   assert.deepEqual(faq.items.filter(item => /Campus Bot|your notes|upload/.test(item.question + item.answer)), [])
-  // The footer describes the product in the hero's words, for the same students.
-  assert.equal(footer.text, hero.lead)
-  assert.equal(count(text, /for UNILAG Management Sciences students\./g), 2)
+  // The hero says what the product is; the footer does not say it again.
+  assert.equal('text' in footer, false)
+  assert.equal(count(text, /for UNILAG Management Sciences students\./g), 1)
   noMatch(text, /for UNILAG students/)
+})
+
+test('the landing reads as decided on 16 November: one name for each thing, and nothing said twice', async () => {
+  const html = await renderHome({ env: CONFIGURED })
+  const text = visibleText(html)
+  const { brand, tryQuestion, showcase, faq } = await content()
+  // One name for notes, and the line the sample card already shows is not said above it.
+  noMatch(text, /study guide|These come straight from/i)
+  assert.ok(text.includes('Notes by topic'))
+  // The two showcase rows are labelled by what they are; the theory row says what the student does.
+  assert.deepEqual(showcase.map(row => row.eyebrow), ['Campus Bot', 'Theory'])
+  assert.equal(showcase[0].shots[0].alt, 'Uploading notes to Practise from your notes')
+  // The FAQ answers, as decided.
+  assert.deepEqual(faq.items.map(item => item.answer).filter(answer => /UNILAG\.$|free pass/.test(answer)), [
+    `Courses for the ${landingFigures().departments} departments of the Faculty of Management Sciences at UNILAG.`,
+    'Yes. GST courses are free, and a free pass lets you try your department courses.'])
+  // Exam mode in the sample says once that results come at the end; a saved answer says only that it was saved.
+  assert.deepEqual([tryQuestion.modeExam, tryQuestion.savedExam, tryQuestion.bubble.saved],
+    ['Your results come at the end.', 'Answer saved.', 'Saved.'])
+  assert.equal(tryQuestion.bubble.wrong, 'Not quite. Here’s why.', 'curly apostrophe')
+  assert.deepEqual([tryQuestion.cta.label, tryQuestion.again], ['Start for free', 'Practise again'])
+  // The tagline is finished, in the footer.
+  assert.equal(brand.tagline, 'Study hard. Study smart.')
+  match(footerOf(html), /<span>Study hard\. Study smart\.<\/span>/)
+  noMatch(text, /Study Hard|Smart\.\.\./)
 })
 
 test('the page title and description say CampusIntell and describe the product', async () => {
   const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8')
   const metadata = layout.slice(layout.indexOf('const SITE_TITLE'), layout.indexOf('export const viewport'))
   // The site's own title and description, shared with every page: the description is the hero's sentence, with the
-  // app's one name for notes. The hero itself (lib/landing/content.ts) still says "study guides" until it takes the
-  // same word; this holds before and after that change.
+  // app's one name for notes.
   match(metadata, /const SITE_TITLE = 'CampusIntell'\n/)
-  match(metadata, /Verified past questions, notes and timed exam practice for UNILAG Management Sciences students\./)
-  assert.ok(metadata.includes(`'${(await content()).hero.lead.replace('study guides', 'notes')}'`),
-    'the description is the hero lead, naming notes as the app does')
+  const lead = (await content()).hero.lead
+  assert.equal(lead, 'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.')
+  assert.ok(metadata.includes(`'${lead}'`), 'the description is the hero lead')
   match(metadata, /siteName: 'CampusIntell'/)
   noMatch(metadata, /CampusIntel(?!l)|inside track|Academic [Ii]ntelligence|decoded exam patterns/)
   assert.equal(count(metadata, /title: SITE_TITLE/g), 3, 'page, Open Graph and X share one title')
@@ -242,7 +267,9 @@ test('calls to action go to login and register; nothing links to the course libr
     assert.ok(hrefs.every(href => href === '/register'), label)
   }
   assert.deepEqual(hrefsFor(html, 'Start for free'), ['/register', '/register'], 'hero and closing call to action')
-  assert.deepEqual(hrefsFor(html, 'Try a real question'), ['#try'])
+  // One name for the way to the sample question, in the header, the hero and the footer.
+  assert.deepEqual(hrefsFor(html, 'Try a question'), ['#try', '#try', '#try'])
+  assert.deepEqual(hrefsFor(html, 'Try a real question'), [])
   assert.equal((await content()).tryQuestion.cta.href, '/register')
   // /courses sends a signed-out visitor to Sign in, so the page never links there, or to any quiz.
   noMatch(html, /href="\/courses|Start quiz|Timed quiz|\d+ min\b/)
@@ -326,8 +353,7 @@ test('the courses line shows the figures counted from the repository', async () 
 
 test('setting-controlled links render only when their setting is a valid https link', async () => {
   const unset = await renderHome()
-  for (const label of ['Join the WhatsApp community', 'Before launch: join Early Access for a free month', 'Not in Management Sciences?',
-    'Join the waitlist', 'WhatsApp us', 'Community']) {
+  for (const label of ['Join the WhatsApp community', 'Not in Management Sciences?', 'Join the waitlist', 'WhatsApp us', 'Community']) {
     assert.equal(unset.includes(label), false, label)
   }
   noMatch(unset, /wa\.me|chat\.whatsapp|tel:/)
@@ -336,18 +362,16 @@ test('setting-controlled links render only when their setting is a valid https l
   // The closing section and the footer's Community column both link to the community.
   assert.deepEqual(hrefsFor(set, 'Join the WhatsApp community (opens in a new tab)'),
     [CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL, CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL])
-  assert.deepEqual(hrefsFor(set, 'Before launch: join Early Access for a free month (opens in a new tab)'),
-    [CONFIGURED.NEXT_PUBLIC_EARLY_ACCESS_FORM_URL])
   assert.deepEqual(hrefsFor(set, 'Join the waitlist on WhatsApp (opens in a new tab)'),
     [`https://wa.me/2348000000000?text=${encodeURIComponent("I'd like to join the waitlist for my faculty.")}`.replace(/'/g, '&#x27;')])
   assert.deepEqual(hrefsFor(set, 'WhatsApp us (opens in a new tab)'), ['https://wa.me/2348000000000'])
   noMatch(set, /\+234 707|tel:/)
 
-  // The live site sets no Early Access link: the line is absent while everything else stays.
-  const live = await renderHome({ env: { NEXT_PUBLIC_WHATSAPP_NUMBER: CONFIGURED.NEXT_PUBLIC_WHATSAPP_NUMBER,
-    NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL } })
-  noMatch(live, /Early Access/)
-  match(live, /Not in Management Sciences\?/)
+  // The pre-launch Early Access form is retired: students claim their free month on the site after launch. A deployment
+  // that still sets the form's old variable shows nothing for it, and nothing reads the variable.
+  noMatch(set, /Early Access|free month|forms\.example\.com/i)
+  match(set, /Not in Management Sciences\?/)
+  noMatch(fs.readFileSync(path.join(root, 'lib/landing/settings.ts'), 'utf8'), /EARLY_ACCESS/)
 
   const unsafe = await renderHome({ env: { NEXT_PUBLIC_WHATSAPP_NUMBER: '+234 800',
     NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: 'javascript:alert(1)', NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: 'http://forms.example.com' } })
@@ -490,7 +514,7 @@ test('each sample is copied word for word from the official GST111 bank', { skip
   }
 })
 
-test('Try a question marks right and wrong answers with an icon and a word, then offers the bank', async () => {
+test('Try a question marks right and wrong answers with an icon and a word, then offers Start for free', async () => {
   const { tryQuestion } = await content()
   const { questions, ...copy } = tryQuestion
   const quiz = await interactive('TryQuestionQuiz.tsx', { copy, questions, intro: null, botSrc: '/landing/campus-bot.png' })
@@ -528,10 +552,10 @@ test('Try a question marks right and wrong answers with an icon and a word, then
     quiz.button('See your score').props.onClick()
     const end = quiz.tree()
     assert.ok(end.some(node => quiz.text(node) === 'You got 1 out of 2.'))
-    assert.ok(end.some(node => node.props?.href === '/register' && quiz.text(node) === 'Get the full question bank'))
+    assert.ok(end.some(node => node.props?.href === '/register' && quiz.text(node) === 'Start for free'))
     assert.ok(end.some(node => quiz.text(node) === copy.endText))
 
-    quiz.button('Play again').props.onClick()
+    quiz.button('Practise again').props.onClick()
     assert.equal(quiz.button('Next question').props.disabled, true)
     const examSwitch = quiz.buttons().find(node => node.props.role === 'switch')
     assert.equal(examSwitch.props['aria-checked'], false)

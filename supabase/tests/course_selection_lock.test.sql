@@ -54,6 +54,7 @@ create function pg_temp.claim(p_email text) returns jsonb language sql immutable
   $$ select jsonb_build_array(jsonb_build_object('version', 1, 'hash', pg_temp.h('claim-v1:' || p_email),
        'check', pg_temp.h('claim-key-check-v1'))) $$;
 delete from private.discovery_pass_claims;
+delete from private.early_access_claims;
 delete from private.discovery_claim_keys;
 
 -- Students: A pass active; B no plan; C Early Access, no selection yet; D revoked grant; E previous semester, nothing

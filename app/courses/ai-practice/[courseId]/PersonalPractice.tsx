@@ -36,7 +36,7 @@ export function PersonalPractice({ set, onClose }: { set: PersonalSetView; onClo
 
   return <section className="ai-practice-run" aria-labelledby={`${id}-heading`}>
     <div className="ai-practice-run-head">
-      <h2 id={`${id}-heading`} className="ai-practice-run-title">Personal practice</h2>
+      <h2 id={`${id}-heading`} className="ai-practice-run-title">Practise from your notes</h2>
       <p className="ai-practice-run-meta">Question {current + 1} of {set.questions.length} · {score.correct} correct so far</p>
     </div>
     <PersonalDisclaimer />
@@ -73,7 +73,7 @@ export function PersonalPractice({ set, onClose }: { set: PersonalSetView; onClo
         : <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={onClose}>Finish</button>}
     </div>
     {finished && <p className="ai-practice-summary" role="status">
-      You scored {score.correct} out of {score.total}.
+      {score.correct} of {score.total} correct
     </p>}
   </section>
 }

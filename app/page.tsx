@@ -27,7 +27,7 @@ export default function HomePage(): ReactElement {
     <div className={`${styles.landing} ${landingDisplay.variable}`}>
       <SignedInHome />
       <LandingHeader />
-      <Hero earlyAccessUrl={links.earlyAccess} />
+      <Hero />
       <TryQuestion />
       <Features />
       <Showcase />
