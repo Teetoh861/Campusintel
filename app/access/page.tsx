@@ -1,6 +1,7 @@
-// app/access/page.tsx — The student's plan: what they have now (free GST, a free pass, Early Access or a paid plan), the
-// two plans while sales are open, Campus Bot use, and receipts. Every price comes from the catalogue; nothing here says
-// paid unless our own order does.
+// app/access/page.tsx — The student's plan: what they have now (free GST, a free pass, a free month or a paid plan), the
+// plans on offer (the free month first while the student can claim it, then the two paid plans while sales are open),
+// Campus Bot use, and receipts. Every price comes from the catalogue; nothing here says paid unless our own order does.
+// Every date shown is the database's, and whether an offer shows is the database's answer for this student.
 import Link from 'next/link'
 import { CalendarCheck, Lock, ReceiptText, Ticket } from 'lucide-react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
@@ -15,15 +16,16 @@ import { readAllowance } from '@/lib/ai-practice/supabase-env'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
 import { discoveryOffered } from '@/lib/entitlements/contract'
-import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, FREE_PASS_COPY, PLAN_COPY, RECEIPT_STATUS_LINE, accessCopy,
-  formatAccessDate, formatAccessDay, formatAccessLastDay, naira, paidPlanName, paymentReference, planName, planOf, trialWording }
-  from '@/lib/entitlements/presentation'
+import { ACCESS_SOURCE_LABEL, DISCOVERY_PASS_LABEL, FREE_MONTH_COPY, FREE_PASS_COPY, PLAN_COPY, RECEIPT_STATUS_LINE,
+  accessCopy, formatAccessDay, formatAccessLastDay, formatFreeMonthDay, naira, paidPlanName, paymentReference, planName,
+  planOf, trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { PAYMENT_TERMS_PATH, RECEIPTS_PATH } from '@/lib/payments/paths'
-import { formatSemesterDay, readCourseSelection, readProfileRevision } from '@/lib/profile/course-selection'
+import { readProfileRevision } from '@/lib/profile/course-selection'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { buildWhatsAppUrl, COURSE_CHANGE_MESSAGE } from '@/lib/whatsapp'
+import { FreeMonthPlanCard } from './FreeMonthOffer'
 import { FreePassStart } from './FreePassStart'
 import { PlanChooser } from './PlanChooser'
 import { PassOfferScope, WhileOffered } from './TrialActivation'
@@ -37,6 +39,8 @@ export const metadata = { title: 'Plan & Access | CampusIntell', robots: { index
 
 const PATH = STUDENT_DESTINATIONS.access.href
 const LINK = 'font-semibold text-student-primary underline underline-offset-2'
+// How long after paying the refund rule is shown beside the plan (the rule itself is on Payment terms).
+const REFUND_WINDOW_MS = 48 * 60 * 60 * 1000
 
 export default async function AccessPage(): Promise<ReactElement> {
   return <StudentAccessGate returnPath={PATH}>
@@ -48,13 +52,13 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
   const client = await createClient()
   const context = await getStudentSessionContext(undefined, client)
   if (context === null) return redirectForStudentState('signed-out', PATH)
-  const [read, allowance, profileRevision, usage, current, selection] = await Promise.all([
-    readEntitlementForVerifiedStudent(client), readAllowance(client).catch(() => null),
+  const [read, allowance, profileRevision, usage, current] = await Promise.all([
+    readEntitlementForVerifiedStudent(client, { freeMonth: true }), readAllowance(client).catch(() => null),
     readProfileRevision(client, context.user.id), readCampusBotUsage(client).catch(() => null),
-    getCurrentStudentCoursesForVerifiedStudent(client, context.user).catch(() => null), readCourseSelection(client)])
+    getCurrentStudentCoursesForVerifiedStudent(client, context.user).catch(() => null)])
   if (read.status === 'signed-out') return redirectForStudentState('signed-out', PATH)
   const onSale = read.status === 'ok' && read.entitlement.plans_on_sale
-  // GST courses are named once, in Your access, where they are the student's own access.
+  // GST courses are named once, in Your plan, where they are the student's own.
   const band = <PageBand title="Plan & Access" aside={<Link
     href={STUDENT_DESTINATIONS.account.href} prefetch={false} className={studentAction(btnGhost)}>
     {STUDENT_DESTINATIONS.account.label}</Link>} />
@@ -65,22 +69,28 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
   const courses = current?.status === 'ok' ? current.courses : null
   const lockedCount = courses === null ? null : courses.filter(course => !course.isFree).length
   const showPlans = onSale && entitlement.paid === null && entitlement.plans.length > 0
-  const passOffered = trialWording(entitlement).passAvailable && discoveryOffered(entitlement)
+  // The free month, only when the database says this student can claim it now. Without the revision the month could
+  // set courses the student did not see (D7), so nothing is offered.
+  const freeMonth = entitlement.free_month !== null && profileRevision !== null
+    ? { continuityToken, profileRevision, endsOn: formatFreeMonthDay(entitlement.free_month.endsAt) } : null
+  // The database offers no pass while the month can be claimed; the page never shows the two together either.
+  const passOffered = entitlement.free_month === null && trialWording(entitlement).passAvailable && discoveryOffered(entitlement)
   return <StudentPage band={band}><PassOfferScope>
     <div className="grid min-w-0 gap-6 desktop:grid-cols-12">
       <section aria-labelledby="access-heading"
         className={'min-w-0 ' + (entitlement.paid ? 'desktop:col-span-7' : 'desktop:col-span-4')}>
-        <h2 id="access-heading" className="student-section-title">Your access</h2>
-        <div className="mt-3"><YourAccess entitlement={entitlement} lockedCount={lockedCount} onSale={onSale}
-          setUntil={selection?.locked && selection.lastDay !== null ? formatSemesterDay(selection.lastDay) : null} /></div>
+        <h2 id="access-heading" className="student-section-title">Your plan</h2>
+        <div className="mt-3">{yourPlanCard(entitlement, lockedCount, onSale)}</div>
       </section>
-      {showPlans && <section aria-labelledby="plans-heading" className="min-w-0 desktop:col-span-8">
+      {(showPlans || freeMonth !== null) && <section aria-labelledby="plans-heading" className="min-w-0 desktop:col-span-8">
         <h2 id="plans-heading" className="student-section-title">{PLAN_COPY.heading}</h2>
-        <div className="mt-3"><PlanChooser plans={entitlement.plans} /></div>
-        <div className="mt-4 grid gap-1.5 text-sm text-student-text-secondary">
+        {/* The free month is the first plan card, beside the paid plans while they are on sale. */}
+        <div className="mt-3"><PlanChooser plans={showPlans ? entitlement.plans : []}
+          first={freeMonth !== null ? <FreeMonthPlanCard {...freeMonth} /> : undefined} /></div>
+        {showPlans && <div className="mt-4 grid gap-1.5 text-sm text-student-text-secondary">
           <p>{PLAN_COPY.payment}</p>
           <p>{PLAN_COPY.refund} <Link href={PAYMENT_TERMS_PATH} prefetch={false} className={LINK}>{PLAN_COPY.termsLink}</Link></p>
-        </div>
+        </div>}
       </section>}
       {entitlement.receipts.length > 0 && <Receipts receipts={entitlement.receipts} />}
       {usage?.state === 'tokens' && <section aria-labelledby="usage-heading" className="min-w-0 desktop:col-span-5">
@@ -92,38 +102,25 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
           <p className="mt-2 text-sm text-student-text-secondary">{FREE_PASS_COPY.line(entitlement.trial_hours)}</p></WhileOffered>
         <div className="mt-3">{profileRevision === null
           // Without the revision the pass could set courses the student did not see (D7): nothing is started unbound.
-          ? <p className="text-sm text-student-text-secondary" role="status">We couldn’t load your courses. Refresh the page to
-            continue.</p>
+          ? <p className="text-sm text-student-text-secondary" role="status">We couldn’t load your courses. Reload the page.</p>
           : <FreePassStart continuityToken={continuityToken} passHours={entitlement.trial_hours}
             profileRevision={profileRevision} />}</div>
       </section>}
-      <EarlyAccessSection entitlement={entitlement} />
       {/* A paid plan's Campus Bot use is the bars above; if they cannot be read, nothing is shown in their place. */}
       {usage?.state !== 'tokens' && entitlement.paid === null && <AiSection allowance={allowance} onSale={onSale} />}
     </div>
   </PassOfferScope></StudentPage>
 }
 
-/** The student's access now: one card (paid, Early Access, other full access, free pass, free). */
-function YourAccess({ entitlement, lockedCount, onSale, setUntil }: { entitlement: EntitlementSummary;
-  lockedCount: number | null; onSale: boolean; setUntil: string | null }): ReactElement {
-  const card = yourAccessCard(entitlement, lockedCount, onSale)
-  // D9: a student whose courses are set (by a pass, Early Access or a plan) sees the semester's last day, once.
-  return setUntil === null || entitlement.paid !== null ? card : <div className="grid gap-2">{card}
-    <p className="text-sm text-student-text-secondary" data-courses-set-until="">Your courses are set for this semester, until
-      {' '}{setUntil}.</p></div>
-}
-
-function yourAccessCard(entitlement: EntitlementSummary, lockedCount: number | null, onSale: boolean): ReactElement {
-  const { access, trial, paid } = entitlement
-  if (paid !== null) return <Subscribed paid={paid} />
-  if (access !== null && access.source === 'early_access') return <div className="student-surface" data-access="early-access">
+/** The student's plan now: one card (paid, free month, other full access, free pass, free). */
+function yourPlanCard(entitlement: EntitlementSummary, lockedCount: number | null, onSale: boolean): ReactElement {
+  const { access, trial, paid, early_access: early } = entitlement
+  if (paid !== null) return <Subscribed paid={paid} now={entitlement.now} />
+  // The free month and the day it ends, as the database holds it.
+  if (access !== null && access.source === 'early_access') return <div className="student-surface" data-access="free-month">
     <div className="flex items-start gap-3">
       <CalendarCheck aria-hidden="true" size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-student-primary" />
-      <div className="min-w-0">
-        <h3 className="font-bold text-student-text-primary">Early Access</h3>
-        <p className="mt-1 text-sm text-student-text-secondary">Full access to your courses until {formatAccessDay(access.ends_at)}.</p>
-      </div>
+      <h3 className="min-w-0 font-bold text-student-text-primary">{FREE_MONTH_COPY.active(formatFreeMonthDay(access.ends_at))}</h3>
     </div>
   </div>
   if (access !== null) return <div className="student-surface" data-access={access.source}>
@@ -145,6 +142,8 @@ function yourAccessCard(entitlement: EntitlementSummary, lockedCount: number | n
   const ended = trial.status === 'ended' && trial.policy === 'seven-day'
   return <div className="student-surface" data-access="free">
     {ended && <p className="mb-2 text-sm text-student-text-secondary">Your free trial has ended.</p>}
+    {early.status === 'ended' && <p className="mb-2 text-sm text-student-text-secondary" data-free-month="ended">
+      {FREE_MONTH_COPY.ended}</p>}
     <h3 className="font-bold text-student-text-primary">Free GST courses</h3>
     {refund && <p className="mt-2 text-sm text-student-text-secondary" data-refund={refund.status}>
       {refund.status === 'refund-pending' ? `Your refund of ${naira(refund.amount_kobo)} is being processed. Your plan has ended.`
@@ -158,8 +157,10 @@ function yourAccessCard(entitlement: EntitlementSummary, lockedCount: number | n
 }
 
 /** The plan as the student's academic file: each semester it covers, with its dates. */
-function Subscribed({ paid }: { paid: PaidPlan }): ReactElement {
-  const first = paid.first_ends_at === null ? 'Opens once your semester is set' : `Until ${formatAccessLastDay(paid.first_ends_at)}`
+function Subscribed({ paid, now }: { paid: PaidPlan; /** The database's clock at this read. */ now: string }): ReactElement {
+  const first = paid.first_ends_at === null ? 'Dates to follow' : `Until ${formatAccessLastDay(paid.first_ends_at)}`
+  // The refund rule matters for the 48 hours it applies; after that the terms link alone.
+  const refundable = Date.parse(now) - Date.parse(paid.paid_at) < REFUND_WINDOW_MS
   const second = paid.second_ends_at !== null && paid.second_starts_at !== null
     ? `${formatAccessDay(paid.second_starts_at)} to ${formatAccessLastDay(paid.second_ends_at)}` : 'Opens when it resumes'
   return <div className="grid gap-4">
@@ -179,12 +180,12 @@ function Subscribed({ paid }: { paid: PaidPlan }): ReactElement {
       </dl>
     </div>
     <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
-      className={'inline-flex min-h-11 items-center ' + LINK}>View my courses</Link>
-    <p className="text-sm text-student-text-secondary">Your Department, Level and Semester are set until the semester ends.
-      To change them, <a href={buildWhatsAppUrl(COURSE_CHANGE_MESSAGE)} target="_blank" rel="noopener noreferrer"
-        className={LINK}>message us</a>.</p>
-    <p className="text-sm text-student-text-secondary">{PLAN_COPY.refund} <Link href={PAYMENT_TERMS_PATH} prefetch={false}
-      className={LINK}>{PLAN_COPY.termsLink}</Link></p>
+      className={'inline-flex min-h-11 items-center ' + LINK}>View your courses</Link>
+    <p className="text-sm text-student-text-secondary">Need to change your courses?{' '}
+      <a href={buildWhatsAppUrl(COURSE_CHANGE_MESSAGE)} target="_blank" rel="noopener noreferrer"
+        className={LINK}>Message us</a>.</p>
+    <p className="text-sm text-student-text-secondary">{refundable && <>{PLAN_COPY.refund} </>}<Link href={PAYMENT_TERMS_PATH}
+      prefetch={false} className={LINK}>{PLAN_COPY.termsLink}</Link></p>
   </div>
 }
 
@@ -211,35 +212,11 @@ function Receipts({ receipts }: { receipts: Receipt[] }): ReactElement {
   </section>
 }
 
-function EarlyAccessSection({ entitlement }: { entitlement: EntitlementSummary }): ReactElement | null {
-  const early = entitlement.early_access
-  // Active Early Access is the access card above; not listed says nothing.
-  if (early.status === 'not-listed' || early.status === 'active') return null
-  const text: Record<Exclude<typeof early.status, 'not-listed' | 'active'>, ReactElement> = {
-    // Never a date: the month starts at the actual public launch, not the planned one.
-    'awaiting-launch': <>You’re on the Early Access list. Your free month of full access starts automatically when
-      CampusIntell launches publicly. There is nothing to claim.</>,
-    'pending': <>You’re on the Early Access list. Your free month is being set up; refresh this page in a moment.</>,
-    'ended': <>Your Early Access month has ended.</>,
-    'enrollment-closed': <>Early Access enrollment closed
-      {early.enrollment_closes_at !== null && <> on {formatAccessDate(early.enrollment_closes_at)}</>}.</>,
-    'unavailable': <>This Early Access place can’t be used by this account. If you think this is a mistake, go to <Link
-      href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
-      {STUDENT_DESTINATIONS.contact.label}</Link>.</>,
-    'account-restricted': <>Early Access is not available while this account is scheduled for deletion.</>,
-  }
-  return <section aria-labelledby="early-access-heading"
-    className="student-surface min-w-0 bg-student-brand-surface desktop:col-span-5">
-    <h2 id="early-access-heading" className="student-section-title">Early Access</h2>
-    <p className="mt-2 text-sm text-student-text-secondary">{text[early.status]}</p>
-  </section>
-}
-
 /** Counted AI sets (a free pass or an older trial); token-funded plans show Campus Bot use instead. */
 function AiSection({ allowance, onSale }: { allowance: AllowanceSummary | null; onSale: boolean }): ReactElement {
   const line = allowance === null || allowance.state === 'not-entitled' ? accessCopy(onSale).aiSection
     : allowance.state === 'expired' ? 'Your Campus Bot access has ended.'
-      : allowance.total === null ? 'Campus Bot practice from your own notes is included.'
+      : allowance.total === null ? 'Practise from your notes is included.'
         : `${Math.max(0, allowance.total - allowance.used)} of ${allowance.total} Campus Bot ` +
           `${allowance.total === 1 ? 'set' : 'sets'} left.`
   return <section aria-labelledby="ai-heading" className="student-surface min-w-0 desktop:col-span-5">

@@ -44,13 +44,11 @@ Copy .env.example to .env.local and fill in the values:
 Required: NEXT_PUBLIC_WHATSAPP_NUMBER (international format, digits
 only). .env.local is gitignored.
 
-Optional, for the landing page at /. Each must be a full https:// URL;
-when one is unset (or not https), its button does not render:
+Optional, for the landing page at /. It must be a full https:// URL;
+when it is unset (or not https), its button does not render:
 
 - NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: the student WhatsApp community
   invite ("Join the WhatsApp community").
-- NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: the pre-launch Early Access form
-  ("Before launch: join Early Access for a free month").
 
 The landing page's figures (courses ready to practise, questions and
 departments) are counted from the repository by

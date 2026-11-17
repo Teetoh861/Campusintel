@@ -39,6 +39,7 @@ async function page(file, args, state = {}) {
   return withTsx(async () => {
     const original = Module._load
     const rpcCalls = []
+    const readOptions = []
     function StudentAccessGate() { return null }
     function CheckoutForm(props) { return React.createElement('checkout-form', { 'data-plan': props.plan,
       'data-price': String(props.priceKobo), 'data-revision': String(props.expectedRevision), 'data-request': props.requestId,
@@ -57,9 +58,14 @@ async function page(file, args, state = {}) {
         if (name === '@/lib/supabase/server') return { createClient: async () => client }
         if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () =>
           state.signedOut ? null : ({ user: { id: 'student' }, sessionId: 's' }) }
-        if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => state.entitlement === null
-          ? { status: 'unavailable' } : ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({ ...wire, ...state.entitlement }),
-            discovery_eligible: false } }) }
+        // `freeMonth` is what the server's free month read decided before render: the offer, or null.
+        if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async (_client, options) => {
+          readOptions.push(options)
+          return state.entitlement === null ? { status: 'unavailable' }
+            : ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({ ...wire, ...state.entitlement }),
+              discovery_eligible: false, free_month: state.freeMonth ?? null } }) } }
+        if (name === '../FreeMonthOffer') return { FreeMonthInstead: props => React.createElement('free-month-instead',
+          { 'data-token': props.continuityToken, 'data-revision': String(props.profileRevision), 'data-ends-on': props.endsOn }) }
         if (name === '@/lib/courses/read-model') return { getCurrentStudentCoursesForVerifiedStudent: async () =>
           state.courses === undefined ? courses : state.courses }
         if (name === '@/lib/profile/student-profile') return { getCurrentStudentProfileForVerifiedStudent: async () =>
@@ -80,7 +86,7 @@ async function page(file, args, state = {}) {
         try { tree = await child.type(child.props) } catch (error) {
           if (error instanceof Redirect) return { redirect: error.to, returnPath: tree.props.returnPath }; throw error }
       }
-      return { html: renderToStaticMarkup(tree), rpcCalls }
+      return { html: renderToStaticMarkup(tree), rpcCalls, readOptions }
     } finally { Module._load = original }
   })
 }
@@ -95,7 +101,8 @@ test('Confirm courses: the plan, its catalogue price, the study context, the cou
   assert.match(words, /Business Administration · 200 Level · First Semester Change/)
   assert.match(html, /href="\/profile-selection\?return=%2Faccess%2Fcheckout%3Fplan%3Dstandard_semester"/)
   assert.match(words, /Your 2 courses Financial Management BUA 216 Use of English GST 112 Free/)
-  assert.match(words, /After you pay, your Department, Level and Semester are set until the semester ends\./)
+  assert.match(words, /You can’t change your department, level or semester until the semester ends\./)
+  assert.doesNotMatch(words, /are set until|Department, Level and Semester/, 'the one courses sentence, in lower case')
   const form = html.match(/<checkout-form[^>]*>/)[0]
   assert.match(form, /data-plan="standard_semester" data-price="400000" data-revision="7"/)
   assert.match(form, /data-request="[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/)
@@ -110,10 +117,28 @@ test('a Session plan says it also covers the Second Semester; a locked selection
   assert.doesNotMatch(words, /Change/)
 })
 
-test('Early Access continues first: the plan keeps courses open after it', async () => {
-  const words = text((await confirm('standard_semester', { entitlement: { tier: 'full',
-    access: { source: 'early_access', ends_at: '2026-11-25T12:00:00+00:00' } } })).html)
-  assert.match(words, /Your Early Access month continues until Wed, 25 Nov 2026\. Your plan then keeps your courses open until Mon, 8 Mar 2027\./)
+test('a free month already running continues first: the plan keeps courses open after it', async () => {
+  const { html } = await confirm('standard_semester', { entitlement: { tier: 'full',
+    access: { source: 'early_access', ends_at: '2026-11-25T12:00:00+00:00' } } })
+  const words = text(html)
+  assert.match(words, /Your free month continues until Wed, 25 Nov 2026\. Your plan then keeps your courses open until Mon, 8 Mar 2027\./)
+  assert.doesNotMatch(words, /Early Access/)
+  assert.doesNotMatch(html, /<free-month-instead/, 'a student who has their month is not offered it again')
+})
+
+test('a student who can claim a free month is offered it in one line above Pay; paying stays possible', async () => {
+  const { html, readOptions } = await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00' } })
+  assert.deepEqual(readOptions, [{ discoveryEligibility: false, freeMonth: true }], 'the page asks the database whether it can be claimed')
+  const offer = html.match(/<free-month-instead[^>]*>/)[0]
+  assert.match(offer, /data-token="page-token" data-revision="7" data-ends-on="16 December"/,
+    'the claim is bound to the courses on this page, and the end date is the database answer written out')
+  assert.ok(html.indexOf('<free-month-instead') < html.indexOf('<checkout-form'), 'above Pay')
+  assert.ok(html.indexOf('<free-month-instead') > html.indexOf('You can’t change your department'), 'the last thing above it')
+  assert.match(html, /<checkout-form/, 'paying stays possible')
+  // Nobody else sees it: not while the read says no, and not without the revision the claim would be bound to.
+  assert.doesNotMatch((await confirm('standard_semester', {})).html, /free-month-instead/)
+  assert.doesNotMatch((await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00' }, revision: null })).html,
+    /free-month-instead|checkout-form/)
 })
 
 test('a reason the checkout sent back is never in the server\'s page (the browser reads it), and the form is there', async () => {
@@ -127,12 +152,14 @@ test('a reason the checkout sent back is never in the server\'s page (the browse
   }
 })
 
-test('needs a confirmed selection first: one Confirm my courses link that comes back here, and no form', async () => {
+test('needs a confirmed selection first: one Confirm your courses link that comes back here, and no form', async () => {
   for (const state of [{ selection: { state: 'incomplete', locked: false, lastDay: null } }, { revision: null },
     { courses: null }, { profile: { status: 'incomplete' } }]) {
     const { html } = await confirm('plus_semester', state)
     assert.match(text(html), /Confirm your courses for this semester to choose a plan\./)
-    assert.match(html, /href="\/profile-selection\?return=%2Faccess%2Fcheckout%3Fplan%3Dplus_semester"[^>]*>Confirm my courses</)
+    assert.match(text(html), /Your plan covers the courses for your department, level and semester\./)
+    assert.doesNotMatch(text(html), /Your plan covers these courses for/, 'no line at the top while there is no list for it to describe')
+    assert.match(html, /href="\/profile-selection\?return=%2Faccess%2Fcheckout%3Fplan%3Dplus_semester"[^>]*>Confirm your courses</)
     assert.doesNotMatch(html, /checkout-form/, JSON.stringify(state))
   }
 })
@@ -145,8 +172,8 @@ test('already paid, plans closed, a plan not sold now, or a failed read: no form
     [{ entitlement: { paid } }, null, /You’re already subscribed Standard · Semester covers your courses until Mon, 8 Mar 2027\./],
     [{ entitlement: { plans_on_sale: false, plans: [] } }, null, /Plans aren’t on sale right now\. GST courses stay free\./],
     [{ entitlement: { plans: catalogue.filter(plan => plan.period === 'semester') } }, null,
-      /That plan isn’t available right now\. Choose another plan on Plan &amp; Access\./],
-    [{ entitlement: null }, null, /Your plan couldn’t be loaded Please try again in a few minutes\./],
+      /That plan isn’t available right now\. Back to Plan &amp; Access/],
+    [{ entitlement: null }, null, /We couldn’t load your plan\. Try again/],
   ]
   for (const [state, status, line] of cases) {
     // A Session plan when only Semester plans are sold (outside a First Semester); otherwise a Semester plan.
@@ -202,7 +229,8 @@ test('a receipt shows our order\'s plan, amount, date, reference and status; any
   const paid = { state: 'paid', order_id: ORDER, plan: 'plus_session', tier: 'plus', period: 'session', amount_kobo: 1100000,
     created_at: NOW, paid_at: '2026-11-03T10:01:00+01:00', ends_at: null, second_starts_at: null, second_ends_at: null }
   const words = text((await receipt(ORDER, { rpc: { data: paid, error: null } })).html)
-  assert.match(words, /CampusIntell Receipt Plan Plus · Session Amount ₦11,000 Paid Tue, 3 Nov 2026, 10:01 \(Lagos\)/)
+  assert.match(words, /CampusIntell Receipt Plan Plus · Session Amount ₦11,000 Paid Tue, 3 Nov 2026, 10:01 Payment reference/)
+  assert.doesNotMatch(words, /\(Lagos\)/)
   assert.match(words, /Payment reference 3F2C9A1B7D Status Paid Save or print/)
   assert.doesNotMatch(words, new RegExp(ORDER), 'the internal order id is not on the receipt')
   for (const state of [{ rpc: { data: { ...paid, state: 'confirming', paid_at: null }, error: null } },

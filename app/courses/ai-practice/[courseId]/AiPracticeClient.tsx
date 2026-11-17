@@ -8,18 +8,20 @@ import { Notice } from '@/components/student/Notice'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { UPLOAD_ACCEPT_ATTRIBUTE, approximateWords } from '@/lib/ai-practice/upload-contract'
 import type { AllowanceSummary, PersonalSetView } from '@/lib/ai-practice/upload-contract'
-import { NEUTRAL_TRIAL_WORDING } from '@/lib/entitlements/presentation'
+import { FreeMonthStart } from '@/app/access/FreeMonthOffer'
+import type { FreeMonthClaim } from '@/app/access/FreeMonthOffer'
+import { FREE_MONTH_COPY, NEUTRAL_TRIAL_WORDING } from '@/lib/entitlements/presentation'
 import type { TrialWording } from '@/lib/entitlements/presentation'
-import { NOT_ENTITLED_TITLE, createGenerationRequests, freePassAction, generateFromDocument, grantName, notEntitledMessage,
+import { createGenerationRequests, freePassAction, generateFromDocument, grantName, notEntitledMessage,
   runUploadJourney, setDateLabel } from './journey'
 import type { JourneyOutcome, JourneyPhase } from './journey'
-import { PersonalDisclaimer, PersonalPractice } from './PersonalPractice'
+import { PersonalPractice } from './PersonalPractice'
 import type { ReactElement } from 'react'
 
 const PHASE_COPY: Record<JourneyPhase, { title: string; detail: string }> = {
   // Only the upload needs the page: it goes straight from this device, and leaving the page stops it.
   uploading: { title: 'Uploading your file', detail: 'Keep this page open while your file uploads.' },
-  reading: { title: 'Reading your notes', detail: 'Preparing your notes for practice questions.' },
+  reading: { title: 'Reading your notes', detail: '' },
   generating: { title: 'Writing five questions', detail: 'This may take a moment.' },
 }
 
@@ -41,7 +43,7 @@ export function JourneyProgress({ phase }: { phase: JourneyPhase }): ReactElemen
   return <div className="ai-practice-progress" role="status" aria-live="polite">
     <LoaderCircle aria-hidden="true" size={20} strokeWidth={1.75} className="animate-spin" />
     <div><p className="ai-practice-progress-title">{PHASE_COPY[phase].title}</p>
-      <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p></div>
+      {PHASE_COPY[phase].detail ? <p className="ai-practice-progress-detail">{PHASE_COPY[phase].detail}</p> : null}</div>
   </div>
 }
 
@@ -56,11 +58,15 @@ type Props = {
   trial?: TrialWording
   /** The copy switch (plans_on_sale). */
   plansOnSale?: boolean
+  /** The free month, when this student can claim it now: Campus Bot then offers it in place of everything else. */
+  freeMonth?: FreeMonthClaim | null
+  /** The course's own page, for the message that sends the student to its study materials. */
+  courseHref?: string
 }
 
 export function AiPracticeClient({ courseId, continuityToken, initialAllowance, recentSets,
-  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true, uploadsUnavailableReason, plansOnSale = false }: Props):
-  ReactElement {
+  trial = NEUTRAL_TRIAL_WORDING, canGenerate = true, uploadsUnavailableReason, plansOnSale = false, freeMonth = null,
+  courseHref }: Props): ReactElement {
   const input = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<JourneyPhase | null>(null)
   const [outcome, setOutcome] = useState<Extract<JourneyOutcome, { kind: 'problem' }> | null>(null)
@@ -84,8 +90,8 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
     setOutcome(result)
   }
 
-  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, plansOnSale, onPhase: setPhase,
-    requests })
+  const deps = () => ({ fetch: window.fetch.bind(window), continuityToken, courseId, trial, plansOnSale, courseHref,
+    onPhase: setPhase, requests })
 
   async function upload(file: File): Promise<void> {
     setOutcome(null)
@@ -106,19 +112,20 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
   const freePass = freePassAction(trial, plansOnSale)
 
   return <div className="ai-practice-workspace">
-    <PersonalDisclaimer />
     {!canGenerate && sets.length > 0 && uploadsUnavailableReason ? <p className="ai-practice-upload-help">
       {uploadsUnavailableReason === 'outside-list'
-        ? 'Uploads are available for your courses this semester. Your saved sets are still here.'
+        ? 'You can’t upload notes for this course.'
         : 'Uploads are paused for now. Your saved sets are still here.'}
     </p> : null}
-    {canGenerate && !entitled && <Notice title={NOT_ENTITLED_TITLE} tone="info" action={freePass === null ? undefined
-      : <Link href={freePass.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>{freePass.label}</Link>}>
-      {notEntitledMessage(trial, plansOnSale)}</Notice>}
+    {/* One line and one button: the free month when this student can claim it, else where Campus Bot opens. */}
+    {canGenerate && !entitled && (freeMonth !== null
+      ? <Notice title={FREE_MONTH_COPY.campusBot} tone="info" action={<FreeMonthStart {...freeMonth} />} />
+      : <Notice title={notEntitledMessage(trial, plansOnSale)} tone="info" action={freePass === null ? undefined
+        : <Link href={freePass.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>{freePass.label}</Link>} />)}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
       <h2 id="ai-practice-upload-title" className="ai-practice-upload-title">Upload your notes</h2>
-      <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. Upload one topic or chapter
-        at a time for the best questions. Files are deleted after reading; the text is kept privately for 7 days.</p>
+      <p className="ai-practice-upload-help">PDF, Word (.docx) or plain text, up to 5 MB. One topic or chapter at a time
+        works best.</p>
       {line && <p className="ai-practice-allowance">{line}</p>}
       <input ref={input} id="ai-practice-file" type="file" className="sr-only" accept={UPLOAD_ACCEPT_ATTRIBUTE}
         disabled={busy} onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void upload(file) }} />

@@ -1,27 +1,25 @@
 #!/usr/bin/env node
-// scripts/entitlements/ops.cjs — Operator tool for entitlements: status, recovery and the trusted Early Access list.
+// scripts/entitlements/ops.cjs — Operator tool for entitlements: status, recovery, the public launch and the free month.
 // Explicit invocation only. Every change requires --actor and --reason and is written to the audit trail by the
-// database function it calls. The Early Access list import collects no phone number (a file with a phone column is
-// refused unread); the Discovery Pass collects none either and has no operator command (students activate it).
+// database function it calls. Students start their own free pass and claim their own free month (Early Access) on the
+// site, so there is no operator command for either, and no list: the import, member and sweep commands are retired.
 //   node scripts/entitlements/ops.cjs status --user <uuid>
 //   node scripts/entitlements/ops.cjs grant --user <uuid> --days <n> --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs change-grant --grant <uuid> --action extend|revoke|restore|set-ai-units
 //       [--until <ISO time>] [--units <n>] --actor <name> --reason <text>
-//   node scripts/entitlements/ops.cjs import-early-access --file <csv> --batch <label> --actor <name> [--dry-run]
-//       CSV header: email,full_name,joined_at  (joined_at is an ISO time before launch; no phone column)
-//   node scripts/entitlements/ops.cjs member --email <email> --action exclude|include|mark-duplicate|clear-duplicate
-//       [--of <email>] --actor <name> --reason <text>
 //   node scripts/entitlements/ops.cjs early-access-report
+//       The launch, when the claim closes (or would close if launch were activated now) and the months claimed.
 //   node scripts/entitlements/ops.cjs configure-early-access [--planned-launch <ISO>] [--enrollment-days <n>]
 //       --actor <name> --reason <text>
+//       --enrollment-days is how long after launch a month can be claimed; 0 closes the claim at once.
 //       --trial-after-early-access is retired (20261023120000): no account that has had Early Access gets a pass.
-//   node scripts/entitlements/ops.cjs activate-launch --confirm-public-launch --actor <name> --reason <text>
-//       Records the ACTUAL public launch (once, now) and enrolls eligible confirmed accounts in bounded batches until
-//       none remain.
-//   node scripts/entitlements/ops.cjs reconcile-early-access --actor <name> --reason <text>
+//   node scripts/entitlements/ops.cjs activate-launch --confirm-public-launch [--allow-short-claim-window]
+//       --actor <name> --reason <text>
+//       Records the ACTUAL public launch (once, now) and opens the claim. It enrols nobody. It prints when the claim
+//       closes, and refuses a claim window shorter than the configured days unless --allow-short-claim-window is given.
 //   node scripts/entitlements/ops.cjs purge-claims
-//       Removes expired Discovery Pass email claims (past discovery_claim_retention, 5 years). pg_cron also runs this
-//       daily (campusintell-discovery-claim-purge); the command is for an immediate purge.
+//       Removes expired email claims (free pass and free month; past discovery_claim_retention, 5 years). pg_cron also
+//       runs this daily (campusintell-discovery-claim-purge); the command is for an immediate purge.
 //   node scripts/entitlements/ops.cjs claim-keys
 //       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
 //   node scripts/entitlements/ops.cjs selection-status | selection-change | calendar | term-set | term-extend ...
@@ -30,20 +28,23 @@
 //       campus-bot-cap | campus-bot-writer | campus-bot-refill | ai-limits | payment-verify | payment-fulfil | refund | refund-retry |
 //       reconcile-now ...
 //       Plan payments: see scripts/entitlements/payments.cjs and docs/payments-operations.md.
-const fs = require('node:fs')
 const { courseSelectionCall } = require('./course-selection.cjs')
 const { courseAdditionCall } = require('./course-additions.cjs')
 const { authAdminReader, paymentCommand } = require('./payments.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
-const IMPORT_MAX_ROWS = 20_000
-// Each sweep is one bounded transaction; the tool repeats them until nothing enrollable is left. A batch that grants
-// nobody is retried only while it deferred accounts held by in-flight confirmations, which enroll themselves.
-const SWEEP_BATCH = 200
-const SWEEP_MAX_BATCHES = 500
-const SWEEP_MAX_STALLED = 20
-const SWEEP_RETRY_MS = 250
+// The list commands of the retired pre-launch Early Access list (PRD 4.9). Named so that a habit or an old runbook gets a
+// clear answer instead of a usage line, and nothing is sent.
+const RETIRED = new Set(['import-early-access', 'member', 'reconcile-early-access'])
+const LAGOS_TIME = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', weekday: 'short', day: 'numeric',
+  month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+
+/** An instant the database returned, as the operator reads it. */
+function lagos(iso) {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? String(iso) : `${LAGOS_TIME.format(date)} (Lagos)`
+}
 
 function options(args) {
   const parsed = { _: [] }
@@ -51,7 +52,8 @@ function options(args) {
     const arg = args[index]
     if (!arg.startsWith('--')) { parsed._.push(arg); continue }
     const name = arg.slice(2)
-    if (['dry-run', 'confirm-public-launch', 'allow-empty', 'confirm', 'destination-confirmed', 'everyone'].includes(name)) { parsed[name] = true; continue }
+    if (['dry-run', 'confirm-public-launch', 'allow-short-claim-window', 'allow-empty', 'confirm', 'destination-confirmed',
+      'everyone'].includes(name)) { parsed[name] = true; continue }
     const value = args[index + 1]
     if (value === undefined || value.startsWith('--')) throw new Error(`--${name} needs a value`)
     parsed[name] = value
@@ -77,62 +79,6 @@ function integer(opts, name) {
 function isoTime(value, name) {
   if (Number.isNaN(Date.parse(value))) throw new Error(`${name} must be an ISO time`)
   return new Date(value).toISOString()
-}
-
-/** Minimal RFC 4180 reader: quoted fields, doubled quotes and CRLF. */
-function parseCsv(text) {
-  const rows = []
-  let row = []
-  let field = ''
-  let quoted = false
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    if (quoted) {
-      if (char === '"' && text[index + 1] === '"') { field += '"'; index += 1 }
-      else if (char === '"') quoted = false
-      else field += char
-    } else if (char === '"') quoted = true
-    else if (char === ',') { row.push(field); field = '' }
-    else if (char === '\n' || char === '\r') {
-      if (char === '\r' && text[index + 1] === '\n') index += 1
-      row.push(field); rows.push(row); row = []; field = ''
-    } else field += char
-  }
-  if (quoted) throw new Error('CSV has an unterminated quote')
-  if (field !== '' || row.length > 0) { row.push(field); rows.push(row) }
-  return rows.filter(cells => cells.some(cell => cell.trim() !== ''))
-}
-
-/**
- * Validate every row before anything is written; a bad file changes nothing. Phone numbers are no longer collected:
- * the header is checked first, and a file with a phone column is refused before any row is parsed.
- */
-function readMembers(file) {
-  const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '')
-  const columns = (parseCsv(text.split(/\r?\n/, 1)[0])[0] ?? []).map(cell => cell.trim().toLowerCase())
-  const phoneColumn = columns.find(column => /phone|mobile|whatsapp/.test(column))
-  if (phoneColumn !== undefined) {
-    throw new Error(`CSV has a "${phoneColumn}" column: phone numbers are no longer collected. Delete that column ` +
-      'from the file and import again')
-  }
-  const expected = ['email', 'full_name', 'joined_at']
-  if (columns.join(',') !== expected.join(',')) throw new Error(`CSV header must be ${expected.join(',')}`)
-  const rows = parseCsv(text).slice(1)
-  if (rows.length > IMPORT_MAX_ROWS) throw new Error(`CSV has more than ${IMPORT_MAX_ROWS} rows`)
-  const seen = new Set()
-  return rows.map((cells, index) => {
-    const line = index + 2
-    if (cells.length !== expected.length) throw new Error(`line ${line}: expected ${expected.length} columns`)
-    const [email, fullName, joinedAt] = cells.map(cell => cell.trim())
-    const normalizedEmail = email.toLowerCase()
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizedEmail) || normalizedEmail.length > 254) {
-      throw new Error(`line ${line}: invalid email`)
-    }
-    if (seen.has(normalizedEmail)) throw new Error(`line ${line}: email repeated in this file`)
-    seen.add(normalizedEmail)
-    if (fullName === '' || fullName.length > 200) throw new Error(`line ${line}: full_name is required`)
-    return { email: normalizedEmail, fullName, joinedAt: isoTime(joinedAt, `line ${line}: joined_at`) }
-  })
 }
 
 function connection(env, transport) {
@@ -164,58 +110,14 @@ function connection(env, transport) {
   }
 }
 
-/**
- * Repeat bounded sweeps until nothing enrollable remains. The database counts only accounts it would enroll, so a
- * batch that grants nobody and defers nobody means the sweep cannot finish: that, or running out of retries, is an
- * error naming what is left, never a quiet success.
- */
-async function sweepAll(rpc, noteArgs, first, pause = ms => new Promise(resolve => setTimeout(resolve, ms))) {
-  let granted = first ? Number(first.granted) : 0
-  let remaining = first ? Number(first.remaining) : Infinity
-  let batches = first ? 1 : 0
-  let stalled = 0
-  while (remaining > 0 && batches < SWEEP_MAX_BATCHES) {
-    const batch = await rpc('admin_reconcile_early_access', { ...noteArgs, p_limit: SWEEP_BATCH })
-    batches += 1
-    granted += Number(batch.granted)
-    remaining = Number(batch.remaining)
-    if (Number(batch.granted) > 0) { stalled = 0; continue }
-    if (remaining === 0 || !(Number(batch.deferred) > 0) || ++stalled >= SWEEP_MAX_STALLED) break
-    await pause(SWEEP_RETRY_MS)
-  }
-  const result = { granted, remaining: Number.isFinite(remaining) ? remaining : 0, batches }
-  if (result.remaining > 0) {
-    throw new Error(`sweep stopped with ${result.remaining} enrollable account(s) left after ${batches} batch(es) ` +
-      `(${granted} granted); run reconcile-early-access again`)
-  }
-  return result
-}
-
 async function run(args, env = process.env, transport = fetch, write = text => process.stdout.write(text)) {
   const [command, ...rest] = args
   const opts = options(rest)
   const note = () => ({ p_actor: required(opts, 'actor'), p_reason: required(opts, 'reason') })
   const print = value => write(`${JSON.stringify(value, null, 2)}\n`)
-  if (command === 'import-early-access') {
-    const members = readMembers(required(opts, 'file'))
-    const batch = required(opts, 'batch')
-    const actor = required(opts, 'actor')
-    if (opts['dry-run']) return print({ valid: members.length })
-    const rpc = connection(env, transport)
-    const counts = {}
-    let deferred = 0
-    for (const member of members) {
-      // No phone hash: members already stored keep theirs, and a new row joins a group only by an operator's merge.
-      const result = await rpc('admin_add_early_access_member', { p_email: member.email, p_full_name: member.fullName,
-        p_phone_hash: null, p_joined_at: member.joinedAt, p_source: 'import', p_batch: batch, p_actor: actor })
-      counts[result.state] = (counts[result.state] ?? 0) + 1
-      if (result.enrollment === 'deferred') deferred += 1
-    }
-    if (deferred === 0) return print(counts)
-    // An account that appeared mid-import was not enrolled inside it (that would invert the lock order); enroll it now
-    // in fresh transactions.
-    return print({ ...counts, deferred, sweep: await sweepAll(rpc, { p_actor: actor,
-      p_reason: `import ${batch}: deferred enrollment` }, null) })
+  if (RETIRED.has(command)) {
+    throw new Error(`${command} is retired: there is no Early Access list. Students claim their free month on the ` +
+      'site; see docs/entitlements-operations.md')
   }
   const rpc = connection(env, transport)
   switch (command) {
@@ -227,14 +129,6 @@ async function run(args, env = process.env, transport = fetch, write = text => p
       return print(await rpc('admin_change_grant', { p_grant_id: required(opts, 'grant', UUID), p_action: action,
         p_ends_at: action === 'extend' ? isoTime(required(opts, 'until'), '--until') : null,
         p_ai_units: action === 'set-ai-units' ? integer(opts, 'units') : null, ...note() }))
-    }
-    case 'member': {
-      const action = required(opts, 'action', /^(exclude|include|mark-duplicate|clear-duplicate)$/)
-      const changed = await rpc('admin_change_early_access_member', { p_email: required(opts, 'email'), p_action: action,
-        p_other_email: action === 'mark-duplicate' ? required(opts, 'of') : null, ...note() })
-      if (changed.enrollment !== 'deferred') return print(changed)
-      // As for imports: an account that appeared mid-change is enrolled now, in fresh transactions.
-      return print({ ...changed, sweep: await sweepAll(rpc, note(), null) })
     }
     case 'early-access-report': return print(await rpc('admin_early_access_report', {}))
     case 'configure-early-access': {
@@ -248,13 +142,20 @@ async function run(args, env = process.env, transport = fetch, write = text => p
         p_trial_after_early_access: null, ...note() }))
     }
     case 'activate-launch': {
-      // Irreversible: the launch is recorded once and every eligible month starts when its batch commits.
+      // Irreversible: the launch is recorded once, and the claim opens at that instant.
       if (opts['confirm-public-launch'] !== true) throw new Error('activate-launch needs --confirm-public-launch')
-      const launched = await rpc('admin_activate_public_launch', { ...note(), p_limit: SWEEP_BATCH })
-      if (launched.state !== 'launched') return print(launched)
-      return print({ ...launched, ...await sweepAll(rpc, note(), launched) })
+      const launched = await rpc('admin_activate_public_launch', { ...note(),
+        p_allow_short_window: opts['allow-short-claim-window'] === true })
+      if (launched.state === 'short-claim-window') {
+        // Nothing was recorded. The operator decides with the dates in front of them.
+        throw new Error(`launch NOT recorded: the free month claim would close on ${lagos(launched.claim_would_close_at)}, ` +
+          `less than ${launched.claim_days} days after launch (a full window needs launch by ` +
+          `${lagos(launched.full_window_needs_launch_by)}). To launch anyway, add --allow-short-claim-window`)
+      }
+      // The two dates the operator needs, in Lagos time, ahead of the database's own answer.
+      return print({ state: launched.state, launch_recorded: lagos(launched.actual_launch_at),
+        claim_closes: lagos(launched.claim_closes_at), ...launched })
     }
-    case 'reconcile-early-access': return print(await sweepAll(rpc, note(), null))
     case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
     case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
     default: {
@@ -276,4 +177,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { run, parseCsv, readMembers }
+module.exports = { run }

@@ -1,5 +1,6 @@
-// app/api/entitlements/route.ts — One-click Discovery Pass activation for the signed-in student. Early Access needs no
-// student command. The body names the action only; the student, the limits and the pass window come from the server.
+// app/api/entitlements/route.ts — The signed-in student's two commands: start a Discovery Pass, claim a free month
+// (Early Access). The body names the action and the profile revision the page showed, and nothing else: the student,
+// the limits, every window and every start and end time come from the server and the database clock.
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AUTH_CONTINUITY_HEADER } from '@/lib/auth/constants'
@@ -24,6 +25,8 @@ const HTTP_STATUS: Partial<Record<EntitlementResultStatus, number>> = {
   'early-access-active': 409,
   'trial-not-offered': 403,
   'selection-changed': 409,
+  'offer-ended': 409,
+  'offer-unavailable': 403,
 }
 
 function privateJson(body: unknown, status: number, headers?: Headers): Response {
@@ -34,7 +37,7 @@ function privateJson(body: unknown, status: number, headers?: Headers): Response
   return response
 }
 
-/** Identity, the one-pass rules, the request limits and the Early Access overlap are server-owned. */
+/** Identity, the one-per-account rules, the request limits and the claim window are server-owned. */
 export async function POST(request: Request): Promise<Response> {
   let input: unknown
   let address: string

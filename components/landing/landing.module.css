@@ -63,7 +63,6 @@
 .landing .heroTitle { font-size: clamp(2.5rem, 5.6vw, 4.5rem); line-height: 1.03; font-weight: 800; letter-spacing: -.01em; }
 .emphasis { white-space: nowrap; color: var(--l-blue); }
 .lead { font-size: 1.2rem; color: var(--l-muted); max-width: 33rem; margin-top: 20px; }
-.earlyAccess { margin-top: 14px; }
 /* The frame is the photograph's own shape (900 by 975) and the picture covers all of it. */
 .heroFrame { display: block; justify-self: center; width: 100%; max-width: 440px; aspect-ratio: 900 / 975; }
 .heroImage { display: block; width: 100%; height: 100%; object-fit: cover;
@@ -75,7 +74,6 @@
 .quizSec { background: linear-gradient(180deg, var(--l-bg), var(--l-surface) 60%, var(--l-bg)); }
 .quizGrid { display: grid; grid-template-columns: 1fr; gap: 56px; align-items: center; }
 @media (min-width: 901px) { .quizGrid { grid-template-columns: .85fr 1.15fr; } }
-.introText { color: var(--l-muted); margin-top: 14px; font-size: 1.1rem; }
 .mode { margin-top: 26px; }
 .modeNote { margin-top: 4px; color: var(--l-muted); font-size: .95rem; }
 .switch { width: 56px; height: 30px; border-radius: 999px; background: var(--l-line); position: relative; flex: none; transition: background .3s; }
@@ -187,7 +185,6 @@
 }
 .footer h2 { margin: 0 0 6px; font-family: inherit; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--l-navy); }
 .footerLogo { height: 38px; width: auto; margin-bottom: 14px; }
-.footerText { color: var(--l-muted); max-width: 22rem; }
 .copyLine { border-top: 1px solid var(--l-line); padding-block: 20px calc(20px + env(safe-area-inset-bottom, 0px)); color: var(--l-muted); font-size: .88rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 
 @keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }

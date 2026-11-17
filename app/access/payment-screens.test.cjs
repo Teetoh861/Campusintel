@@ -84,7 +84,7 @@ const label = node => text(renderToStaticMarkup(React.createElement(React.Fragme
 test('plans: Semester first; the switch shows Session prices with the saving line; every card line is the approved copy', async () => {
   await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue }, async ({ render, html }) => {
     const semester = text(html())
-    assert.match(semester, /Standard · Semester ₦4,000 a semester Your courses this semester: notes, practice, exams and Campus Bot\./)
+    assert.match(semester, /Standard · Semester ₦4,000 a semester Your courses: notes, practice, exams and Campus Bot\./)
     assert.match(semester, /Plus · Semester ₦6,000 a semester Everything in Standard, with twice the Campus Bot use\./)
     assert.doesNotMatch(semester, /save|Session ₦/)
     assert.match(html(), /<legend class="sr-only">Billing period<\/legend>/)
@@ -118,6 +118,27 @@ test('outside a First Semester only Semester plans are sold: no switch and no pr
     const markup = html()
     assert.doesNotMatch(markup, /Billing period|Session/)
     assert.match(markup, /href="\/access\/checkout\?plan=plus_semester"[^>]*>Pay ₦6,000<\/a>/)
+  })
+})
+
+test('the free month card is the first plan card, before Standard and Plus, and the only one when no paid plan is on sale', async () => {
+  const first = React.createElement('li', { 'data-plan': 'free-month' }, 'Free month ₦0')
+  const cards = markup => [...markup.matchAll(/<li[^>]* data-plan="([^"]+)"/g)].map(match => match[1])
+  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue, first }, async ({ html }) => {
+    const markup = html()
+    assert.deepEqual(cards(markup), ['free-month', 'standard_semester', 'plus_semester'])
+    assert.match(markup, /<ul class="grid gap-4 tablet:grid-cols-2 desktop:grid-cols-3"/, 'three cards side by side on a desktop')
+    assert.match(markup, /Billing period/, 'the period switch belongs to the paid plans and stays')
+  })
+  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: [], first }, async ({ html }) => {
+    const markup = html()
+    assert.deepEqual(cards(markup), ['free-month'])
+    assert.doesNotMatch(markup, /Billing period|desktop:grid-cols-3|Pay ₦/)
+  })
+  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue }, async ({ html }) => {
+    const markup = html()
+    assert.deepEqual(cards(markup), ['standard_semester', 'plus_semester'], 'without it, the two paid cards as before')
+    assert.doesNotMatch(markup, /desktop:grid-cols-3/)
   })
 })
 
@@ -157,7 +178,7 @@ test('the checkout reason is read in the browser and shows once: never in the fi
   const lines = { 'unavailable': 'We couldn’t open the payment page. Try again in a moment.',
     'checkout-expired': 'That payment page expired. Try again to open a new one.',
     'selection-changed': 'Your courses changed. Check the list below, then try again.',
-    'session-changed': 'Your session changed. Try again.', 'invalid-request': 'Something went wrong. Try again.',
+    'session-changed': 'We couldn’t open the payment page. Try again.', 'invalid-request': 'Something went wrong. Try again.',
     'something-new': 'We couldn’t open the payment page. Try again in a moment.' }
   const line = lines.unavailable
   const CheckoutForm = props => React.createElement('checkout-form', { 'data-plan': props.plan, 'data-price': String(props.priceKobo),
@@ -243,10 +264,11 @@ test('the free pass: Start opens the modal with what it gives and its terms (onl
       assert.equal(text(html()), 'Get your free pass')
       find(render(), node => node.type === 'button' && label(node) === 'Get your free pass').props.onClick()
       const modal = text(html().match(/<dialog-open>[\s\S]*<\/dialog-open>/)[0])
-      assert.match(modal, /Start your free pass/)
-      assert.match(modal, /A full timed exam from one of your courses/)
-      assert.match(modal, /It lasts 3 days from now\. Each student can have one free pass\. Starting it sets your courses for this semester\./)
-      assert.match(modal, /Not now Start my free pass/)
+      assert.match(modal, /^Your free pass /)
+      assert.match(modal, /A full exam from one of your courses A complete notes topic from one of your courses Practise from your notes /)
+      assert.doesNotMatch(modal, /timed exam|study guide|own notes/)
+      assert.match(modal, /It lasts 3 days from now\. Each student can have one free pass\. You can’t change your department, level or semester until the semester ends\./)
+      assert.match(modal, /Not now Start your free pass$/)
       assert.doesNotMatch(modal, /Discovery|72|phone/)
     }, mocks)
 })
@@ -380,9 +402,10 @@ test('each settled state has its own screen; failed never promises no charge', a
   const cases = {
     failed: [/Your payment didn’t go through No plan was added\. If money left your account, message us with the time you paid and we’ll sort it out\./,
       /href="\/access\/checkout\?plan=standard_semester"[^>]*>Try again</],
-    cancelled: [/Payment not completed You left checkout before paying\. No plan was added\./, /Try again/],
-    'paid-duplicate': [/You’re already subscribed We received two payments for this plan\. We’ll refund the extra one\./, /Go to my courses/],
-    'refund-pending': [/Your refund is being processed Your refund of ₦4,000 is being processed\. Your plan has ended\./, /Back to Plan &amp; Access/],
+    cancelled: [/Payment not completed No plan was added\./, /Try again/],
+    'paid-duplicate': [/You’re already subscribed We received two payments for this plan\. We’ll refund the extra one\./, /Go to your courses/],
+    'refund-pending': [/Your refund is being processed ₦4,000 is on its way back to you\. Your plan has ended, and GST courses stay free\./,
+      /Back to Plan &amp; Access/],
     refunded: [/Your payment was refunded Your plan has ended\. GST courses stay free\./, /Back to Plan &amp; Access/],
     'amount-mismatch': [/Payment didn’t match the plan price We’ll refund the full amount\. You can then pay for your plan again\./,
       /Back to Plan &amp; Access/],
@@ -425,7 +448,7 @@ test('another student\'s order or an unknown id: "We couldn\'t find that payment
   await returnPage({ kind: 'not-found' }, async ({ html, intervals }) => {
     const markup = html()
     assert.match(markup, /data-return-state="not-found"/)
-    assert.match(text(markup), /We couldn’t find that payment Check Plan &amp; Access for your current plan\./)
+    assert.match(text(markup), /We couldn’t find that payment Plan &amp; Access$/)
     assert.doesNotMatch(markup, /₦|Payment reference|subscribed|Check again/i)
     assert.equal(intervals.length, 0, 'nothing to ask again')
   })

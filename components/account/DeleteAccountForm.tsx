@@ -6,7 +6,6 @@ import { Feedback } from '@/components/chrome/Feedback'
 import { btnNavy, btnGhost } from '@/components/chrome/ui'
 import { studentAction } from '@/components/student/ui'
 import { AUTH_API, PASSWORD_MAX_LENGTH } from '@/lib/auth/constants'
-import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@/lib/account/constants'
 import type { FormEvent } from 'react'
 
@@ -32,30 +31,29 @@ export function DeleteAccountForm({ continuityToken }: { continuityToken: string
   }
   return <section className="student-surface border-student-error" aria-labelledby="delete-account-heading">
     <h2 id="delete-account-heading" className="student-section-title">Delete account</h2>
-    <p className="mt-2 text-sm text-student-text-secondary">Schedule deletion of your account and student data after {ACCOUNT_DELETION_GRACE_DAYS} days.</p>
+    <p className="mt-2 text-sm text-student-text-secondary">Delete your account and everything in it. You have {ACCOUNT_DELETION_GRACE_DAYS} days to change your mind.</p>
     <button ref={trigger} type="button" className={studentAction(btnGhost, 'mt-4 text-student-error')}
       onClick={() => open ? close() : setOpen(true)} disabled={pending}
-      aria-expanded={open} aria-controls="delete-account-form">Delete my account</button>
+      aria-expanded={open} aria-controls="delete-account-form">Delete your account</button>
     <div id="delete-account-form" hidden={!open}>
       {open && <form onSubmit={schedule} className="mt-4 grid gap-4">
         <div id="deletion-details" className="space-y-2 text-sm text-student-text-secondary">
-          <p>You will be signed out on every device. Before the {ACCOUNT_DELETION_GRACE_DAYS}-day deadline, sign in and choose “Yes, keep my account” to cancel.</p>
-          <p>After the deadline, you can’t sign in or restore your account, even if deletion has not finished. Your profile, bookmarks, practice history and question reports that identify you will be removed.</p>
-          <p>If you used a free pass, a protected record of your email address is kept without your account, so the same address cannot start another pass. A used free trial or Early Access place stays used.</p>
-          <p>Our service providers may retain some records and backups under their policies or legal obligations. Ask {STUDENT_DESTINATIONS.contact.label} for details.</p>
+          <p>You’ll be signed out. To cancel, sign in within {ACCOUNT_DELETION_GRACE_DAYS} days and choose “Keep your account”.</p>
+          <p>After {ACCOUNT_DELETION_GRACE_DAYS} days, your account, bookmarks and results are deleted for good.</p>
+          <p>We keep a note that this email has used its free pass or free month.</p>
         </div>
         <FormField id="delete-current-password" name="password" label="Current password" type="password"
           autoComplete="current-password" required maxLength={PASSWORD_MAX_LENGTH} disabled={pending} aria-describedby="deletion-details" autoFocus />
         <label className="flex min-h-11 items-start gap-3 text-sm text-student-text-primary">
           <input name="confirmed" type="checkbox" required disabled={pending} className="student-focus-control mt-1 h-5 w-5 shrink-0" />
-          <span>I understand that deletion becomes permanent after {ACCOUNT_DELETION_GRACE_DAYS} days.</span>
+          <span>I understand my account will be deleted for good after {ACCOUNT_DELETION_GRACE_DAYS} days.</span>
         </label>
         {error && <Feedback tone="error" message={error} />}
         <div className="flex flex-wrap gap-2">
           <button type="submit" disabled={pending} aria-busy={pending} className={studentAction(btnNavy)}>
-            {pending ? 'Scheduling…' : 'Schedule account deletion'}
+            {pending ? 'Deleting…' : 'Delete account'}
           </button>
-          <button type="button" disabled={pending} onClick={close} className={studentAction(btnGhost)}>Go back</button>
+          <button type="button" disabled={pending} onClick={close} className={studentAction(btnGhost)}>Cancel</button>
         </div>
       </form>}
     </div>

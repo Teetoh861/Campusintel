@@ -1,6 +1,7 @@
 'use client'
-// app/access/PlanChooser.tsx — The two plans: a Semester | Session switch above a Standard and a Plus card. Prices come from
-// the catalogue through the server; Pay always opens Confirm courses first. Choosing Semester first offers the Session.
+// app/access/PlanChooser.tsx — The plans: a Semester | Session switch above a Standard and a Plus card, with the free
+// month as the first card while this student can claim it. Prices come from the catalogue through the server; Pay
+// always opens Confirm courses first. Choosing Semester first offers the Session.
 import Link from 'next/link'
 import { useState } from 'react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
@@ -11,9 +12,13 @@ import { PLAN_COPY, PLAN_PERIOD_NAME, naira, planName, semesterPromptLine, sessi
   from '@/lib/entitlements/presentation'
 import { checkoutHref } from '@/lib/payments/paths'
 import type { PlanOnSale, PlanPeriod, PlanTier } from '@/lib/entitlements/contract'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
-export function PlanChooser({ plans }: { plans: ReadonlyArray<PlanOnSale> }): ReactElement {
+export function PlanChooser({ plans, first }: {
+  plans: ReadonlyArray<PlanOnSale>
+  /** A plan card the server puts ahead of the paid plans (the free month), as a list item. */
+  first?: ReactNode
+}): ReactElement {
   const sessionOffered = plans.some(plan => plan.period === 'session')
   const [period, setPeriod] = useState<PlanPeriod>('semester')
   const [prompt, setPrompt] = useState<PlanTier | null>(null)
@@ -27,7 +32,9 @@ export function PlanChooser({ plans }: { plans: ReadonlyArray<PlanOnSale> }): Re
         <span>{PLAN_PERIOD_NAME[value]}</span>
       </label>)}
     </fieldset>}
-    <ul className="grid gap-4 tablet:grid-cols-2" aria-live="polite">
+    <ul className={'grid gap-4 tablet:grid-cols-2' + (first !== undefined && plans.length > 0 ? ' desktop:grid-cols-3' : '')}
+      aria-live="polite">
+      {first}
       {PLAN_TIERS.map(tier => {
         const prices = tierPrices(plans, tier)
         const plan = shown === 'session' ? prices.session : prices.semester

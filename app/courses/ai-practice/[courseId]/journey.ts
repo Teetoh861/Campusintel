@@ -58,6 +58,8 @@ export type JourneyDeps = {
   trial: TrialWording
   /** The copy switch (plans_on_sale): "included when you subscribe" once plans are on sale. */
   plansOnSale?: boolean
+  /** The course's own page, for the one message that sends the student there. */
+  courseHref?: string
   onPhase(phase: JourneyPhase): void
   requests: GenerationRequests
 }
@@ -69,16 +71,14 @@ export function setDateLabel(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : SET_DAY.format(date)
 }
 
-export const NOT_ENTITLED_TITLE = 'Campus Bot isn’t included in your account.'
-export const CAMPUS_BOT_LIMIT_TITLE = 'Campus Bot limit reached.'
-
 /** Whether the closed message offers this student a free pass: only when they are eligible for one. */
 const passOffered = (trial: TrialWording, plansOnSale: boolean): boolean => !plansOnSale && trial.passAvailable
 
-/** Why AI practice is closed and where it opens. The pass is named only when this student is eligible for one. */
+/** Where Campus Bot opens, in one line. The pass is named only when this student is eligible for one. (A student who
+ *  can claim a free month is shown that instead, by the page.) */
 export function notEntitledMessage(trial: TrialWording, plansOnSale: boolean = false): string {
   if (plansOnSale) return accessCopy(true).aiNotEntitled
-  return passOffered(trial, plansOnSale) ? 'Campus Bot opens with a free pass or Early Access.' : accessCopy(false).aiNotEntitled
+  return passOffered(trial, plansOnSale) ? 'Campus Bot opens with a free pass.' : accessCopy(false).aiNotEntitled
 }
 
 /** The button under that message when it offers the pass: the pass is started on Plan & Access. */
@@ -99,44 +99,41 @@ const problem = (title: string, message: string, retry: 'same-file' | 'new-file'
 
 /** Map any non-success result to what the student should read and do next. */
 export function describeResult(result: AiPracticeResult, trial: TrialWording = NEUTRAL_TRIAL_WORDING,
-  plansOnSale: boolean = false): JourneyOutcome {
+  plansOnSale: boolean = false, courseHref?: string): JourneyOutcome {
   switch (result.status) {
     case 'generated': return { kind: 'generated', set: result.set, allowance: result.allowance }
-    case 'upload-rejected': return problem('We could not use this file.', UPLOAD_REJECTION_MESSAGES[result.reason])
+    case 'upload-rejected': return problem('We couldn’t use this file.', UPLOAD_REJECTION_MESSAGES[result.reason])
     case 'insufficient-source': return { ...problem('Not enough to work with.',
       'Your notes did not contain enough clear material for five fair questions. Try fuller notes on one topic. ' +
       'This did not use any of your Campus Bot allowance.', 'new-file', 'info'), allowance: result.allowance }
+    // Each title says what happened; the line under it says only what is new.
     case 'flagged-for-review': return { ...problem('We couldn’t use this file.',
-      'We couldn’t use this material for course practice. Upload clear, appropriate study notes for this course instead. ' +
-      'This did not use any of your Campus Bot allowance.', 'new-file', 'info'), allowance: result.allowance }
-    case 'generation-failed': return { ...problem('We couldn’t create your questions.',
-      'Something went wrong while writing your questions. This did not use any of your Campus Bot allowance. Try again.',
-      'same-file'), allowance: result.allowance }
+      'Upload clear study notes for this course.', 'new-file', 'info'), allowance: result.allowance }
+    case 'generation-failed': return { ...problem('We couldn’t create your questions.', 'Try again.', 'same-file'),
+      allowance: result.allowance }
     case 'allowance-exhausted': return { ...problem('You’ve used your Campus Bot allowance.',
-      `You have used all of the Campus Bot practice included in your ${grantName(result.allowance, trial)}. ` +
       'Your course materials stay available.', 'none', 'info'), allowance: result.allowance }
     case 'allowance-expired': return { ...problem('Your Campus Bot access has ended.',
       `Your ${grantName(result.allowance, trial)} has ended. Your course materials stay available.`, 'none', 'info'),
       allowance: result.allowance }
-    case 'not-entitled': return { ...problem(NOT_ENTITLED_TITLE, notEntitledMessage(trial, plansOnSale), 'none', 'info'),
+    case 'not-entitled': return { ...problem(notEntitledMessage(trial, plansOnSale), '', 'none', 'info'),
       link: freePassAction(trial, plansOnSale) ?? { label: STUDENT_DESTINATIONS.access.label, href: STUDENT_DESTINATIONS.access.href } }
-    case 'campus-bot-limit': return problem(CAMPUS_BOT_LIMIT_TITLE, result.limit === 'session'
-      ? CAMPUS_BOT_LIMIT_COPY.session(result.resetsAt) : result.limit === 'week' ? CAMPUS_BOT_LIMIT_COPY.week(result.resetsAt)
-        : CAMPUS_BOT_LIMIT_COPY.undelivered, 'none', 'info')
+    case 'campus-bot-limit': {
+      const limit = CAMPUS_BOT_LIMIT_COPY[result.limit]
+      return problem(limit.title, limit.line(result.resetsAt), 'none', 'info')
+    }
     case 'busy': return problem('Still preparing your questions.',
       'Please wait a moment, then try again.', 'same-file', 'info')
-    case 'capacity': return problem('Campus Bot is busy.',
-      'Too many students are generating questions right now. Try again later.', 'same-file', 'info')
-    case 'upload-limit': return problem('Daily upload limit reached.',
-      'You have uploaded the maximum number of files for today. Try again tomorrow.', 'none', 'info')
-    case 'pass-upload-limit': return problem('Free pass uploads used.', UPLOAD_REJECTION_MESSAGES['pass-upload-limit'], 'none', 'info')
-    case 'not-eligible': return problem('This course has study materials.',
-      'Use the study materials for this course instead.', 'none', 'info')
+    case 'capacity': return problem('Campus Bot is busy.', 'Try again in a few minutes.', 'same-file', 'info')
+    case 'upload-limit': return problem('Daily upload limit reached.', 'Try again tomorrow.', 'none', 'info')
+    case 'pass-upload-limit': return problem('Free pass uploads used.', '', 'none', 'info')
+    case 'not-eligible': return { ...problem('This course has study materials.', '', 'none', 'info'),
+      ...(courseHref === undefined ? {} : { link: { label: 'Go to course', href: courseHref } }) }
     case 'signed-out': return { ...problem('You’ve been signed out.', 'Sign in again to continue.', 'none'), signedOut: true }
     // The page loads again for the current sign-in, as it does when signed out.
     case 'session-changed': return { ...problem(SIGNED_IN_ON_ANOTHER_TAB, '', 'none'), signedOut: true }
     case 'disabled': return problem('Campus Bot is unavailable.', 'Try again later.', 'none', 'info')
-    case 'not-found': return problem('Upload not found.', 'Choose your file again.')
+    case 'not-found': return problem('We couldn’t find your file.', 'Choose it again.')
     default: return problem('Something went wrong.', 'Check your connection and try again.', 'same-file')
   }
 }
@@ -170,7 +167,7 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
   deps.onPhase('uploading')
   const reserved = await command(deps, { operation: 'reserve-upload', courseId: deps.courseId,
     fileName: file.name, mediaType, byteSize: file.size })
-  if (reserved.status !== 'upload-reserved') return describeResult(reserved, deps.trial, deps.plansOnSale)
+  if (reserved.status !== 'upload-reserved') return describeResult(reserved, deps.trial, deps.plansOnSale, deps.courseHref)
   try {
     // Straight to private Storage: the file never passes through an application function.
     const put = await deps.fetch(reserved.uploadUrl, { method: 'PUT', cache: 'no-store',
@@ -182,7 +179,7 @@ export async function runUploadJourney(file: File, deps: JourneyDeps): Promise<J
   }
   deps.onPhase('reading')
   const processed = await command(deps, { operation: 'process-upload', documentId: reserved.documentId })
-  if (processed.status !== 'upload-ready') return describeResult(processed, deps.trial, deps.plansOnSale)
+  if (processed.status !== 'upload-ready') return describeResult(processed, deps.trial, deps.plansOnSale, deps.courseHref)
   return generateFromDocument(reserved.documentId, deps)
 }
 
@@ -192,6 +189,6 @@ export async function generateFromDocument(documentId: string, deps: JourneyDeps
   const result = await command(deps, { operation: 'generate', documentId,
     requestId: deps.requests.requestIdFor(documentId) })
   deps.requests.settle(documentId, result)
-  const outcome = describeResult(result, deps.trial, deps.plansOnSale)
+  const outcome = describeResult(result, deps.trial, deps.plansOnSale, deps.courseHref)
   return outcome.kind === 'problem' && outcome.retry === 'same-file' ? { ...outcome, documentId } : outcome
 }

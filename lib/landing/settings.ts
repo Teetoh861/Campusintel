@@ -4,8 +4,6 @@ import { whatsAppChatUrl } from '@/lib/whatsapp'
 export type LandingLinks = {
   /** NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL: the student WhatsApp community invite. */
   community: string | null
-  /** NEXT_PUBLIC_EARLY_ACCESS_FORM_URL: the pre-launch Early Access sign-up form. */
-  earlyAccess: string | null
   /** WhatsApp chat with the team, pre-filled with the waitlist request. */
   waitlist: string | null
   /** WhatsApp chat with the team, without a message. */
@@ -28,7 +26,6 @@ export function httpsUrlOrNull(value: string | undefined): string | null {
 export function landingLinks(waitlistMessage: string): LandingLinks {
   return {
     community: httpsUrlOrNull(process.env.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL),
-    earlyAccess: httpsUrlOrNull(process.env.NEXT_PUBLIC_EARLY_ACCESS_FORM_URL),
     waitlist: whatsAppChatUrl(waitlistMessage),
     whatsApp: whatsAppChatUrl(),
   }

@@ -1,4 +1,5 @@
-// Server-authorized Student App account workspace.
+// app/account/page.tsx — The student's Profile page: personal and academic details, their plan, signing out and
+// deleting the account, read from the live server session.
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AuthUnavailable } from '@/components/auth/AuthShell'
@@ -23,7 +24,7 @@ import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Account | CampusIntell', robots: { index: false, follow: false } }
+export const metadata = { title: 'Profile | CampusIntell', robots: { index: false, follow: false } }
 
 /** Read identity, academic details and deletion eligibility from the live server session. */
 export default async function AccountPage(): Promise<ReactElement> {
@@ -49,7 +50,7 @@ export default async function AccountPage(): Promise<ReactElement> {
   if (profile.status === 'signed-out') redirect(AUTH_PATHS.login)
   if (profile.status === 'incomplete') redirect(PROFILE_SELECTION_PATH)
   return <><AuthFlowSync signedIn continuityToken={continuityToken} />
-    <StudentPage band={<PageBand title="Account" lede="Your profile, academic details and account settings."
+    <StudentPage band={<PageBand title="Profile"
       aside={<Link href={STUDENT_HOME_PATH} className={studentAction(btnGhost)}>Dashboard</Link>} />}>
       <div className="grid min-w-0 gap-4 tablet:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.9fr)] desktop:gap-6">
         <div className="grid min-w-0 content-start gap-4">
@@ -63,15 +64,14 @@ export default async function AccountPage(): Promise<ReactElement> {
               <dt className="student-meta">Email</dt>
               <dd className="mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{context.user.email}</dd>
             </dl>
-            <p className="mt-3 text-sm text-student-text-secondary">Your confirmed email is used to sign in.</p>
           </section>
           <section aria-labelledby="academic-profile-heading" className="student-surface bg-student-brand-surface">
-            <h2 id="academic-profile-heading" className="student-section-title">Academic profile</h2>
+            <h2 id="academic-profile-heading" className="student-section-title">Academic details</h2>
             {profile.status === 'complete' ? <>
               <div className="mt-4 min-w-0"><SelectionSummary selection={profile.selection} /></div>
-              <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit profile and selection</Link>
+              <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit</Link>
             </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure'
-              ? <>{profile.status === 'missing-profile' ? 'Your profile could not be found.' : 'Your profile needs attention.'}{' '}
+              ? <>{profile.status === 'missing-profile' ? 'We couldn’t find your profile.' : 'We couldn’t load your profile.'}{' '}
                 <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
                   {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} /></div>}
           </section>
@@ -79,17 +79,17 @@ export default async function AccountPage(): Promise<ReactElement> {
         <div className="grid min-w-0 content-start gap-4">
           <section aria-labelledby="plan-access-heading" className="student-surface">
             <h2 id="plan-access-heading" className="student-section-title">{STUDENT_DESTINATIONS.access.label}</h2>
-            <p className="mb-4 mt-2 text-sm text-student-text-secondary">Your free trial, Early Access and Campus Bot allowance.</p>
-            <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnGhost)}>View your plan</Link>
+            <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>View your plan</Link>
           </section>
-          <section aria-labelledby="security-heading" className="student-surface">
-            <h2 id="security-heading" className="student-section-title">Security</h2>
-            <p className="mb-4 mt-2 text-sm text-student-text-secondary">Sign out of this device when you finish using a shared computer.</p>
+          {/* No heading: the line and the button say it. */}
+          <section aria-label="Sign out" className="student-surface">
+            <p className="mb-4 text-sm text-student-text-secondary">Sign out of CampusIntell on this device.</p>
             <LogoutButton continuityToken={continuityToken} />
           </section>
           {deletionAllowed ? <DeleteAccountForm continuityToken={continuityToken} /> : <section className="student-surface">
-            <h2 className="student-section-title">Account management</h2>
-            <p className="mt-2 text-sm text-student-text-secondary">Operator account changes require an operations review.</p>
+            <p className="text-sm text-student-text-secondary">This account can’t be deleted here.{' '}
+              <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false}
+                className="whitespace-nowrap underline underline-offset-2">Message us</Link> for help.</p>
           </section>}
         </div>
       </div>

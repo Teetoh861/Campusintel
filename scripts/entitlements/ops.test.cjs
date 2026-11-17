@@ -1,11 +1,8 @@
-// scripts/entitlements/ops.test.cjs — The operator tool: trusted-list import validation, no phone numbers collected,
-// mandatory actor/reason, and narrow service RPCs only.
+// scripts/entitlements/ops.test.cjs — The operator tool: mandatory actor/reason, narrow service RPCs only, the public
+// launch with its claim window, and the retired Early Access list commands.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
-const { run, parseCsv } = require('./ops.cjs')
+const { run } = require('./ops.cjs')
 
 const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret' }
 
@@ -20,107 +17,19 @@ function harness(reply = () => ({ state: 'added' })) {
   return { requests, output, run: (args, env = ENV) => run(args, env, transport, text => output.push(text)) }
 }
 
-function csv(text) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'early-access-'))
-  const file = path.join(dir, 'list.csv')
-  fs.writeFileSync(file, text)
-  return { file, done: () => fs.rmSync(dir, { recursive: true, force: true }) }
-}
-
-test('the CSV reader handles quotes, doubled quotes, CRLF and a byte-order mark', () => {
-  assert.deepEqual(parseCsv('a,"b, c","say ""hi"""\r\n1,2,3\n'), [['a', 'b, c', 'say "hi"'], ['1', '2', '3']])
-  assert.throws(() => parseCsv('a,"b'), /unterminated/)
-})
-
-test('import reads email,full_name,joined_at, normalizes email, and sends a null phone hash', async () => {
-  const list = csv('﻿email,full_name,joined_at\n Ada@Example.TEST ,"Ada Obi",2026-09-01T10:00:00Z\n' +
-    'tunde@example.test,Tunde Bello,2026-09-02T10:00:00Z\n')
-  try {
-    const h = harness()
-    await h.run(['import-early-access', '--file', list.file, '--batch', 'google-form-2026-10', '--actor', 'ops'])
-    assert.deepEqual(h.requests.map(r => r.fn), ['admin_add_early_access_member', 'admin_add_early_access_member'])
-    assert.deepEqual(h.requests[0].body, { p_email: 'ada@example.test', p_full_name: 'Ada Obi', p_phone_hash: null,
-      p_joined_at: '2026-09-01T10:00:00.000Z', p_source: 'import', p_batch: 'google-form-2026-10', p_actor: 'ops' })
-    assert.equal(h.requests[1].body.p_phone_hash, null)
-    assert.deepEqual(JSON.parse(h.output[0]), { added: 2 })
-  } finally { list.done() }
-})
-
-test('a file that still has a phone column is refused before any number is read or anything is sent', async () => {
-  for (const header of ['email,full_name,phone,joined_at', 'email,full_name,joined_at,Phone Number',
-    'Mobile,email,full_name,joined_at', 'email,full_name,joined_at,whatsapp']) {
-    // The phone cell is malformed on purpose: the file is refused on its header, so the cell is never parsed.
-    const list = csv(`${header}\na@x.test,A,2026-09-01T00:00:00Z,"0803 123 4567\n`)
-    try {
-      const h = harness()
-      await assert.rejects(h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops']),
-        /column: phone numbers are no longer collected\. Delete that column from the file and import again/)
-      await assert.rejects(h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops',
-        '--dry-run']), /no longer collected/)
-      assert.equal(h.requests.length, 0)
-    } finally { list.done() }
+test('the retired list commands are refused by name and nothing is sent', async () => {
+  const h = harness()
+  for (const command of [['import-early-access', '--file', 'list.csv', '--batch', 'b-1', '--actor', 'ops'],
+    ['import-early-access', '--file', 'list.csv', '--batch', 'b-1', '--actor', 'ops', '--dry-run'],
+    ['member', '--email', 'ada@example.test', '--action', 'include', '--actor', 'ops', '--reason', 'list fixed'],
+    ['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery sweep']]) {
+    await assert.rejects(h.run(command), new RegExp(`^Error: ${command[0]} is retired: there is no Early Access list\\. ` +
+      'Students claim their free month on the site'))
+    // Not even a configuration error: the command is refused before the connection is read.
+    await assert.rejects(h.run(command, {}), /is retired/)
   }
-})
-
-test('duplicates group by email: a repeated email is refused in the file and reported as existing by the database', async () => {
-  // Two people sharing a phone but using different emails are now two separate entries; same-name rows go to the
-  // report for an operator merge.
-  const list = csv('email,full_name,joined_at\nada@example.test,Ada Obi,2026-09-01T10:00:00Z\n' +
-    'ada.obi@example.test,Ada Obi,2026-09-03T10:00:00Z\nalready@example.test,Bola Ade,2026-09-04T10:00:00Z\n')
-  try {
-    const h = harness(body => ({ state: body.p_email === 'already@example.test' ? 'existing' : 'added' }))
-    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops'])
-    assert.deepEqual(h.requests.map(r => [r.body.p_email, r.body.p_phone_hash]),
-      [['ada@example.test', null], ['ada.obi@example.test', null], ['already@example.test', null]])
-    assert.deepEqual(JSON.parse(h.output[0]), { added: 2, existing: 1 })
-  } finally { list.done() }
-  const repeated = csv('email,full_name,joined_at\nada@example.test,Ada,2026-09-01T00:00:00Z\n' +
-    'ADA@example.test ,Ada Obi,2026-09-02T00:00:00Z\n')
-  try {
-    const h = harness()
-    await assert.rejects(h.run(['import-early-access', '--file', repeated.file, '--batch', 'b-1', '--actor', 'ops']),
-      /line 3: email repeated in this file/)
-    assert.equal(h.requests.length, 0)
-  } finally { repeated.done() }
-})
-
-test('a bad row, duplicate email, wrong header or column count rejects the file before any write', async () => {
-  const cases = [
-    ['email,full_name,joined_at\nnot-an-email,A,2026-09-01T00:00:00Z\n', /line 2: invalid email/],
-    ['email,full_name,joined_at\na@x.test,A,2026-09-01T00:00:00Z\nA@x.test,B,2026-09-01T00:00:00Z\n', /repeated/],
-    ['email,name\na@x.test,A\n', /header must be email,full_name,joined_at/],
-    ['email,full_name,joined_at\na@x.test,A,08031234567,2026-09-01T00:00:00Z\n', /line 2: expected 3 columns/],
-    ['email,full_name,joined_at\na@x.test,A,yesterday\n', /joined_at/],
-    ['email,full_name,joined_at\na@x.test,,2026-09-01T00:00:00Z\n', /full_name/],
-  ]
-  for (const [text, error] of cases) {
-    const list = csv(text)
-    try {
-      const h = harness()
-      await assert.rejects(h.run(['import-early-access', '--file', list.file, '--batch', 'batch-1', '--actor', 'ops']), error)
-      assert.equal(h.requests.length, 0)
-    } finally { list.done() }
-  }
-})
-
-test('the import no longer needs ENTITLEMENT_PHONE_HASH_KEY', async () => {
-  const list = csv('email,full_name,joined_at\na@x.test,A,2026-09-01T00:00:00Z\n')
-  try {
-    const h = harness()
-    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops'],
-      { ...ENV, ENTITLEMENT_PHONE_HASH_KEY: '' })
-    assert.equal(h.requests[0].body.p_phone_hash, null)
-  } finally { list.done() }
-})
-
-test('a dry run validates and counts without connecting', async () => {
-  const list = csv('email,full_name,joined_at\na@x.test,A,2026-09-01T00:00:00Z\n')
-  try {
-    const h = harness()
-    await h.run(['import-early-access', '--file', list.file, '--batch', 'b-1', '--actor', 'ops', '--dry-run'], {})
-    assert.deepEqual(JSON.parse(h.output[0]), { valid: 1 })
-    assert.equal(h.requests.length, 0)
-  } finally { list.done() }
+  assert.equal(h.requests.length, 0)
+  assert.equal(h.output.length, 0)
 })
 
 test('every recovery change requires an actor and a reason and calls one narrow function', async () => {
@@ -158,93 +67,67 @@ test('hosted configuration requires HTTPS and an sb_secret_ key; nothing is sent
 })
 
 test('the actual public launch needs an explicit confirmation flag, an actor and a reason', async () => {
-  const h = harness(() => ({ state: 'launched', granted: 3, remaining: 0 }))
+  const h = harness(() => ({ state: 'launched', actual_launch_at: '2026-11-20T08:00:00+00:00',
+    claim_closes_at: '2026-11-30T08:00:00+00:00', claim_days: 10, short_window: false }))
   await assert.rejects(h.run(['activate-launch', '--actor', 'founder', '--reason', 'go live']), /--confirm-public-launch/)
   await assert.rejects(h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder']), /--reason/)
   assert.equal(h.requests.length, 0)
   await h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
+  // One call, no sweep: the launch enrols nobody. The short window is refused unless the flag is given.
   assert.deepEqual(h.requests.map(r => [r.fn, r.body]), [['admin_activate_public_launch',
-    { p_actor: 'founder', p_reason: 'public launch', p_limit: 200 }]])
+    { p_actor: 'founder', p_reason: 'public launch', p_allow_short_window: false }]])
 })
 
-test('policy changes keep the enrollment window configurable; the post-Early-Access trial is retired', async () => {
+test('the launch prints when it was recorded and when the claim closes, in Lagos time', async () => {
+  const reply = { state: 'launched', actual_launch_at: '2026-11-20T08:00:00+00:00',
+    claim_closes_at: '2026-11-30T08:00:00+00:00', claim_days: 10, short_window: false }
+  const h = harness(() => reply)
+  await h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
+  assert.deepEqual(JSON.parse(h.output.at(-1)), { state: 'launched', launch_recorded: 'Fri, 20 Nov 2026, 09:00 (Lagos)',
+    claim_closes: 'Mon, 30 Nov 2026, 09:00 (Lagos)', ...reply })
+  // Run again by mistake: the database changes nothing and the tool still says when the claim closes.
+  const again = harness(() => ({ state: 'already-launched', actual_launch_at: reply.actual_launch_at,
+    claim_closes_at: reply.claim_closes_at }))
+  await again.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
+  assert.equal(JSON.parse(again.output.at(-1)).claim_closes, 'Mon, 30 Nov 2026, 09:00 (Lagos)')
+  assert.equal(JSON.parse(again.output.at(-1)).state, 'already-launched')
+})
+
+test('a launch that would leave fewer than the full claim days is refused, with the dates, unless the flag is given', async () => {
+  const short = { state: 'short-claim-window', claim_would_close_at: '2026-11-30T23:00:00+00:00', claim_days: 10,
+    full_window_needs_launch_by: '2026-11-20T23:00:00+00:00' }
+  const h = harness(() => short)
+  await assert.rejects(h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch']),
+    /launch NOT recorded: the free month claim would close on Tue, 1 Dec 2026, 00:00 \(Lagos\), less than 10 days after launch \(a full window needs launch by Sat, 21 Nov 2026, 00:00 \(Lagos\)\)\. To launch anyway, add --allow-short-claim-window/)
+  assert.equal(h.output.length, 0, 'nothing is printed as if the launch happened')
+  assert.equal(h.requests[0].body.p_allow_short_window, false)
+  const allowed = harness(() => ({ state: 'launched', actual_launch_at: '2026-11-25T08:00:00+00:00',
+    claim_closes_at: '2026-11-30T23:00:00+00:00', claim_days: 10, short_window: true }))
+  await allowed.run(['activate-launch', '--confirm-public-launch', '--allow-short-claim-window', '--actor', 'founder',
+    '--reason', 'public launch'])
+  assert.equal(allowed.requests[0].body.p_allow_short_window, true)
+  const printed = JSON.parse(allowed.output.at(-1))
+  assert.deepEqual([printed.claim_closes, printed.short_window], ['Tue, 1 Dec 2026, 00:00 (Lagos)', true])
+})
+
+test('policy changes keep the claim days configurable; the post-Early-Access trial is retired', async () => {
   const h = harness(() => ({ state: 'changed' }))
   for (const value of ['true', 'false', 'maybe']) {
     await assert.rejects(h.run(['configure-early-access', '--trial-after-early-access', value, '--actor', 'o', '--reason', 'r']),
       /retired/)
   }
   assert.equal(h.requests.length, 0, 'a retired flag never reaches the database')
-  await h.run(['configure-early-access', '--enrollment-days', '42', '--actor', 'owner', '--reason', 'final policy'])
-  assert.deepEqual(h.requests.at(-1).body, { p_planned_launch_at: null, p_enrollment_days: 42,
-    p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'final policy' })
-  await h.run(['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery sweep'])
-  assert.equal(h.requests.at(-1).fn, 'admin_reconcile_early_access')
+  // 0 days closes the claim at once: the operator's brake.
+  await h.run(['configure-early-access', '--enrollment-days', '0', '--actor', 'owner', '--reason', 'close the claim'])
+  assert.deepEqual(h.requests.at(-1).body, { p_planned_launch_at: null, p_enrollment_days: 0,
+    p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'close the claim' })
 })
 
-test('launch and recovery sweep in bounded batches until nothing enrollable remains', async () => {
-  const replies = [{ state: 'launched', granted: 200, remaining: 350, deferred: 0 },
-    { state: 'reconciled', granted: 200, remaining: 150, deferred: 0 }, { state: 'reconciled', granted: 150, remaining: 0, deferred: 0 }]
-  const h = harness(() => replies.shift())
-  await h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
-  assert.deepEqual(h.requests.map(r => [r.fn, r.body.p_limit]), [['admin_activate_public_launch', 200],
-    ['admin_reconcile_early_access', 200], ['admin_reconcile_early_access', 200]])
-  assert.deepEqual(JSON.parse(h.output.at(-1)), { state: 'launched', granted: 550, remaining: 0, deferred: 0, batches: 3 })
-  const sweep = harness(() => ({ state: 'reconciled', granted: 0, remaining: 0, deferred: 0 }))
-  await sweep.run(['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery'])
-  assert.deepEqual(JSON.parse(sweep.output.at(-1)), { granted: 0, remaining: 0, batches: 1 })
-})
-
-test('M3-B: a batch that grants nobody only because accounts were in flight is retried, not taken as the end', async () => {
-  const replies = [{ state: 'reconciled', granted: 0, remaining: 3, deferred: 2 },
-    { state: 'reconciled', granted: 3, remaining: 0, deferred: 0 }]
-  const h = harness(() => replies.shift())
-  await h.run(['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery'])
-  assert.deepEqual(JSON.parse(h.output.at(-1)), { granted: 3, remaining: 0, batches: 2 })
-})
-
-test('M3-B: the sweep never reports success while enrollable accounts remain', async () => {
-  // No progress and nothing in flight: the database says work is left that no batch can do. That is an error.
-  const stuck = harness(() => ({ state: 'reconciled', granted: 0, remaining: 10, deferred: 0 }))
-  await assert.rejects(stuck.run(['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery']),
-    /stopped with 10 enrollable account\(s\) left after 1 batch/)
-  assert.equal(stuck.output.length, 0, 'no partial result is printed as if complete')
-  const launch = [{ state: 'launched', granted: 200, remaining: 10, deferred: 0 },
-    { state: 'reconciled', granted: 0, remaining: 10, deferred: 0 }]
-  const h = harness(() => launch.shift())
-  await assert.rejects(h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'go']),
-    /10 enrollable account\(s\) left after 2 batch\(es\) \(200 granted\)/)
-})
-
-test('M3-A: an enrollment deferred by an import is completed by a follow-up sweep in fresh transactions', async () => {
-  const list = csv('email,full_name,joined_at\nada@example.test,Ada Obi,2026-09-01T10:00:00Z\n' +
-    'tunde@example.test,Tunde Bello,2026-09-02T10:00:00Z\n')
-  try {
-    const h = harness(body => body.p_email === 'ada@example.test' ? { state: 'added', enrollment: 'deferred' }
-      : body.p_email ? { state: 'added', enrollment: null } : { state: 'reconciled', granted: 1, remaining: 0, deferred: 0 })
-    await h.run(['import-early-access', '--file', list.file, '--batch', 'google-form', '--actor', 'ops'])
-    assert.deepEqual(h.requests.map(r => r.fn), ['admin_add_early_access_member', 'admin_add_early_access_member',
-      'admin_reconcile_early_access'])
-    assert.deepEqual(h.requests.at(-1).body, { p_actor: 'ops', p_reason: 'import google-form: deferred enrollment',
-      p_limit: 200 })
-    assert.deepEqual(JSON.parse(h.output.at(-1)), { added: 2, deferred: 1, sweep: { granted: 1, remaining: 0, batches: 1 } })
-    const plain = harness(() => ({ state: 'added', enrollment: 'granted' }))
-    await plain.run(['import-early-access', '--file', list.file, '--batch', 'google-form', '--actor', 'ops'])
-    assert.equal(plain.requests.filter(r => r.fn === 'admin_reconcile_early_access').length, 0,
-      'no sweep when nothing was deferred')
-  } finally {
-    list.done()
-  }
-})
-
-test('M3-A: an enrollment deferred by a member change is completed by a follow-up sweep', async () => {
-  const h = harness(body => body.p_email ? { state: 'changed', enrollment: 'deferred', duplicate_grants_revoked: 0 }
-    : { state: 'reconciled', granted: 1, remaining: 0, deferred: 0 })
-  await h.run(['member', '--email', 'ada@example.test', '--action', 'include', '--actor', 'ops', '--reason', 'list fixed'])
-  assert.deepEqual(h.requests.map(r => r.fn), ['admin_change_early_access_member', 'admin_reconcile_early_access'])
-  assert.deepEqual(h.requests.at(-1).body, { p_actor: 'ops', p_reason: 'list fixed', p_limit: 200 })
-  assert.deepEqual(JSON.parse(h.output.at(-1)), { state: 'changed', enrollment: 'deferred', duplicate_grants_revoked: 0,
-    sweep: { granted: 1, remaining: 0, batches: 1 } })
-  const plain = harness(() => ({ state: 'changed', enrollment: 'granted', duplicate_grants_revoked: 0 }))
-  await plain.run(['member', '--email', 'ada@example.test', '--action', 'include', '--actor', 'ops', '--reason', 'list fixed'])
-  assert.deepEqual(plain.requests.map(r => r.fn), ['admin_change_early_access_member'], 'no sweep when nothing was deferred')
+test('the report is one read and prints what the database answered', async () => {
+  const report = { actual_launch_at: null, claim_days: 10, claim_open: false,
+    if_launched_now: { claim_would_close_at: '2026-11-26T08:00:00+00:00', full_window: true }, months: { claimed: 0 } }
+  const h = harness(() => report)
+  await h.run(['early-access-report'])
+  assert.deepEqual(h.requests.map(r => [r.fn, r.body]), [['admin_early_access_report', {}]])
+  assert.deepEqual(JSON.parse(h.output[0]), report)
 })

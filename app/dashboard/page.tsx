@@ -1,5 +1,7 @@
 // app/dashboard/page.tsx — Request-scoped Student App home with course-file navigation and personal Continue practice.
+// At the top, only for a student the database says can claim it now: the free month card; once claimed, the day it ends.
 import Link from 'next/link'
+import { FreeMonthCard } from '@/app/access/FreeMonthOffer'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { ContinueCard } from '@/components/dashboard/ContinueCard'
 import { StudentIdentity } from '@/components/dashboard/StudentIdentity'
@@ -18,8 +20,10 @@ import { AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
 import { homeCoursesFrom } from '@/lib/dashboard/home-courses'
+import { FREE_MONTH_COPY, accessNotice, formatFreeMonthDay } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readPracticeProgress } from '@/lib/practice/progress'
+import { readProfileRevision } from '@/lib/profile/course-selection'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -57,8 +61,10 @@ export default async function DashboardPage(): Promise<ReactElement> {
       </>}
   </StudentPage></>
   // One practice read for every course, for this verified session only.
-  const [current, entitlement, progress] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
-    readEntitlementForVerifiedStudent(client), readPracticeProgress(context.sessionId)])
+  const [current, entitlement, progress, profileRevision] = await Promise.all([
+    getCurrentStudentCoursesForVerifiedStudent(client, context.user),
+    readEntitlementForVerifiedStudent(client, { freeMonth: true }), readPracticeProgress(context.sessionId),
+    readProfileRevision(client, context.user.id)])
   if (current.status === 'signed-out' || current.status === 'incomplete') redirectForStudentState(current.status, STUDENT_HOME_PATH)
   // A selection changed during this request must not produce mismatched courses or figures.
   const matching = current.status === 'ok' &&
@@ -67,8 +73,20 @@ export default async function DashboardPage(): Promise<ReactElement> {
     current.selection.academicPeriodId === profile.selection.academicPeriod.id
     ? current : null
   const home = matching === null ? null : homeCoursesFrom(matching.courses, matching.cbtBankSizes, progress)
+  const plan = entitlement.status === 'ok' ? entitlement.entitlement : null
+  // The free month card, only when the database says this student can claim it now. Without the revision the month
+  // could set courses the student did not see (D7), so nothing is offered.
+  const freeMonth = plan !== null && plan.free_month !== null && profileRevision !== null
+    ? { continuityToken, profileRevision, endsOn: formatFreeMonthDay(plan.free_month.endsAt) } : null
+  // A free month that is running, by the day the database says it ends. In its last hours the notice below says when it
+  // ends, to the minute, so the line is not said twice.
+  const running = plan !== null && plan.paid === null && plan.access?.source === 'early_access'
+    && accessNotice(plan)?.id !== 'access-ending' ? plan.access.ends_at : null
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">
-    <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
+    {freeMonth !== null && <FreeMonthCard {...freeMonth} />}
+    {running !== null && <p className="dashboard-free-month student-enter" data-free-month="active">
+      {FREE_MONTH_COPY.active(formatFreeMonthDay(running))}</p>}
+    <AccessNotice entitlement={plan} />
     {home?.continuePractice && <ContinueCard next={home.continuePractice} />}
     <PrimaryCards courses={matching?.courses ?? null} />
     <SupportingActions />
