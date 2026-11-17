@@ -42,7 +42,7 @@ export const SIGNED_IN_ON_ANOTHER_TAB = 'Reload this page to continue.'
 export const AUTH_MESSAGES = {
   unavailable: 'Something went wrong. Try again.',
   sessionChanged: SIGNED_IN_ON_ANOTHER_TAB,
-  recoveryCode: 'That code is incorrect or has expired.',
+  recoveryCode: 'That code is wrong or has expired.',
   recoveryRestart: 'Request a new code to continue.',
   comingSoon: 'CampusIntell isn’t available right now. Please try again later.',
   confirmationRequired: 'Email confirmation is required before signing in.',
@@ -52,7 +52,7 @@ export const AUTH_MESSAGES = {
   weakPassword: STRONGER_PASSWORD,
   invalid: 'Check your details and try again.',
   credentials: 'Incorrect email or password.',
-  code: 'That code is incorrect or has expired.',
+  code: 'That code is wrong or has expired.',
   limited: 'Too many attempts. Please try again later.',
   deletionPassword: ACCOUNT_MESSAGES.passwordInvalid,
   deletionExcluded: ACCOUNT_MESSAGES.excluded,

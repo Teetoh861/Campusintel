@@ -21,8 +21,8 @@ export default function TutorsPage(): ReactElement {
     <>
       <BlueCover
         crumbs={[{ label: 'Home', href: '/' }, { label: 'Tutors' }]}
-        title="Peer tutoring"
-        lede="Peer tutoring isn’t available yet. Join the waitlist and we’ll message you when it opens."
+        title="Tutors"
+        lede="Tutoring isn’t available yet. Join the waitlist and we’ll message you when it opens."
       />
 
       <section className="bg-ci-paper student-page" data-screen-label="Coming soon">
