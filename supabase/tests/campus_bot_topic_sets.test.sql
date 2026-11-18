@@ -237,6 +237,36 @@ select is((select jsonb_build_array(g.outcome_reason,g.question_set is null,e.st
 select is(pg_temp.quiz(5,'GST111',(select gst from t),(select req from r5))->>'state','not-entitled',
   'a retry of that request is told what a new quiz would be told');
 
+-- The semester ends while a set is written. GST remains readable and the paid grant's stored end still includes
+-- payment slack, so delivery must recheck the same effective semester and scope that admitted the funding.
+select pg_temp.student(8);
+create temporary table o8 as select pg_temp.paid(8) id;
+create temporary table q8 as select pg_temp.quiz(8,'GST111',(select gst from t)) j;
+select is((select j->>'state' from q8),'started','a GST set is admitted before the paid semester ends');
+create temporary table q8_calendar as select a.id, a.resumes_on from private.academic_terms a
+  join public.entitlement_grants g on g.course_term_id = a.id
+  join public.ai_usage_events e on e.funding_grant_id = g.id
+  where e.id = (select usage_event_id from public.ai_practice_generations where id = pg_temp.gen((select j from q8)));
+-- Advance the fixture's semester boundary past the admitted request without waiting for a real semester to end.
+update private.academic_terms set resumes_on = ((clock_timestamp() at time zone 'Africa/Lagos')::date
+  - interval '4 months' - interval '1 day')::date where id in (select id from q8_calendar);
+select ok((select g.ends_at > clock_timestamp() and private.grant_effective_end(g) <= clock_timestamp()
+  from public.entitlement_grants g join public.ai_usage_events e on e.funding_grant_id = g.id
+  where e.id = (select usage_event_id from public.ai_practice_generations where id = pg_temp.gen((select j from q8)))),
+  'the paid semester ended while the raw grant end is still in the future');
+select is((select state from private.campus_bot_topic_context(pg_temp.u(8),pg_temp.r('GST111'),
+  (select gst from t),clock_timestamp(),1)),'ready','the GST topic is still readable');
+select is(pg_temp.done(8,pg_temp.gen((select j from q8)))->>'status','failed','settled after the semester ends: not delivered');
+select is((select jsonb_build_array(g.outcome_reason,g.question_set is null,e.state,e.charged_tokens)
+    from public.ai_practice_generations g join public.ai_usage_events e on e.id = g.usage_event_id
+    where g.id = pg_temp.gen((select j from q8))),
+  '["access-ended",true,"released",0]'::jsonb,'the expired funding releases the reservation without saving or charging');
+select ok((select bool_and(charged_tokens = 0 and settled_at is not null) from private.campus_bot_requests
+  where generation_id = pg_temp.gen((select j from q8))),'every reserved model step is released at no charge');
+select is((select count(*)::int from private.plan_use_events where user_id = pg_temp.u(8)),0,
+  'an undelivered set records no plan use');
+update private.academic_terms a set resumes_on = saved.resumes_on from q8_calendar saved where a.id = saved.id;
+
 -- A topic withdrawn while its set is written.
 create temporary table gone_note as select gen_random_uuid() id;
 insert into public.managed_content_items (id, course_id, kind, current_revision, created_by)

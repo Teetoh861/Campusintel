@@ -38,24 +38,32 @@ function sessionStore(): RequestIdStore | null {
 }
 
 /**
- * The request id for a topic's quiz: the one this tab is still waiting on, or a new one. A store that cannot be read
- * or written (a private window, blocked storage) only loses the reuse across reloads; the page still works.
+ * The request id for a topic's quiz: component memory keeps a pending id even when storage fails; the tab's storage
+ * also keeps it across reloads when available. The caller owns the memory for the lifetime of its component.
  */
-export function topicRequestId(itemId: string, newId: () => string, store: RequestIdStore | null = sessionStore()):
+export function topicRequestId(itemId: string, newId: () => string, store: RequestIdStore | null = sessionStore(),
+  pending?: Map<string, string>):
   string {
+  const remembered = pending?.get(itemId)
+  if (remembered !== undefined) return remembered
   const key = KEY_PREFIX + itemId
   try {
     const kept = store?.getItem(key) ?? null
-    if (kept !== null && UUID.test(kept)) return kept
-  } catch { /* Unreadable: start a new request. */ }
+    if (kept !== null && UUID.test(kept)) {
+      pending?.set(itemId, kept)
+      return kept
+    }
+  } catch { /* Unreadable: component memory still keeps the id. */ }
   const requestId = newId()
+  pending?.set(itemId, requestId)
   try { store?.setItem(key, requestId) } catch { /* Kept for this page view only. */ }
   return requestId
 }
 
 /** Forget the id once the server has recorded an outcome against it. Any other result keeps it for a retry. */
 export function settleTopicRequest(itemId: string, result: TopicSetResult,
-  store: RequestIdStore | null = sessionStore()): void {
+  store: RequestIdStore | null = sessionStore(), pending?: Map<string, string>): void {
   if (!RECORDED.has(result.status)) return
+  pending?.delete(itemId)
   try { store?.removeItem(KEY_PREFIX + itemId) } catch { /* Nothing to forget. */ }
 }

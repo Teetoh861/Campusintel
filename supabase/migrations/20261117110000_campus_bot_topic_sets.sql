@@ -384,11 +384,15 @@ begin
   -- A set is delivered only if a new quiz would still be written now: the topic still one this student may read (or
   -- the topic their pass still pins), and the grant that funds it still current. Otherwise it is neither stored nor
   -- charged, and its reservation is released. Topic sets have no exam block (owner decision, 16 November 2026).
+  -- Paid grants' stored ends include payment slack: admission's funding function decides the effective semester,
+  -- current term and department, and must still select the recorded grant at delivery.
   if v_status = 'generated' and ((select t.state from private.campus_bot_topic_context(p_user_id,
         v_generation.source_course_id, v_generation.source_item_id, v_at, 1) t) is distinct from 'ready'
       or not exists (select 1 from public.ai_usage_events e join public.entitlement_grants g on g.id = e.funding_grant_id
         where e.id = v_generation.usage_event_id and g.user_id = p_user_id and g.revoked_at is null
-          and g.starts_at <= v_at and g.ends_at > v_at)) then
+          and g.starts_at <= v_at and g.ends_at > v_at
+          and (g.source <> 'paid' or exists (
+            select 1 from private.campus_bot_plan(p_user_id, v_at, array['paid']) f where f.grant_id = g.id)))) then
     v_status := 'failed';
     v_reason := 'access-ended';
     v_set := null;

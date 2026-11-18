@@ -93,6 +93,30 @@ test('a set still being written is waited for, then opened; the page leaving sto
     'a wait has an end: the busy notice offers Try again')
 }))
 
+for (const [name, store] of [['absent', null], ['throwing', blocked]]) {
+  test(`a lost response keeps the pending request in component memory with ${name} session storage`, async () => withTsx(async () => {
+    const { runQuiz } = require('./QuizMe.tsx')
+    const pending = new Map(), delivered = new Map(), sent = []
+    let next = 0
+    const deps = { store, newId: () => `85000000-0000-4000-8000-${String(++next).padStart(12, '0')}`,
+      wait: async () => {}, send: async command => {
+        sent.push(command.requestId)
+        if (!delivered.has(command.requestId)) delivered.set(command.requestId, SET)
+        // The set was delivered, but its first HTTP response did not reach the browser.
+        return sent.length === 1 ? { status: 'unavailable' } : { status: 'ready', setId: delivered.get(command.requestId) }
+      } }
+    const topic = { courseSlug: 'principles-economics-1', itemId: ITEM }
+    assert.deepEqual(await runQuiz(topic, 'page-token', deps, () => true, pending), { status: 'unavailable' })
+    assert.equal(pending.get(ITEM), sent[0], 'the component keeps the id when no outcome is known')
+    assert.deepEqual(await runQuiz(topic, 'page-token', deps, () => true, pending), { status: 'ready', setId: SET })
+    assert.equal(sent[1], sent[0], 'Try again replays the same request')
+    assert.equal(delivered.size, 1, 'one delivered set, never a second reservation')
+    assert.equal(pending.has(ITEM), false, 'a recorded outcome clears the component memory')
+    await runQuiz(topic, 'page-token', deps, () => true, pending)
+    assert.notEqual(sent[2], sent[0], 'the next intentional set has a new request id')
+  }))
+}
+
 test('the quiz’s part of the area: the button, the wait, the free pass line, and each problem with its one way on',
   async () => withTsx(async () => {
     const { QuizMeView } = require('./QuizMe.tsx')

@@ -35,13 +35,13 @@ const DEFAULT_DEPS: QuizDeps = {
 
 /** Ask for a set until it is ready or something stops it. Null when the page no longer wants the answer. */
 export async function runQuiz(topic: { courseSlug: string; itemId: string }, pageToken: string, deps: QuizDeps,
-  stillWanted: () => boolean): Promise<TopicSetResult | null> {
-  const requestId = topicRequestId(topic.itemId, deps.newId, deps.store)
+  stillWanted: () => boolean, pending: Map<string, string> = new Map()): Promise<TopicSetResult | null> {
+  const requestId = topicRequestId(topic.itemId, deps.newId, deps.store, pending)
   for (let attempt = 0; ; attempt += 1) {
     const result = await deps.send({ operation: 'generate-topic', courseSlug: topic.courseSlug, itemId: topic.itemId,
       requestId }, pageToken)
     if (!stillWanted()) return null
-    settleTopicRequest(topic.itemId, result, deps.store)
+    settleTopicRequest(topic.itemId, result, deps.store, pending)
     if (result.status !== 'in-progress' || attempt >= IN_PROGRESS_RETRIES) return result
     await deps.wait(IN_PROGRESS_WAIT_MS)
     if (!stillWanted()) return null
@@ -85,12 +85,13 @@ export function QuizMe({ courseSlug, itemId, passLine, continuityToken, signInHr
   const [view, setView] = useState<QuizView>({ writing: false, problem: null })
   const [off, setOff] = useState(false)
   const run = useRef(0)
+  const pending = useRef(new Map<string, string>())
   useEffect(() => () => { run.current += 1 }, [])
 
   async function start(): Promise<void> {
     const mine = ++run.current
     setView({ writing: true, problem: null })
-    const result = await runQuiz({ courseSlug, itemId }, continuityToken, deps, () => run.current === mine)
+    const result = await runQuiz({ courseSlug, itemId }, continuityToken, deps, () => run.current === mine, pending.current)
     if (result === null) return
     if (result.status === 'ready') {
       // The wait stays on screen until the set's page opens.
