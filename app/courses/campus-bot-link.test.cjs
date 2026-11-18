@@ -188,11 +188,11 @@ test('All Courses: a 100 Level student gets the Campus Bot link on their own cou
   assert.deepEqual([...rows.keys()], ['ACC101', 'BUA102', 'BUA302', 'GST102', 'GST111', 'GST302'])
   for (const item of [GST102, BUA102]) {
     assert.ok(rows.get(item.code).includes(linkTo(item)), `${item.code} is on their list`)
-    assert.match(rows.get(item.code), /Practise from your own notes <span class="student-ai-practice-tag">Campus Bot<\/span>/)
+    assert.match(rows.get(item.code), /Practise from your notes <span class="student-ai-practice-tag">Campus Bot<\/span>/)
   }
   for (const item of [BUA302, ACC101, GST302]) {
     assert.match(rows.get(item.code), /Study materials are not available\./)
-    assert.doesNotMatch(rows.get(item.code), /<a\b|Campus Bot|Practise from your own notes/, `${item.code} is outside their list`)
+    assert.doesNotMatch(rows.get(item.code), /<a\b|Campus Bot|Practise from your notes/, `${item.code} is outside their list`)
   }
   assert.deepEqual(linked(rows), ['BUA102', 'GST102'])
   assert.deepEqual(f.state.reads, ['access 5', 'courses with sets'], 'one access read for the rows without materials, one light look for kept sets')

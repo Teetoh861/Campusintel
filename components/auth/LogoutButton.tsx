@@ -30,7 +30,7 @@ export function LogoutControl({ action, className, inNav = false }: {
   return <div className={inNav ? 'relative h-11 w-full' : undefined}>
     <button type="button" disabled={action.pending} aria-busy={action.pending}
       className={buttonClassName(btnBase, btnSm, className ?? btnWhite, 'disabled:opacity-60')}
-      onClick={action.logout}>Log out</button>
+      onClick={action.logout}>Sign out</button>
     {action.error && <div className={inNav ? 'absolute right-0 top-full z-10 mt-2 w-64' : undefined}>
       <Feedback message={action.error} tone="error" />
     </div>}

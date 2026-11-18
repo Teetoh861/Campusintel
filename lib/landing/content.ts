@@ -31,14 +31,14 @@ export type FaqItem = { question: string; answer: string }
 
 const REGISTER = '/register'
 const LOGIN = '/login'
-// Said in the hero and again in the footer, in the same words.
-const PITCH = 'Verified past questions, study guides and timed exam practice for UNILAG Management Sciences students.'
+// Said once, in the hero.
+const PITCH = 'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.'
 const NUMBER = new Intl.NumberFormat('en-GB')
 
 export const landingContent = {
   brand: {
     name: 'CampusIntell',
-    tagline: 'Study Hard. Study Smart...',
+    tagline: 'Study hard. Study smart.',
     logo: { src: '/landing/logo-full.png', width: 640, height: 184, alt: 'CampusIntell' },
     homeLabel: 'CampusIntell home',
   },
@@ -60,14 +60,12 @@ export const landingContent = {
     titleEmphasis: 'prepared.',
     lead: PITCH,
     primary: { label: 'Start for free', href: REGISTER },
-    secondary: { label: 'Try a real question', href: '#try' },
-    earlyAccess: 'Before launch: join Early Access for a free month',
+    secondary: { label: 'Try a question', href: '#try' },
   },
   tryQuestion: {
     id: 'try' satisfies LandingAnchor,
     eyebrow: 'Try it now',
     title: 'Answer a real question. No sign-up.',
-    text: 'These come straight from our GST 111 question bank.',
     cardLabel: 'Live practice question',
     modeSwitch: 'Exam mode',
     modeInstant: 'Each answer is explained as you go.',
@@ -75,7 +73,7 @@ export const landingContent = {
     labelPractice: 'Practice',
     labelExam: 'Exam mode',
     progress: 'Question {current} of {total}',
-    savedExam: 'Answer saved. You will see the result at the end.',
+    savedExam: 'Answer saved.',
     correct: 'Correct',
     correctAnswer: 'Correct answer',
     yourAnswer: 'Your answer',
@@ -85,8 +83,8 @@ export const landingContent = {
     bubble: {
       start: 'Ready when you are.',
       right: 'Correct! Nice one.',
-      wrong: "Not quite. Here's why.",
-      saved: 'Saved. Results at the end.',
+      wrong: 'Not quite. Here’s why.',
+      saved: 'Saved.',
       perfect: 'Nice work!',
       other: 'Practice makes perfect.',
     },
@@ -96,8 +94,8 @@ export const landingContent = {
     endSome: 'Good start.',
     endNone: 'Now you know why.',
     endText: 'Practise real questions like these for your courses.',
-    cta: { label: 'Get the full question bank', href: REGISTER },
-    again: 'Play again',
+    cta: { label: 'Start for free', href: REGISTER },
+    again: 'Practise again',
     // GST 111 is free. Copied word for word from the official GST111 bank (GST111_Platform.json), by bank ID.
     questions: [
       {
@@ -125,7 +123,7 @@ export const landingContent = {
     items: [
       { icon: 'past-questions', highlight: true, title: 'Verified past questions',
         text: 'Past questions and new questions for your course, each one vetted by our team.' },
-      { icon: 'notes', title: 'Study guides by topic',
+      { icon: 'notes', title: 'Notes by topic',
         text: 'Notes that follow your course outline, one topic at a time.' },
       { icon: 'exam', title: 'Exam mode',
         text: 'Timed practice that holds your results until the end.' },
@@ -136,19 +134,19 @@ export const landingContent = {
   // The only place that explains Campus Bot practice and theory practice.
   showcase: [
     {
-      eyebrow: 'From your notes',
+      eyebrow: 'Campus Bot',
       title: 'Practice questions from your own notes.',
       text: 'For a course with no study materials yet, Campus Bot builds practice questions from the notes you upload.',
       ticks: ['PDF, Word and text files', 'An explanation and a quote from your notes with each answer'],
       shots: [
-        { src: '/landing/upload-notes.webp', width: 700, height: 696, alt: 'The card for uploading notes on the Practise from your notes screen' },
+        { src: '/landing/upload-notes.webp', width: 700, height: 696, alt: 'Uploading notes to Practise from your notes' },
         { src: '/landing/campus-bot-question.webp', width: 700, height: 1542, alt: 'A Campus Bot question, answered, with its explanation and a quote from the notes' },
       ],
     },
     {
-      eyebrow: 'Theory questions',
+      eyebrow: 'Theory',
       title: 'Theory questions with suggested answers.',
-      text: 'Practise theory questions and see a suggested answer for each one.',
+      text: 'Write your answer, then compare it with the suggested answer.',
       ticks: [],
       // GST 111, theory question 12 of 15: the study guide's own question and suggested answer, word for word.
       shots: [
@@ -175,11 +173,11 @@ export const landingContent = {
     helpJoin: 'or email',
     items: [
       { question: 'Which courses are available?',
-        answer: `Courses for the ${LANDING_FIGURES.departments} departments of the Faculty of Management Sciences at UNILAG, added course by course.` },
+        answer: `Courses for the ${LANDING_FIGURES.departments} departments of the Faculty of Management Sciences at UNILAG.` },
       { question: 'Where do the questions come from?',
         answer: 'From past papers, class tests, course outlines and class notes, and our team vets every question.' },
       { question: 'Can I try it before paying?',
-        answer: 'Yes: GST courses are free for every UNILAG student, and a new account can start a free pass for its department courses.' },
+        answer: 'Yes. GST courses are free, and a free pass lets you try your department courses.' },
     ] satisfies FaqItem[],
   },
   finalCta: {
@@ -193,7 +191,6 @@ export const landingContent = {
     waitlistMessage: "I'd like to join the waitlist for my faculty.",
   },
   footer: {
-    text: PITCH,
     productHeading: 'Product',
     product: [
       { label: 'Try a question', href: '#try' },

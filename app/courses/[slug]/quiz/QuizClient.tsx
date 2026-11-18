@@ -1,6 +1,6 @@
-// QuizClient — the Practice screens around one server-run attempt: the start of a topic's instant feedback, the exam
-// briefing, the resume card, the attempt itself (ActiveAttempt for an exam, InstantAttempt for instant feedback), the
-// result and the review. The server owns every attempt; this file only moves between screens.
+// QuizClient — the screens around one server-run attempt: the start of a topic's practice (instant feedback), Exam
+// mode's start, the resume card, the attempt itself (ActiveAttempt for an exam, InstantAttempt for instant feedback),
+// the result and the review. The server owns every attempt; this file only moves between screens.
 // A start names a fresh attempt id kept on this device until the server answers, so a lost response is retried with
 // the same id and never starts a second attempt. Every attempt has a reloadable URL (?attempt=<id>).
 'use client'
@@ -42,10 +42,15 @@ const PROBLEMS: Record<string, Problem> = {
   'start-refused': { title: PRACTICE_COPY.startRefusedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'resume-failed': { title: PRACTICE_COPY.resumeFailedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
   'policy-changed': { title: PRACTICE_COPY.changedTitle, body: PRACTICE_COPY.changedBody },
-  'questions-changed': { title: 'These questions have changed.', body: 'Retake with new questions instead.' },
+  'questions-changed': { title: 'These questions have changed.', body: 'Choose “New questions” instead.' },
   'locked': { title: 'You can’t start a new practice right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
   // An instant start whose topic the course no longer has.
   'topic-missing': { title: 'This topic isn’t available.', body: 'Choose another topic.' },
+}
+// The same two problems when what would not start is an exam: an exam is never called practice.
+const EXAM_PROBLEMS: Record<string, Problem> = {
+  'start-refused': { title: PRACTICE_COPY.examStartRefusedTitle, body: PRACTICE_COPY.tryAgainBody, retry: true },
+  'locked': { title: 'You can’t start a new exam right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
 }
 
 export type QuizInitial =
@@ -107,7 +112,7 @@ function problemFor(status: string, courseHref: string, attemptId: string | null
       : `${AUTH_PATHS.login}?next=${encodeURIComponent(page)}` } }
   if (status === 'session-changed') return { title: PRACTICE_COPY.sessionChangedTitle, body: '',
     action: { label: PRACTICE_COPY.reload, href: page } }
-  return PROBLEMS[status]
+  return (topic ? undefined : EXAM_PROBLEMS[status]) ?? PROBLEMS[status]
 }
 
 export function QuizClient(props: Props): ReactElement | null {
@@ -115,7 +120,6 @@ export function QuizClient(props: Props): ReactElement | null {
   const [view, setView] = useState<View>(() => initialView(initial))
   const [brief, setBrief] = useState(props.brief)
   const [bankSize, setBankSize] = useState(props.bankSize)
-  const [briefingVersion, setBriefingVersion] = useState(0)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<Problem | null>(null)
   const [report, setReport] = useState<{ index: number; target: ReportTarget } | null>(null)
@@ -189,20 +193,19 @@ export function QuizClient(props: Props): ReactElement | null {
     if (outcome.status === 'ready' || outcome.status === 'in-progress' || outcome.status === 'graded') { show(outcome); return }
     // An exam is open in this course: practice waits, and the exam is one tap away.
     if (outcome.status === 'exam-open') {
-      setProblem({ title: PRACTICE_COPY.examOpenTitle, body: PRACTICE_COPY.examOpenBody,
+      setProblem({ title: PRACTICE_COPY.examOpenTitle, body: '',
         action: { label: PRACTICE_COPY.resumeExam, href: attemptHref(props.courseHref, outcome.attempt.id) } })
       return
     }
     if (outcome.status === 'policy-changed') {
       setBrief({ questionCount: outcome.questionCount, durationSeconds: outcome.durationSeconds })
       setBankSize(outcome.bankSize)
-      setBriefingVersion(version => version + 1)
       setView({ screen: 'intro' })
     }
     const known = 'mode' in pending && outcome.status === 'not-found' ? PROBLEMS['topic-missing']
       : problemFor(outcome.status, props.courseHref, null, 'mode' in pending)
     if (known === undefined) retryStart.current = { ...pending, attemptId: crypto.randomUUID() }
-    setProblem(known ?? PROBLEMS['start-refused']!)
+    setProblem(known ?? ('mode' in pending ? PROBLEMS : EXAM_PROBLEMS)['start-refused']!)
   }, [courseSlug, continuityToken, show, props.courseHref])
 
   const retry = useCallback(() => {
@@ -333,7 +336,7 @@ export function QuizClient(props: Props): ReactElement | null {
     return <InstantStarting {...identity} topicsHref={topicsHref} topic={view.topic} error={problem} busy={busy}
       onRetry={retry} />
   }
-  return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief} wholeBank={bankSize <= brief.questionCount}
-    briefingVersion={briefingVersion} starting={busy} error={problem} onRetry={retry} lastResultHref={props.lastResultHref}
+  return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief}
+    starting={busy} error={problem} onRetry={retry} lastResultHref={props.lastResultHref}
     onStart={() => start('new', null, brief)} />
 }

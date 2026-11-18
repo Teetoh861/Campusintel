@@ -79,7 +79,7 @@ export function ReviewCard({ question, n, status, open, reported, onToggle, onRe
       </ul>
       {status === 'unanswered' ? <p className="student-practice-help">You didn’t answer this question.</p> : null}
       {question.explanation ? <div className="student-practice-explanation">
-        <p className="student-practice-eyebrow">Explanation</p>
+        <p className="student-practice-eyebrow">Why</p>
         <p>{question.explanation}</p>
       </div> : null}
       {/* The exam is graded, so every question may be explained, answered or left out. */}

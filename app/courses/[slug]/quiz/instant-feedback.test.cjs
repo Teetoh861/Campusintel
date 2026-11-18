@@ -39,7 +39,7 @@ test('marks, resume point, end line and haptic rules', async () => withTsx(async
   assert.equal(optionMarkOf(1, undefined), null, 'nothing is marked before the server answers')
   assert.equal(firstOpenQuestion([{ feedback: right }, { feedback: wrong }, {}]), 2, 'resume on the next unanswered question')
   assert.equal(firstOpenQuestion([{ feedback: right }]), 0)
-  assert.equal(instantScoreLine(7, 10), '7 of 10 right')
+  assert.equal(instantScoreLine(7, 10), '7 of 10 correct')
   assert.deepEqual([hapticPattern(true), hapticPattern(false)], [10, [10, 60, 10]])
   const calls = []
   const vibrate = pattern => { calls.push(pattern); return true }
@@ -123,7 +123,7 @@ async function flow(run, records = new Map()) {
         const options = find(tree, element => element.type === 'input' && element.props.type === 'radio')
         options[n].props.onChange()
       }
-      const nextButton = tree => find(tree, element => element.type === 'button' && /Next|See result/.test(text(html(element))))[0]
+      const nextButton = tree => find(tree, element => element.type === 'button' && /Next|See your result/.test(text(html(element))))[0]
       await run({ mount, settle, html, choose, nextButton, answers, requests, vibrations, listeners, graded, records })
     })
   } finally {
@@ -152,7 +152,8 @@ test('a right pick: locked at once, marked only when the server answers, one hap
   f.answers.push(picked(0, 1, openAttempt({ 0: 1 })))
   f.choose(tree, 1)
   tree = render()
-  assert.match(text(f.html(tree)), /Locked/, 'the pick shows as locked before any result')
+  assert.match(f.html(tree), /data-locked="true"/, 'the pick is held before any result')
+  assert.doesNotMatch(text(f.html(tree)), /Locked/, 'one line says so: Checking your answer…')
   assert.match(text(f.html(tree)), /Checking your answer/)
   assert.doesNotMatch(text(f.html(tree)), /Correct/, 'no result before the server answers')
   assert.deepEqual(f.requests[0], { action: 'pick', attemptId: ATTEMPT, questionId: Q(0), option: 1 })
@@ -192,7 +193,7 @@ test('offline: the pick is kept, sent again on reconnect and after a reload, and
     await f.settle()
     tree = render()
     assert.match(text(f.html(tree)), /No connection\. Your answer is kept/)
-    assert.match(text(f.html(tree)), /Locked/)
+    assert.match(f.html(tree), /data-locked="true"/)
     assert.equal(f.nextButton(tree).props.disabled, true)
     assert.equal(f.records.size, 1, 'kept on this device')
     // Reconnected: the same pick goes again.
@@ -243,19 +244,19 @@ test('the last pick ends the attempt; See result shows it', async () => flow(asy
   await f.settle()
   tree = render()
   const next = f.nextButton(tree)
-  assert.equal(text(f.html(next)), 'See result')
+  assert.equal(text(f.html(next)), 'See your result')
   next.props.onClick()
   assert.equal(f.graded.length, 1)
   assert.equal(f.graded[0].result.score, 2)
 }))
 
-test('the end says how many were right, then Practise again, Next topic and All topics', async () => withTsx(async () => {
+test('the end says how many were correct, then Practise again, Next topic and All topics', async () => withTsx(async () => {
   const { InstantResult } = require('./InstantResult.tsx')
   const end = renderToStaticMarkup(React.createElement(InstantResult, { ...identity, topicsHref: '/courses/use-of-english/practice',
     attempt: gradedAttempt(7, [1, 1, 1, 1, 1, 1, 1, 0, 0, 0]), canStartNew: true, nextTopic: 'The Sounds of English',
     starting: false, error: null, onPractiseAgain() {}, onNextTopic() {}, onRetry() {} }))
-  assert.match(end, /<h1[^>]*>7 of 10 right<\/h1>/)
-  assert.match(text(end), /Listening Skills 7 of 10 right Practise again Next topic All topics$/, 'the topic names the run')
+  assert.match(end, /<h1[^>]*>7 of 10 correct<\/h1>/)
+  assert.match(text(end), /Listening Skills 7 of 10 correct Practise again Next topic All topics$/, 'the topic names the run')
   assert.match(end, /href="\/courses\/use-of-english\/practice"[^>]*>All topics</, 'the one way out is the topic list, where the progress shows')
   assert.doesNotMatch(end, /Back to course/)
   assert.doesNotMatch(text(end), /You answered/, 'a finished attempt needs no second line')
@@ -266,7 +267,7 @@ test('the end says how many were right, then Practise again, Next topic and All 
   const early = renderToStaticMarkup(React.createElement(InstantResult, { ...identity, topicsHref: '/courses/use-of-english/practice',
     attempt: gradedAttempt(2, [1, 1, 0, null, null]), canStartNew: false, nextTopic: null, starting: false, error: null,
     onPractiseAgain() {}, onNextTopic() {}, onRetry() {} }))
-  assert.match(early, /<h1[^>]*>2 of 3 right<\/h1>/, 'correct out of answered')
+  assert.match(early, /<h1[^>]*>2 of 3 correct<\/h1>/, 'correct out of answered')
   assert.doesNotMatch(early, /Practise again/, 'no new attempt without access')
 }))
 

@@ -46,10 +46,11 @@ const text = html => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
 
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = new Map(Object.entries(require.cache))
-  const calls = [], client = { name: 'verified detail client' }
+  const calls = [], planReads = [], client = { name: 'verified detail client' }
   // topics: the course's topic list as published_cbt_topics returns it (null: unreadable); progress per topic.
+  // plan: what the entitlement read answers for a locked course; revision: the profile revision the page reads with it.
   const state = { result: full(), signedOut: false, sessionError: false, clientError: false, topics: [], progress: null,
-    topicError: false, buildTime: { notes: true, cbtPractice: true, theory: false } }
+    topicError: false, buildTime: { notes: true, cbtPractice: true, theory: false }, plan: { status: 'unavailable' }, revision: 4 }
   function StudentAccessGate() { return null }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -58,11 +59,14 @@ async function fixture(run) {
     }).outputText, file)
     const central = require(path.join(root, 'lib/courses/read-model.ts'))
     const topicModel = require(path.join(root, 'lib/practice/topics.ts'))
+    const selection = require(path.join(root, 'lib/profile/course-selection.ts'))
     Module._load = function(name, ...args) {
       if (name === '@/components/auth/StudentAccessGate') return { StudentAccessGate }
       if (name === 'next/navigation') return {
         redirect: destination => { throw new Error('redirect:' + destination) },
         notFound: () => { throw new Error('notFound') },
+        // The free month button asks the router to read the page again; these renders mount no router.
+        useRouter: () => ({ refresh() {} }),
       }
       if (name === '@/lib/supabase/server') return { createClient: async () => {
         calls.push('client'); if (state.clientError) throw new Error('private provider details'); return client
@@ -90,9 +94,12 @@ async function fixture(run) {
         },
         readTopicProgress: async (sessionId, courseId) => { calls.push(['progress', sessionId, courseId]); return state.progress },
       }
-      if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => {
-        calls.push('entitlement'); return { status: 'unavailable' }
+      if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async (supplied, options) => {
+        calls.push('entitlement'); assert.equal(supplied, client); planReads.push(options); return state.plan
       }, readPlansOnSale: async () => state.plansOnSale === true }
+      if (name === '@/lib/profile/course-selection') return { ...selection, readProfileRevision: async (supplied, owner) => {
+        assert.equal(supplied, client); assert.equal(owner, 'verified-student'); return state.revision
+      } }
       if (name === './BookmarkButton') return { BookmarkButton: props =>
         React.createElement('button', { type: 'button', 'data-bookmark': props.contentKey }, 'Bookmark control') }
       if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
@@ -104,7 +111,9 @@ async function fixture(run) {
       }
       return load.call(this, name, ...args)
     }
-    const page = require('./page.tsx').default
+    const pageModule = require('./page.tsx')
+    const page = pageModule.default
+    const metadata = (slug = 'central-route') => pageModule.generateMetadata({ params: Promise.resolve({ slug }) })
     const loading = require('./loading.tsx').default
     const granted = async (slug = 'central-route') => {
       const gated = await page({ params: Promise.resolve({ slug }) })
@@ -115,7 +124,7 @@ async function fixture(run) {
       return child.type(child.props)
     }
     const html = async slug => renderToStaticMarkup(await granted(slug))
-    await run({ state, calls, granted, html, loading })
+    await run({ state, calls, planReads, granted, html, loading, metadata })
   } finally {
     Module._load = load
     if (tsx) Module._extensions['.tsx'] = tsx; else delete Module._extensions['.tsx']
@@ -151,7 +160,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   // Approved desktop frame: a contents rail beside one bounded reading column, both inside the shared workspace.
   assert.match(html, /class="student-workspace student-page-workspace student-detail-workspace"><aside class="student-detail-rail"><nav aria-label="Study sections" class="student-detail-nav"><p class="student-detail-kicker student-detail-nav-label">Contents<\/p><ol>/)
   assert.deepEqual([...html.matchAll(/student-detail-nav-number">(\d\d)<\/span>([^<]+)</g)].map(match => [match[1], match[2]]),
-    [['01', 'Notes'], ['02', 'CBT practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
+    [['01', 'Notes'], ['02', 'Practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
   assert.match(html, /<\/aside><div class="student-detail-reading">/)
   assert.ok(html.indexOf('student-detail-rail') < html.indexOf('id="notes"'), 'the rail precedes the reading column')
 }))
@@ -311,7 +320,7 @@ test('a locked course keeps its identity, renders no study content or reading li
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
-  assert.match(text(html), /Included with full access\. Notes · CBT practice See how to unlock/)
+  assert.match(text(html), /Included with a plan\. Notes · Practice See how to unlock/)
   assert.doesNotMatch(html, /GST|open fully|open when you subscribe/, 'one line: what the course has, no repetition, no GST')
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
@@ -322,8 +331,91 @@ test('a locked course keeps its identity, renders no study content or reading li
   f.state.buildTime = { notes: false, cbtPractice: false, theory: false }
   const empty = await f.html()
   assert.match(text(empty), /Study materials are not available\./)
-  assert.doesNotMatch(empty, /href="\/access"|See how to unlock|Subscribe|Included with full access|Free pass/)
+  assert.doesNotMatch(empty, /href="\/access"|See how to unlock|Subscribe|Included with a plan|Free pass/)
   assert.equal((empty.match(/class="student-notice"/g) || []).length, 1)
+}))
+
+const { entitlementSummarySchema } = require(path.join(root, 'lib/entitlements/contract.ts'))
+// The plan as the server read it a day after launch for a student with no plan; `free_month` is the database's answer
+// to "can this student claim now", with the instant the month would end.
+const planRead = freeMonth => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
+  now: '2026-11-16T12:00:00+00:00', planned_launch_at: '2026-11-14T23:00:00+00:00', actual_launch_at: '2026-11-15T08:00:00+00:00',
+  trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
+  trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
+  discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-25T08:00:00+00:00' },
+}), free_month: freeMonth } })
+
+test('a locked course on the student\'s list offers the free month when the database says they can claim it now', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  f.state.revision = 7
+  const hub = await f.granted()
+  assert.deepEqual(hub.props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December',
+    closesInMs: (8 * 24 + 20) * 3_600_000 },
+    'bound to the page token, the profile revision the page read and the end day the database gave')
+  assert.deepEqual(f.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')
+  const html = renderToStaticMarkup(hub)
+  // What the course has is listed in the study families' own labels.
+  const has = require(path.join(root, 'components/student/study-families.ts')).getStudyFamilyLabels(f.state.buildTime).join(' · ')
+  assert.ok(text(html).includes(`Included in your free month. ${has} Claim your free month `), text(html))
+  assert.match(html, /<button type="button" data-free-month-start=""/)
+  assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
+  assert.doesNotMatch(html, /href="\/access"|See how to unlock|Get your free pass|Subscribe|Early Access|16 December/,
+    'no trip to Plan & Access, and the end date is in the confirmation')
+  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|\/quiz[?"]/, 'the course stays locked until the month starts')
+}))
+
+test('no free month on a locked course when the database offers none, or the revision or the plan cannot be read', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  f.state.plan = planRead(null)
+  assert.equal((await f.granted()).props.freeMonth, null)
+  assert.match(text(await f.html()), /Included with a plan\. Notes · Practice See how to unlock /)
+  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  f.state.revision = null
+  assert.equal((await f.granted()).props.freeMonth, null, 'a month must be bound to the courses the student saw (D7)')
+  assert.doesNotMatch(await f.html(), /free month|data-free-month-start/i)
+  f.state.revision = 7
+  f.state.plan = { status: 'unavailable' }
+  assert.equal((await f.granted()).props.freeMonth, null)
+}))
+
+test('the free month is never read or offered for a course off the list, with courses unconfirmed, or with nothing published', async () => fixture(async f => {
+  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  for (const reason of ['outside-list', 'needs-selection', 'selection-locked']) {
+    f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason }), learning: null, practice: null }
+    const html = await f.html()
+    assert.doesNotMatch(html, /free month|data-free-month-start/i, reason)
+  }
+  assert.deepEqual(f.planReads, [], 'no plan is read where a plan would not open the course')
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  f.state.buildTime = { notes: false, cbtPractice: false, theory: false }
+  const empty = await f.html()
+  assert.match(text(empty), /Study materials are not available\./)
+  assert.doesNotMatch(empty, /free month|data-free-month-start/i, 'nothing published: nothing a month would open')
+}))
+
+test('the browser tab names the course as the page does, and only for a live session', async () => fixture(async f => {
+  const noindex = { index: false, follow: false }
+  assert.deepEqual(await f.metadata(), { title: 'INST101 Institutional title | CampusIntell', robots: noindex },
+    'the student\'s own course code and title, never the shelf\'s')
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  assert.equal((await f.metadata()).title, 'INST101 Institutional title | CampusIntell', 'a locked course keeps its name')
+  f.state.result = { status: 'repository-only', course: repositoryOnly(ready({ notes: true })), learning, practice }
+  assert.equal((await f.metadata()).title, 'STATIC 999 Static repository title | CampusIntell')
+  // No course is named when none was verified: the tab keeps the site's own title.
+  for (const status of ['not-found', 'unavailable', 'invariant-failure', 'signed-out']) {
+    f.state.result = { status }
+    assert.deepEqual(await f.metadata(), { robots: noindex }, status)
+  }
+  f.state.result = full()
+  f.calls.length = 0
+  f.state.signedOut = true
+  assert.deepEqual(await f.metadata(), { robots: noindex })
+  assert.equal(f.calls.some(call => Array.isArray(call)), false, 'no lookup without a live session')
+  f.state.signedOut = false
+  f.state.sessionError = true
+  assert.deepEqual(await f.metadata(), { robots: noindex }, 'a failed read names nothing and never throws')
 }))
 
 test('repository-only renders repository identity and content without any fabricated institutional ownership', async () => fixture(async f => {
@@ -331,8 +423,9 @@ test('repository-only renders repository identity and content without any fabric
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Static repository title<\/h1>/)
   assert.match(html, /Additional study material · STATIC 999/)
-  // The title is a label, so it takes no full stop; the sentence under it does.
-  assert.match(html, /<h2 class="student-notice-title">Additional study material<\/h2><p class="student-notice-text">Check it against your course outline\.<\/p>/)
+  // The label is said once, at the top; the notice is the one line that tells the student what to do about it.
+  assert.equal((html.match(/Additional study material/g) || []).length, 1)
+  assert.match(html, /<h2 class="student-notice-title">Check this against your course outline\.<\/h2><\/div><\/div>/)
   assert.doesNotMatch(html, /have not been confirmed/)
   assert.doesNotMatch(html, /INST101|Institutional title|Confirmed for|Business Administration|Insurance|200 Level|Semester|Free/)
   assert.match(html, /id="notes"/)
@@ -411,31 +504,32 @@ test('loading boundary is inert: one announcement, no identity, no actions', asy
   assert.match(html, /aria-hidden="true"/)
 }))
 
-test('once plans are on sale, a locked course points to a plan in the new wording; closed keeps today\'s', async () => fixture(async f => {
+test('once plans are on sale, a locked course says "when you subscribe"; before that, "with a plan"', async () => fixture(async f => {
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
   f.state.plansOnSale = true
   const open = text(await f.html())
   assert.match(open, /Included when you subscribe\. /)
-  assert.doesNotMatch(open, /Included with full access|Early Access/)
+  assert.doesNotMatch(open, /Included with a plan|full access|Early Access/)
   f.state.plansOnSale = false
-  assert.match(text(await f.html()), /Included with full access\. /)
+  assert.match(text(await f.html()), /Included with a plan\. /)
 }))
 
 test('outside-list detail shows the support lock without asking for a pass or rendering learning', async () => fixture(async f => {
   f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason: 'outside-list' }), learning: null, practice: null }
   const html = await f.html()
   assert.match(html, /Institutional title/)
-  assert.match(text(html), /Not in your courses this semester\. Message us to add it\./)
+  assert.match(text(html), /Not in your courses this semester\. Message us to add it /, 'the button says what the message is for')
+  assert.doesNotMatch(text(html), /Message us to add it\./, 'and no sentence above it says it again')
   assert.ok(anchors(html).some(link => /Message us/.test(link) && /href="\/contact"/.test(link)))
-  assert.doesNotMatch(html, /Included with full access|Discovery|Confirmed for|id="notes"|id="cbtPractice"|id="theory"|id="reading"/)
+  assert.doesNotMatch(html, /Included with a plan|Discovery|Confirmed for|id="notes"|id="cbtPractice"|id="theory"|id="reading"/)
   assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
 }))
 
 
 test('course detail gives each selection recovery one notice and never asks for a pass', async () => fixture(async f => {
   for (const [reason, title, action] of [
-    ['needs-selection', 'Confirm your courses for this semester.', 'Confirm my courses'],
-    ['selection-locked', 'Your courses are set for another semester.', 'Message us'],
+    ['needs-selection', 'Confirm your courses for this semester.', 'Confirm your courses'],
+    ['selection-locked', 'Not in your courses this semester.', 'Message us'],
   ]) {
     f.calls.length = 0
     f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason }), learning: null, practice: null }
@@ -444,7 +538,7 @@ test('course detail gives each selection recovery one notice and never asks for 
     assert.ok(html.includes('>' + action + '</a>'))
     assert.equal((html.match(/class="student-notice"/g) || []).length, 1)
     assert.equal(anchors(html).length, 1)
-    assert.doesNotMatch(html, /Included with full access|Discovery|Confirmed for|id="notes"|id="reading"/)
+    assert.doesNotMatch(html, /Included with a plan|Discovery|Confirmed for|id="notes"|id="reading"/)
     assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
   }
 }))
@@ -454,6 +548,6 @@ test('repository-only detail shows not-available without material sections or pl
   const html = await f.html()
   assert.match(html, /Static repository title|Additional study material/)
   assert.match(html, /Study materials are not available./)
-  assert.doesNotMatch(html, /Message us|Included with full access|See how to unlock|Core reading|id="notes"|id="reading"|Request material/)
+  assert.doesNotMatch(html, /Message us|Included with a plan|See how to unlock|Core reading|id="notes"|id="reading"|Request material/)
   assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
 }))

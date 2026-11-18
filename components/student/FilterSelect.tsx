@@ -28,7 +28,7 @@ export function FilterSelect({ id, label, value, options, onChange, selectRef }:
         }}>
         <option value="">All</option>
         {value !== null && !options.some(option => option.id === value) &&
-          <option value={value} disabled>Selection no longer available</option>}
+          <option value={value} disabled>No longer available</option>}
         {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
       </select>
       <ChevronDown aria-hidden="true" size={18} strokeWidth={1.75} />

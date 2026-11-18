@@ -20,7 +20,8 @@ test('the stored syllabus topics are not listed; the rest of the overview stays'
     formulaSheet: [{ name: 'Break-even', formula: 'BEQ = FC / (P − v)', explanation: 'Contribution' }] }
   const html = renderToStaticMarkup(React.createElement(OverviewSection, { overview: full, number: 4 }))
   assert.doesNotMatch(html, /Syllabus topics|Old chapter|>CH \d/)
-  assert.equal(text(html), '04 / Course overview Course overview Published overview body. Course outcomes 01 Listen effectively. '
+  // The section's name is said once: no numbered kicker repeats it above the heading.
+  assert.equal(text(html), 'Course overview Published overview body. Course outcomes 01 Listen effectively. '
     + 'How you’re assessed The exam is objective (CBT). Key takeaways 01 Takeaway Remember this Exam focus 01 Focus area '
     + 'Formula sheet Break-even BEQ = FC / (P − v) Contribution')
   assert.doesNotMatch(html, /Explore the topics|student-meta/, 'no line about topics the overview no longer lists')

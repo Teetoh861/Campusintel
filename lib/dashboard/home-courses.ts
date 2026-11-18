@@ -95,12 +95,12 @@ export function formatTimeLeft(minutes: number): string {
   return rest === 0 ? `${hours} hr left` : `${hours} hr ${rest} min left`
 }
 
-/** "8 of 40 questions practised · Last score 6/10"; the total only when the course's bank can be counted now, the score
+/** "8 of 40 questions practised · Last score 6 of 10 correct"; the total only when the course's bank can be counted now, the score
  * only once there is one. */
 export function formatCourseProgress(progress: NonNullable<HomeCourse['progress']>): string {
   const questions = progress.total === null
     ? `${progress.practised} ${progress.practised === 1 ? 'question' : 'questions'} practised`
     : `${progress.practised} of ${progress.total} questions practised`
   return progress.lastScore === null ? questions
-    : `${questions} · Last score ${progress.lastScore.score}/${progress.lastScore.total}`
+    : `${questions} · Last score ${progress.lastScore.score} of ${progress.lastScore.total} correct`
 }

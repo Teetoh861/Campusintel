@@ -63,12 +63,8 @@ export function TutorForm() {
   return (
     <div className="mx-auto max-w-[640px] rounded-[20px] border border-ci-border bg-ci-white p-[28px_24px] shadow-ci-card min-[900px]:p-9">
       <p className="text-[16px] leading-[1.6] text-ci-gray-600">
-        Tell us about your subjects and experience. Send your details on WhatsApp, and we’ll follow up with you there.
+        Your application opens in WhatsApp, and we’ll reply there.
       </p>
-      <div className="mt-3 inline-flex items-center gap-2 text-[13px] text-ci-gray-600">
-        <span className="h-[6px] w-[6px] rounded-full bg-ci-blue-400" />
-        Discuss your application with us on WhatsApp
-      </div>
 
       <div className="mt-7 flex flex-col gap-5">
         <div>

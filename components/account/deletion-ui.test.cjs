@@ -23,7 +23,7 @@ async function controls(run) {
   })
 }
 
-test('mandatory decision makes no request on mount, and only Yes cancels with the original rendered request/session', async () => controls(async f => {
+test('mandatory decision makes no request on mount, and only Keep your account cancels with the original rendered request/session', async () => controls(async f => {
   const { DeletionDecision } = require('./DeletionDecision.tsx')
   const requestId = randomUUID(), view = f.mount(DeletionDecision, { requestId, continuityToken: 'rendered-A' })
   let tree = view.render()
@@ -31,7 +31,7 @@ test('mandatory decision makes no request on mount, and only Yes cancels with th
   view.props = { requestId: randomUUID(), continuityToken: 'rendered-B' }
   tree = view.render()
   const buttons = f.nodes(tree).filter(node => node.type === 'button')
-  assert.deepEqual(buttons.map(node => node.props.children), ['Yes, keep my account', 'No, continue with deletion'])
+  assert.deepEqual(buttons.map(node => node.props.children), ['Keep your account', 'Delete your account'])
   await buttons[0].props.onClick()
   assert.equal(f.calls[0][0], '/api/auth/cancel-deletion')
   assert.deepEqual(f.calls[0][1], { requestId })
@@ -91,7 +91,7 @@ test('deletion disclosure keeps a stable ARIA target, exposes expansion and retu
   }
   let rendered = disclosure()
   assert.equal(rendered.trigger.props['aria-expanded'], false); assert.equal(rendered.panel.props.hidden, true)
-  for (const closeFrom of ['Go back', 'trigger']) {
+  for (const closeFrom of ['Cancel', 'trigger']) {
     rendered.trigger.props.onClick(); rendered = disclosure()
     assert.equal(rendered.trigger.props['aria-expanded'], true); assert.equal(rendered.panel.props.hidden, false)
     assert.equal(rendered.nodes.find(node => node.props.name === 'password').props.autoFocus, true)
@@ -102,4 +102,28 @@ test('deletion disclosure keeps a stable ARIA target, exposes expansion and retu
     assert.equal(focused, triggerElement)
     assert.equal(rendered.nodes.some(node => node.type === 'form'), false, 'closing discards password/consent controls')
   }
+}))
+
+test('the delete form says what happens in three short lines and keeps one note: the free pass or free month this email used', async () => controls(async f => {
+  const { DeleteAccountForm } = require('./DeleteAccountForm.tsx')
+  const view = f.mount(DeleteAccountForm, { continuityToken: 'rendered-A' })
+  const words = node => [].concat(node.props.children).map(part => typeof part === 'object' && part !== null ? words(part) : String(part)).join('')
+  let nodes = f.nodes(view.render())
+  assert.deepEqual(nodes.filter(node => node.type === 'p').map(words),
+    ['Delete your account and everything in it. You have 30 days to change your mind.'], 'closed: one line and the button')
+  const trigger = nodes.find(node => node.type === 'button')
+  assert.equal(trigger.props.children, 'Delete your account')
+  trigger.props.onClick()
+  nodes = f.nodes(view.render())
+  const details = nodes.find(node => node.props.id === 'deletion-details')
+  assert.deepEqual(f.nodes(details).filter(node => node.type === 'p').map(words), [
+    'You’ll be signed out. To cancel, sign in within 30 days and choose “Keep your account”.',
+    'After 30 days, your account, bookmarks and results are deleted for good.',
+    'We keep a note that this email has used its free pass or free month.'])
+  assert.equal(words(nodes.find(node => node.type === 'span')), 'I understand my account will be deleted for good after 30 days.')
+  assert.deepEqual(nodes.filter(node => node.type === 'button').slice(1).map(words), ['Delete account', 'Cancel'])
+  f.state.pending = true
+  assert.deepEqual(f.nodes(view.render()).filter(node => node.type === 'button').slice(1).map(words), ['Deleting…', 'Cancel'])
+  assert.doesNotMatch(JSON.stringify(f.nodes(view.render()).filter(node => node.type === 'p' || node.type === 'span').map(words)),
+    /Early Access|free trial|protected record|service providers|backups|Schedule|every device/)
 }))

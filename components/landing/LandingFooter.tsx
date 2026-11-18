@@ -33,7 +33,6 @@ export function LandingFooter({ whatsAppUrl, communityUrl, year }: {
         <div>
           <Image src={brand.logo.src} width={brand.logo.width} height={brand.logo.height} alt={brand.logo.alt}
             sizes="132px" className={styles.footerLogo} />
-          <p className={styles.footerText}>{footer.text}</p>
         </div>
         <nav aria-labelledby="footer-product">
           <h2 id="footer-product">{footer.productHeading}</h2>

@@ -111,17 +111,17 @@ test('the attempt line never claims a save the server has not confirmed', () => 
   assert.equal(saveLineFor({ ...base, answered: 0 }), null, 'nothing answered, nothing to claim')
   assert.equal(saveLineFor({ ...base, save: 'saving' }).text, 'Saving…')
   assert.equal(saveLineFor({ ...base, save: 'unsaved' }).text, 'Not saved yet. We’ll keep trying.')
-  assert.deepEqual(saveLineFor({ ...base, save: 'failed' }), { text: 'Your answers couldn’t be saved. They’re still on this device.', retry: true })
+  assert.deepEqual(saveLineFor({ ...base, save: 'failed' }), { text: 'We couldn’t save your answers. Keep this page open.', retry: true })
   assert.equal(saveLineFor({ ...base, clockSynced: false }).text, 'Checking the time left…')
   assert.match(saveLineFor({ ...base, clockSynced: false, clockFailures: 2 }).text, /^Reconnecting…/)
   assert.equal(saveLineFor({ ...base, timeUp: true }).text, PRACTICE_COPY.timeUp)
   assert.equal(saveLineFor({ ...base, timeUp: true, submitFailing: true }).text, PRACTICE_COPY.timeUpOffline)
   const reload = { label: 'Reload', href: '/courses/x/quiz?attempt=a' }
-  const changed = { text: 'You signed in on another tab.', action: reload, timeUpText: PRACTICE_COPY.timeUpSessionChanged, timeUpAction: reload }
-  assert.deepEqual(saveLineFor({ ...base, refusal: changed }), { text: 'You signed in on another tab.', retry: false, action: reload })
+  const changed = { text: 'Reload this page to continue.', action: reload, timeUpText: PRACTICE_COPY.timeUpSessionChanged, timeUpAction: reload }
+  assert.deepEqual(saveLineFor({ ...base, refusal: changed }), { text: 'Reload this page to continue.', retry: false, action: reload })
   // A refused hand-in at time up says why, with its way on, never "Getting your result…" for good.
   assert.deepEqual(saveLineFor({ ...base, timeUp: true, refusal: changed }),
-    { text: 'Time is up. You signed in on another tab.', retry: false, action: reload })
+    { text: 'Time is up. Reload this page to continue.', retry: false, action: reload })
   const signIn = { label: 'Sign in', href: '/login?next=%2Fcourses%2Fx%2Fquiz%3Fattempt%3Da' }
   assert.deepEqual(saveLineFor({ ...base, timeUp: true, refusal: { text: 'You’ve been signed out. The timer is still running.',
     action: signIn, timeUpText: PRACTICE_COPY.timeUpSignedOut, timeUpAction: signIn } }),
@@ -134,12 +134,13 @@ test('the attempt line never claims a save the server has not confirmed', () => 
   assert.deepEqual(saveLineFor({ ...base, submitting: true }), { text: 'Submitting…', retry: false })
   assert.equal(saveLineFor({ ...base, timeUp: true, submitting: true }).text, PRACTICE_COPY.timeUp)
   // A submission that didn't go through offers Try again, never "try again" without a button.
-  assert.deepEqual(saveLineFor({ ...base, submitFailing: true }), { text: 'Your answers are saved. Submission didn’t go through.', retry: true })
-  assert.deepEqual(saveLineFor({ ...base, submitFailing: true, save: 'unsaved' }),
-    { text: 'Your answers are kept on this device. Submission didn’t go through.', retry: true })
-  assert.deepEqual(saveLineFor({ ...base, submitFailing: true, answersSafe: false }),
-    { text: 'Submission didn’t go through, and some answers are only on this page.', retry: true })
-  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Keep this page open|Refresh this page|Reconnect and tap/)
+  // One line whatever was saved: what the student has to do is the same, keep the page open and tap Try again.
+  for (const state of [{}, { save: 'unsaved' }, { save: 'failed' }]) {
+    assert.deepEqual(saveLineFor({ ...base, submitFailing: true, ...state }),
+      { text: 'We couldn’t submit your answers. Keep this page open.', retry: true })
+  }
+  // Never where the answers are held (this device, this page, the server): only the result and the action.
+  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Refresh this page|Reconnect and tap|on this device|only on this page|didn’t go through/)
   for (const state of ['saving', 'unsaved', 'failed', 'closed']) {
     assert.doesNotMatch(saveLineFor({ ...base, save: state })?.text ?? '', /saved$/i)
     assert.equal(exitBodyFor(state === 'closed' ? 'saving' : state, 3), PRACTICE_COPY.exitSaving)

@@ -96,7 +96,8 @@ test('a failed generation keeps the document so retry does not re-upload', async
   const { deps } = harness([{ status: 200, json: { status: 'generation-failed', allowance: null } }])
   const outcome = await generateFromDocument(DOC, deps)
   assert.equal(outcome.documentId, DOC)
-  assert.match(outcome.message, /did not use any of your Campus Bot allowance/)
+  assert.deepEqual([outcome.title, outcome.message], ['We couldn’t create your questions.', 'Try again.'],
+    'the title says what happened; the line under it only what to do')
 })
 
 test('a reply lost after the server committed is retried as the same request: one provider call, one charge', async () => {
@@ -162,13 +163,31 @@ test('every server result has student-safe copy; unknown or broken replies degra
     'capacity', 'upload-limit', 'not-eligible', 'session-changed', 'disabled', 'not-found', 'unavailable', 'invalid-request']) {
     const outcome = describeResult({ status, allowance: null })
     assert.equal(outcome.kind, 'problem')
-    // A changed sign-in loads the page again, as a signed-out one does, so it needs no second line.
-    assert.ok(outcome.title.length > 0 && (outcome.signedOut === true || outcome.message.length > 0), status)
+    // A title that says it all has no second line: where Campus Bot opens, a course with its own materials, and a
+    // changed sign-in (the page loads again, as it does when signed out).
+    const oneLine = ['not-entitled', 'not-eligible', 'session-changed'].includes(status)
+    assert.ok(outcome.title.length > 0, status)
+    assert.equal(outcome.message.length > 0, !oneLine, `${status}: ${outcome.message}`)
   }
   assert.equal(describeResult({ status: 'session-changed', allowance: null }).signedOut, true)
   assert.equal(describeResult({ status: 'signed-out' }).signedOut, true)
   const blocked = describeResult({ status: 'not-entitled' })
-  assert.deepEqual([blocked.title, blocked.retry, blocked.tone], ['Campus Bot isn’t included in your account.', 'none', 'info'])
+  assert.deepEqual([blocked.title, blocked.message, blocked.retry, blocked.tone],
+    ['Campus Bot is included with a plan.', '', 'none', 'info'], 'one line, and never the internal name')
+  // Each message that used to say it twice keeps its title and adds only what is new.
+  const said = (status, extra = {}) => { const { title, message } = describeResult({ status, allowance: null, ...extra }); return [title, message] }
+  assert.deepEqual(said('flagged-for-review'), ['We couldn’t use this file.', 'Upload clear study notes for this course.'])
+  assert.deepEqual(said('allowance-exhausted'), ['You’ve used your Campus Bot allowance.', 'Your course materials stay available.'])
+  assert.deepEqual(said('upload-limit'), ['Daily upload limit reached.', 'Try again tomorrow.'])
+  assert.deepEqual(said('pass-upload-limit'), ['Free pass uploads used.', ''])
+  assert.deepEqual(said('capacity'), ['Campus Bot is busy.', 'Try again in a few minutes.'])
+  assert.deepEqual(said('not-found'), ['We couldn’t find your file.', 'Choose it again.'])
+  assert.deepEqual(said('upload-rejected', { reason: 'empty' })[0], 'We couldn’t use this file.')
+  // A course with its own study materials: one line, and a link to that course when the page knows it.
+  assert.deepEqual(said('not-eligible'), ['This course has study materials.', ''])
+  assert.equal(describeResult({ status: 'not-eligible' }).link, undefined)
+  assert.deepEqual(describeResult({ status: 'not-eligible' }, undefined, false, '/courses/business-statistics').link,
+    { label: 'Go to course', href: '/courses/business-statistics' })
   // Regression F4: a trial grant is named by the policy the student's own grant was issued under, from the plan
   // summary, never by whether the database could issue a Discovery Pass. A historical seven-day trial stays a free
   // trial on a database from before the pass and on one that offers it; a pass is offered only to an account that
@@ -181,7 +200,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
   const pre = { ...summary, trial_days: 7 }
   const post = { ...summary, trial_hours: 72, discovery: { cbt_questions: 50, ai_sets: 1, previews: [] } }
   const expired = describe => describeResult({ status: 'allowance-expired', allowance: allowance('trial') }, describe).message
-  const exhausted = describe => describeResult({ status: 'allowance-exhausted', allowance: allowance('trial') }, describe).message
+  const notEntitled = (...args) => describeResult({ status: 'not-entitled' }, ...args).title
   for (const [label, wire] of [['pre-migration', pre], ['post-migration', post]]) {
     for (const status of ['ended', 'active']) {
       const sevenDay = trialWording(entitlementSummarySchema.parse({ ...wire, trial: { ...wire.trial, status,
@@ -189,58 +208,60 @@ test('every server result has student-safe copy; unknown or broken replies degra
       assert.deepEqual(sevenDay, { policy: 'seven-day', passAvailable: false }, `${label} ${status}: a seven-day grant`)
       assert.match(expired(sevenDay), /free trial has ended/, `${label} ${status}`)
       assert.doesNotMatch(expired(sevenDay), /Discovery/, `${label} ${status}: a seven-day trial is never a Discovery Pass`)
-      assert.match(exhausted(sevenDay), /included in your free trial\./, `${label} ${status}`)
-      assert.doesNotMatch(describeResult({ status: 'not-entitled' }, sevenDay).message, /Discovery|pass/i,
+      assert.doesNotMatch(notEntitled(sevenDay), /Discovery|pass/i,
         `${label} ${status}: an account that had its trial is not offered a pass`)
     }
   }
   const pass = trialWording(entitlementSummarySchema.parse({ ...post, trial: { ...post.trial, status: 'active', policy: 'discovery' } }))
   assert.deepEqual(pass, { policy: 'discovery', passAvailable: false })
   assert.match(expired(pass), /Your free pass has ended/)
-  assert.match(exhausted(pass), /included in your free pass\./)
   const offered = trialWording(entitlementSummarySchema.parse({ ...post, trial: { status: 'available', policy: null,
     starts_at: null, ends_at: null, available_from: null } }))
   assert.deepEqual(offered, { policy: null, passAvailable: false }, 'not eligible until the server has read eligibility')
   const eligible = trialWording({ ...entitlementSummarySchema.parse({ ...post, trial: { status: 'available', policy: null,
     starts_at: null, ends_at: null, available_from: null } }), discovery_eligible: true })
   assert.deepEqual(eligible, { policy: null, passAvailable: true }, 'an eligible student can start a pass')
-  assert.equal(describeResult({ status: 'not-entitled' }, eligible).message, 'Campus Bot opens with a free pass or Early Access.')
+  assert.equal(notEntitled(eligible), 'Campus Bot opens with a free pass.')
   assert.deepEqual(describeResult({ status: 'not-entitled' }, eligible).link, { label: 'Get your free pass', href: '/access' },
     'the button names the pass the message offers')
   assert.deepEqual(describeResult({ status: 'not-entitled' }, eligible, true).link, { label: 'Plan & Access', href: '/access' },
     'once plans are on sale the message offers no pass')
   assert.deepEqual(describeResult({ status: 'not-entitled' }, offered).link, { label: 'Plan & Access', href: '/access' })
-  assert.doesNotMatch(JSON.stringify([expired(pass), exhausted(pass)]), /Discovery/, 'the pass is called a free pass')
-  assert.doesNotMatch(describeResult({ status: 'not-entitled' }, offered).message, /Discovery|pass/i, 'an ineligible student is not offered one')
+  assert.doesNotMatch(expired(pass), /Discovery/, 'the pass is called a free pass')
+  assert.doesNotMatch(notEntitled(offered), /Discovery|pass/i, 'an ineligible student is not offered one')
   const neutral = trialWording(null)
   assert.deepEqual(neutral, { policy: null, passAvailable: false }, 'no plan summary: neutral')
   assert.match(expired(neutral), /Your trial access has ended/, 'without policy data the grant is named neutrally')
-  assert.doesNotMatch(describeResult({ status: 'not-entitled' }, neutral).message, /Discovery|pass/i)
-  assert.doesNotMatch(describeResult({ status: 'not-entitled' }).message, /Discovery|pass/i, 'the default is the neutral wording')
+  assert.doesNotMatch(notEntitled(neutral), /Discovery|pass/i)
+  assert.doesNotMatch(notEntitled(), /Discovery|pass/i, 'the default is the neutral wording')
   assert.match(describeResult({ status: 'allowance-expired', allowance: allowance('early_access') }, pass).message,
-    /Campus Bot access has ended/, 'Early Access copy stays neutral')
+    /Campus Bot access has ended/, 'a free month that ended is named neutrally')
   // The copy switch: once plans are on sale, a student without access is pointed to a plan, pass or not.
   for (const wording of [eligible, offered, neutral]) {
-    assert.equal(describeResult({ status: 'not-entitled' }, wording, true).message,
-      'Campus Bot is included when you subscribe.')
+    assert.equal(notEntitled(wording, true), 'Campus Bot is included when you subscribe.')
+  }
+  // No wording, on sale or not, uses our internal name for the free month.
+  for (const wording of [eligible, offered, neutral]) {
+    assert.doesNotMatch(notEntitled(wording) + notEntitled(wording, true), /Early Access/)
   }
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)
   assert.equal(broken.title, 'Something went wrong.')
 })
 
 test('Campus Bot limits replace the generic allowance message: session, week and undelivered, with reset times', () => {
-  const { CAMPUS_BOT_LIMIT_TITLE } = require('./journey.ts')
+  // What has run out, then when it comes back.
   const session = describeResult({ status: 'campus-bot-limit', limit: 'session', resetsAt: '2026-11-03T14:30:00+01:00' })
-  assert.deepEqual([session.title, session.retry, session.tone], [CAMPUS_BOT_LIMIT_TITLE, 'none', 'info'])
-  assert.equal(session.message, 'You’ve reached this session’s Campus Bot limit. It resets at 14:30.')
+  assert.deepEqual([session.title, session.message, session.retry, session.tone],
+    ['You’ve used up Campus Bot for now.', 'It resets at 14:30.', 'none', 'info'])
   const week = describeResult({ status: 'campus-bot-limit', limit: 'week', resetsAt: '2026-11-09T00:00:00+01:00' })
-  assert.equal(week.message, 'You’ve reached this week’s Campus Bot limit. It resets Monday at 00:00.')
+  assert.deepEqual([week.title, week.message], ['You’ve used up Campus Bot for this week.', 'It resets Monday at 00:00.'])
   const undelivered = describeResult({ status: 'campus-bot-limit', limit: 'undelivered', resetsAt: null })
-  assert.equal(undelivered.message, 'Campus Bot couldn’t finish your last few sets. Try again tomorrow.')
+  assert.deepEqual([undelivered.title, undelivered.message],
+    ['Campus Bot limit reached.', 'Campus Bot couldn’t finish your last few sets. Try again tomorrow.'])
   for (const outcome of [session, week, undelivered]) {
-    assert.doesNotMatch(outcome.message, /allowance|used up|token|\d+ sets?/i)
+    assert.doesNotMatch(outcome.title + outcome.message, /allowance|token|\d+ sets?|this session/i)
   }
-  // Without a reset time the sentence stops at the limit: no invented time.
-  assert.equal(describeResult({ status: 'campus-bot-limit', limit: 'session', resetsAt: null }).message,
-    'You’ve reached this session’s Campus Bot limit.')
+  // Without a reset time there is no second line: no invented time.
+  const unknown = describeResult({ status: 'campus-bot-limit', limit: 'session', resetsAt: null })
+  assert.deepEqual([unknown.title, unknown.message], ['You’ve used up Campus Bot for now.', ''])
 })

@@ -56,6 +56,7 @@ select ok((select v::text !~ 'correct_option|explanation' from result where k='t
 reset role;
 -- A live linked old claim still matches a differently spelled canonical alias.
 delete from private.discovery_pass_claims;
+delete from private.early_access_claims;
 delete from private.discovery_claim_keys;
 insert into private.discovery_claim_keys(key_version,key_check) values(999,repeat('f',64));
 insert into private.discovery_pass_claims(claim_hash,key_version,user_id,expires_at) values(repeat('a',64),999,pg_temp.u(3),now()+interval '1 year');

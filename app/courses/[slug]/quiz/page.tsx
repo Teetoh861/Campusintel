@@ -27,6 +27,7 @@ import { QuizClient } from './QuizClient'
 import { PRACTICE_COPY, attemptHref, practiceContext } from './practice-presentation'
 import type { QuizInitial } from './QuizClient'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
+import type { Metadata } from 'next'
 import type { ReactElement } from 'react'
 
 type Search = { attempt?: string | string[]; topic?: string | string[]; mode?: string | string[] }
@@ -35,6 +36,14 @@ type Entry = { attemptId: string | null; topic: string | null; exam: boolean }
 
 // Account-gated per student; never prerender or share across viewers.
 export const dynamic = 'force-dynamic'
+
+/** The tab names what the address asks for: Exam mode for ?mode=exam, Practice otherwise. An attempt's own address
+ * does not say which it is, and reading it here would read it twice, so it keeps the section's name. */
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  const { mode } = await searchParams
+  return { title: `${mode === 'exam' ? PRACTICE_COPY.examMode : PRACTICE_COPY.title} | CampusIntell`,
+    robots: { index: false, follow: false } }
+}
 
 const MS_PER_MINUTE = 60_000
 
@@ -65,7 +74,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
   if (result.status === 'not-found') return notFound()
   if (result.status === 'signed-out' || sessionId === null) return redirectForStudentState('signed-out', returnPath)
   if (result.status !== 'ok' && result.status !== 'repository-only') {
-    return <StudentPage band={<PageBand title={PRACTICE_COPY.title} lede={PRACTICE_COPY.lede} />}>
+    return <StudentPage band={<PageBand title={entry.exam ? PRACTICE_COPY.examMode : PRACTICE_COPY.title} />}>
       <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
         retryHref={`/courses/${encodeURIComponent(slug)}/quiz`} />
     </StudentPage>
@@ -74,14 +83,15 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
   const { course, practice } = result
   const { route } = course.repository
   const context = practiceContext(result)
-  const band = <PageBand title={PRACTICE_COPY.title} lede={context.lede} context={<p>{context.context}</p>} />
+  // Exam mode names its own screens; every other state on this page belongs to Practice.
+  const band = <PageBand title={entry.exam ? PRACTICE_COPY.examMode : PRACTICE_COPY.title} context={<p>{context.context}</p>} />
   const backToCourse = <Link href={route.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
     {PRACTICE_COPY.backToCourse}
   </Link>
   const retry = () => <StudentPage band={band}>
-    <Notice title={PRACTICE_COPY.loadFailedTitle} action={<>
+    <Notice title={entry.exam ? PRACTICE_COPY.examLoadFailedTitle : PRACTICE_COPY.loadFailedTitle} action={<>
       <a href={`${route.href}/quiz`} className={studentAction(btnNavy, studentFocusDark)}>Try again</a>{backToCourse}
-    </>}>{PRACTICE_COPY.temporaryBody}</Notice>
+    </>} />
   </StudentPage>
   // A fresh attempt may start only with current access and a live bank; the database judges both again at start.
   const brief = course.content.state === 'ready' && course.content.study.cbtPractice && practice !== null
@@ -152,7 +162,7 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
         <Link href={attemptHref(route.href, state.attempt.id)} prefetch={false}
           className={studentAction(btnNavy, studentFocusDark)}>{PRACTICE_COPY.resumeExam}</Link>
         {backToCourse}
-      </>}>{PRACTICE_COPY.examOpenBody}</Notice>
+      </>} />
     </StudentPage>
   }
   if (state.status === 'open' && !openTopic) {
@@ -187,6 +197,6 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
   </StudentPage>
   if (course.content.state === 'temporarily-unavailable') return retry()
   return <StudentPage band={band}>
-    <Notice tone="info" title={PRACTICE_COPY.notBuiltTitle} action={backToCourse}>{PRACTICE_COPY.notBuiltBody}</Notice>
+    <Notice tone="info" title={PRACTICE_COPY.notBuiltTitle} action={backToCourse} />
   </StudentPage>
 }

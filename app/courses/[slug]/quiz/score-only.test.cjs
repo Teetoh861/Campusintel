@@ -9,30 +9,31 @@ const attempt = { id: 'attempt', mode: 'exam', status: 'submitted', reviewAvaila
 
 for (const [reason, line] of [
   ['needs-plan', 'Answers and explanations are included with full access.'],
-  ['outside-list', 'Answers are available for your courses this semester.'],
+  ['outside-list', 'Not in your courses this semester, so answers aren’t shown.'],
   ['needs-selection', 'Confirm your courses for this semester to see answers.'],
 ]) test(`score-only result retains course identity, navigation and the correct ${reason} line`, async () => withTsx(() => {
   const { ScoreOnly } = require('./ScoreOnly.tsx')
   const markup = renderToStaticMarkup(React.createElement(ScoreOnly, { ...identity,
     attempt: { ...attempt, reviewUnavailableReason: reason }, canStartNew: false, starting: false, onRetake() {} }))
   assert.match(markup, /BUA 216.*Financial Management/)
+  assert.match(markup, /<h1[^>]*>Exam result<\/h1>/, 'an exam\'s result is never called a practice result')
   assert.match(markup, /2 of 5 correct/)
   assert.ok(markup.includes(line))
   assert.match(markup, /href="\/courses\/bua-216"/)
-  assert.doesNotMatch(markup, /Review answers|Retake with new questions/)
+  assert.doesNotMatch(markup, /Review answers|Practise again|New questions/)
   // Confirm courses comes back to this result after the save.
   assert.equal(markup.includes(`href="/profile-selection?return=${encodeURIComponent('/courses/bua-216/quiz?attempt=attempt')}"`),
     reason === 'needs-selection')
-  assert.equal(markup.includes('Confirm courses'), reason === 'needs-selection')
+  assert.equal(markup.includes('>Confirm your courses<'), reason === 'needs-selection')
 }))
 
-test('score-only retake follows the server permission and the current bank size', async () => withTsx(() => {
+test('score-only offers its one retake as Practise again, whatever the bank size', async () => withTsx(() => {
   const { ScoreOnly } = require('./ScoreOnly.tsx')
-  for (const [bankSize, label] of [[200, 'Retake with new questions'], [5, 'Practise again']]) {
+  for (const bankSize of [200, 5]) {
     const markup = renderToStaticMarkup(React.createElement(ScoreOnly, { ...identity,
       attempt: { ...attempt, bankSize }, canStartNew: true, starting: false, onRetake() {} }))
-    assert.ok(markup.includes(label))
-    assert.doesNotMatch(markup, /Review answers/)
+    assert.ok(markup.includes('>Practise again<'))
+    assert.doesNotMatch(markup, /Review answers|New questions|Same questions/)
   }
 }))
 
@@ -41,7 +42,8 @@ test('free-pass timeout shows the timeout line alongside its score, without an a
   const render = timedOut => renderToStaticMarkup(React.createElement(DiscoveryExam, { continuityToken: 't', courseSlug: 'bua-216',
     questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z', savedSheet: null,
     initialResult: { score: 3, total: 50, timed_out: timedOut } }))
-  assert.match(render(true), /Your score.*3\/50.*Time ran out\..*Answers and explanations are included with full access\./s)
+  assert.match(render(true), /Your score.*3 of 50 correct.*Time ran out\..*Answers and explanations are included with full access\./s)
+  assert.doesNotMatch(render(true), /3\/50/, 'scores read the same on every screen')
   assert.doesNotMatch(render(false), /Time ran out\./)
   assert.doesNotMatch(render(true), /correctOption|"explanation"\s*:|Review answers|input|Subscribe/)
 }))
@@ -53,6 +55,12 @@ test('the copy switch: once plans are on sale, a score names subscribing; closed
     attempt: { ...attempt, reviewUnavailableReason: 'needs-plan' }, canStartNew: false, starting: false, onRetake() {} }))
   assert.match(score(true), /Answers and explanations are included when you subscribe\./)
   assert.match(score(false), /Answers and explanations are included with full access\./)
+  // The button to Plan & Access is named as on a locked course: Subscribe once plans are on sale.
+  assert.match(score(true), /href="\/access"[^>]*>Subscribe<\/a>/)
+  assert.match(score(false), /href="\/access"[^>]*>See how to unlock<\/a>/)
+  // A topic's practice keeps its own name.
+  assert.match(renderToStaticMarkup(React.createElement(ScoreOnly, { ...identity, attempt: { ...attempt, mode: 'instant',
+    reviewUnavailableReason: 'needs-plan' }, canStartNew: false, starting: false, onRetake() {} })), /<h1[^>]*>Practice result<\/h1>/)
   const exam = plansOnSale => renderToStaticMarkup(React.createElement(DiscoveryExam, { continuityToken: 't',
     courseSlug: 'bua-216', questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z',
     savedSheet: null, plansOnSale, initialResult: { score: 3, total: 50, timed_out: false } }))

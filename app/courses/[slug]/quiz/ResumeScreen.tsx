@@ -29,8 +29,8 @@ type Props = {
 
 /** No readiness checkbox: the student agreed to these conditions when the attempt started. */
 export function ResumeScreen(props: Props): ReactElement {
-  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly)
-  return <StudentPage band={<PageBand title={PRACTICE_COPY.title} lede={identity.lede} context={<p>{identity.context}</p>} />}>
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly, 'exam')
+  return <StudentPage band={<PageBand title={PRACTICE_COPY.examMode} context={<p>{identity.context}</p>} />}>
     <div className="max-w-[720px]">
       <Notice tone="info" title={PRACTICE_COPY.resumeTitle} action={<>
         <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={props.opening}
@@ -39,7 +39,7 @@ export function ResumeScreen(props: Props): ReactElement {
       </>}>
         {answeredLine(props.answered, props.total, 0)} · {props.minutesLeft < 1 ? 'less than a minute' : plural(props.minutesLeft, 'minute')} left
       </Notice>
-      {props.opening ? <p role="status" className="student-practice-help mt-3">{PRACTICE_COPY.loading}</p> : null}
+      {props.opening ? <p role="status" className="student-practice-help mt-3">{PRACTICE_COPY.loadingExam}</p> : null}
       {props.error ? <div className="mt-5"><ProblemNotice problem={props.error} busy={props.opening} onRetry={props.onRetry} /></div> : null}
     </div>
   </StudentPage>

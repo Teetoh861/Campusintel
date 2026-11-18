@@ -1,4 +1,5 @@
-// app/dashboard/dashboard.test.cjs — Personalized course-file navigation and unchanged private Continue behavior.
+// app/dashboard/dashboard.test.cjs — Personalized course-file navigation, unchanged private Continue behavior, and the
+// free month: one card at the top while this student can claim it, then one line with the day it ends.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -8,6 +9,18 @@ const ts = require('typescript')
 const { renderToStaticMarkup } = require('react-dom/server')
 
 const NOW = '2026-10-27T09:00:00.000Z'
+const root = path.join(__dirname, '../..')
+const { entitlementSummarySchema } = require(path.join(root, 'lib/entitlements/contract.ts'))
+// The plan as the server read it, at the database's clock NOW, a day after launch, for a student with no plan.
+// `free_month` is the database's answer to "can this student claim now", with the instant the month would end.
+const planRead = ({ free_month = null, ...overrides } = {}) => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
+  now: NOW, planned_launch_at: '2026-10-25T23:00:00+00:00', actual_launch_at: '2026-10-26T08:00:00+00:00',
+  trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
+  trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
+  discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-05T08:00:00+00:00' },
+  ...overrides }), free_month } })
+const hoursFromNow = hours => new Date(Date.parse(NOW) + hours * 3_600_000).toISOString()
 
 async function fixture(run) {
   const load = Module._load, tsx = Module._extensions['.tsx'], cache = { ...require.cache }
@@ -19,13 +32,29 @@ async function fixture(run) {
     } }, profileReads: 0, courseReads: 0, current: { status: 'ok',
       selection: { departmentId: 'dept', academicLevelId: 'level', academicPeriodId: 'period' },
       courses: [], cbtBankSizes: new Map() },
-    progressReads: [], progress: { status: 'ok', now: NOW, open: null, latest: null, courses: new Map() } }
+    progressReads: [], progress: { status: 'ok', now: NOW, open: null, latest: null, courses: new Map() },
+    // What the plan read and the profile revision read answer, and what the page asked the plan read for.
+    plan: { status: 'unavailable' }, revision: 4, planReads: [] }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
     }).outputText, file)
     Module._load = function(name, ...args) {
-      if (name === 'next/navigation') return { redirect: target => { throw Error('redirect:' + target) } }
+      if (name === 'next/navigation') return { redirect: target => { throw Error('redirect:' + target) },
+        // The free month button asks the router to read the page again; these renders mount no router.
+        useRouter: () => ({ refresh() {} }) }
+      if (name === '@/lib/entitlements/server') return {
+        ...load.call(this, path.join(root, 'lib/entitlements/server.ts'), ...args),
+        readEntitlementForVerifiedStudent: async (client, options) => {
+          assert.equal(client, state.client); state.planReads.push(options); return state.plan
+        },
+      }
+      if (name === '@/lib/profile/course-selection') return {
+        ...load.call(this, path.join(root, 'lib/profile/course-selection.ts'), ...args),
+        readProfileRevision: async (client, owner) => {
+          assert.equal(client, state.client); assert.equal(owner, state.context.user.id); return state.revision
+        },
+      }
       if (name === '@/lib/auth/config') return { isStudentAuthEnabled: () => state.enabled }
       if (name === '@/lib/ai-practice/config') return { isAiPracticeAvailable: () => state.aiAvailable }
       if (name === '@/lib/supabase/server') return { createClient: async () => state.client }
@@ -64,8 +93,9 @@ async function fixture(run) {
 test('sprint plan 23 Oct item 2: home is a real personalized command centre with no fabricated activity', async () => fixture(async f => {
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
-  for (const text of ['Welcome back, Ọlá', 'Business Administration', '200 Level', 'First Semester',
-    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request Material', 'Help &amp; Support', 'Account', 'Waitlist']) assert.ok(html.includes(text), text)
+  for (const text of ['Hi, Ọlá', 'Business Administration', '200 Level', 'First Semester',
+    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request material', 'Help &amp; Support', 'Profile', 'Waitlist']) assert.ok(html.includes(text), text)
+  assert.doesNotMatch(html, /Welcome back|Your study space/, 'a first visit is greeted like any other, with no filler beside the university')
   assert.doesNotMatch(html, /streak|GPA|credits remaining|Tobi|not-a-name@|Saved files/)
   assert.match(courseCard(html), /<h2 id="my-courses-title">My Courses<\/h2>/)
   assert.doesNotMatch(html, /This semester|Your courses ·/)
@@ -80,8 +110,8 @@ test('Practice describes Campus Bot practice according to its availability, sepa
   assert.doesNotMatch(html, /Verified CBT practice/, 'no unbacked claim above Practice')
   assert.match(html, /href="\/my-courses"/)
   assert.match(html, /Practise from your notes/)
-  assert.match(html, /Currently unavailable/)
-  assert.match(html, /Campus Bot practice from your notes is unavailable right now/)
+  assert.match(html, /Unavailable right now/)
+  assert.doesNotMatch(html, /Campus Bot practice from your notes is unavailable|Choose a course to practise/, 'said once, by the tag')
   const upload = html.match(/<section aria-labelledby="upload-practice-title"[\s\S]*?<\/section>/)?.[0]
   assert.ok(upload)
   assert.doesNotMatch(upload, /<a |<button|type="file"|href=/)
@@ -92,12 +122,13 @@ test('Practice describes Campus Bot practice according to its availability, sepa
   assert.ok(practice.indexOf(upload) < practice.indexOf('dashboard-practice-action'), 'quiet upload note precedes the live practice action')
   assert.match(html, /id="practice-title">Practice<\/h2>/)
   assert.doesNotMatch(html, /Practice quizzes|dashboard-status/)
-  assert.match(upload, /class="student-status-rail" data-status="unavailable">Currently unavailable/)
+  assert.match(upload, /class="student-status-rail" data-status="unavailable">Unavailable right now/)
   assert.match(html, /class="student-status-rail" data-status="waitlist">Waitlist/)
   f.state.aiAvailable = true
   const enabled = await f.html()
-  assert.doesNotMatch(enabled, /Currently unavailable|Coming soon/)
-  assert.match(enabled, /Upload notes for courses without study materials, and Campus Bot turns them into practice questions/)
+  assert.doesNotMatch(enabled, /Unavailable right now|Currently unavailable|Coming soon/)
+  assert.match(enabled, /<p>Campus Bot turns your notes into practice questions\.<\/p>/)
+  assert.doesNotMatch(enabled, /courses without study materials/, 'the card says what Campus Bot does, not which courses it opens for')
 }))
 
 test('academic identity owns a full-width band outside the bounded course/action workspace', async () => fixture(async f => {
@@ -110,13 +141,75 @@ test('academic identity owns a full-width band outside the bounded course/action
   const inner = band.props.children[1]
   assert.ok(inner.props.className.split(' ').includes('student-workspace'), 'only the inner academic content is constrained')
   assert.equal(shell.props.workspaceClassName, 'dashboard-workspace')
-  assert.equal(shell.props.children[0].type.name, 'AccessNotice', 'the plan notice leads the workspace')
-  assert.ok(!shell.props.children[1], 'no Continue card before the student has started')
-  assert.equal(shell.props.children[2].type.name, 'PrimaryCards')
-  assert.equal(shell.props.children[3].type.name, 'SupportingActions')
+  const [offer, month, notice, next, primary, supporting] = shell.props.children
+  assert.deepEqual([offer, month], [false, false], 'no free month card or line unless the database gives one')
+  assert.equal(notice.type.name, 'AccessNotice', 'the plan notice leads the workspace')
+  assert.ok(!next, 'no Continue card before the student has started')
+  assert.equal(primary.type.name, 'PrimaryCards')
+  assert.equal(supporting.type.name, 'SupportingActions')
   const html = await f.html()
   assert.match(html, /class="student-page-root" data-student-app="true"><header class="dashboard-identity/)
   assert.match(html, /class="student-workspace student-page-workspace dashboard-workspace"/)
+}))
+
+const MONTH = { endsAt: '2026-11-26T08:30:00+00:00', closesAt: '2026-11-05T08:00:00+00:00' }
+const words = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+test('a student who can claim the free month sees one card at the top of the Dashboard: title, one line and the button', async () => fixture(async f => {
+  f.state.plan = planRead({ free_month: MONTH })
+  f.state.revision = 7
+  f.state.current.courses = [mappedCourse(0, 'ready')]
+  const tree = await f.page(), shell = tree.props.children[1]
+  const [offer, month] = shell.props.children
+  assert.equal(offer.type.name, 'FreeMonthCard')
+  // closesInMs: 5 Nov 08:00 less the database's now, 27 Oct 09:00.
+  assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '26 November',
+    closesInMs: (8 * 24 + 23) * 3_600_000 },
+    'bound to the page token, the profile revision the page read and the end day the database gave')
+  assert.equal(month, false)
+  assert.deepEqual(f.state.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')
+  const html = await f.html()
+  const card = html.match(/<section aria-labelledby="free-month-title" class="dashboard-offer student-enter" data-free-month="offer">[\s\S]*?<\/section>/)[0]
+  assert.equal(words(card), 'Your free month Full access to your courses and Campus Bot for one month. Claim your free month')
+  assert.equal((card.match(/<button\b/g) || []).length, 1)
+  assert.ok(html.indexOf('data-free-month="offer"') < html.indexOf('my-courses-title'), 'above every other card')
+  assert.equal((html.match(/data-free-month=/g) || []).length, 1, 'offered once: no banner, line or second card')
+  assert.doesNotMatch(html, /Early Access|Free pass|Get your free pass|26 November|data-access-notice/,
+    'no pass beside it, and the end date is in the confirmation')
+}))
+
+test('no free month card when the database offers none, the revision cannot be read, or the plan cannot be read', async () => fixture(async f => {
+  const offered = async () => (await f.page()).props.children[1].props.children[0]
+  f.state.plan = planRead()
+  assert.equal(await offered(), false)
+  f.state.plan = planRead({ free_month: MONTH })
+  f.state.revision = null
+  assert.equal(await offered(), false, 'a month must be bound to the courses the student saw (D7)')
+  f.state.revision = 7
+  f.state.plan = { status: 'unavailable' }
+  assert.equal(await offered(), false)
+  assert.doesNotMatch(await f.html(), /free month|data-free-month/i)
+}))
+
+test('a running free month is one line, "Free month · Ends {day}"; in its last hours the notice gives the time instead', async () => fixture(async f => {
+  const running = endsAt => planRead({ tier: 'full', access: { source: 'early_access', ends_at: endsAt },
+    trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
+    early_access: { status: 'active', starts_at: hoursFromNow(-24), ends_at: endsAt, enrollment_closes_at: null } })
+  f.state.plan = running(hoursFromNow(24 * 20))
+  const html = await f.html()
+  assert.match(html, /<p class="dashboard-free-month student-enter" data-free-month="active">Free month · Ends 16 November<\/p>/)
+  assert.equal((html.match(/free month/gi) || []).length, 1, 'said once')
+  assert.doesNotMatch(html, /data-free-month="offer"|data-access-notice|Early Access|Claim your free month/)
+  // Inside the notice window (12 hours, by the database's clock) the notice says when, to the minute, and the line goes.
+  f.state.plan = running(hoursFromNow(11))
+  const ending = await f.html()
+  assert.doesNotMatch(ending, /data-free-month="active"/)
+  assert.match(ending, /data-access-notice="access-ending"/)
+  assert.match(words(ending), /Your free month ends Tue, 27 Oct 2026, 21:00\. After that, only GST courses stay free\. View your plan/)
+  // Once it has ended, the Dashboard says nothing about it (Plan & Access does, once).
+  f.state.plan = planRead({ trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
+    early_access: { status: 'ended', starts_at: hoursFromNow(-24 * 31), ends_at: hoursFromNow(-1), enrollment_closes_at: null } })
+  assert.doesNotMatch(await f.html(), /free month|data-free-month|data-access-notice/i)
 }))
 
 test('Courses and material retains personal Bookmarks first and quiet icon-led help/account destinations', async () => fixture(async f => {
@@ -127,7 +220,8 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
   assert.deepEqual([...material.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
     ['/bookmarks', '/courses', '/materials'])
   assert.deepEqual([...material.matchAll(/<h3>(.*?)<\/h3>/g)].map(match => match[1]),
-    ['Bookmarks', 'All Courses', 'Request Material'])
+    ['Bookmarks', 'All Courses', 'Request material'])
+  assert.doesNotMatch(material, /<p\b/, 'each card is its name and its action, with no sentence between')
   assert.match(material, /dashboard-bookmark-card/)
   const utilities = html.match(/<section aria-labelledby="utilities-title"[\s\S]*?<\/section>/)?.[0]
   assert.ok(utilities)
@@ -136,20 +230,20 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
   assert.equal((utilities.match(/class="[^"]*dashboard-utility-icon"/g) || []).length, 3)
   assert.doesNotMatch(utilities, /dashboard-utility-arrow|lucide-arrow-right/)
   assert.match(utilities, /data-status="waitlist">Waitlist/)
-  assert.doesNotMatch(utilities, /Log out|Logout|<button/)
+  assert.doesNotMatch(utilities, /Sign out|Log out|Logout|<button/)
 }))
 
 test('Dashboard actions stay arrow-free with their labels, destinations and keyboard focus families intact', async () => fixture(async f => {
-  // A student with courses: an empty list has no View my courses (below).
+  // A student with courses: an empty list has no View your courses (below).
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
   const actions = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
     .filter(([, attributes]) => /class="[^"]*\bdashboard-(?:course-file|practice-action|material-card|utility-row)\b/.test(attributes))
   const expected = [
-    ['/my-courses', 'View my courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
-    ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse the library', 'card'],
-    ['/materials', 'Request course material', 'card'], ['/tutors', 'Tutors', 'row'],
-    ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Account', 'row'],
+    ['/my-courses', 'View your courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
+    ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse all courses', 'card'],
+    ['/materials', 'Send a request', 'card'], ['/tutors', 'Tutors', 'row'],
+    ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Profile', 'row'],
   ]
   assert.equal(actions.length, expected.length)
   for (const [index, [href, label, focus]] of expected.entries()) {
@@ -176,14 +270,14 @@ test('server guards redirect absent sessions or incomplete names and keep failur
   f.state.failure = true
   const html = await f.html()
   assert.match(html, /Something went wrong/)
-  assert.doesNotMatch(html, /private provider details|Welcome back/)
+  assert.doesNotMatch(html, /private provider details|Hi, Ọlá/)
   // A profile that can't be shown: the way to the team is the page by its name.
   f.state.failure = false
   f.state.profile = { status: 'invariant-failure' }
   const broken = await f.html()
   assert.match(broken, /Something went wrong/)
   assert.match(broken, /<a[^>]*href="\/contact"[^>]*>Help &amp; Support<\/a>/)
-  assert.doesNotMatch(broken, /Contact support|Welcome back/)
+  assert.doesNotMatch(broken, /Contact support|Hi, Ọlá/)
 }))
 
 const shelf = index => ({ slug: `course-${index}`, contentKey: `course-${index}`, code: `SHELF${index}`, title: `Shelf ${index}` })
@@ -219,8 +313,8 @@ test('day-one course file shows seven courses and three ready without listing id
   assert.match(card, /class="dashboard-file-tab">7 courses · 3 ready to study<\/span>/)
   assert.match(card, /<h2 id="my-courses-title">My Courses<\/h2>/)
   assert.doesNotMatch(card, /Your semester, in one place/)
-  assert.match(card, />View my courses<\/span>/)
-  for (const label of ['Overview', 'Notes', 'CBT practice', 'Theory']) assert.ok(card.includes(label), label)
+  assert.match(card, />View your courses<\/span>/)
+  assert.doesNotMatch(card, /dashboard-file-index|Overview|Notes|CBT practice|Theory/, 'no list of study families: it would read the same for every student')
   assert.equal((card.match(/<a\b/g) || []).length, 1, 'the whole card is one target')
   assert.doesNotMatch(card, /<ul\b|<li\b|<button\b|Available study materials vary by course/)
   assert.doesNotMatch(html, /COURSE\d|Course \d title|This semester|Your courses ·/)
@@ -267,12 +361,12 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
   const next = continueCard(html)
   assert.match(next, /data-continue="resume"/)
   assert.match(next, /href="\/courses\/course-1\/quiz"/)
-  assert.match(next, />Resume practice: COURSE1, 12 min left</)
+  assert.match(next, />Resume exam: COURSE1, 12 min left</, 'an open exam is never called practice')
   assert.equal((html.match(/class="dashboard-continue /g) || []).length, 1, 'one next step only')
   assert.doesNotMatch(courseCard(html), FIGURES)
   for (const [minutes, text] of [[60, '1 hr left'], [95, '1 hr 35 min left'], [0.2, '1 min left']]) {
     f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: minutesFromNow(minutes) } }
-    assert.match(continueCard(await f.html()), new RegExp(`>Resume practice: COURSE1, ${text}<`))
+    assert.match(continueCard(await f.html()), new RegExp(`>Resume exam: COURSE1, ${text}<`))
   }
   f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: NOW } }
   assert.match(continueCard(await f.html()), />Continue practising COURSE0</, 'an attempt whose time is up is never offered')
@@ -290,7 +384,7 @@ test('instant feedback: an open attempt is resumed with no clock, and picks show
   const { formatCourseProgress } = require('../../lib/dashboard/home-courses.ts')
   assert.equal(formatCourseProgress({ practised: 3, total: 25, lastScore: null }), '3 of 25 questions practised')
   assert.equal(formatCourseProgress({ practised: 3, total: 25, lastScore: { score: 2, total: 3 } }),
-    '3 of 25 questions practised · Last score 2/3')
+    '3 of 25 questions practised · Last score 2 of 3 correct')
 }))
 
 
@@ -332,7 +426,7 @@ test('sprint plan 23 Oct item 2: an unavailable or signed-out practice read show
     f.state.progress = { status }
     const html = await f.html()
     assert.match(courseCard(html), />1 course · 1 ready to study</)
-    assert.doesNotMatch(html, /Resume practice|Continue practising|practised|Last score/)
+    assert.doesNotMatch(html, /Resume practice|Resume exam|Continue practising|practised|Last score/)
   }
 }))
 
@@ -360,15 +454,15 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
   assert.doesNotMatch(empty, FIGURES)
   assert.equal(continueCard(empty), undefined)
   // My Courses would open empty, so the card offers no way there.
-  assert.doesNotMatch(courseCard(empty), /View my courses|href="\/my-courses"/)
+  assert.doesNotMatch(courseCard(empty), /View your courses|href="\/my-courses"/)
   assert.equal(courseCard(empty).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
     'Your courses are not available yet.')
   for (const status of ['unavailable', 'missing-profile', 'invariant-failure']) {
     f.state.current = { status }
     const html = await f.html()
-    // No count and no failure line beside a View my courses that still works.
+    // No count and no failure line beside a View your courses that still works.
     assert.doesNotMatch(courseCard(html), /temporarily unavailable|dashboard-file-tab/)
-    assert.match(courseCard(html), />View my courses</, 'only an empty list loses the link')
+    assert.match(courseCard(html), />View your courses</, 'only an empty list loses the link')
     assert.doesNotMatch(html, FIGURES)
     assert.doesNotMatch(html, /Continue practising/)
   }
@@ -378,7 +472,7 @@ test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list 
     }, courses: [mappedCourse(0, 'ready')], cbtBankSizes: new Map([['course-0', 40]]) }
     const html = await f.html()
     assert.doesNotMatch(courseCard(html), /temporarily unavailable|dashboard-file-tab/)
-    assert.match(courseCard(html), />View my courses</)
+    assert.match(courseCard(html), />View your courses</)
     assert.equal(items(html).length, 0)
     assert.doesNotMatch(html, /Continue practising|practised/)
   }
@@ -410,12 +504,14 @@ test('semantic focus, official C texture and reduced motion have shared owners',
   assert.doesNotMatch(css, /text-decoration: underline|0 -3px 0|Geist|Playfair|Myriad/)
 })
 
-test('course-file CSS restores the reference tab, index, focus and equal-height cards without list styles', () => {
+test('course-file CSS restores the reference tab, focus and equal-height cards without list styles', () => {
   const css = fs.readFileSync(path.join(__dirname, '../../styles/student-app.css'), 'utf8')
   assert.match(css, /\.dashboard-primary-grid \{[^}]*grid-auto-rows: 1fr;[^}]*align-items: stretch;/)
-  for (const selector of ['.dashboard-file-tab', '.dashboard-file-index', '.dashboard-course-file:focus-visible']) {
+  for (const selector of ['.dashboard-file-tab', '.dashboard-course-file:focus-visible']) {
     assert.ok(css.includes(selector), selector)
   }
+  // The card's list of study families and the Practice card's sentence are gone, and so are their styles.
+  assert.doesNotMatch(css, /\.dashboard-file-index|\.dashboard-cbt/)
   assert.doesNotMatch(css, /\.dashboard-course-(?:list|item|heading|code|status|title|progress)\b/)
   assert.ok(css.indexOf('[data-student-app] .dashboard-course-file:focus-visible') >
     css.indexOf('[data-student-app] .student-focus-card:focus-visible'), 'course-file focus overrides the shared card focus')

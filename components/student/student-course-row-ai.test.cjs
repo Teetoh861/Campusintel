@@ -51,7 +51,7 @@ test('the link shows only on the rows where Campus Bot opens for the student', (
     assert.equal('aiPracticeHref' in presentStudentCourseRow(unbuilt, { campusBotLinks: elsewhere }), false, 'another course')
     const html = renderToStaticMarkup(React.createElement(StudentCourseRow, { course: unbuilt, campusBotLinks: elsewhere }))
     assert.match(html, /Study materials are not available\./)
-    assert.doesNotMatch(html, /<a\b|Campus Bot|Practise from your own notes/, 'the row says only that there are no materials')
+    assert.doesNotMatch(html, /<a\b|Campus Bot|Practise from your notes/, 'the row says only that there are no materials')
   })
 })
 
@@ -66,7 +66,7 @@ test('the rendered row keeps "not yet available" first and labels the link as Ca
   const html = withEnv(ENABLED, () => renderToStaticMarkup(React.createElement(StudentCourseRow, { course: unbuilt, campusBotLinks: OPEN })))
   assert.ok(html.indexOf('student-ai-practice-link') > html.indexOf('MKT 201'))
   assert.match(html, /href="\/courses\/ai-practice\/41111111-1111-4111-8111-111111111111"/)
-  assert.match(html, /Practise from your own notes/)
+  assert.match(html, /Practise from your notes/)
   assert.match(html, /student-ai-practice-tag">Campus Bot</)
 })
 

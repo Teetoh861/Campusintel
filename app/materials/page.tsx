@@ -4,6 +4,7 @@ import { MaterialsClient } from './MaterialsClient'
 
 // Account-gated per student; never prerender or share across viewers.
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Request material | CampusIntell', robots: { index: false, follow: false } }
 
 /** Cross the student account boundary before the material request form renders. */
 export default function MaterialsPage() {

@@ -96,7 +96,7 @@ test('the page composes StudentPage, the locked PageBand copy and the client cat
   assert.match(html, /^<div class="student-page-root" data-student-app="true"><header class="student-page-band">/)
   assert.equal((html.match(/<h1\b/g) || []).length, 1)
   assert.match(html, /<h1 class="student-page-band-title">Bookmarks<\/h1>/)
-  assert.match(html, /Courses you’ve bookmarked to come back to\./)
+  assert.doesNotMatch(html, /student-page-band-lede|bookmarked to come back/, 'the title needs no line under it')
   assert.doesNotMatch(html, /TaskHeader|breadcrumb|Cover|student-grid/)
   const catalog = catalogOf(html)
   assert.deepEqual(catalog.map(item => [item.key, item.slug, item.code]),

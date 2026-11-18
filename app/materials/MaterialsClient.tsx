@@ -29,8 +29,7 @@ export function MaterialsClient(): ReactElement {
 
   return (
     <>
-      <TaskHeader label="Materials" title="Request or send materials"
-        description="Request study material privately for any course, or email notes and past questions of your own." />
+      <TaskHeader label="Materials" title="Request or send materials" />
 
       <section className="student-page" data-screen-label="Choose a course">
         <div className={WRAP}>
@@ -78,7 +77,7 @@ export function MaterialsClient(): ReactElement {
                 aria-disabled={!hasCourse}
                 className={cx(btnBase, btnAccent, 'w-full', !hasCourse && 'pointer-events-none opacity-45')}
               >
-                Request material privately
+                Request material
               </a>
               <a
                 href={shareHref}

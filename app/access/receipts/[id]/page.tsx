@@ -24,7 +24,7 @@ export const metadata = { title: 'Receipt | CampusIntell', robots: { index: fals
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const RECEIPTED: ReadonlySet<OrderView['state']> = new Set(['paid', 'paid-duplicate', 'refund-pending', 'refunded'])
 const STATUS_LINE: Partial<Record<OrderView['state'], string>> = {
-  'paid': 'Paid', 'paid-duplicate': 'Paid twice: the extra payment is being refunded', 'refund-pending': 'Refund in progress',
+  'paid': 'Paid', 'paid-duplicate': 'Paid twice, extra being refunded', 'refund-pending': 'Refund in progress',
   'refunded': 'Refunded',
 }
 
@@ -49,7 +49,7 @@ async function Receipt({ id, here }: { id: string; here: string }): Promise<Reac
   const back = <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
     className={studentAction(btnGhost, 'bg-student-surface')}>{RETURN_COPY.backToAccess}</Link>
   if (order === null) return <StudentPage band={<PageBand title="Receipt" />}>
-    <Notice tone="info" title={RETURN_COPY.notFoundTitle} action={back}>{RETURN_COPY.notFoundBody}</Notice>
+    <Notice tone="info" title={RETURN_COPY.notFoundTitle} action={back} />
   </StudentPage>
   const rows: Array<[string, string]> = [['Plan', planName(order.tier, order.period)], ['Amount', naira(order.amount_kobo)],
     ['Paid', formatAccessDate(order.paid_at!)], [RETURN_COPY.reference, paymentReference(order.order_id)],

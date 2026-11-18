@@ -68,8 +68,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
   const complete = profile.status === 'complete'
   const mode = profile.status === 'incomplete' || complete ? await courseSelectionMode() : 'open'
   return <ProfilePageFrame title={PROFILE_TITLE}
-    description={mode === null ? undefined : mode === 'locked' ? 'Update your first name.'
-      : complete ? 'Update your first name and academic details.' : 'Add your first name and confirm the details used for your courses.'} narrow>
+    description={mode !== null && profile.status === 'incomplete' ? 'Set up your profile to see your courses.' : undefined} narrow>
     <AuthFlowSync signedIn continuityToken={continuityToken} />
     {mode === null ? <div className="student-surface">
       <Feedback tone="error" message={<>We couldn’t load your courses. <a href={PROFILE_SELECTION_PATH}
@@ -77,10 +76,10 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
     </div> : profile.status === 'incomplete' || complete ? <ProfileSelectionForm initial={profile} continuityToken={continuityToken} mode={mode}
       returnPath={returnPath} /> : <div className="student-surface space-y-3">
       <Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure' ? <>
-        {profile.status === 'missing-profile' ? 'Your profile could not be found.' : 'Your profile needs attention.'}{' '}
+        {profile.status === 'missing-profile' ? 'We couldn’t find your profile.' : 'We couldn’t load your profile.'}{' '}
         <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
           {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} />
-      <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl)}>Back to account</Link>
+      <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl)}>Back to profile</Link>
     </div>}
   </ProfilePageFrame>
 }

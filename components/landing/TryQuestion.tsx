@@ -12,7 +12,6 @@ export function TryQuestion(): ReactElement {
     <>
       <span className={styles.eyebrow}>{copy.eyebrow}</span>
       <h2 id="try-title" className="mt-3">{copy.title}</h2>
-      <p className={styles.introText}>{copy.text}</p>
     </>
   )
   return (

@@ -1,4 +1,5 @@
-// app/courses/ai-practice/[courseId]/page.test.cjs — Where the Campus Bot link on a course row lands.
+// app/courses/ai-practice/[courseId]/page.test.cjs — Where the Campus Bot link on a course row lands, and what the page
+// hands Campus Bot: the free month only when the database says this student can claim it now.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const Module = require('node:module')
@@ -7,6 +8,7 @@ const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const { withTsx } = require('../../../../lib/test/tsx-loader.cjs')
 const { elementNodes } = require('../../../../lib/test/element-walker.cjs')
+const { entitlementSummarySchema } = require('../../../../lib/entitlements/contract.ts')
 
 const COURSE = '41111111-1111-4111-8111-111111111111'
 const reference = (id, label) => ({ id, label, isActive: true })
@@ -24,15 +26,27 @@ const decision = (reason, extra = {}) => ({ institutional_course_id: COURSE, rea
   ends_at: null, ...extra })
 const savedSet = { generationId: '71111111-1111-4111-8111-111111111111', createdAt: '2026-11-10T09:00:00.000Z',
   fileName: 'logic-notes.pdf', questions: [] }
+// The plan as the server read it for a student with no plan, a day after launch; `free_month` is the database's answer
+// to "can this student claim now", with the day the month would end.
+const plan = (freeMonth, overrides = {}) => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
+  now: '2026-11-16T12:00:00+00:00', planned_launch_at: '2026-11-14T23:00:00+00:00', actual_launch_at: '2026-11-15T08:00:00+00:00',
+  trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
+  trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
+  discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-25T08:00:00+00:00' },
+  ...overrides }), free_month: freeMonth } })
 
 async function fixture(run) {
   return withTsx(async () => {
-    const original = Module._load, client = {}, user = { id: 'student' }, reads = []
+    const original = Module._load, client = {}, user = { id: 'student' }, reads = [], planReads = []
     const state = { course: course(), decision: decision('free'), sets: [], enabled: true,
+      // What the entitlement read and the profile revision read answer.
+      plan: { status: 'unavailable' }, revision: 1,
       allowance: { state: 'not-entitled', source: null, total: 0, used: 0, endsAt: null },
       profile: { status: 'complete', revision: 1, firstName: 'Ada', options: {}, selection: mine } }
     function StudentAccessGate() { return null }
     function AiPracticeClient() { return React.createElement('div', { 'data-campus-bot': '' }) }
+    const selection = original.call(Module, path.join(__dirname, '../../../..', 'lib/profile/course-selection.ts'), module, false)
     const local = relative => path.join(__dirname, '../../../..', relative)
     try {
       Module._load = function(name, ...args) {
@@ -65,7 +79,14 @@ async function fixture(run) {
           readAllowance: async supplied => { assert.equal(supplied, client); return state.allowance },
         }
         if (name === '@/lib/ai-practice/config') return { isAiPracticeAvailable: () => state.enabled }
-        if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => ({ status: 'unavailable' }) }
+        if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async (supplied, options) => {
+          assert.equal(supplied, client); planReads.push(options)
+          if (state.plan === 'fails') throw new Error('read failed')
+          return state.plan
+        } }
+        if (name === '@/lib/profile/course-selection') return { ...selection, readProfileRevision: async (supplied, owner) => {
+          assert.equal(supplied, client); assert.equal(owner, user.id); return state.revision
+        } }
         if (name === './AiPracticeClient') return { AiPracticeClient }
         return original.call(this, name, ...args)
       }
@@ -80,9 +101,9 @@ async function fixture(run) {
       const workspace = async () => {
         const screens = elementNodes(await open()).filter(node => node.type === AiPracticeClient)
         assert.equal(screens.length, 1, 'the page shows Campus Bot')
-        return screens[0].props
+        return { ...screens[0].props, key: screens[0].key }
       }
-      await run({ state, reads, open, workspace })
+      await run({ state, reads, planReads, open, workspace })
     } finally { Module._load = original }
   })
 }
@@ -95,7 +116,43 @@ test('the Campus Bot link on a free course without materials opens Campus Bot, n
   assert.equal(props.uploadsUnavailableReason, undefined)
   assert.deepEqual(props.initialAllowance, f.state.allowance)
   assert.deepEqual(f.reads, ['profile'], 'the list is read from the student’s own saved selection')
-  assert.match(renderToStaticMarkup(await f.open()), /<b>GST102<\/b> · Philosophy and Logic/)
+  const html = renderToStaticMarkup(await f.open())
+  assert.match(html, /<b>GST102<\/b> · Philosophy and Logic/)
+  assert.doesNotMatch(html, /Turn your own notes into practice questions/, 'the title says it; no line repeats it')
+  assert.equal(props.freeMonth, null, 'no plan read, no offer')
+}))
+
+test('a student who can claim the free month is offered it here, bound to the revision and end day the server read', async () => fixture(async f => {
+  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' }, { plans_on_sale: true, plans: [] })
+  f.state.revision = 7
+  const props = await f.workspace()
+  // closesInMs: 25 Nov 08:00 less the database's now, 16 Nov 12:00.
+  assert.deepEqual(props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December',
+    closesInMs: (8 * 24 + 20) * 3_600_000 })
+  assert.deepEqual(f.planReads.at(-1), { freeMonth: true }, 'the page asks whether this student can claim now')
+  assert.equal(props.plansOnSale, true, 'what else the page could say is still handed over; the month comes first')
+}))
+
+test('no free month here when the database offers none, or the plan or the revision cannot be read', async () => fixture(async f => {
+  f.state.plan = plan(null)
+  assert.equal((await f.workspace()).freeMonth, null, 'the database offers none')
+  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  f.state.revision = null
+  assert.equal((await f.workspace()).freeMonth, null, 'a month must be bound to the courses the student saw (D7)')
+  f.state.revision = 7
+  for (const failed of [{ status: 'unavailable' }, { status: 'signed-out' }, 'fails']) {
+    f.state.plan = failed
+    const props = await f.workspace()
+    assert.equal(props.freeMonth, null, JSON.stringify(failed))
+    assert.deepEqual(props.trial, { policy: null, passAvailable: false }, 'and the wording stays neutral')
+  }
+}))
+
+test('Campus Bot is drawn afresh when what the account holds changes, so a month claimed here opens the upload', async () => fixture(async f => {
+  const before = (await f.workspace()).key
+  f.state.allowance = { state: 'active', source: 'early_access', total: null, used: 0, endsAt: '2026-12-16T13:30:00.000Z' }
+  const after = (await f.workspace()).key
+  assert.deepEqual([before, after], ['not-entitled:', 'active:early_access'])
 }))
 
 test('a free course of another level stays outside Campus Bot, as every course off the student’s list does', async () => fixture(async f => {
@@ -138,7 +195,8 @@ test('a paid course keeps the database’s answer about the list', async () => f
 test('with Campus Bot switched off the student’s own free course says so, and still does not bounce', async () => fixture(async f => {
   f.state.enabled = false
   const html = renderToStaticMarkup(await f.open())
-  assert.match(html, /Campus Bot is unavailable/)
+  assert.match(html, /<h2 class="student-notice-title">Campus Bot is unavailable\.<\/h2><div class="student-notice-action">/,
+    'one line, then the way back')
   assert.match(html, /href="\/my-courses"/)
   assert.doesNotMatch(html, /data-campus-bot/)
 }))

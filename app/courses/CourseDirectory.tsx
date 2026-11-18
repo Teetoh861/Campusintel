@@ -85,7 +85,7 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
     </section>
     <div className="student-catalogue-summary">
       <p className="student-summary" role="status" aria-live="polite" aria-atomic="true">
-        {filtered.length} {filtered.length === 1 ? 'result' : 'results'} of {items.length} courses
+        {narrowed ? `${filtered.length} of ${items.length} courses` : ''}
       </p>
       <button type="button" disabled={!narrowed} className={studentAction(btnGhost)} onClick={clearAll}>Clear filters</button>
     </div>
@@ -99,6 +99,6 @@ export function CourseDirectory({ items }: { items: ReadonlyArray<DirectoryItem>
         : <EmptyState title={noMatchMessage(query.trim(), hasFilters)} icon={null} actions={null}>{null}</EmptyState>}
     </section>
     <Pagination page={page} totalPages={totalPages} onPageChange={setPage}
-      label="Course catalogue pages" scrollTarget={resultsRef} />
+      label="All Courses pages" scrollTarget={resultsRef} />
   </>
 }

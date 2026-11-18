@@ -1,4 +1,4 @@
-// app/courses/[slug]/preview/[kind]/page.tsx — The Discovery Pass exam or study guide topic on a locked course.
+// app/courses/[slug]/preview/[kind]/page.tsx — The free pass (Discovery Pass) exam or notes topic on a locked course.
 // Loading this page never spends anything: it only reads what the database has pinned. Opening is the explicit
 // OpenPreview step, and everything shown comes from the server's pinned slice, never from the full course.
 import Link from 'next/link'
@@ -34,9 +34,11 @@ type PageProps = { params: Promise<{ slug: string; kind: string }> }
 
 // Account-gated per student; never prerender or share across viewers.
 export const dynamic = 'force-dynamic'
-export const metadata = { robots: { index: false, follow: false } }
+export const metadata = { title: 'Free pass | CampusIntell', robots: { index: false, follow: false } }
 
-const TITLE: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'Study guide topic' }
+const TITLE: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'Notes topic' }
+// The same two, mid-sentence ("Your … is on ACC 101.").
+const NOUN: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'notes topic' }
 
 export default async function PreviewPage({ params }: PageProps): Promise<ReactElement> {
   const { slug, kind: segment } = await params
@@ -59,7 +61,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   if (lookup.status === 'not-found') return notFound()
   if (lookup.status === 'signed-out') return redirectForStudentState('signed-out', returnPath)
   if (lookup.status !== 'ok' && lookup.status !== 'repository-only') {
-    return <StudentPage band={<PageBand title={TITLE[kind]} lede="Part of a department course." />}>
+    return <StudentPage band={<PageBand title={TITLE[kind]} />}>
       <ResultNotice state="course-unavailable" retryHref={returnPath} />
     </StudentPage>
   }
@@ -104,7 +106,7 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
           reloadHref={returnPath} />
       </CampusBotArea> : null}
       <Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
-        Back to {course.code}
+        Back to course
       </Link>
     </div>
   </StudentPage>
@@ -135,19 +137,18 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         return <section className="student-surface student-surface-raised" aria-labelledby="open-title">
           <h2 id="open-title" className="student-section-title">{course.code} CBT exam</h2>
           <p className="student-detail-prose mt-2">
-            {examQuestions ?? 'The'}{examQuestions !== null && '-question'} exam, timed at {minutes} minutes like the real
-            CBT. The timer starts when you begin and keeps running if you leave the page. Your answers save as you go,
-            and only answers saved before time runs out count. When you submit, you’ll see your score.
+            {examQuestions !== null && <>{examQuestions} questions · </>}{minutes} minutes. The timer starts when you
+            begin and keeps running if you leave.
           </p>
-          <p className="student-meta mt-2">Your pass includes one CBT exam, on the course you start it on.</p>
+          <p className="student-meta mt-2">Your free pass includes one CBT exam, on the course you start it on.</p>
           <div className="mt-4">
             <OpenPreview continuityToken={continuityToken} command={{ action: 'open', courseSlug: course.slug, kind: 'cbt' }}
-              label="Start the exam" />
+              label="Start exam" />
           </div>
         </section>
       }
       if (result.topics === null || result.topics.length === 0) {
-        return <NotOffered course={course} what="study guide topics" />
+        return <NotOffered course={course} what="notes topics" />
       }
       return <section className="student-surface student-surface-raised" aria-labelledby="topics-title">
         <h2 id="topics-title" className="student-section-title">Choose one topic</h2>
@@ -160,16 +161,15 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         </ul>
       </section>
     case 'not-enough-time':
-      return <Notice tone="info" title="Not enough time left on your pass." action={plan}>
+      return <Notice tone="info" title="Not enough time left on your free pass." action={plan}>
         The {course.code} CBT exam takes {Math.round((examSecondsFor(course.slug) ?? 0) / SECONDS_PER_MINUTE)} minutes,
         and your {DISCOVERY_PASS_NOUN} ends {formatAccessDate(result.endsAt)}. Nothing was used.
       </Notice>
     case 'used-elsewhere':
-      return <Notice tone="info" title="Already used on another course." action={result.courseSlug !== null
-        && <Link href={`/courses/${result.courseSlug}/preview/${PREVIEW_SEGMENT[kind]}`} prefetch={false}
-          className={studentAction(btnNavy, studentFocusDark)}>Open it on {result.courseCode}</Link>}>
-        Your {TITLE[kind].toLowerCase()} is on {result.courseCode ?? 'another course'}. Your pass includes one.
-      </Notice>
+      return <Notice tone="info" title={`Your ${NOUN[kind]} is on ${result.courseCode ?? 'another course'}.`}
+        action={result.courseSlug !== null
+          && <Link href={`/courses/${result.courseSlug}/preview/${PREVIEW_SEGMENT[kind]}`} prefetch={false}
+            className={studentAction(btnNavy, studentFocusDark)}>Go to {result.courseCode}</Link>} />
     case 'expired':
       return <Notice tone="info" title={`Your ${DISCOVERY_PASS_NOUN} has ended.`} action={plan} />
     case 'no-pass':
@@ -180,17 +180,15 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
       return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}.`} action={<Link href={STUDENT_DESTINATIONS.access.href}
         prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Get your {DISCOVERY_PASS_NOUN}</Link>} />
     case 'nothing-to-preview':
-      return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'study guide topics'} />
+      return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'notes topics'} />
     default:
-      return <Notice title="This couldn’t be loaded." action={<a href={`${course.href}/preview/${PREVIEW_SEGMENT[kind]}`}
+      return <Notice title="We couldn’t load this." action={<a href={`${course.href}/preview/${PREVIEW_SEGMENT[kind]}`}
         className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>}>Nothing was used.</Notice>
   }
 }
 
 function NotOffered({ course, what }: { course: CourseIdentity; what: string }): ReactElement {
-  return <Notice tone="info" title="Not available on this course yet.">
-    {course.code} doesn’t have {what} yet. Nothing was used, so you can choose another course.
-  </Notice>
+  return <Notice tone="info" title={`${course.code} doesn’t have ${what} yet.`}>Choose another course.</Notice>
 }
 
 function Pinned({ preview, now, course, continuityToken, plansOnSale }: {

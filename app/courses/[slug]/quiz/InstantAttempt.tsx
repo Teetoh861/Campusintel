@@ -5,7 +5,7 @@
 // is sent again on reconnect or reload: the server answers a repeated pick with the result it already recorded.
 import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { CircleCheck, CircleX, Lock } from 'lucide-react'
+import { CircleCheck, CircleX } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { postPracticeCommand } from '@/lib/practice/client'
@@ -35,7 +35,7 @@ type Props = {
 type Waiting = 'sending' | 'offline' | 'signed-out' | 'refused' | null
 const REFUSED: Record<string, string> = {
   'session-changed': PRACTICE_COPY.sessionChangedTitle,
-  'not-found': 'This attempt is no longer available.',
+  'not-found': PRACTICE_COPY.practiceGone,
 }
 
 function feedbackOf(attempt: OpenAttempt): Record<string, PickFeedback> {
@@ -182,9 +182,6 @@ export function InstantAttempt(props: Props): ReactElement {
             {mark ? <span className="student-instant-tag">
               {mark.mark === 'correct' ? <CircleCheck aria-hidden="true" size={18} strokeWidth={2.25} />
                 : <CircleX aria-hidden="true" size={18} strokeWidth={2.25} />}{mark.label}
-            </span> : null}
-            {locked && mark === null ? <span className="student-instant-tag">
-              <Lock aria-hidden="true" size={16} strokeWidth={2.25} />{INSTANT_COPY.locked}
             </span> : null}
           </label>
         })}
