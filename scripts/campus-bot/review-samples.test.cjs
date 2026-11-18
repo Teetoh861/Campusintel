@@ -108,6 +108,22 @@ test('a live run needs a key and a spending cap, and stops before its worst case
   assert.equal(JSON.parse(h.printed.at(-1)).stopped_at_cap, true)
 })
 
+test('on a calculation course the writer and the checker are reserved together before the first call', async () => {
+  // Writer at its caps $0.0012, checker (Sonnet 4,000 x 2 + 2,000 x 10) / 1,000,000 = $0.028. Each fits $0.029 alone;
+  // together ($0.0292) they do not, so nothing is called.
+  const h = harness(true)
+  const capped = await h.run(['--courses', 'principles-economics-1', '--live', '--max-usd', '0.029'],
+    { ...ENV, ANTHROPIC_API_KEY: 'sk-test-not-a-key' })
+  assert.equal(capped.stopped, true)
+  assert.equal(h.calls.length, 0)
+  // With room for both, the pair runs.
+  const h2 = harness(true)
+  const room = await h2.run(['--courses', 'principles-economics-1', '--live', '--max-usd', '0.03', '--questions', '1',
+    '--topics', '0'], { ...ENV, ANTHROPIC_API_KEY: 'sk-test-not-a-key' })
+  assert.equal(h2.calls.length, 2)
+  assert.ok(room.spent <= 0.03)
+})
+
 test('course keys and counts are checked before anything is asked of the database', async () => {
   const h = harness(false)
   await assert.rejects(h.run([]), /--courses needs/)

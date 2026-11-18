@@ -70,14 +70,28 @@ export function optionLetter(index: number): string {
   return LETTERS[index] ?? '?'
 }
 
-/** A safety net, not a proof: an explanation that states a different option is the correct one is never shown. */
+/** A safety net, not a proof: an explanation that states a different option is the correct one, or says the official
+ *  one is not, is never shown. Matched in any case ("Correct answer is b."), letters compared in capitals. */
 export function namesAnotherOption(text: string, correctOption: number, optionCount: number): boolean {
   const correct = optionLetter(correctOption)
   const letters = LETTERS.slice(0, Math.max(0, Math.min(optionCount, LETTERS.length)))
   if (letters === '') return false
+  const option = `(?:option\\s+|choice\\s+|answer\\s+)?\\(?([${letters}])\\)?`
+  // A letter after "answer is" ends its clause, so "the correct answer is a fixed cost" is not read as option A.
+  const ends = `(?=\\s*(?:[.,;:!?]|$|(?:because|since|as)\\b))`
   const claims = [
-    new RegExp(`\\b(?:correct|right)\\s+(?:answer|option|choice)\\s+(?:is|should be|would be)\\s+(?:option\\s+)?([${letters}])\\b`, 'g'),
-    new RegExp(`\\b(?:option\\s+)?([${letters}])\\s+is\\s+(?:actually\\s+)?(?:the\\s+)?(?:correct|right)\\b`, 'g'),
+    // "The correct answer is B", "the right option should be (b)".
+    new RegExp(`\\b(?:correct|right)\\s+(?:answer|option|choice)\\s+(?:is|should\\s+be|would\\s+be)\\s+${option}${ends}`, 'gi'),
+    // "B is the correct answer", "option b is actually right".
+    new RegExp(`\\b${option}\\s+is\\s+(?:actually\\s+|really\\s+)?(?:the\\s+)?(?:correct|right)\\b`, 'gi'),
   ]
-  return claims.some(pattern => [...text.matchAll(pattern)].some(match => match[1] !== correct))
+  if (claims.some(pattern => [...text.matchAll(pattern)].some(match => match[1].toUpperCase() !== correct))) return true
+  // The official answer denied: "A is not correct", "option A is wrong", "the answer is not A".
+  const official = `(?:option\\s+|choice\\s+|answer\\s+)?\\(?${correct}\\)?`
+  const denials = [
+    new RegExp(`\\b${official}\\s+(?:(?:is|was)\\s+(?:not|never)|(?:isn|wasn)['’]t)\\s+(?:the\\s+)?(?:correct|right|answer)\\b`, 'i'),
+    new RegExp(`\\b${official}\\s+(?:is|was)\\s+(?:wrong|incorrect|false)\\b`, 'i'),
+    new RegExp(`\\b(?:correct|right)?\\s*(?:answer|option|choice)\\s+(?:is|was)\\s+not\\s+${official}${ends}`, 'i'),
+  ]
+  return denials.some(pattern => pattern.test(text))
 }

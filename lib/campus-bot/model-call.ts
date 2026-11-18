@@ -9,8 +9,41 @@ import type { UsageReport } from '@/lib/ai-practice/contract'
 import type { ProviderDiagnostic, ProviderEffort, ProviderErrorCode, ProviderResponse, QuestionGenerationProvider }
   from '@/lib/ai-practice/provider'
 
-/** The model and written-token cap the database reserved the request for (its `model` and `max_output_tokens`). */
-export type CampusBotModelLimits = { model: string; maxOutputTokens: number }
+/** The model and token caps the database reserved the request for (its `model`, `max_input_tokens` and
+ *  `max_output_tokens`). The reservation covers exactly these, so a call never exceeds either. */
+export type CampusBotModelLimits = { model: string; maxInputTokens: number; maxOutputTokens: number }
+
+/** Room for what the API adds around the prompt (roles, the structured-output instructions). */
+const PROMPT_OVERHEAD_TOKENS = 400
+
+/** An upper estimate of the input tokens a prompt can cost: the system and user text and the reply's schema at two
+ *  characters a token (Claude's tokens average well over three characters of this text), plus the API's own
+ *  overhead. The database also never charges more than it reserved; this keeps a call inside its cap in the first
+ *  place. */
+export function promptTokenBound(prompt: { system: string; user: string; outputSchema: Record<string, unknown> }): number {
+  const chars = prompt.system.length + prompt.user.length + JSON.stringify(prompt.outputSchema).length
+  return Math.ceil(chars / 2) + PROMPT_OVERHEAD_TOKENS
+}
+
+/** The prompt built from as much of the notes as fits the input cap: passages are left off from the end (the least
+ *  relevant search result, or a topic's last lessons and recap) until it fits. Null when even one passage does not. */
+export function fitNotesPrompt<N extends { passages: ReadonlyArray<unknown> }, P extends CampusBotPromptShape>(
+  notes: N, build: (notes: N) => P, limits: CampusBotModelLimits): { notes: N; prompt: P } | null {
+  for (let count = notes.passages.length; count >= 1; count -= 1) {
+    const fitted = { ...notes, passages: notes.passages.slice(0, count) } as N
+    const prompt = build(fitted)
+    if (promptFits(prompt, limits)) return { notes: fitted, prompt }
+  }
+  return null
+}
+
+type CampusBotPromptShape = { system: string; user: string; outputSchema: Record<string, unknown> }
+
+/** Whether a prompt fits the input cap it was admitted with. */
+export function promptFits(prompt: { system: string; user: string; outputSchema: Record<string, unknown> },
+  limits: CampusBotModelLimits): boolean {
+  return promptTokenBound(prompt) <= limits.maxInputTokens
+}
 
 export type CampusBotModelRequest = {
   system: string
@@ -39,6 +72,10 @@ export async function callCampusBotModel(provider: QuestionGenerationProvider, r
   now: () => number = Date.now): Promise<CampusBotModelResult> {
   if (!PRICED_ANTHROPIC_MODELS.includes(request.limits.model)) {
     return { kind: 'failed', code: 'unsupported-model', diagnostic: EMPTY_PROVIDER_DIAGNOSTIC }
+  }
+  // A prompt that could cost more input than was reserved is never sent.
+  if (!promptFits(request, request.limits)) {
+    return { kind: 'failed', code: 'invalid-request', diagnostic: EMPTY_PROVIDER_DIAGNOSTIC }
   }
   const started = now()
   let response: ProviderResponse

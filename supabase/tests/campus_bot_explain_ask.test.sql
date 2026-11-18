@@ -153,13 +153,15 @@ select is((select array_agg(k.content_key order by k.content_key collate "C") fr
     'principles-marketing'],
   'the calculation courses are the 16 whose exam runs 40 minutes');
 select is((select count(*)::integer from unnest(array['private.campus_bot_courses', 'private.note_passages',
-    'private.campus_bot_replies', 'private.campus_bot_reply_days', 'private.campus_bot_explanations']) t,
+    'private.campus_bot_replies', 'private.campus_bot_reply_days', 'private.campus_bot_explanations',
+    'private.campus_bot_pass_explanations']) t,
     unnest(array['anon', 'authenticated', 'service_role']) api_role,
     unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) privilege
   where has_table_privilege(api_role, t, privilege)), 0, 'no API role reads or writes the new tables');
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('private.campus_bot_courses'::regclass,
   'private.note_passages'::regclass, 'private.campus_bot_replies'::regclass, 'private.campus_bot_reply_days'::regclass,
-  'private.campus_bot_explanations'::regclass)), 'row-level security is on for every new table');
+  'private.campus_bot_explanations'::regclass, 'private.campus_bot_pass_explanations'::regclass)),
+  'row-level security is on for every new table');
 select is((select count(*)::integer from unnest(array['public.begin_campus_bot_explanation(uuid,uuid,uuid,boolean)',
     'public.finish_campus_bot_explanation(uuid,uuid,text,text,uuid,jsonb,jsonb)',
     'public.begin_campus_bot_chat(uuid,uuid,uuid,uuid,boolean)', 'public.finish_campus_bot_chat(uuid,uuid,text,jsonb,jsonb)',
@@ -179,6 +181,7 @@ select is((select count(*)::integer from unnest(array['private.guide_inline_text
     'private.note_search(uuid,text,text,integer,integer)', 'private.campus_bot_window_use(uuid)',
     'private.campus_bot_reply_funding(uuid,timestamptz)', 'private.release_abandoned_campus_bot_replies(uuid,timestamptz)',
     'private.campus_bot_exam_open(uuid,uuid,timestamptz)',
+    'private.campus_bot_pass_explanations_used(uuid,timestamptz,integer)',
     'private.campus_bot_topic_context(uuid,uuid,uuid,timestamptz,integer)',
     'private.campus_bot_explanation_view(private.campus_bot_explanations)',
     'private.campus_bot_explanation_ref(uuid,integer,integer)', 'public.purge_campus_bot_chat_replies()']) fn,
@@ -410,6 +413,13 @@ insert into outcome values ('pass-e1-settled', pg_temp.settle(4, pg_temp.o('pass
 insert into outcome values ('pass-pick-2', pg_temp.pick(4, 7, pg_temp.qn(7, 5), true));
 insert into outcome values ('pass-e2', pg_temp.explain(4, 7, pg_temp.qn(7, 5)));
 insert into outcome values ('pass-saved', pg_temp.explain(4, 7, pg_temp.qn(7, 4)));
+-- Student 1's saved explanation of the first question, for the same wrong choice: written for someone else.
+insert into outcome values ('pass-pick-shared', pg_temp.pick(4, 7, pg_temp.qn(7, 1), false));
+insert into outcome values ('pass-shared-over', pg_temp.explain(4, 7, pg_temp.qn(7, 1)));
+insert into outcome values ('pass-limit-2', public.admin_set_campus_bot_reply_limits(2, null, null, null, null, 'Ops',
+  'pass test'));
+insert into outcome values ('pass-shared', pg_temp.explain(4, 7, pg_temp.qn(7, 1)));
+insert into outcome values ('pass-shared-again', pg_temp.explain(4, 7, pg_temp.qn(7, 1)));
 insert into outcome values ('pass-limit-5', public.admin_set_campus_bot_reply_limits(5, null, null, null, null, 'Ops',
   'restore'));
 reset role;
@@ -421,6 +431,15 @@ select is((select jsonb_build_array(state, charged_tokens) from private.campus_b
     where id = pg_temp.reply(pg_temp.o('pass-e1'))), '["consumed",null]'::jsonb, 'a delivered one is counted');
 select is(pg_temp.o('pass-e2'), '{"state":"pass-limit"}'::jsonb, 'past the pass''s explanations, no more are written');
 select is(pg_temp.o('pass-saved') ->> 'state', 'saved', 'saved ones stay free to read');
+select is(pg_temp.o('pass-shared-over'), '{"state":"pass-limit"}'::jsonb,
+  'an explanation saved for someone else counts toward the pass too: past its explanations, none is delivered');
+select is(jsonb_build_array(pg_temp.o('pass-shared') ->> 'state', pg_temp.o('pass-shared') ->> 'outcome'),
+  '["saved","explained"]'::jsonb, 'with room on the pass it is delivered, from what was saved');
+select is((select count(*)::integer from private.campus_bot_pass_explanations x join public.entitlement_grants g
+    on g.id = x.grant_id where g.user_id = pg_temp.u(4)), 2, 'and counted once on the pass, as the second of its two');
+select is(jsonb_build_array(pg_temp.o('pass-shared-again') ->> 'state', (select count(*)::integer
+    from private.campus_bot_pass_explanations x join public.entitlement_grants g on g.id = x.grant_id
+    where g.user_id = pg_temp.u(4))), '["saved",2]'::jsonb, 'reading it again is free');
 
 -- 9. Explain: abandoned reservations, limits, the day's ceiling -------------------------------------------------------
 set local role service_role;
@@ -505,7 +524,8 @@ reset role;
 select is((pg_temp.o('calc-on') ->> 'explanations_removed')::integer, (select n from unchecked),
   'a course made a calculation course keeps no explanation that was never checked');
 select is(pg_temp.o('calc') ->> 'state', 'started', 'so student 1''s explanation is written again, for student 7');
-select is(pg_temp.o('calc') -> 'check', '{"model":"claude-sonnet-5-5","max_output_tokens":2000}'::jsonb,
+select is(pg_temp.o('calc') -> 'check',
+  '{"model":"claude-sonnet-5-5","max_input_tokens":4000,"max_output_tokens":2000}'::jsonb,
   'with the stronger model''s check');
 select is((select reserved_tokens from private.campus_bot_replies where id = pg_temp.reply(pg_temp.o('calc'))), 26000::bigint,
   'reserved for both calls at the writer''s weight: (8,000 + 5 x 800 + 4,000 + 5 x 2,000) x 1');
@@ -661,8 +681,14 @@ update private.campus_bot_replies set reply_expires_at = clock_timestamp() - int
 select is(public.purge_campus_bot_chat_replies(), 1, 'the minute job deletes replies whose time is up');
 select is((select count(*)::integer from private.campus_bot_replies where reply is not null
   and reply_expires_at <= clock_timestamp()), 0, 'leaving none past their time');
+insert into fixture values ('t-other', (select i.id from public.managed_content_items i where i.course_id = pg_temp.c('08')
+  and i.kind = 'note' and i.published_revision is not null and i.id <> pg_temp.f('t1') order by i.id limit 1));
 set local role service_role;
+insert into outcome values ('c1-other-topic', pg_temp.chat(6, 1, pg_temp.f('t-other')));
+insert into outcome values ('c13', pg_temp.chat(6, 13, pg_temp.f('t1')));
 insert into outcome values ('s6-exam', pg_temp.estart(6, 12));
+insert into outcome values ('c1-replay-exam', pg_temp.chat(6, 1, pg_temp.f('t1')));
+insert into outcome values ('c13-late', pg_temp.answer(6, pg_temp.o('c13')));
 insert into outcome values ('exam-open-ask', pg_temp.chat(6, 10, pg_temp.f('t1')));
 insert into outcome values ('pinned-answered', pg_temp.answer(4, pg_temp.o('pinned')));
 insert into outcome values ('pass-messages-1', public.admin_set_campus_bot_reply_limits(null, 1, null, null, null, 'Ops',
@@ -672,6 +698,17 @@ insert into outcome values ('pass-messages-10', public.admin_set_campus_bot_repl
   'restore'));
 reset role;
 select is(pg_temp.o('exam-open-ask'), '{"state":"exam-open"}'::jsonb, 'nothing is asked in a course while an exam runs there');
+select is(pg_temp.o('c1-other-topic'), '{"state":"not-found"}'::jsonb,
+  'a stored message is answered only for the course and topic it was asked about');
+select is(pg_temp.o('c1-replay-exam'), '{"state":"exam-open"}'::jsonb,
+  'a retry after an exam opened gets what a new message would, not the stored reply');
+select is(pg_temp.o('c13') ->> 'state', 'started', 'a message admitted before the exam opened');
+select is(pg_temp.o('c13-late'), '{"state":"finished","outcome":"failed"}'::jsonb,
+  'whose reply arrives once the exam is open is not delivered');
+select is((select jsonb_build_array(state, charged_tokens, reply) from private.campus_bot_replies
+    where id = pg_temp.reply(pg_temp.o('c13'))), '["released",0,null]'::jsonb, 'nor kept, nor charged');
+select is((pg_temp.o('c1') ->> 'max_input_tokens')::integer, 14000,
+  'the server is told the input cap too, and bounds the whole prompt by it');
 select is((select jsonb_build_array(state, charged_tokens) from private.campus_bot_replies
     where id = pg_temp.reply(pg_temp.o('pinned'))), '["consumed",null]'::jsonb, 'a reply on the pass is counted, not metered');
 select is(pg_temp.o('pass-chat-limit'), '{"state":"pass-limit"}'::jsonb, 'past the pass''s messages, Campus Bot stops');
@@ -796,6 +833,41 @@ select is((select jsonb_build_array(e -> 'standard_allowed', e -> 'counts' -> 'c
     e -> 'counts' -> 'campus_bot_sets') from (select public.refund_eligibility((select id from o9), null,
     clock_timestamp()) e) x), '[true, 2, 0]'::jsonb,
   'the refund check counts them as replies, not sets, and two leave the standard refund open');
+
+-- Codex B review of #168: delivery rechecks access, and no settlement charges past its reservation.
+set local role service_role;
+insert into outcome values ('paid-pick-2', pg_temp.pick(9, 20, pg_temp.qn(20, 2), false));
+insert into outcome values ('paid-late', pg_temp.explain(9, 20, pg_temp.qn(20, 2)));
+reset role;
+-- A practice exam opens in the course while the explanation is being written (the topic practice handed in first:
+-- one open practice per course).
+update public.quiz_attempts set status = 'submitted', finished_at = clock_timestamp(), score = 0
+  where id = pg_temp.a(20);
+insert into public.quiz_attempts (id, user_id, course_id, question_count, status, mode, deadline_at, duration_seconds,
+    intent, bank_size)
+  values (pg_temp.a(21), pg_temp.u(9), pg_temp.f('bua'), 5, 'in_progress', 'exam', clock_timestamp() + interval '30 minutes',
+    1800, 'new', 5);
+set local role service_role;
+insert into outcome values ('paid-late-settled', pg_temp.settle(9, pg_temp.o('paid-late'), 'explained', pg_temp.f('bua-1')));
+reset role;
+delete from public.quiz_attempts where id = pg_temp.a(21);
+set local role service_role;
+insert into outcome values ('paid-chat-2', pg_temp.chat(9, 21, pg_temp.f('bua-1'), pg_temp.f('bua')));
+insert into outcome values ('paid-chat-2-answered', public.finish_campus_bot_chat(pg_temp.u(9),
+  pg_temp.reply(pg_temp.o('paid-chat-2')), 'answered', '{"text":"Your notes say so.","in_notes":true}'::jsonb,
+  pg_temp.usage(100000, 5000)));
+reset role;
+select is((pg_temp.o('paid-late') ->> 'max_input_tokens')::integer, 8000, 'an explanation is admitted with its input cap');
+select is(pg_temp.o('paid-late-settled'), '{"state":"finished","outcome":"failed"}'::jsonb,
+  'an explanation finished after an exam opened in the course is not delivered');
+select is((select jsonb_build_array(state, charged_tokens) from private.campus_bot_replies
+    where id = pg_temp.reply(pg_temp.o('paid-late'))), '["released",0]'::jsonb, 'and nothing is charged');
+select is((select count(*)::integer from private.campus_bot_explanations e join public.quiz_attempt_questions q
+    on q.item_id = e.item_id and q.content_revision = e.revision
+    where q.attempt_id = pg_temp.a(20) and q.question_id = pg_temp.qn(20, 2)), 0, 'nor saved for anyone');
+select is((select jsonb_build_array(reserved_tokens, charged_tokens, read_tokens) from private.campus_bot_replies
+    where id = pg_temp.reply(pg_temp.o('paid-chat-2'))), '[18000,18000,100000]'::jsonb,
+  'a provider report past the caps is recorded, but never charged past what was reserved');
 
 select * from finish();
 rollback;

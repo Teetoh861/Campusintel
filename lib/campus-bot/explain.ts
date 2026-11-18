@@ -4,7 +4,7 @@
 // and the notes (begin_campus_bot_explanation). This file writes the explanation, has it checked on a calculation
 // course, and reports back; the student is shown only what the database then saved.
 import 'server-only'
-import { callCampusBotModel } from './model-call'
+import { callCampusBotModel, fitNotesPrompt, promptFits } from './model-call'
 import { passageById } from './notes-context'
 import { buildExplainCheckPrompt, buildExplainPrompt } from './prompts'
 import { capWords, namesAnotherOption, plainText, REPLY_WORDS } from './reply-text'
@@ -87,6 +87,18 @@ export function readVerdict(json: unknown): 'pass' | 'fail' | null {
   return value === 'pass' || value === 'fail' ? value : null
 }
 
+/** The check's prompt within its input cap: the cited passage shortened from its end if it must be; null when even
+ *  the question and the explanation alone do not fit. */
+function checkPromptWithin(question: ExplainQuestion, passage: NotesPassage, text: string, limits: CampusBotModelLimits) {
+  let notes = passage.text
+  for (;;) {
+    const prompt = buildExplainCheckPrompt(question, { ...passage, text: notes }, text)
+    if (promptFits(prompt, limits)) return prompt
+    if (notes.length === 0) return null
+    notes = notes.slice(0, Math.max(0, notes.length - 2_000))
+  }
+}
+
 /** Explain one question for the verified student bound into env. Every outcome is a value. */
 export async function explainQuestion(env: ExplainEnv, command: { attemptId: string; questionId: string }):
   Promise<ExplainResult> {
@@ -112,8 +124,14 @@ export async function explainQuestion(env: ExplainEnv, command: { attemptId: str
     return { status: 'disabled' }
   }
 
-  const { question, notes } = begun
-  const prompt = buildExplainPrompt(begun.course, question, notes)
+  const { question } = begun
+  // The whole prompt stays within the input cap admitted: as many of the passages as fit.
+  const fitted = fitNotesPrompt(begun.notes, notes => buildExplainPrompt(begun.course, question, notes), begun.limits)
+  if (fitted === null) {
+    await env.finish(begun.replyId, { outcome: 'failed', usage: null, checkUsage: null })
+    return { status: 'failed' }
+  }
+  const { notes, prompt } = fitted
   const reply = await callCampusBotModel(provider, { ...prompt, limits: begun.limits, effort: 'low',
     timeoutMs: EXPLAIN_WRITE_TIMEOUT_MS })
   if (reply.kind === 'failed') {
@@ -138,8 +156,12 @@ export async function explainQuestion(env: ExplainEnv, command: { attemptId: str
   let checkUsage: UsageReport | null = null
   if (begun.check !== null) {
     // A calculation course: the stronger model reads the working once, before the explanation is saved for anyone.
-    const check = await callCampusBotModel(provider, { ...buildExplainCheckPrompt(question, passage, text),
-      limits: begun.check, effort: 'medium', timeoutMs: EXPLAIN_CHECK_TIMEOUT_MS })
+    const checkPrompt = checkPromptWithin(question, passage, text, begun.check)
+    const check = checkPrompt === null
+      // The working cannot be checked within the check's cap: treated as not passed, so nothing generated is shown.
+      ? { kind: 'invalid' as const, usage: null }
+      : await callCampusBotModel(provider, { ...checkPrompt, limits: begun.check, effort: 'medium',
+        timeoutMs: EXPLAIN_CHECK_TIMEOUT_MS })
     if (check.kind === 'failed') {
       // No verdict at all (a timeout or an outage) is not a failed check: nothing is saved, so the next try checks again.
       env.reportProviderProblem(check.code, check.diagnostic)

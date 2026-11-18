@@ -33,7 +33,8 @@ type ServiceClient = SupabaseClient
 
 const uuid = z.string().uuid()
 const providerModel = z.string().regex(/^claude-[a-z0-9-]{1,60}$/)
-const limits = z.object({ model: providerModel, max_output_tokens: z.number().int().min(1).max(1_000_000) })
+const limits = z.object({ model: providerModel, max_input_tokens: z.number().int().min(1).max(1_000_000),
+  max_output_tokens: z.number().int().min(1).max(1_000_000) })
 const courseLabel = z.object({ code: z.string().nullable(), title: z.string().nullable() })
 const topic = z.object({ item_id: uuid, number: z.number().int().positive(), title: z.string().min(1) }).nullable()
 const saved = z.object({ outcome: z.enum(['explained', 'not-covered', 'check-failed']), body: z.string().nullable(),
@@ -133,8 +134,10 @@ export function createSupabaseExplainEnv(client: StudentClient, userId: string, 
       const notes = notesContextFromSearch(row.passages)
       if (notes === null || row.question.correct_option >= row.question.options.length
           || !outlasts(row.reservation_seconds, EXPLAIN_WRITE_TIMEOUT_MS + EXPLAIN_CHECK_TIMEOUT_MS)) return null
-      return { state: 'started', replyId: row.reply_id, limits: { model: row.model, maxOutputTokens: row.max_output_tokens },
-        check: row.check === null ? null : { model: row.check.model, maxOutputTokens: row.check.max_output_tokens },
+      return { state: 'started', replyId: row.reply_id,
+        limits: { model: row.model, maxInputTokens: row.max_input_tokens, maxOutputTokens: row.max_output_tokens },
+        check: row.check === null ? null : { model: row.check.model, maxInputTokens: row.check.max_input_tokens,
+          maxOutputTokens: row.check.max_output_tokens },
         course: row.course, notes, question: { prompt: row.question.prompt, options: row.question.options,
           correctOption: row.question.correct_option, chosenOption: row.question.chosen_option,
           officialExplanation: row.question.explanation } }
@@ -173,7 +176,8 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
       if (row.state !== 'started') return { state: row.state }
       const notes = notesContextFromTopic(row.topic.title, row.passages)
       if (notes === null || !outlasts(row.reservation_seconds, CHAT_TIMEOUT_MS)) return null
-      return { state: 'started', replyId: row.reply_id, limits: { model: row.model, maxOutputTokens: row.max_output_tokens },
+      return { state: 'started', replyId: row.reply_id,
+        limits: { model: row.model, maxInputTokens: row.max_input_tokens, maxOutputTokens: row.max_output_tokens },
         course: row.course, topicTitle: row.topic.title, notes }
     },
     async finish(replyId, settlement: AskSettlement): Promise<boolean> {

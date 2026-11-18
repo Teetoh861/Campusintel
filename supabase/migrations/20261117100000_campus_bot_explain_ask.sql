@@ -212,8 +212,10 @@ create table private.campus_bot_replies (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   feature text not null check (feature in ('explain', 'chat')),
-  -- Chat: the browser's id for the message, so a retry is the same request.
+  -- Chat: the browser's id for the message, so a retry is the same request, and the notes topic it was about. A
+  -- retry is answered only for that same course and topic, and only after every check a new message passes.
   request_id uuid,
+  item_id uuid references public.managed_content_items (id) on delete cascade,
   course_id uuid not null references public.courses (id) on delete restrict,
   state text not null default 'reserved' check (state in ('reserved', 'consumed', 'released')),
   outcome text check (char_length(outcome) between 1 and 40),
@@ -245,6 +247,7 @@ create table private.campus_bot_replies (
   reply_expires_at timestamptz,
   constraint campus_bot_replies_settled_check check ((state = 'reserved') = (settled_at is null)),
   constraint campus_bot_replies_request_check check ((feature = 'chat') = (request_id is not null)),
+  constraint campus_bot_replies_topic_check check ((feature = 'chat') = (item_id is not null)),
   constraint campus_bot_replies_tokens_check check ((funding_source = 'trial') = (reserved_tokens is null)),
   constraint campus_bot_replies_kept_check check (reply is null or (feature = 'chat' and reply_expires_at is not null))
 );
@@ -299,13 +302,26 @@ create index campus_bot_explanations_topic_idx on private.campus_bot_explanation
   where topic_item_id is not null;
 create index campus_bot_explanations_course_idx on private.campus_bot_explanations (course_id, outcome);
 
+-- A free pass's explanations, each counted once when it is first delivered to that student: written for them or
+-- saved earlier for someone else. Per pass and per question revision and choice; reading it again is free.
+create table private.campus_bot_pass_explanations (
+  grant_id uuid not null references public.entitlement_grants (id) on delete cascade,
+  item_id uuid not null,
+  revision integer not null,
+  chosen_option integer not null check (chosen_option between -1 and 7),
+  delivered_at timestamptz not null,
+  primary key (grant_id, item_id, revision, chosen_option)
+);
+
 alter table private.campus_bot_courses enable row level security;
+alter table private.campus_bot_pass_explanations enable row level security;
 alter table private.note_passages enable row level security;
 alter table private.campus_bot_replies enable row level security;
 alter table private.campus_bot_reply_days enable row level security;
 alter table private.campus_bot_explanations enable row level security;
 revoke all on table private.campus_bot_courses, private.note_passages, private.campus_bot_replies,
-  private.campus_bot_reply_days, private.campus_bot_explanations from public, anon, authenticated, service_role;
+  private.campus_bot_reply_days, private.campus_bot_explanations, private.campus_bot_pass_explanations
+  from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- Keeping the passages. Publishing never fails on a note this cannot read: such a note simply has no passages.
@@ -471,18 +487,35 @@ $$;
 
 -- Reservations the server never settled (a crash, a lost connection): released, charged nothing, and the explanation
 -- they were writing is free for the next request.
+-- Lock order. Reclaiming a stale reservation never waits: a reply row, and the running explanation it was writing,
+-- are each taken with SKIP LOCKED, and whatever another transaction holds is left to it (it is reclaiming or settling
+-- that very row). Only the caller's own rows are waited on elsewhere, and those are serialised by the caller's
+-- 'ai-practice-generation:<user>' lock. So two students whose expired requests cross (each reclaiming the
+-- explanation the other's dead request was writing) never wait on each other.
 create function private.release_abandoned_campus_bot_replies(p_user uuid, p_at timestamptz) returns void
 language sql security definer set search_path = '' as $$
   with stale as (
     update private.campus_bot_replies r
       set state = 'released', outcome = 'abandoned', settled_at = p_at,
         charged_tokens = case when r.reserved_tokens is null then null else 0 end
-      from private.campus_bot_settings s
-      where r.user_id = p_user and r.state = 'reserved'
-        and r.reserved_at <= p_at - make_interval(secs => s.reply_reservation_seconds)
+      where r.id in (select x.id from private.campus_bot_replies x cross join private.campus_bot_settings s
+          where x.user_id = p_user and x.state = 'reserved'
+            and x.reserved_at <= p_at - make_interval(secs => s.reply_reservation_seconds)
+          for update of x skip locked)
       returning r.id
   )
-  delete from private.campus_bot_explanations e using stale where e.reply_id = stale.id and e.state = 'running';
+  delete from private.campus_bot_explanations e
+    where e.ctid in (select x.ctid from private.campus_bot_explanations x join stale on x.reply_id = stale.id
+      where x.state = 'running' for update of x skip locked);
+$$;
+
+-- A free pass's explanations so far: those delivered to its student, and those being written for them now.
+create function private.campus_bot_pass_explanations_used(p_grant uuid, p_at timestamptz, p_reservation_seconds integer)
+returns integer
+language sql stable security definer set search_path = '' as $$
+  select ((select count(*) from private.campus_bot_pass_explanations x where x.grant_id = p_grant)
+    + (select count(*) from private.campus_bot_replies r where r.funding_grant_id = p_grant and r.feature = 'explain'
+        and r.state = 'reserved' and r.reserved_at > p_at - make_interval(secs => p_reservation_seconds)))::integer;
 $$;
 
 -- An exam is open in this course for this student: a practice exam, or the free pass exam. Campus Bot explains and
@@ -666,7 +699,13 @@ begin
     where item_id = v_question.item_id and revision = v_question.content_revision and chosen_option = v_chosen;
   if v_saved.item_id is not null and v_saved.state = 'running'
       and v_saved.started_at <= v_now - make_interval(secs => v_settings.reply_reservation_seconds) then
-    -- Its writer never settled. The reply row first, then the explanation row, as finishing does.
+    -- Its writer never settled. The reply row first, then the explanation row, as finishing does. The writer's
+    -- reply belongs to another student: never waited on (see release_abandoned_campus_bot_replies). If another
+    -- transaction holds it, that one is settling or reclaiming it, so this request is simply busy.
+    perform 1 from private.campus_bot_replies where id = v_saved.reply_id for update skip locked;
+    if not found and exists (select 1 from private.campus_bot_replies where id = v_saved.reply_id) then
+      return jsonb_build_object('state', 'busy');
+    end if;
     update private.campus_bot_replies
       set state = 'released', outcome = 'abandoned', settled_at = v_now,
         charged_tokens = case when reserved_tokens is null then null else 0 end
@@ -679,7 +718,19 @@ begin
   end if;
   if v_saved.item_id is not null and v_saved.state = 'running' then return jsonb_build_object('state', 'busy'); end if;
   if v_saved.item_id is not null then
-    -- No provider call and no charge. Reading an explanation is still Campus Bot use on a paid course.
+    -- No provider call and no charge. On a free pass, the first delivery of an explanation to this student counts
+    -- toward the pass's explanations, like one written for them; reading it again is free.
+    if v_saved.outcome = 'explained' and v_mode = 'count' and not exists (select 1
+        from private.campus_bot_pass_explanations x where x.grant_id = v_grant and x.item_id = v_question.item_id
+          and x.revision = v_question.content_revision and x.chosen_option = v_chosen) then
+      if private.campus_bot_pass_explanations_used(v_grant, v_now, v_settings.reply_reservation_seconds)
+          >= v_settings.pass_explanations then
+        return jsonb_build_object('state', 'pass-limit');
+      end if;
+      insert into private.campus_bot_pass_explanations (grant_id, item_id, revision, chosen_option, delivered_at)
+        values (v_grant, v_question.item_id, v_question.content_revision, v_chosen, v_now);
+    end if;
+    -- Reading an explanation is still Campus Bot use on a paid course.
     if v_saved.outcome = 'explained' then
       perform private.mark_plan_use(v_user, 'campus-bot-message', v_attempt.course_id,
         private.campus_bot_explanation_ref(v_question.item_id, v_question.content_revision, v_chosen), v_now);
@@ -752,9 +803,7 @@ begin
       return jsonb_build_object('state', 'week-limit', 'resets_at', v_week.ends_at);
     end if;
   else
-    select count(*) into v_used from private.campus_bot_replies r
-      where r.funding_grant_id = v_grant and r.feature = 'explain' and (r.state = 'consumed' or (r.state = 'reserved'
-        and r.reserved_at > v_now - make_interval(secs => v_settings.reply_reservation_seconds)));
+    v_used := private.campus_bot_pass_explanations_used(v_grant, v_now, v_settings.reply_reservation_seconds);
     if v_used >= v_settings.pass_explanations then return jsonb_build_object('state', 'pass-limit'); end if;
   end if;
 
@@ -788,11 +837,13 @@ begin
 
   select c.course_code, c.display_title into v_course_code, v_course_title
     from public.institutional_courses c where c.repository_course_id = v_attempt.course_id;
-  -- The server must use exactly these models and written-token caps: the reply is charged at the weights recorded here.
+  -- The server must use exactly these models and token caps (it bounds the whole prompt by max_input_tokens before
+  -- calling): the reply is charged at the weights recorded here, and never more than was reserved.
   return jsonb_build_object('state', 'started', 'reply_id', v_reply, 'model', v_provider_model,
-    'max_output_tokens', v_written_max, 'reservation_seconds', v_settings.reply_reservation_seconds,
-    'check', case when v_calculation
-      then jsonb_build_object('model', v_check_provider, 'max_output_tokens', v_check_written_max) end,
+    'max_input_tokens', v_read_max, 'max_output_tokens', v_written_max,
+    'reservation_seconds', v_settings.reply_reservation_seconds,
+    'check', case when v_calculation then jsonb_build_object('model', v_check_provider,
+      'max_input_tokens', v_check_read_max, 'max_output_tokens', v_check_written_max) end,
     'course', jsonb_build_object('code', v_course_code, 'title', v_course_title),
     'question', jsonb_build_object('prompt', v_payload -> 'prompt', 'options', v_payload -> 'options',
       'correct_option', v_payload -> 'correctOption', 'chosen_option', case when v_chosen >= 0 then v_chosen end,
@@ -846,7 +897,13 @@ begin
       or (v_outcome = 'check-failed' and v_reply.check_provider_model is null)
       -- The topic named must be one of the course's published notes.
       or (v_outcome in ('explained', 'check-failed')
-        and private.note_topic_view(v_reply.course_id, p_topic_item_id) is null)) then
+        and private.note_topic_view(v_reply.course_id, p_topic_item_id) is null)
+      -- Every admission check again, at delivery: the student may still see this course's answers
+      -- (private.attempt_material_allowed's rule), no exam has opened in it, and they still have Campus Bot.
+      or not private.practice_can_start(p_user_id, v_reply.course_id, v_now)
+      or private.campus_bot_exam_open(p_user_id, v_reply.course_id, v_now)
+      or not exists (select 1 from private.campus_bot_reply_funding(p_user_id, v_now) f where f.mode is not null)) then
+    -- Not delivered, not saved for anyone, and the reservation is released: nothing is charged.
     v_outcome := 'failed';
   end if;
 
@@ -862,10 +919,11 @@ begin
       settled_at = v_now, read_tokens = v_read, written_tokens = v_written,
       check_read_tokens = case when p_check_usage is not null then v_check_read end,
       check_written_tokens = case when p_check_usage is not null then v_check_written end,
-      -- The check is charged at the writer's weight: the student never pays the checking model's price.
+      -- The check is charged at the writer's weight: the student never pays the checking model's price. Never more
+      -- than was reserved, whatever the provider reports.
       charged_tokens = case when reserved_tokens is null then null when v_outcome = 'explained'
-        then (v_read + written_token_weight * v_written + v_check_read + written_token_weight * v_check_written)
-          * price_weight else 0 end,
+        then least(reserved_tokens, (v_read + written_token_weight * v_written + v_check_read
+          + written_token_weight * v_check_written) * price_weight) else 0 end,
       cost_usd = case when p_usage is null and p_check_usage is null then null
         else coalesce((p_usage ->> 'estimatedCostUsd')::numeric, 0)
           + coalesce((p_check_usage ->> 'estimatedCostUsd')::numeric, 0) end,
@@ -883,6 +941,12 @@ begin
       checked = (v_outcome = 'explained' and p_check_usage is not null), finished_at = v_now
     where reply_id = p_reply_id
     returning * into v_saved;
+  if v_outcome = 'explained' and v_reply.funding_source = 'trial' and v_reply.funding_grant_id is not null then
+    -- Delivered to a free pass: one of its explanations.
+    insert into private.campus_bot_pass_explanations (grant_id, item_id, revision, chosen_option, delivered_at)
+      values (v_reply.funding_grant_id, v_saved.item_id, v_saved.revision, v_saved.chosen_option, v_now)
+      on conflict do nothing;
+  end if;
   if v_outcome = 'explained' then
     -- A delivered explanation is plan use for refunds, at the time it was admitted. Free courses are never recorded.
     perform private.mark_plan_use(p_user_id, 'campus-bot-message', v_reply.course_id,
@@ -951,14 +1015,6 @@ begin
   update private.campus_bot_replies set reply = null
     where user_id = v_user and reply is not null and reply_expires_at <= v_now;
 
-  -- The same message again. Still being answered: wait. Answered: the kept reply, free, while it is kept.
-  select * into v_existing from private.campus_bot_replies
-    where user_id = v_user and request_id = p_request_id and state <> 'released';
-  if v_existing.id is not null and v_existing.state = 'reserved' then return jsonb_build_object('state', 'busy'); end if;
-  if v_existing.id is not null then
-    return jsonb_build_object('state', 'answered', 'reply', v_existing.reply);
-  end if;
-
   -- The topic, by the rule "Practise this topic" shares (private.campus_bot_topic_context).
   select t.state, t.title, t.passages into v_topic_state, v_title, v_passages
     from private.campus_bot_topic_context(v_user, p_course_id, p_item_id, v_now, 36000) t;
@@ -974,6 +1030,19 @@ begin
     into v_mode, v_source, v_grant, v_session_hours, v_session_tokens, v_week_days, v_week_tokens, v_weight
     from private.campus_bot_reply_funding(v_user, v_now) f;
   if v_mode is null then return jsonb_build_object('state', 'not-entitled'); end if;
+
+  -- The same message again, only after every check above, so a retry gets what a new message would. It is bound to
+  -- the course and topic it was asked about. Still being answered: wait. Answered: the kept reply, free, while it is
+  -- kept.
+  select * into v_existing from private.campus_bot_replies
+    where user_id = v_user and request_id = p_request_id and state <> 'released';
+  if v_existing.id is not null and (v_existing.course_id <> p_course_id or v_existing.item_id <> p_item_id) then
+    return jsonb_build_object('state', 'not-found');
+  end if;
+  if v_existing.id is not null and v_existing.state = 'reserved' then return jsonb_build_object('state', 'busy'); end if;
+  if v_existing.id is not null then
+    return jsonb_build_object('state', 'answered', 'reply', v_existing.reply);
+  end if;
   if not p_generate then return jsonb_build_object('state', 'disabled'); end if;
 
   if exists (select 1 from private.campus_bot_replies
@@ -1028,17 +1097,19 @@ begin
         values (v_user, 'week', v_now, v_now + make_interval(days => v_week_days)) returning * into v_week;
     end if;
   end if;
-  insert into private.campus_bot_replies (user_id, feature, request_id, course_id, funding_source, funding_grant_id,
-      session_window_id, week_window_id, reserved_tokens, model, provider_model, price_weight, written_token_weight,
-      read_tokens_max, written_tokens_max, reserved_at)
-    values (v_user, 'chat', p_request_id, p_course_id, v_source, v_grant, v_session.id, v_week.id, v_reserved, v_model,
+  insert into private.campus_bot_replies (user_id, feature, request_id, item_id, course_id, funding_source,
+      funding_grant_id, session_window_id, week_window_id, reserved_tokens, model, provider_model, price_weight,
+      written_token_weight, read_tokens_max, written_tokens_max, reserved_at)
+    values (v_user, 'chat', p_request_id, p_item_id, p_course_id, v_source, v_grant, v_session.id, v_week.id, v_reserved,
+      v_model,
       v_provider_model, v_price_weight, v_weight, v_read_max, v_written_max, v_now)
     returning id into v_reply;
 
   select c.course_code, c.display_title into v_course_code, v_course_title
     from public.institutional_courses c where c.repository_course_id = p_course_id;
   return jsonb_build_object('state', 'started', 'reply_id', v_reply, 'model', v_provider_model,
-    'max_output_tokens', v_written_max, 'reservation_seconds', v_settings.reply_reservation_seconds,
+    'max_input_tokens', v_read_max, 'max_output_tokens', v_written_max,
+    'reservation_seconds', v_settings.reply_reservation_seconds,
     'course', jsonb_build_object('code', v_course_code, 'title', v_course_title),
     'topic', jsonb_build_object('title', v_title), 'passages', v_passages);
 end;
@@ -1078,8 +1149,14 @@ begin
   if v_reply.state <> 'reserved' then return jsonb_build_object('state', 'already-finished'); end if;
   select chat_reply_keep_seconds into strict v_keep from private.campus_bot_settings;
   v_now := clock_timestamp();
-  -- A reply finished after deletion was scheduled can never be shown, so it is neither kept nor charged.
-  if v_outcome = 'answered' and exists (select 1 from private.account_deletion_jobs where user_id = p_user_id) then
+  -- A reply is delivered only if a new message would still be answered now: no deletion scheduled, the topic still
+  -- one this student may ask about, no exam open in the course, Campus Bot still theirs. Otherwise it is neither kept
+  -- nor charged.
+  if v_outcome = 'answered' and (exists (select 1 from private.account_deletion_jobs where user_id = p_user_id)
+      or (select t.state from private.campus_bot_topic_context(p_user_id, v_reply.course_id, v_reply.item_id, v_now, 1) t)
+        is distinct from 'ready'
+      or private.campus_bot_exam_open(p_user_id, v_reply.course_id, v_now)
+      or not exists (select 1 from private.campus_bot_reply_funding(p_user_id, v_now) f where f.mode is not null)) then
     v_outcome := 'failed';
   end if;
   v_read := coalesce((p_usage ->> 'inputTokens')::bigint, 0) + coalesce((p_usage ->> 'cacheReadInputTokens')::bigint, 0)
@@ -1088,8 +1165,9 @@ begin
   update private.campus_bot_replies
     set state = case when v_outcome = 'answered' then 'consumed' else 'released' end, outcome = v_outcome,
       settled_at = v_now, read_tokens = v_read, written_tokens = v_written,
+      -- Never more than was reserved, whatever the provider reports.
       charged_tokens = case when reserved_tokens is null then null when v_outcome = 'answered'
-        then (v_read + written_token_weight * v_written) * price_weight else 0 end,
+        then least(reserved_tokens, (v_read + written_token_weight * v_written) * price_weight) else 0 end,
       cost_usd = (p_usage ->> 'estimatedCostUsd')::numeric, duration_ms = (p_usage ->> 'durationMs')::integer,
       reply = case when v_outcome = 'answered' then p_reply end,
       reply_expires_at = case when v_outcome = 'answered' then v_now + make_interval(secs => v_keep) end
@@ -1475,6 +1553,7 @@ revoke all on function private.guide_inline_text(jsonb), private.guide_blocks_te
   private.note_search(uuid, text, text, integer, integer), private.campus_bot_window_use(uuid),
   private.campus_bot_reply_funding(uuid, timestamptz), private.release_abandoned_campus_bot_replies(uuid, timestamptz),
   private.campus_bot_exam_open(uuid, uuid, timestamptz),
+  private.campus_bot_pass_explanations_used(uuid, timestamptz, integer),
   private.campus_bot_topic_context(uuid, uuid, uuid, timestamptz, integer),
   private.campus_bot_explanation_view(private.campus_bot_explanations),
   private.campus_bot_explanation_ref(uuid, integer, integer),

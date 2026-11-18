@@ -4,7 +4,7 @@
 // reach of a chat. The chat itself lives in the page; what arrives here is the new message and a few recent turns.
 import 'server-only'
 import { CHAT_LIMITS } from './contract'
-import { callCampusBotModel } from './model-call'
+import { callCampusBotModel, fitNotesPrompt } from './model-call'
 import { buildAskPrompt } from './prompts'
 import { capWords, plainText, REPLY_WORDS, studentText } from './reply-text'
 import type { UsageReport } from '@/lib/ai-practice/contract'
@@ -90,7 +90,15 @@ export async function askCampusBot(env: AskEnv, command: AskCommand): Promise<As
     return { status: 'disabled' }
   }
 
-  const prompt = buildAskPrompt(begun.course, begun.topicTitle, begun.notes, recentTurns(command.history), message)
+  // The whole prompt stays within the input cap admitted: as much of the topic's notes as fits.
+  const turns = recentTurns(command.history)
+  const fitted = fitNotesPrompt(begun.notes, notes => buildAskPrompt(begun.course, begun.topicTitle, notes, turns, message),
+    begun.limits)
+  if (fitted === null) {
+    await env.finish(begun.replyId, { outcome: 'failed', usage: null })
+    return { status: 'failed' }
+  }
+  const { prompt } = fitted
   const reply = await callCampusBotModel(provider, { ...prompt, limits: begun.limits, effort: 'low',
     timeoutMs: CHAT_TIMEOUT_MS })
   if (reply.kind === 'failed') {

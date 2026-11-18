@@ -42,15 +42,24 @@ pages offer neither feature; explanations already saved are still served.
   (Haiku = 1). On a calculation course the check is charged at the **writer's** weight too; the platform absorbs the
   difference (owner decision).
 - **Free pass:** 5 explanations and 10 messages per pass, counted, not metered: on GST practice and notes, and Ask on
-  the topic the pass pinned.
+  the topic the pass pinned. An explanation counts when it is first delivered to the student, whether it was written
+  for them or saved earlier for someone else (`private.campus_bot_pass_explanations`, per pass and per question
+  revision and option); reading it again is free.
 - **No Campus Bot:** the student sees the Campus Bot notice: subscribe when plans are on sale, the free pass when they
   can still start one, otherwise "Campus Bot is included with a plan." (The free month button joins once Early Access
   is in develop.)
 - **Reserve, then settle.** A request reserves its worst case at its caps before the provider is called; only a
-  delivered explanation or reply is charged. Nothing is charged for "not covered", a failed check, a timeout, a refusal
-  or an unusable reply, or for a reservation the server never settled (released after 180 seconds).
+  delivered explanation or reply is charged, and never more than was reserved. The server bounds the whole prompt
+  (instructions, notes, question or chat, and the reply's schema) by the input cap it was admitted with, leaving off
+  the least relevant passages until it fits; a prompt that still could not fit is never sent. Nothing is charged for
+  "not covered", a failed check, a timeout, a refusal or an unusable reply, or for a reservation the server never
+  settled (released after 180 seconds).
+- **Checked again at delivery.** A reply that finishes after the student lost access to the course, an exam opened
+  in it, or their Campus Bot ended is not delivered or saved, and its reservation is released unpaid.
 - **One at a time:** one explanation and one message in flight per student; a second tap answers "busy". The database
-  takes the same per-student lock as practice sets, so windows open and reserve one request at a time.
+  takes the same per-student lock as practice sets, so windows open and reserve one request at a time. Reclaiming
+  a reservation that was never settled never waits on another transaction: rows another one holds are skipped
+  (`FOR UPDATE SKIP LOCKED`) and left to it, so students whose dead requests cross cannot deadlock.
 
 ## Saved explanations
 
@@ -68,7 +77,9 @@ problem; `campus-bot-explanations --course <key>` lists them with their question
 The chat lives in the page: nothing a student types is stored. Each message is sent with at most the 6 latest turns
 (600 characters each) and is at most 500 characters. Email addresses and Nigerian phone numbers are removed before
 anything is sent. A delivered reply is kept for 10 minutes, so a retry of the same message (after a lost connection)
-gets it free; a job deletes it every minute after that.
+gets it free; a job deletes it every minute after that. A retry is answered only for the course and topic it was asked
+about, and only after every check a new message passes (access, an open exam, Campus Bot), so it gets what a new
+message would.
 
 ## What is sent to the provider
 

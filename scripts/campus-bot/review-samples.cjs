@@ -112,12 +112,14 @@ async function run(args, env = process.env, transport = fetch, write = line => p
     throw new Error('the Campus Bot settings could not be read')
   }
   const provider = live ? deps.liveProvider(writer, env.ANTHROPIC_API_KEY) : deps.fakeProvider()
-  const limits = step => ({ model: step === 'explain-check' ? checker : writer, maxOutputTokens: caps[step].written })
+  const limits = step => ({ model: step === 'explain-check' ? checker : writer, maxInputTokens: caps[step].read,
+    maxOutputTokens: caps[step].written })
   let spent = 0
-  // Live: the worst case of the next call, at its caps, must fit what is left of --max-usd.
-  const affordable = step => !live
-    || spent + (deps.cost(limits(step).model, { inputTokens: caps[step].read, outputTokens: caps[step].written,
-      cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }) ?? Infinity) <= maxUsd
+  // Live: the worst case of the next request, every call in it at its caps, must fit what is left of --max-usd. An
+  // explanation on a calculation course is two calls (writer and checker), so both are counted before the first.
+  const worst = step => deps.cost(limits(step).model, { inputTokens: caps[step].read, outputTokens: caps[step].written,
+    cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }) ?? Infinity
+  const affordable = (...steps) => !live || spent + steps.reduce((sum, step) => sum + worst(step), 0) <= maxUsd
   const call = async (step, prompt, effort) => {
     const result = await deps.callModel(provider, { ...prompt, limits: limits(step), effort, timeoutMs: CALL_TIMEOUT_MS })
     if (result.kind !== 'failed') spent += result.usage.estimatedCostUsd ?? 0
@@ -143,7 +145,10 @@ async function run(args, env = process.env, transport = fetch, write = line => p
         continue
       }
       row.notes = notes.passages.map(passage => `${passage.topicTitle} / ${passage.heading}`).join('; ')
-      if (!affordable('explain') || (sample.course.calculation && !affordable('explain-check'))) { stopped = true; break }
+      if (!(sample.course.calculation ? affordable('explain', 'explain-check') : affordable('explain'))) {
+        stopped = true
+        break
+      }
       const reply = await call('explain', deps.explainPrompt(course, question, notes), 'low')
       if (reply.kind === 'failed') { rows.push({ ...row, outcome: `failed: ${reply.code}` }); continue }
       Object.assign(row, { tokensIn: reply.usage.inputTokens, tokensOut: reply.usage.outputTokens, cost: reply.usage.estimatedCostUsd })

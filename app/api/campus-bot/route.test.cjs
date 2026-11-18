@@ -15,13 +15,13 @@ const ITEM = '72000000-0000-4000-8000-000000000004'
 const COURSE = '72000000-0000-4000-8000-000000000005'
 const REQUEST = '72000000-0000-4000-8000-000000000006'
 const TOPIC = { item_id: ITEM, number: 3, title: 'Demand' }
-const explainStarted = (extra = {}) => ({ state: 'started', reply_id: REPLY, model: 'claude-haiku-5-5', max_output_tokens: 800,
+const explainStarted = (extra = {}) => ({ state: 'started', reply_id: REPLY, model: 'claude-haiku-5-5', max_input_tokens: 8000, max_output_tokens: 800,
   reservation_seconds: 180, check: null, course: { code: 'ECO101', title: 'Principles of Economics I' },
   question: { prompt: 'What happens to quantity demanded when price rises?', options: ['It rises', 'It falls', 'Nothing', 'It doubles'],
     correct_option: 1, chosen_option: 3, explanation: 'The law of demand.' },
   passages: [{ item_id: ITEM, topic_number: 3, topic_title: 'Demand', heading: '3.1 The law of demand',
     body: 'When price rises, quantity demanded falls.' }], ...extra })
-const chatStarted = { state: 'started', reply_id: REPLY, model: 'claude-haiku-5-5', max_output_tokens: 800,
+const chatStarted = { state: 'started', reply_id: REPLY, model: 'claude-haiku-5-5', max_input_tokens: 8000, max_output_tokens: 800,
   reservation_seconds: 180, course: { code: 'ECO101', title: 'Principles of Economics I' }, topic: { title: 'Demand' },
   passages: [{ heading: 'What you must know', body: 'When price rises, quantity demanded falls.' }] }
 const EXPLAIN = { operation: 'explain', attemptId: ATTEMPT, questionId: QUESTION }
@@ -104,7 +104,7 @@ test('explain: the body names only the attempt and the question; the database is
 }))
 
 test('explain on a calculation course: both models are called with the limits admitted, and both reports are settled', async () => fixture(async f => {
-  f.state.replies = { begin_campus_bot_explanation: explainStarted({ check: { model: 'claude-sonnet-5-5', max_output_tokens: 2000 } }),
+  f.state.replies = { begin_campus_bot_explanation: explainStarted({ check: { model: 'claude-sonnet-5-5', max_input_tokens: 4000, max_output_tokens: 2000 } }),
     finish_campus_bot_explanation: args => ({ state: 'finished', outcome: args.p_outcome, body: args.p_body, topic: TOPIC }) }
   f.state.script = { check: 'fail' }
   const response = await f.post(EXPLAIN)
