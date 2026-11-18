@@ -76,22 +76,26 @@ export function namesAnotherOption(text: string, correctOption: number, optionCo
   const correct = optionLetter(correctOption)
   const letters = LETTERS.slice(0, Math.max(0, Math.min(optionCount, LETTERS.length)))
   if (letters === '') return false
-  const option = `(?:option\\s+|choice\\s+|answer\\s+)?\\(?([${letters}])\\)?`
-  // A letter after "answer is" ends its clause, so "the correct answer is a fixed cost" is not read as option A.
-  const ends = `(?=\\s*(?:[.,;:!?]|$|(?:because|since|as)\\b))`
+  const option = `(?:option\\s+|choice\\s+|answer\\s+)?\\(?([${letters}])\\b\\)?`
+  // Only a bare lowercase "a" before a word is an article: uppercase A, "option a" and "(a)" are option claims.
+  const isArticle = (match: RegExpMatchArray): boolean => match[1] === 'a'
+    && /\b(?:is|be|not)\s+a$/i.test(match[0])
+    && /^\s+\w/.test(text.slice((match.index ?? 0) + match[0].length))
   const claims = [
     // "The correct answer is B", "the right option should be (b)".
-    new RegExp(`\\b(?:correct|right)\\s+(?:answer|option|choice)\\s+(?:is|should\\s+be|would\\s+be)\\s+${option}${ends}`, 'gi'),
+    new RegExp(`\\b(?:correct|right)\\s+(?:answer|option|choice)\\s+(?:is|should\\s+be|would\\s+be)\\s+${option}`, 'gi'),
     // "B is the correct answer", "option b is actually right".
     new RegExp(`\\b${option}\\s+is\\s+(?:actually\\s+|really\\s+)?(?:the\\s+)?(?:correct|right)\\b`, 'gi'),
   ]
-  if (claims.some(pattern => [...text.matchAll(pattern)].some(match => match[1].toUpperCase() !== correct))) return true
+  if (claims.some(pattern => [...text.matchAll(pattern)].some(match => !isArticle(match)
+      && match[1].toUpperCase() !== correct))) return true
   // The official answer denied: "A is not correct", "option A is wrong", "the answer is not A".
-  const official = `(?:option\\s+|choice\\s+|answer\\s+)?\\(?${correct}\\)?`
+  const official = `(?:option\\s+|choice\\s+|answer\\s+)?\\(?(${correct})\\b\\)?`
+  const qualifiers = `(?:(?:actually|really|entirely)\\s+)*`
   const denials = [
-    new RegExp(`\\b${official}\\s+(?:(?:is|was)\\s+(?:not|never)|(?:isn|wasn)['’]t)\\s+(?:the\\s+)?(?:correct|right|answer)\\b`, 'i'),
-    new RegExp(`\\b${official}\\s+(?:is|was)\\s+(?:wrong|incorrect|false)\\b`, 'i'),
-    new RegExp(`\\b(?:correct|right)?\\s*(?:answer|option|choice)\\s+(?:is|was)\\s+not\\s+${official}${ends}`, 'i'),
+    new RegExp(`\\b${official}\\s+(?:(?:is|was)\\s+(?:not|never)|(?:isn|wasn)['’]t)\\s+${qualifiers}(?:the\\s+)?(?:correct|right|answer)\\b`, 'gi'),
+    new RegExp(`\\b${official}\\s+(?:is|was)\\s+${qualifiers}(?:wrong|incorrect|false)\\b`, 'gi'),
+    new RegExp(`\\b(?:correct|right)?\\s*(?:answer|option|choice)\\s+(?:is|was)\\s+not\\s+${official}`, 'gi'),
   ]
-  return denials.some(pattern => pattern.test(text))
+  return denials.some(pattern => [...text.matchAll(pattern)].some(match => !isArticle(match)))
 }
