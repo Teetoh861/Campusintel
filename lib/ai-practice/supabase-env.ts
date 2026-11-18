@@ -81,12 +81,13 @@ export async function readAllowance(client: StudentClient,
 
 const RECENT_SET_LIMIT = 5
 
-/** The student's unexpired generated sets for one course, newest first, re-validated on read. */
+/** The student's unexpired generated sets from their own uploads for one course, newest first, re-validated on read.
+ *  Sets written from a notes topic open on their own page (app/courses/[slug]/campus-bot/[setId]). */
 export async function listPersonalSetsForCourse(client: StudentClient, userId: string, courseId: string):
   Promise<PersonalSetView[]> {
   const { data, error } = await client.from('ai_practice_generations')
     .select('id,status,created_at,question_set').eq('user_id', userId).eq('institutional_course_id', courseId)
-    .eq('status', 'generated').gt('expires_at', new Date().toISOString())
+    .eq('status', 'generated').eq('source_kind', 'upload').gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false }).limit(RECENT_SET_LIMIT)
   if (error || !Array.isArray(data)) return []
   return data.flatMap(row => {
@@ -101,7 +102,7 @@ export async function listCoursesWithPersonalSets(client: StudentClient, userId:
   Promise<ReadonlySet<string>> {
   // One light read names the courses with a stored set; only those are then read the way the page reads them.
   const { data, error } = await client.from('ai_practice_generations').select('institutional_course_id')
-    .eq('user_id', userId).eq('status', 'generated').gt('expires_at', new Date().toISOString())
+    .eq('user_id', userId).eq('status', 'generated').eq('source_kind', 'upload').gt('expires_at', new Date().toISOString())
   const stored = z.object({ institutional_course_id: uuid }).array().safeParse(data)
   if (error || !stored.success) return new Set()
   const made = new Set(stored.data.map(row => row.institutional_course_id))

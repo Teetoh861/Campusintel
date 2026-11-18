@@ -28,7 +28,8 @@ Assess the material honestly before writing questions:
 - If it is inappropriate for a study platform (sexual, hateful, harassing, or promoting harm), set appropriate to false and return no questions.
 - Use assessmentNote for one short sentence explaining your assessment.`
 
-const OUTPUT_SCHEMA: Record<string, unknown> = {
+/** The reply every Campus Bot set is written in: uploads and notes topics alike (lib/ai-practice/topic-prompt.ts). */
+export const PRACTICE_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: ['assessment', 'questions'],
@@ -79,5 +80,5 @@ export function buildGenerationPrompt(
     material,
     '</source_material>',
   ].join('\n')
-  return { system: SYSTEM_PROMPT, user, outputSchema: OUTPUT_SCHEMA }
+  return { system: SYSTEM_PROMPT, user, outputSchema: PRACTICE_OUTPUT_SCHEMA }
 }

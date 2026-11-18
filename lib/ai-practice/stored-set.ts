@@ -17,19 +17,24 @@ const storedQuestion = z.object({
   grounding: z.object({
     documentId: z.string().uuid(),
     sourceSha256: z.string().regex(/^[0-9a-f]{64}$/),
-    passageId: z.string().regex(/^P[1-9]\d*$/),
+    passageId: z.string().regex(/^[PN][1-9]\d*$/),
     passageStart: z.number().int().nonnegative(),
     passageEnd: z.number().int().nonnegative(),
     quote: text(LIMITS.maxQuoteChars),
   }).passthrough(),
 }).passthrough()
 
+// A set's source: the student's uploaded file, or one topic of CampusIntell's notes (lib/ai-practice/topic-set.ts).
+const uploadSource = z.object({ fileName: text(255) }).passthrough()
+const topicSource = z.object({ kind: z.literal('notes-topic'), itemId: z.string().uuid(), title: text(240),
+  number: z.number().int().positive().nullable() }).passthrough()
+
 export const storedSetSchema = z.object({
   formatVersion: z.literal(1),
   origin: z.literal('ai-generated'),
   visibility: z.literal('personal'),
   verification: z.literal('unverified'),
-  source: z.object({ fileName: text(255) }).passthrough(),
+  source: z.union([topicSource, uploadSource]),
   questions: z.array(storedQuestion).min(1).max(LIMITS.maxQuestions),
 }).passthrough()
 
@@ -37,10 +42,15 @@ export const storedSetSchema = z.object({
 export function toPersonalSetView(generationId: string, createdAt: string, stored: unknown): PersonalSetView | null {
   const parsed = storedSetSchema.safeParse(stored)
   if (!parsed.success) return null
+  const fromTopic = topicSource.safeParse(parsed.data.source)
+  const fromUpload = uploadSource.safeParse(parsed.data.source)
+  const topic = fromTopic.success
+    ? { itemId: fromTopic.data.itemId, title: fromTopic.data.title, number: fromTopic.data.number } : null
   return {
     generationId,
     createdAt,
-    fileName: parsed.data.source.fileName,
+    fileName: topic === null && fromUpload.success ? fromUpload.data.fileName : null,
+    topic,
     questions: parsed.data.questions.map(question => ({
       id: question.id, prompt: question.prompt, options: [...question.options],
       correctOption: question.correctOption, explanation: question.explanation,

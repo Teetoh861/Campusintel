@@ -1,4 +1,4 @@
-// lib/campus-bot/copy.ts — Every line a student reads in Explain and Ask Campus Bot (owner-approved, 16 November 2026;
+// lib/campus-bot/copy.ts — Every line a student reads in Explain, Ask Campus Bot and Quiz me on this topic (owner-approved, 16 November 2026;
 // docs/student-copy.md). Output is labelled Campus Bot. The lines for a student without Campus Bot and for a limit are
 // kept here, with the wording approved for these two features, until the Campus Bot page's own lines match them.
 import { accessCopy, formatAccessTime, formatAccessWeekday } from '@/lib/entitlements/presentation'
@@ -26,7 +26,24 @@ export const CAMPUS_BOT_COPY = {
   outsideNotes: 'This isn’t covered in this topic’s notes.',
   askFailed: 'Campus Bot couldn’t answer that. Try again.',
 
-  // Both.
+  // Quiz me on this topic: its button in a topic's Campus Bot area, the wait, then the set on its own page (owner
+  // decisions of 16 November 2026).
+  quiz: {
+    start: 'Quiz me on this topic',
+    writing: 'Campus Bot is writing your questions…',
+    /** A free pass's sets left, before any is used: the one line about the pass the quiz shows. */
+    passLeft: (left: number, total: number) =>
+      `${left} of ${total} Campus Bot ${total === 1 ? 'set' : 'sets'} left on your free pass.`,
+    failed: 'We couldn’t create your questions.',
+    /** The one label a set written from a notes topic carries (docs/student-copy.md rule 6). */
+    label: 'Made by Campus Bot from this topic’s notes.',
+    fromNotes: 'From the notes:',
+    backToTopic: 'Back to topic',
+    /** The set's heading for screen readers; the page's title already names the topic. */
+    heading: 'Quiz',
+  },
+
+  // All three.
   tryAgain: 'Try again',
   busyTitle: 'Campus Bot is busy.',
   busyLine: 'Try again in a few minutes.',
@@ -50,6 +67,7 @@ export const CAMPUS_BOT_COPY = {
       line: (iso: string | null) => iso ? `It resets ${formatAccessWeekday(iso)} at ${formatAccessTime(iso)}.` : '' },
     passExplain: 'You’ve used your free pass explanations.',
     passChat: 'You’ve used your free pass messages.',
+    passQuiz: 'You’ve used your free pass Campus Bot set.',
     undelivered: { title: 'Campus Bot limit reached.', line: 'Try again tomorrow.' },
   },
 } as const

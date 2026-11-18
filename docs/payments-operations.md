@@ -118,10 +118,11 @@ node -r ./lib/auth/test-loader.cjs scripts/entitlements/ops.cjs <command> ...
 | `campus-bot-writer --model <name> --actor --reason` | The model that writes Campus Bot sets (Haiku at launch). Each request records the model and weights it is charged at, so a change applies to new sets only. |
 | `campus-bot-refill --user <uuid> --actor --reason` | Gives one student fresh Campus Bot limits: new session and week windows start at their next request. Nothing is deleted. |
 | `campus-bot-refill --everyone --confirm --actor --reason` | The same for every student. |
-| `ai-limits [--daily <n>] [--paid-reserve <n>] [--undelivered-per-day <n>] --actor --reason` | The platform's AI sets per UTC day (500 at launch; raise it as paying students grow), how many of them only paying students may use (150), and each student's undelivered tries per day (10). Unnamed settings stay as they are. |
+| `ai-limits [--daily <n>] [--paid-reserve <n>] [--undelivered-per-day <n>] --actor --reason` | The platform's newly written Campus Bot sets per UTC day, uploads and topic quizzes together (2,000 from `20261117110000`; raise it as paying students grow), how many of them only paying students may use (150), and each student's undelivered tries per day (10). Unnamed settings stay as they are. |
 | `campus-bot-feature --feature explain\|ask\|topic-sets --state on\|off --actor --reason` | Switches Explain, Ask Campus Bot or topic sets on or off for every student. All three are off until the human review signs off ([Campus Bot Explain and Ask](campus-bot-explain-ask.md)). |
 | `campus-bot-reply-limits [--pass-explanations <n>] [--pass-messages <n>] [--daily-explanations <n>] [--daily-messages <n>] [--undelivered-per-day <n>] --actor --reason` | A free pass's explanations (5) and messages (10), the platform's explanations (3,000) and messages (10,000) per UTC day, and each student's undelivered replies per day (20). |
 | `campus-bot-checker --model <name> --actor --reason` | The model that checks explanations on calculation courses (Sonnet at launch), charged at the writer's weight. |
+| `campus-bot-set-checker --model <name> --actor --reason` | The model that checks a "Quiz me on this topic" set on a calculation course (Sonnet at launch). Explain's checker is set separately (`campus-bot-checker`). |
 | `campus-bot-course --course <course key> --calculation on\|off --actor --reason` | Puts a course on or off the calculation list. Putting it on removes its explanations that were never checked. |
 | `campus-bot-clear-explanations --course <course key> --confirm --actor --reason` | Removes every saved explanation of a course; each is written again the next time a student asks for it. |
 | `campus-bot-status` | Explain and Ask settings, caps, models, the calculation list, today's requests and what is saved. |
@@ -151,8 +152,9 @@ Early Access alone is unpaid for that reserve. A Discovery Pass keeps its one se
   even if that takes a limit below zero. The hard source cap is 60,000 characters; `read_tokens_max` is the
   reservation estimate, not an input-token rejection limit. A rare overrun is delivered and charged from the actual
   usage report, and can leave a window below zero.
-- **Platform**: 500 sets a day across all students, of which the last 150 are kept for paying students; each student
-  may have 10 undelivered tries a day (`ai-limits` changes all three).
+- **Platform**: 2,000 newly written sets a day across all students (uploads and topic quizzes together), of which the
+  last 150 are kept for paying students; each student may have 10 undelivered tries a day (`ai-limits` changes all
+  three).
 - **Support**: a student out of tokens can be refilled with `campus-bot-refill --user <uuid>`; it starts fresh windows
   at their next request and deletes nothing. Each admission reads the latest applicable refill once and uses that
   same snapshot for both windows; a refill committed afterwards applies to the next admission. A set that finishes
@@ -169,6 +171,35 @@ Transport cancellation and a server deadline both apply, and the server refuses 
 reservation lifetime before calling the provider. Keep this inequality when changing any timeout or adding a check step.
 An abandoned result is still discarded and charged 0, including a reply arriving after abandonment; its reservation
 and token-request row are released at 0. A live server finishes or times out before abandonment can run.
+
+## Quiz me on this topic
+
+"Quiz me on this topic" writes a new set of five questions from one notes topic: from the topic's Campus Bot area on
+its notes page, or on the free pass page for the topic a pass pinned (`20261117110000_campus_bot_topic_sets.sql`).
+A quiz is a Campus Bot set in every other way: the same limits, settlement and refund rule as a set from an upload.
+
+- **Switch**: off until the human review signs off: `campus-bot-feature --feature topic-sets --state on|off`. While it
+  is off, no new quiz is admitted; a quiz already written still opens on its own page.
+- **Who**: a student who can read the topic now (their own courses on a plan or the free month, GST courses for
+  anyone), or the topic a current free pass pinned. Funding is the plan's session and week windows, or the free pass's
+  one set (uploads and quizzes together; its 20,000-character upload limit does not apply). Notes under 150 words
+  offer no quiz.
+- **Model and charge**: the writing model (`campus-bot-writer`, Haiku) for every funding, at the `writing` step's caps
+  (20,000 read / 8,000 written). On a calculation course (`campus-bot-course --calculation on`) the set's checking model
+  (`campus-bot-set-checker`, Sonnet) confirms each question at the `check` step's caps (10,000 read / 3,000 written); a
+  question it does not confirm is removed, and fewer than three left is no set. Each call's whole prompt stays within
+  its read cap: a long topic is sent from its start as far as fits (the set records the passages it was written from),
+  and a check's cited passages are shortened from their ends; a set that cannot be checked within its cap is not
+  shown. The check is charged at the writer's weight (owner decision). A quiz reserves 60,000 tokens, or 85,000 with
+  the check, and is charged from the provider's reports only when delivered, never past what was reserved. A
+  delivered quiz on a paid course is plan use, as a set is.
+- **Delivery**: a set is delivered only if the student can still read the topic (or their pass still pins it) and the
+  grant that funds it is still current; otherwise it is not stored, nothing is charged and its reservation is
+  released. A retry of a request is answered only after every check a new quiz passes. There is no exam block (owner
+  decision).
+- **Repeats**: the student's last ten questions on the topic go with the request, and a repeat is never kept.
+- **Records**: `ai_usage_events.feature = 'topic_practice'`; `ai_practice_generations.source_kind = 'notes-topic'` with
+  the topic's item and revision; `campus_bot_requests` rows `writing` and, on a calculation course, `check`.
 
 ## Plan use for refunds
 

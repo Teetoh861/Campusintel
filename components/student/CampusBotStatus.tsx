@@ -23,7 +23,7 @@ export function CampusBotNotice({ kind }: { kind: CampusBotNoticeKind }): ReactE
 
 type Props = {
   problem: CampusBotProblem
-  feature: 'explain' | 'ask'
+  feature: 'explain' | 'ask' | 'quiz'
   /** Try again, offered only where trying again can help. */
   onRetry?: () => void
   /** Sign in and come back to this page, and this page again for the current sign-in. */
@@ -43,7 +43,8 @@ export function CampusBotStatus({ problem, feature, onRetry, signInHref, reloadH
     case 'limit': {
       const { limits } = CAMPUS_BOT_COPY
       if (problem.limit === 'pass') {
-        return <Notice tone="info" title={feature === 'explain' ? limits.passExplain : limits.passChat} action={plan} />
+        return <Notice tone="info" title={feature === 'explain' ? limits.passExplain : feature === 'ask'
+          ? limits.passChat : limits.passQuiz} action={plan} />
       }
       if (problem.limit === 'undelivered') {
         return <Notice tone="info" title={limits.undelivered.title}>{limits.undelivered.line}</Notice>
@@ -70,7 +71,8 @@ export function CampusBotStatus({ problem, feature, onRetry, signInHref, reloadH
     case 'disabled':
       return null
     default:
-      return <Notice title={feature === 'explain' ? CAMPUS_BOT_COPY.explainFailed : CAMPUS_BOT_COPY.askFailed}
+      return <Notice title={feature === 'explain' ? CAMPUS_BOT_COPY.explainFailed : feature === 'ask'
+        ? CAMPUS_BOT_COPY.askFailed : CAMPUS_BOT_COPY.quiz.failed}
         action={problem.status === 'failed' || problem.status === 'unavailable' ? retry : undefined} />
   }
 }

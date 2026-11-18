@@ -12,6 +12,9 @@ import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { AI_PRACTICE_LIMITS } from '@/lib/ai-practice/contract'
+import { readQuizPassLine } from '@/lib/ai-practice/quiz-pass'
+import { noteWords } from '@/lib/ai-practice/topic-source'
 import { AUTH_PATHS } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { readCampusBotFeatures } from '@/lib/campus-bot/features'
@@ -24,6 +27,7 @@ import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AskCampusBot } from '../../notes/AskCampusBot'
+import { QuizMe } from '../../notes/QuizMe'
 import { NoteArticle } from '../../sections'
 import { DiscoveryExam } from './DiscoveryExam'
 import { OpenPreview } from './OpenPreview'
@@ -90,9 +94,13 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   const offered = plan.status === 'ok' && trialWording(plan.entitlement).passAvailable
   const examQuestions = plan.status === 'ok' && discoveryOffered(plan.entitlement) ? plan.entitlement.discovery.cbt_questions : null
   const endsAt = 'endsAt' in result ? result.endsAt : null
-  // Ask Campus Bot about the topic this pass pinned, when the team has it switched on.
+  // Ask Campus Bot about the topic this pass pinned, and a quiz on it, when the team has each switched on.
   const pinned = result.status === 'ready' && result.preview.kind === 'study_guide' ? result.preview.items[0] ?? null : null
-  const ask = pinned !== null && (await readCampusBotFeatures(client).catch(() => null))?.ask === true
+  const features = pinned === null ? null : await readCampusBotFeatures(client).catch(() => null)
+  const ask = pinned !== null && features?.ask === true
+  const quiz = pinned !== null && features?.topicSets === true && noteWords(pinned.note) >= AI_PRACTICE_LIMITS.minSourceWords
+  const passLine = quiz ? await readQuizPassLine(client) : null
+  const signInHref = `${AUTH_PATHS.login}?next=${encodeURIComponent(returnPath)}`
   const band = <PageBand title={TITLE[kind]} lede={`${course.code} · ${course.title}`}
     context={endsAt !== null && <p>{DISCOVERY_PASS_LABEL} · ends {formatAccessDate(endsAt)}</p>} />
   return <StudentPage band={band}>
@@ -100,10 +108,11 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
       <PreviewBody result={result} kind={kind} course={course} examQuestions={examQuestions} offered={offered}
         continuityToken={continuityToken} plansOnSale={plansOnSale} />
       {/* The topic this pass pinned: the same Campus Bot area as a notes topic. */}
-      {ask && pinned !== null ? <CampusBotArea>
-        <AskCampusBot courseSlug={course.slug} itemId={pinned.item_id} topicTitle={pinned.note.title}
-          continuityToken={continuityToken} signInHref={`${AUTH_PATHS.login}?next=${encodeURIComponent(returnPath)}`}
-          reloadHref={returnPath} />
+      {(ask || quiz) && pinned !== null ? <CampusBotArea>
+        {ask ? <AskCampusBot courseSlug={course.slug} itemId={pinned.item_id} topicTitle={pinned.note.title}
+          continuityToken={continuityToken} signInHref={signInHref} reloadHref={returnPath} /> : null}
+        {quiz ? <QuizMe courseSlug={course.slug} itemId={pinned.item_id} passLine={passLine}
+          continuityToken={continuityToken} signInHref={signInHref} reloadHref={returnPath} /> : null}
       </CampusBotArea> : null}
       <Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
         Back to course

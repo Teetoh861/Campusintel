@@ -7,7 +7,7 @@ Read this before writing any text or building any screen a student will see in C
 3. Match the mode. Practice has no timer, so it gets no time advice. Time tips appear only in timed exams.
 4. Keep it short. Headings are short and read naturally, body text is one sentence, and buttons name the action ("Show answer", "Start exam").
 5. Use a confident tone with no disclaimers or caveats. Legal pages (Payment terms, Privacy policy) are the only exception.
-6. Campus Bot sets made from a student's own notes carry one label: "Made by Campus Bot from your notes."
+6. Campus Bot sets made from a student's own notes carry one label: "Made by Campus Bot from your notes." Sets made from one of our notes topics ("Quiz me on this topic") carry "Made by Campus Bot from this topic’s notes."
 7. Never tell students how to use a screen; the layout should make it obvious.
 8. Headings must read naturally. Never drop words to save space.
 9. A message belongs on the screen where its action happened, and goes away once the student does something else.

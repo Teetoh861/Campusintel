@@ -81,6 +81,8 @@ export type PersonalSetView = {
   generationId: string
   createdAt: string
   fileName: string | null
+  /** The notes topic a "Quiz me on this topic" set was written from; null for a set from an upload. */
+  topic?: { itemId: string; title: string; number: number | null } | null
   questions: PersonalQuestionView[]
 }
 
