@@ -81,6 +81,8 @@ type Props = {
   initial: QuizInitial
   /** The copy switch (plans_on_sale) for the score-only result. */
   plansOnSale?: boolean
+  /** Campus Bot's Explain is switched on: offered under each finished question. */
+  explainAvailable?: boolean
 }
 
 export type View =
@@ -268,7 +270,8 @@ export function QuizClient(props: Props): ReactElement | null {
 
   if (view.screen === 'active' && view.attempt.mode === 'instant') {
     return <InstantAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken}
-      topicsHref={topicsHref} coursePageHref={props.courseHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)} />
+      topicsHref={topicsHref} coursePageHref={props.courseHref} attempt={view.attempt} onGraded={attempt => onGraded(attempt, false)}
+      explainAvailable={props.explainAvailable === true} />
   }
   if (view.screen === 'active') {
     return <ActiveAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken} courseHref={props.courseHref}
@@ -284,6 +287,8 @@ export function QuizClient(props: Props): ReactElement | null {
     return <>
       <ReviewScreen {...identity} questions={attempt.questions} correctCount={attempt.result.score} reported={reported}
         reporting={report ? report.index : null}
+        explain={props.explainAvailable === true ? { attemptId: attempt.id, continuityToken, courseHref: props.courseHref,
+          signInHref: signInToAttemptHref(props.courseHref, attempt.id), reloadHref: attemptHref(props.courseHref, attempt.id) } : null}
         onReport={(index, returnFocusTo) => {
           const question = attempt.questions[index]
           if (!question) return

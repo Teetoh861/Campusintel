@@ -9,6 +9,7 @@ import { CircleCheck, CircleX } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { postPracticeCommand } from '@/lib/practice/client'
+import { ExplainPanel } from './ExplainPanel'
 import { INSTANT_COPY, browserHapticEnv, firstOpenQuestion, optionMarkOf, vibrateForResult } from './instant-feedback'
 import { PRACTICE_COPY, attemptHref, optionLetter, practiceIdentity, signInToAttemptHref } from './practice-presentation'
 import { clearPendingPick, readPendingPick, writePendingPick } from './practice-storage'
@@ -26,6 +27,8 @@ type Props = {
   coursePageHref: string
   attempt: OpenAttempt
   onGraded: (attempt: GradedAttempt) => void
+  /** Campus Bot's Explain is switched on: offered once a question is answered. */
+  explainAvailable?: boolean
 }
 
 // What the line under the options says while a pick has no result.
@@ -196,6 +199,11 @@ export function InstantAttempt(props: Props): ReactElement {
         <h2 id={`${id}-why`}>{INSTANT_COPY.why}</h2>
         <p>{shown.explanation}</p>
       </section> : null}
+      {/* Only an answered question: the server checks the pick against this attempt before it explains anything. */}
+      {props.explainAvailable && shown !== undefined ? <ExplainPanel key={question.questionId} attemptId={attempt.id}
+        questionId={question.questionId} continuityToken={continuityToken} courseHref={props.coursePageHref}
+        signInHref={signInToAttemptHref(props.coursePageHref, attempt.id)}
+        reloadHref={attemptHref(props.coursePageHref, attempt.id)} /> : null}
     </div>
 
     <div className="student-instant-next">

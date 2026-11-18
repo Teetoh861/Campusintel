@@ -8,6 +8,7 @@ import './globals.css'
 import '../styles/student-app.css'
 import '../styles/ai-practice.css'
 import '../styles/instant-practice.css'
+import '../styles/campus-bot.css'
 
 import { Nav } from '@/components/chrome/Nav'
 import { Footer } from '@/components/chrome/Footer'

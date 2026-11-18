@@ -6,6 +6,7 @@
 // and read BACHS_API_KEY from the environment (a live key only with NODE_ENV=production). See docs/payments-operations.md.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REFUND_CLASSES = /^(standard|our-fault|duplicate|excess)$/
+const COURSE_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const AUTH_TIMEOUT_MS = 30_000
 // Operator writes may wait behind account locks: 15 seconds (lib/payments/timeouts.ts OPERATOR_WRITE_TIMEOUT_MS). A write
 // that times out may still have been recorded: check payment-status, then refund-retry (docs/payments-operations.md).
@@ -140,11 +141,44 @@ function paymentCommand(command, opts, ctx) {
     case 'campus-bot-model': return async () => ctx.rpc('admin_set_campus_bot_model', {
       p_model: required(opts, 'model', /^[a-z][a-z0-9-]{0,39}$/), p_price_weight: integer(opts, 'weight'), ...note() })
     case 'campus-bot-cap': return async () => ctx.rpc('admin_set_campus_bot_request_cap', {
-      p_step: required(opts, 'step', /^(writing|check)$/),
+      p_step: required(opts, 'step', /^(writing|check|explain|explain-check|chat)$/),
       p_read_tokens_max: opts.read !== undefined ? integer(opts, 'read') : null,
       p_written_tokens_max: opts.written !== undefined ? integer(opts, 'written') : null, ...note() })
     case 'campus-bot-writer': return async () => ctx.rpc('admin_set_campus_bot_writing_model', {
       p_model: required(opts, 'model', /^[a-z][a-z0-9-]{0,39}$/), ...note() })
+    // Campus Bot Explain and Ask Campus Bot (20261117100000_campus_bot_explain_ask.sql). A course is named by its
+    // content key, the last part of its address on the site.
+    case 'campus-bot-feature': return async () => ctx.rpc('admin_set_campus_bot_feature', {
+      p_feature: required(opts, 'feature', /^(explain|ask|topic-sets)$/),
+      p_enabled: required(opts, 'state', /^(on|off)$/) === 'on',
+      ...note() })
+    case 'campus-bot-reply-limits': {
+      // The free pass's explanations and messages, the platform's day for each, and undelivered tries per student
+      // per day. Unnamed settings are unchanged.
+      const setting = name => opts[name] !== undefined ? integer(opts, name) : null
+      const args = { p_pass_explanations: setting('pass-explanations'), p_pass_chat_messages: setting('pass-messages'),
+        p_daily_explanations: setting('daily-explanations'), p_daily_chat_messages: setting('daily-messages'),
+        p_undelivered_per_day: setting('undelivered-per-day') }
+      if (Object.values(args).every(value => value === null)) {
+        throw new Error('campus-bot-reply-limits needs --pass-explanations, --pass-messages, --daily-explanations, ' +
+          '--daily-messages or --undelivered-per-day')
+      }
+      return async () => ctx.rpc('admin_set_campus_bot_reply_limits', { ...args, ...note() })
+    }
+    case 'campus-bot-checker': return async () => ctx.rpc('admin_set_campus_bot_checker', {
+      p_model: required(opts, 'model', /^[a-z][a-z0-9-]{0,39}$/), ...note() })
+    case 'campus-bot-course': return async () => ctx.rpc('admin_set_campus_bot_course', {
+      p_content_key: required(opts, 'course', COURSE_KEY),
+      p_calculation: required(opts, 'calculation', /^(on|off)$/) === 'on', ...note() })
+    case 'campus-bot-clear-explanations': {
+      // Every saved explanation of the course is written again when a student next asks for it.
+      const course = required(opts, 'course', COURSE_KEY)
+      if (opts.confirm !== true) throw new Error('this removes every saved explanation of the course: add --confirm')
+      return async () => ctx.rpc('admin_clear_campus_bot_explanations', { p_content_key: course, ...note() })
+    }
+    case 'campus-bot-status': return async () => ctx.rpc('admin_campus_bot_status', {})
+    case 'campus-bot-explanations': return async () => ctx.rpc('admin_campus_bot_explanations', {
+      p_content_key: required(opts, 'course', COURSE_KEY), p_limit: opts.limit !== undefined ? integer(opts, 'limit') : 50 })
     case 'campus-bot-refill': {
       // A refill starts fresh session and week windows at the student's next request; nothing is deleted.
       const everyone = opts.everyone === true

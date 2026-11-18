@@ -17,6 +17,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { STUDY_COPY } from '@/components/student/study-families'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { readCampusBotFeatures } from '@/lib/campus-bot/features'
 import { buildTimeStudy } from '@/lib/courses/build-time-study'
 import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { practicePolicyFor, readPracticeAttempt, readPracticeState } from '@/lib/practice/server'
@@ -109,7 +110,8 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
     courseHref={route.href} repositoryOnly={result.status === 'repository-only'}
     repositoryCourseId={course.repository.repositoryCourseId} brief={brief} bankSize={practice?.bankSize ?? 0}
     topics={initial.kind === 'topic' || ('attempt' in initial && initial.attempt.mode === 'instant') ? await topicsFor() : []}
-    lastResultHref={lastResultHref} initial={initial} plansOnSale={client !== null && await readPlansOnSale(client).catch(() => false)} />
+    lastResultHref={lastResultHref} initial={initial} plansOnSale={client !== null && await readPlansOnSale(client).catch(() => false)}
+    explainAvailable={client !== null && (await readCampusBotFeatures(client)).explain} />
 
   // A reloadable attempt URL: the student's own attempt on this course, open or graded.
   if (attemptId !== null) {

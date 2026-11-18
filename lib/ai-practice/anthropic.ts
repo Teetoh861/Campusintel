@@ -114,7 +114,7 @@ export function createAnthropicProvider(options: AnthropicProviderOptions): Ques
           system: request.system,
           messages: [{ role: 'user', content: request.user }],
           // Thinking stays adaptive (the model default); effort is set explicitly because defaults vary by model.
-          output_config: { effort: 'medium', format: { type: 'json_schema', schema: request.outputSchema } },
+          output_config: { effort: request.effort ?? 'medium', format: { type: 'json_schema', schema: request.outputSchema } },
         }, { signal: request.signal })
       } catch (error) {
         throw classifyAnthropicError(error)

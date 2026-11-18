@@ -247,7 +247,9 @@ test('a receipt shows our order\'s plan, amount, date, reference and status; any
 test('Payment terms state the approved terms in plain words', async () => {
   const words = text((await page('../../payment-terms/page.tsx', undefined, {})).html)
   for (const line of [/Standard ₦4,000 ₦7,000 Plus ₦6,000 ₦11,000/,
-    /You can get a full refund within 48 hours of paying, as long as you haven’t used Campus Bot or a large part of your plan\./,
+    /You can get a full refund within 48 hours of paying, as long as you haven’t started an exam, made a Campus Bot question set, answered more than 10 practice questions, opened more than 3 notes topics or had more than 10 Campus Bot replies\./,
+    /GST courses don’t count, and you can get one refund this way\./,
+    /If a problem on our side stops you from using your plan, we’ll refund you\./,
     /Refunds go back to the card or account you paid with, and your plan ends once the refund is made\./,
     /Paid too much\? Your plan starts and we refund the extra\. Paid too little\? It’s refunded in full\./,
     /Prices may change for future plans\. A plan you’ve already paid for keeps its price and end date\./]) {

@@ -156,7 +156,7 @@ select is((select jsonb_build_array(v->'session'->'used',v->'session'->'in_fligh
   from (select pg_temp.usage_of(20) v) x),'[36500,0,313500,663500]','both windows show the charge');
 select is((select count(*)::int from private.plan_use_events where order_id=(select id from o20) and kind='campus-bot-reply'),1,
   'a delivered set is plan use for refunds');
-select is((select (e->'counts'->>'campus_bot_replies')::int from (select public.refund_eligibility((select id from o20),null,clock_timestamp()) e) x),1,
+select is((select (e->'counts'->>'campus_bot_sets')::int from (select public.refund_eligibility((select id from o20),null,clock_timestamp()) e) x),1,
   'and refund_assessment sees it');
 
 -- Failures, refusals and timeouts charge nothing.
@@ -393,7 +393,7 @@ create temporary table o35 as select pg_temp.paid(35) id;
 select is(pg_temp.finish(35,(select g from prepayment))->>'status','generated','the pre-payment request is delivered');
 select is((select count(*)::int from private.plan_use_events where order_id=(select id from o35) and kind='campus-bot-reply'),0,
   'a request admitted before payment does not count toward that payment''s refund');
-select is((public.refund_eligibility((select id from o35),null,clock_timestamp())->'counts'->>'campus_bot_replies')::int,0,
+select is((public.refund_eligibility((select id from o35),null,clock_timestamp())->'counts'->>'campus_bot_sets')::int,0,
   'refund assessment keeps the pre-payment request out too');
 
 -- Abandonment is final for every funding type. It releases a token request too, never charging a late set.
