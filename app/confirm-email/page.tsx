@@ -13,5 +13,5 @@ function ToSignIn(): never {
 
 /** Apply the server session guard first: a signed-in student goes to their own home, not through Sign in. */
 export default function Page() {
-  return <SignedOutGate><ToSignIn /></SignedOutGate>
+  return <SignedOutGate route="/confirm-email"><ToSignIn /></SignedOutGate>
 }

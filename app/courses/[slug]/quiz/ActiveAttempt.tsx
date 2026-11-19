@@ -42,7 +42,7 @@ function refusalFor(status: string, courseHref: string, attemptId: string): Atte
   const back = { label: PRACTICE_COPY.backToCourse, href: courseHref }
   if (status === 'not-found') return { text: PRACTICE_COPY.examGone, action: back, timeUpText: PRACTICE_COPY.timeUpGone,
     timeUpAction: back }
-  return { text: 'Something went wrong.', action: here, timeUpText: PRACTICE_COPY.timeUpRetry, retry: true }
+  return { text: 'We couldn’t update your exam. Try again.', action: here, timeUpText: PRACTICE_COPY.timeUpRetry, retry: true }
 }
 
 type Props = {

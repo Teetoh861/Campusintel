@@ -1,16 +1,17 @@
 import 'server-only'
 import type { createClient } from '@/lib/supabase/server'
-
-const TERMINAL_SESSION_ERRORS = new Set([
-  'refresh_token_not_found', 'refresh_token_already_used', 'session_expired', 'session_not_found', 'user_not_found',
-])
+import { clearInvalidStudentSession, isInvalidStudentCredential } from './invalid-session'
+import { authUnavailable } from './unavailable'
 
 /** Verify the cookie-bound identity with Auth; an ambiguous failure is never sign-out. */
 export async function readVerifiedStudentUser(client: Awaited<ReturnType<typeof createClient>>, jwt?: string) {
-  const { data, error } = await (jwt === undefined ? client.auth.getUser() : client.auth.getUser(jwt))
+  let answer: Awaited<ReturnType<typeof client.auth.getUser>>
+  try { answer = await (jwt === undefined ? client.auth.getUser() : client.auth.getUser(jwt)) }
+  catch (error) { throw authUnavailable(error, 'identity') }
+  const data = answer?.data, error = answer?.error
   const user = data?.user
-  if (user === null && (!error || error.name === 'AuthSessionMissingError' ||
-      (typeof error.code === 'string' && TERMINAL_SESSION_ERRORS.has(error.code)))) return null
-  if (error || !user || typeof user.id !== 'string' || !user.id) throw new Error('Session validation failed')
+  if (isInvalidStudentCredential(error)) { clearInvalidStudentSession(client); return null }
+  if (user === null && !error) return null
+  if (error || !user || typeof user.id !== 'string' || !user.id) throw authUnavailable(error, 'identity')
   return user
 }

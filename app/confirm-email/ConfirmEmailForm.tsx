@@ -43,7 +43,7 @@ export function ConfirmEmailForm({ email, next, onStartOver }: { email: string; 
       setMessage('')
       resetField('code')
       const result = await submit(AUTH_API.resend, { email })
-      if (result) setMessage(codeSentMessage(email))
+      if (result) setMessage(codeSentMessage())
     }}>Resend code</button>
     <button type="button" disabled={busy} onClick={onStartOver} className={cx(btnBase, btnSm, btnGhost, focusRingNavy, 'disabled:pointer-events-none disabled:opacity-60')}>Change email</button>
       </>}

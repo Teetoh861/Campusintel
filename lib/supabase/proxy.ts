@@ -13,6 +13,11 @@ import type { CookieOptions } from '@supabase/ssr'
 import type { NextRequest } from 'next/server'
 import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
+import { bindStudentAuthDeadlines, studentAuthFetch } from '@/lib/auth/deadline'
+import { clearInvalidStudentSession, isActiveStudentAuthCookie, isInvalidStudentCredential,
+  registerInvalidSessionCleanup } from '@/lib/auth/invalid-session'
+import { readVerifiedStudentUser } from '@/lib/auth/verified-user'
+import { authUnavailable, authUnavailableReason, createAuthDiagnostic, logAuthUnavailable } from '@/lib/auth/unavailable'
 
 // The landing page is built once for every visitor and never reads the session, so its signed-in redirect lives here.
 const LANDING_PATH = '/'
@@ -24,6 +29,7 @@ const LANDING_PATH = '/'
  * still holds. A session ended elsewhere, an unclear answer or a failed check all see the landing page.
  */
 export async function refreshStudentSession(request: NextRequest): Promise<NextResponse> {
+  const diagnostic = createAuthDiagnostic(request.nextUrl.pathname)
   const requestHeaders = new Headers(request.headers)
   requestHeaders.delete(CHROME_STATE_HEADER)
   requestHeaders.delete(STUDENT_RENDER_PATH_HEADER)
@@ -43,9 +49,11 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
   let chrome: ChromeState = 'unknown'
   let restricted = false
   let failed = false
+  let failure: unknown
   try {
     const { url, key } = getSupabaseConfig()
     const client = createServerClient(url, key, {
+      global: { fetch: studentAuthFetch },
       ...(namespace.storageName ? { cookieOptions: { name: namespace.storageName } } : {}),
       cookies: {
         getAll: () => namespace.mode === 'invalid' ? [] : request.cookies.getAll(),
@@ -58,20 +66,37 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
         },
       },
     })
+    bindStudentAuthDeadlines(client.auth)
+    const storageName = namespace.storageName ?? `sb-${new URL(url).hostname.split('.')[0]}-auth-token`
+    registerInvalidSessionCleanup(client, () => {
+      for (const { name } of request.cookies.getAll()) {
+        if (!isActiveStudentAuthCookie(name, storageName)) continue
+        request.cookies.set(name, '')
+        writes.push({ name, value: '', options: { maxAge: 0, expires: new Date(0) } })
+      }
+    })
     const { data, error } = await client.auth.getClaims()
     // Only the SDK's explicit no-session answer is signed-out; unclear answers stay neutral.
-    if (error !== null) failed = true
+    if (isInvalidStudentCredential(error)) { clearInvalidStudentSession(client); chrome = 'signed-out' }
+    else if (error?.name === 'AuthInvalidJwtError') {
+      // A local verification failure can be a stale signing-key cache. Confirm with Auth before clearing cookies.
+      if (await readVerifiedStudentUser(client) === null) chrome = 'signed-out'
+      else { failed = true; failure = authUnavailable(error, 'identity') }
+    }
+    else if (error !== null) { failed = true; failure = authUnavailable(error, 'identity') }
     else if (data === null) chrome = 'signed-out'
-    else if (typeof data?.claims?.sub !== 'string' || !data.claims.sub) failed = true
+    else if (typeof data?.claims?.sub !== 'string' || !data.claims.sub) { failed = true; failure = authUnavailable(null, 'identity') }
     else if (renderPage) {
       const lifecycle = await readAccountLifecycle(client)
+      if (lifecycle.status === 'signed-out') clearInvalidStudentSession(client)
       chrome = lifecycle.status === 'signed-out' ? 'signed-out' : 'signed-in'
       restricted = (lifecycle.status === 'scheduled' || lifecycle.status === 'expired') &&
         request.nextUrl.pathname !== ACCOUNT_DELETION_PATH
     }
-  } catch {
+  } catch (error) {
     // Matched pages remain renderable; protected endpoints authenticate independently.
     failed = true
+    failure = error
   }
   // Keep the downstream request coherent with the cookies this response writes.
   if (writes.length) {
@@ -87,8 +112,12 @@ export async function refreshStudentSession(request: NextRequest): Promise<NextR
   for (const { name, value, options } of writes) response.cookies.set(name, value, getStudentCookieOptions(options))
   refreshHeaders.forEach((value, name) => response.headers.set(name, value))
   // A redirect is one student's answer; it must never be stored and replayed to a signed-out visitor.
-  if (redirectPath !== null || (failed && !response.headers.has('Cache-Control'))) {
+  if (redirectPath !== null || writes.length > 0 || (failed && !response.headers.has('Cache-Control'))) {
     response.headers.set('Cache-Control', 'private, no-store')
+  }
+  if (failed && renderPage) {
+    const reported = logAuthUnavailable({ route: request.nextUrl.pathname, reason: authUnavailableReason(failure, 'identity') }, diagnostic)
+    response.headers.set('X-CampusIntell-Auth-Reference', reported.reference)
   }
   return response
 }

@@ -1,3 +1,4 @@
+import { AuthUnavailableError, authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
@@ -8,7 +9,7 @@ import { studentFocusControl } from '@/components/student/ui'
 import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
-import { AUTH_MESSAGES, AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_PATHS } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readCourseSelection } from '@/lib/profile/course-selection'
@@ -47,17 +48,18 @@ async function courseSelectionMode(): Promise<CourseSelectionMode | null> {
 export default async function ProfileSelectionPage({ searchParams }: { searchParams?: Promise<{ return?: string }> } = {}):
   Promise<ReactElement> {
   // Where a save returns to: only Confirm courses or a practice result (allow-listed); otherwise the home page.
+  const diagnostic = createAuthDiagnostic('/profile-selection')
   const returnPath = selectionReturnPath((await searchParams)?.return)
   if (!isStudentAuthEnabled()) return <ProfilePageFrame title={PROFILE_TITLE} narrow>
-    <div className="student-surface"><AuthUnavailable /></div>
+    <div className="student-surface"><AuthUnavailable message={authUnavailableMessage('/profile-selection', new AuthUnavailableError('configuration'), diagnostic)} /></div>
   </ProfilePageFrame>
   let continuityToken: string | undefined
   try {
     const context = await getStudentSessionContext()
     if (context !== null) continuityToken = issueAccountContinuityToken(context.user.id, context.sessionId)
-  } catch {
+  } catch (error) {
     return <ProfilePageFrame title={PROFILE_TITLE} narrow>
-      <div className="student-surface"><Feedback tone="error" message={AUTH_MESSAGES.unavailable} /></div>
+      <div className="student-surface"><Feedback tone="error" message={authUnavailableMessage('/profile-selection', error, diagnostic)} /></div>
     </ProfilePageFrame>
   }
   if (!continuityToken) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
@@ -78,7 +80,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
       <Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure' ? <>
         {profile.status === 'missing-profile' ? 'We couldn’t find your profile.' : 'We couldn’t load your profile.'}{' '}
         <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
-          {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} />
+          {STUDENT_DESTINATIONS.contact.label}</Link></> : authUnavailableMessage('/profile-selection', null, diagnostic)} />
       <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, studentFocusControl)}>Back to profile</Link>
     </div>}
   </ProfilePageFrame>

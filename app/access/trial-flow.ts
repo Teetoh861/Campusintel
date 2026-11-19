@@ -16,6 +16,7 @@ export const PASS_REFUSED = 'A free pass isn’t available on this account. Free
 const TOO_MANY_ATTEMPTS = 'Too many attempts. Please wait a few minutes and try again.'
 const SIGNED_OUT = 'You’ve been signed out.'
 const COURSES_UPDATED = 'Your courses were just updated.'
+const INVALID_REQUEST = "That didn't go through. Refresh the page and try again."
 
 /** Plain, specific copy for every result. Never reveals anything about another account. */
 export function describeResult(result: EntitlementResult): { message: FlowMessage | null; next: NextStep } {
@@ -33,7 +34,7 @@ export function describeResult(result: EntitlementResult): { message: FlowMessag
     case 'session-changed': return { next: 'refresh', message: { tone: 'error', text: SIGNED_IN_ON_ANOTHER_TAB } }
     // The courses changed in another tab: the page loads again, so the student sees which courses a pass would set.
     case 'selection-changed': return { next: 'refresh', message: { tone: 'error', text: COURSES_UPDATED } }
-    case 'invalid-request': return { next: 'stay', message: { tone: 'error', text: 'Something went wrong. Try again.' } }
+    case 'invalid-request': return { next: 'stay', message: { tone: 'error', text: INVALID_REQUEST } }
     case 'unavailable': return { next: 'stay', message: { tone: 'error',
       text: 'This isn’t available right now. Please try again in a few minutes.' } }
     // A free month answer never follows a free pass command; if one ever did, the plan is simply read again.
@@ -53,6 +54,7 @@ export type FreeMonthStep = 'stay' | 'refresh' | 'started' | 'close'
  */
 export function describeFreeMonthResult(result: EntitlementResult): { message: FlowMessage | null; next: FreeMonthStep } {
   switch (result.status) {
+    case 'invalid-request': return { next: 'stay', message: { tone: 'error', text: INVALID_REQUEST } }
     case 'month-started': return { next: 'started', message: null }
     // The claim closed while the page was open: the offer goes, where it was asked for.
     case 'offer-ended': return { next: 'close', message: { tone: 'info', text: FREE_MONTH_COPY.offerEnded } }

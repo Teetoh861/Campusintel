@@ -1,5 +1,6 @@
 'use client'
 import { AUTH_API } from './constants'
+import { AuthClientFailure } from './client-request'
 
 export const STUDENT_AUTH_TRANSITION_LOCK = 'campusintell:student-auth-transition:v1'
 const transitionEndpoints = new Set<string>([AUTH_API.login, AUTH_API.confirm, AUTH_API.reset, AUTH_API.logout,
@@ -22,7 +23,7 @@ export function requiresAuthResponseOrdering(endpoint: string): boolean {
 export async function runAuthTransition<T>(endpoint: string, operation: () => Promise<T>): Promise<T> {
   if (!requiresAuthResponseOrdering(endpoint)) return operation()
   if (typeof navigator === 'undefined' || typeof navigator.locks?.request !== 'function') {
-    throw new Error('Auth transition unavailable')
+    throw new AuthClientFailure('unsupported')
   }
   return navigator.locks.request(STUDENT_AUTH_TRANSITION_LOCK, { mode: 'exclusive' }, () => operation())
 }

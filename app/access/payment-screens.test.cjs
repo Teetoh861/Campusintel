@@ -199,7 +199,7 @@ test('the checkout reason is read in the browser and shows once: never in the fi
   const lines = { 'unavailable': 'We couldn’t open the payment page. Try again in a moment.',
     'checkout-expired': 'That payment page expired. Try again to open a new one.',
     'selection-changed': 'Your courses changed. Check the list below, then try again.',
-    'session-changed': 'We couldn’t open the payment page. Try again.', 'invalid-request': 'Something went wrong. Try again.',
+    'session-changed': 'We couldn’t open the payment page. Try again.', 'invalid-request': "We couldn't open the payment page. Refresh the page and try again.",
     'something-new': 'We couldn’t open the payment page. Try again in a moment.' }
   const line = lines.unavailable
   const CheckoutForm = props => React.createElement('checkout-form', { 'data-plan': props.plan, 'data-price': String(props.priceKobo),
@@ -258,7 +258,7 @@ test('the checkout reason is read in the browser and shows once: never in the fi
     await screen(at(`?plan=plus_session&status=${status}`), async ({ html }) => {
       html()
       const shown = html()
-      assert.ok(text(shown).includes(expected), status)
+      assert.ok(text(shown).replaceAll('&#x27;', "'").includes(expected), status)
       assert.doesNotMatch(shown, /charged/i, status)
     })
   }

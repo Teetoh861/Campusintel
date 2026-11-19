@@ -1,3 +1,4 @@
+import { AuthUnavailableError, authUnavailableMessage } from '@/lib/auth/unavailable'
 // app/resend-confirmation/page.tsx — Rollout-gated resend confirmation page.
 import { SignedOutGate } from '@/components/auth/SignedOutGate'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
@@ -13,11 +14,11 @@ function Content() {
     {isStudentAuthEnabled() ? <>
 
       <EmailForm />
-    </> : <AuthUnavailable />}
+    </> : <AuthUnavailable message={authUnavailableMessage('/resend-confirmation', new AuthUnavailableError('configuration'))} />}
   </AuthShell>
 }
 
 /** Apply the server session guard before rendering the identity-entry page. */
 export default function Page() {
-  return <SignedOutGate><Content /></SignedOutGate>
+  return <SignedOutGate route="/resend-confirmation"><Content /></SignedOutGate>
 }

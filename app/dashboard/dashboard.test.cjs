@@ -269,13 +269,13 @@ test('server guards redirect absent sessions or incomplete names and keep failur
   await assert.rejects(f.page, /redirect:\/profile-selection/)
   f.state.failure = true
   const html = await f.html()
-  assert.match(html, /Something went wrong/)
+  assert.match(html, /complete your request right now/)
   assert.doesNotMatch(html, /private provider details|Hi, Ọlá/)
   // A profile that can't be shown: the way to the team is the page by its name.
   f.state.failure = false
   f.state.profile = { status: 'invariant-failure' }
   const broken = await f.html()
-  assert.match(broken, /Something went wrong/)
+  assert.match(broken, /complete your request right now/)
   assert.match(broken, /<a[^>]*href="\/contact"[^>]*>Help &amp; Support<\/a>/)
   assert.doesNotMatch(broken, /Contact support|Hi, Ọlá/)
 }))

@@ -40,7 +40,9 @@ const STRONGER_PASSWORD = 'Choose a stronger password.'
  * what to do, never why. The name is from the earlier wording; other files import it. */
 export const SIGNED_IN_ON_ANOTHER_TAB = 'Reload this page to continue.'
 export const AUTH_MESSAGES = {
-  unavailable: 'Something went wrong. Try again.',
+  unavailable: "We couldn't complete your request right now. Please try again in a minute.",
+  connection: "We couldn't reach CampusIntell. Check your connection and try again.",
+  browser: 'Your browser needs an update to continue. Update it, or use the latest Chrome, Safari or Firefox.',
   sessionChanged: SIGNED_IN_ON_ANOTHER_TAB,
   recoveryCode: 'That code is wrong or has expired.',
   recoveryRestart: 'Request a new code to continue.',
@@ -57,15 +59,14 @@ export const AUTH_MESSAGES = {
   deletionPassword: ACCOUNT_MESSAGES.passwordInvalid,
   deletionExcluded: ACCOUNT_MESSAGES.excluded,
   deletionExpired: ACCOUNT_MESSAGES.expired,
-  // What the server answers when a code request is accepted, the same for every address. The screen says it with
-  // the address the student typed (codeSentMessage).
-  email: 'We sent a new code.',
-  recovery: 'We sent a new code.',
+  // The same acknowledgment for every address; screens do not claim a message was delivered.
+  email: 'Check your email for a new code.',
+  recovery: 'Check your email for a new code.',
 } as const
 
 /** The line after Resend code. It reads the same whether or not the address has an account. */
-export function codeSentMessage(email: string): string {
-  return `We sent a new code to ${email}.`
+export function codeSentMessage(): string {
+  return 'Check your email for a new code.'
 }
 export const AUTH_STATUS_EVENT = 'campusintell-auth-changed'
 export const AUTH_CONTINUITY_HEADER = 'x-campus-account-continuity'

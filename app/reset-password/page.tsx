@@ -13,5 +13,5 @@ function ToForgotPassword(): never {
 
 /** Apply the server session guard first: a signed-in student goes to their own home, not through Forgot password. */
 export default function Page() {
-  return <SignedOutGate><ToForgotPassword /></SignedOutGate>
+  return <SignedOutGate route="/reset-password"><ToForgotPassword /></SignedOutGate>
 }

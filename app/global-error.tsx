@@ -13,9 +13,9 @@ import type { ReactElement } from 'react'
 export default function GlobalError({ retry }: { error: Error & { digest?: string }; retry: () => void }): ReactElement {
   return <html lang="en">
     <body className="flex min-h-dvh flex-col font-sans">
-      <title>Something went wrong | CampusIntell</title>
+      <title>We couldn’t load this page | CampusIntell</title>
       <main id="top" className="flex-1">
-        <StudentPage band={<PageBand title="Something went wrong." />}>
+        <StudentPage band={<PageBand title="We couldn’t load this page" />}>
           <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={() => retry()}>Try again</button>
         </StudentPage>
       </main>
