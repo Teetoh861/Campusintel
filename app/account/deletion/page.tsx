@@ -1,4 +1,4 @@
-import { AuthUnavailableError, authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 import { redirect } from 'next/navigation'
 import { StudentPage } from '@/components/student/StudentPage'
 import { PageBand } from '@/components/student/PageBand'
@@ -6,7 +6,7 @@ import { Feedback } from '@/components/chrome/Feedback'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { DeletionDecision } from '@/components/account/DeletionDecision'
-import { AUTH_PATHS } from '@/lib/auth/constants'
+import { AUTH_MESSAGES, AUTH_PATHS } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
@@ -19,7 +19,7 @@ export const metadata = { title: 'Account deletion | CampusIntell', robots: { in
 /** This is the only student page available to an authenticated scheduled account. */
 export default async function AccountDeletionPage() {
   const diagnostic = createAuthDiagnostic('/account/deletion')
-  if (!isStudentAuthEnabled()) return <StudentPage><Feedback message={authUnavailableMessage('/account/deletion', new AuthUnavailableError('configuration'), diagnostic)} /></StudentPage>
+  if (!isStudentAuthEnabled()) return <StudentPage><Feedback message={AUTH_MESSAGES.comingSoon} /></StudentPage>
   let state
   try {
     const client = await createClient()

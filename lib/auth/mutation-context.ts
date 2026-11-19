@@ -19,7 +19,7 @@ export type MutationContextResult = SessionResult | { status: 'session-changed' 
  * This establishes identity, not permission to perform a domain operation.
  */
 export async function getLiveSessionContext(response?: NextResponse, allowRestricted = false): Promise<SessionResult> {
-  if (!isStudentAuthEnabled()) return { status: 'unavailable', reason: { step: 'configuration', code: null } }
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
   try {
     const client = await createClient(response)
     const session = await getStudentSessionContext(response, client, { allowRestricted })

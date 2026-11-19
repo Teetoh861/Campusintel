@@ -85,8 +85,9 @@ export function useAuthSubmit() {
           const supplied = 'error' in value ? value.error : undefined
           const outcomeInstruction = endpoint === AUTH_API.confirm && supplied === AUTH_MESSAGES.confirmationSignIn ||
             (endpoint === AUTH_API.reset || endpoint === AUTH_API.verifyRecovery) && supplied === AUTH_MESSAGES.recoveryRestart
-          const text = response.status === 503 && !outcomeInstruction ? AUTH_MESSAGES.unavailable : safeAuthMessage(supplied)
-          const message = authMessageReference(text, reference)
+          const text = response.status === 503 && !outcomeInstruction && supplied !== AUTH_MESSAGES.comingSoon
+            ? AUTH_MESSAGES.unavailable : safeAuthMessage(supplied)
+          const message = authMessageReference(text, reference, response.status === 503)
           const code = timedOut && endpoint === AUTH_API.reset ? RECOVERY_FAILURE.restart :
             'code' in value && (value.code === RECOVERY_FAILURE.invalidCode || value.code === RECOVERY_FAILURE.restart ||
               value.code === RECOVERY_FAILURE.password) ? value.code : undefined

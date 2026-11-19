@@ -10,9 +10,15 @@ export function withAuthDiagnostics(route: string, operation: () => Promise<Resp
   return runAuthDiagnostic(route, async diagnostic => {
     let response: Response
     try { response = await operation() } catch (error) { response = authError(error, route) }
+    let body: unknown
+    if (response.status === 503 || diagnostic.reported) {
+      try { body = await response.clone().json() } catch { /* Unreadable failures use the safe fallback below. */ }
+    }
+    const switchedOff = body && typeof body === 'object' && 'error' in body && body.error === AUTH_MESSAGES.comingSoon
     // Also cover direct/unanticipated 503s without trusting or logging their body.
-    if (response.status === 503 && !diagnostic.reported) {
-      response = NextResponse.json(authUnavailableBody({ error: AUTH_MESSAGES.unavailable }, 503, { route }),
+    if (response.status === 503 && !diagnostic.reported && !switchedOff) {
+      body = authUnavailableBody({ error: AUTH_MESSAGES.unavailable }, 503, { route })
+      response = NextResponse.json(body,
         { status: 503, headers: response.headers })
     }
     if (diagnostic.clearCookies.size) {
@@ -25,7 +31,9 @@ export function withAuthDiagnostics(route: string, operation: () => Promise<Resp
     }
     const final = response instanceof NextResponse ? response : new NextResponse(response.body,
       { status: response.status, headers: response.headers })
-    final.headers.set('X-CampusIntell-Auth-Reference', diagnostic.reference)
+    if (diagnostic.reported && body && typeof body === 'object' && 'reference' in body && body.reference === diagnostic.reference) {
+      final.headers.set('X-CampusIntell-Auth-Reference', diagnostic.reference)
+    } else final.headers.delete('X-CampusIntell-Auth-Reference')
     return final
   })
 }

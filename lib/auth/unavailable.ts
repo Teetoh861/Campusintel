@@ -85,12 +85,14 @@ function deployment(): string {
   return process.env.VERCEL === '1' ? 'unknown' : 'local'
 }
 
-function emit(diagnostic: AuthDiagnostic, reason: AuthUnavailableReason): void {
+function emit(diagnostic: AuthDiagnostic, reason: AuthUnavailableReason,
+  event: 'CampusIntell auth unavailable' | 'CampusIntell auth address unknown' = 'CampusIntell auth unavailable',
+): void {
   const { route, reference } = diagnostic
   const { step } = reason
   const code = boundedCode(step, reason.code)
   const durationMs = Math.max(0, Math.round(performance.now() - diagnostic.started))
-  console.error('CampusIntell auth unavailable', { route, step, code, reference, deployment: deployment(), durationMs })
+  console.error(event, { route, step, code, reference, deployment: deployment(), durationMs })
 }
 
 /** Report one unavailable outcome at its response/page boundary. */
@@ -103,11 +105,13 @@ export function logAuthUnavailable({ route, reason = { step: 'unexpected', code:
 
 /** Missing address is recoverable admission, not a reason to refuse the request. */
 export function logUnknownRequester(route: string, shape: 'missing' | 'list' | 'invalid'): void {
-  emit(context.getStore() ?? createAuthDiagnostic(route), { step: 'requester-address', code: shape })
+  emit(context.getStore() ?? createAuthDiagnostic(route), { step: 'requester-address', code: shape },
+    'CampusIntell auth address unknown')
 }
 
 /** Attach a support reference, preserving instructions for operations that may already have completed. */
 export function authUnavailableBody(body: Record<string, unknown>, status: number, unavailable?: AuthUnavailableContext): Record<string, unknown> {
+  if (body.error === AUTH_MESSAGES.comingSoon) return body
   if (!unavailable && !context.getStore()) return body
   if (status !== 503 && body.error !== AUTH_MESSAGES.unavailable) return body
   const diagnostic = logAuthUnavailable(unavailable ?? { route: context.getStore()?.route ?? '/auth' })

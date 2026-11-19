@@ -1,5 +1,7 @@
 'use client'
 
+import { AUTH_MESSAGES } from './constants'
+
 export const AUTH_BROWSER_TIMEOUT_MS = 20_000
 
 /** Browser-only failures are distinct from the server's bounded diagnostics. */
@@ -37,7 +39,9 @@ export async function fetchAuthReply(endpoint: string, init: RequestInit): Promi
 }
 
 /** An untrusted reply can supply only the server reference's exact, non-identifying syntax. */
-export function authMessageReference(message: string, reference: unknown): string {
-  return typeof reference === 'string' && /^[A-HJ-NP-Z2-9]{8}$/.test(reference)
+export function authMessageReference(message: string, reference: unknown, unavailableResponse = false): string {
+  const unavailable = message === AUTH_MESSAGES.unavailable || unavailableResponse &&
+    (message === AUTH_MESSAGES.confirmationSignIn || message === AUTH_MESSAGES.recoveryRestart)
+  return unavailable && typeof reference === 'string' && /^[A-HJ-NP-Z2-9]{8}$/.test(reference)
     ? `${message} Reference: ${reference}` : message
 }

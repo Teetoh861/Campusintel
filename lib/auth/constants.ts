@@ -40,8 +40,8 @@ const STRONGER_PASSWORD = 'Choose a stronger password.'
  * what to do, never why. The name is from the earlier wording; other files import it. */
 export const SIGNED_IN_ON_ANOTHER_TAB = 'Reload this page to continue.'
 export const AUTH_MESSAGES = {
-  unavailable: "We couldn't complete your request right now. Please try again in a minute.",
-  connection: "We couldn't reach CampusIntell. Check your connection and try again.",
+  unavailable: "We couldn’t complete your request right now. Please try again in a minute.",
+  connection: "We couldn’t reach CampusIntell. Check your connection and try again.",
   browser: 'Your browser needs an update to continue. Update it, or use the latest Chrome, Safari or Firefox.',
   sessionChanged: SIGNED_IN_ON_ANOTHER_TAB,
   recoveryCode: 'That code is wrong or has expired.',

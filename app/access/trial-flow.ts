@@ -16,7 +16,7 @@ export const PASS_REFUSED = 'A free pass isn’t available on this account. Free
 const TOO_MANY_ATTEMPTS = 'Too many attempts. Please wait a few minutes and try again.'
 const SIGNED_OUT = 'You’ve been signed out.'
 const COURSES_UPDATED = 'Your courses were just updated.'
-const INVALID_REQUEST = "That didn't go through. Refresh the page and try again."
+const INVALID_REQUEST = "That didn’t go through. Refresh the page and try again."
 
 /** Plain, specific copy for every result. Never reveals anything about another account. */
 export function describeResult(result: EntitlementResult): { message: FlowMessage | null; next: NextStep } {

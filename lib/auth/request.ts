@@ -15,7 +15,7 @@ export async function readAuthRequest<T>(
   request: Request, schema: ZodType<T>, options: { maxBytes?: number } = {},
 ): Promise<T> {
   const maxBytes = options.maxBytes ?? AUTH_BODY_MAX_BYTES
-  if (!isStudentAuthEnabled()) throw new AuthUnavailableError('configuration')
+  if (!isStudentAuthEnabled()) throw new AuthRequestError(503, AUTH_MESSAGES.comingSoon)
   if (!isTrustedAuthOrigin(request.headers.get('origin')) ||
       ['cross-site', 'same-site'].includes(request.headers.get('sec-fetch-site') || '')) {
     throw new AuthRequestError(403, 'This request could not be accepted.')

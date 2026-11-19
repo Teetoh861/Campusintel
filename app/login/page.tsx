@@ -1,4 +1,3 @@
-import { AuthUnavailableError, authUnavailableMessage } from '@/lib/auth/unavailable'
 // app/login/page.tsx — Rollout-gated sign in page.
 import { SignedOutGate } from '@/components/auth/SignedOutGate'
 import { AuthShell, AuthUnavailable } from '@/components/auth/AuthShell'
@@ -18,7 +17,7 @@ async function Content({ searchParams }: { searchParams: Promise<{ next?: string
   return <AuthShell title="Sign in">
     {isStudentAuthEnabled() ? <>
       <LoginForm next={next} />
-    </> : <AuthUnavailable message={authUnavailableMessage('/login', new AuthUnavailableError('configuration'))} />}
+    </> : <AuthUnavailable />}
   </AuthShell>
 }
 

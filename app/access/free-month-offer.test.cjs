@@ -162,7 +162,7 @@ test('an error keeps the confirmation open with the approved line, and the stude
       button(render(), 'Claim your free month').props.onClick()
       await tapStart(render)
       assert.match(dialog(html()), failure.status === 'invalid-request'
-        ? /That didn&#x27;t go through\. Refresh the page and try again\. Not now Start your free month$/
+        ? /That didn’t go through\. Refresh the page and try again\. Not now Start your free month$/
         : /Couldn’t start your free month\. Try again\. Not now Start your free month$/, failure.status)
       assert.match(html(), /role="alert"/)
       assert.deepEqual(refreshes, [])

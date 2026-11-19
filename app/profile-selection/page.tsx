@@ -1,4 +1,4 @@
-import { AuthUnavailableError, authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
@@ -51,7 +51,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
   const diagnostic = createAuthDiagnostic('/profile-selection')
   const returnPath = selectionReturnPath((await searchParams)?.return)
   if (!isStudentAuthEnabled()) return <ProfilePageFrame title={PROFILE_TITLE} narrow>
-    <div className="student-surface"><AuthUnavailable message={authUnavailableMessage('/profile-selection', new AuthUnavailableError('configuration'), diagnostic)} /></div>
+    <div className="student-surface"><AuthUnavailable /></div>
   </ProfilePageFrame>
   let continuityToken: string | undefined
   try {

@@ -1,4 +1,4 @@
-import { AuthUnavailableError, authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 // app/account/page.tsx — The student's Profile page: personal and academic details, their plan, signing out and
 // deleting the account, read from the live server session.
 import Link from 'next/link'
@@ -30,7 +30,7 @@ export const metadata = { title: 'Profile | CampusIntell', robots: { index: fals
 /** Read identity, academic details and deletion eligibility from the live server session. */
 export default async function AccountPage(): Promise<ReactElement> {
   const diagnostic = createAuthDiagnostic('/account')
-  if (!isStudentAuthEnabled()) return <StudentPage><AuthUnavailable message={authUnavailableMessage('/account', new AuthUnavailableError('configuration'), diagnostic)} /></StudentPage>
+  if (!isStudentAuthEnabled()) return <StudentPage><AuthUnavailable /></StudentPage>
   let verified: {
     client: Awaited<ReturnType<typeof createClient>>
     context: NonNullable<Awaited<ReturnType<typeof getStudentSessionContext>>>

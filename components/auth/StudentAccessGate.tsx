@@ -11,7 +11,7 @@ import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { AuthFlowSync } from './AuthFlowSync'
 import type { ReactElement, ReactNode } from 'react'
-import { AuthUnavailableError, authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 
 /** Render children only for a live student with a completed selection; every failure is closed. */
 export async function StudentAccessGate({ returnPath, children }: {
@@ -19,7 +19,7 @@ export async function StudentAccessGate({ returnPath, children }: {
   children: ReactNode | ((continuityToken: string) => ReactNode)
 }): Promise<ReactElement> {
   const diagnostic = createAuthDiagnostic(returnPath)
-  if (!isStudentAuthEnabled()) return <AuthUnavailable message={authUnavailableMessage(returnPath, new AuthUnavailableError('configuration'), diagnostic)} />
+  if (!isStudentAuthEnabled()) return <AuthUnavailable />
   const login = AUTH_PATHS.login + '?next=' + encodeURIComponent(getSafeReturnPath(returnPath))
   let continuityToken: string | undefined
   try {
