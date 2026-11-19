@@ -1,3 +1,4 @@
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 // app/account/page.tsx — The student's Profile page: personal and academic details, their plan, signing out and
 // deleting the account, read from the live server session.
 import Link from 'next/link'
@@ -12,7 +13,7 @@ import { StudentPage } from '@/components/student/StudentPage'
 import { PageBand } from '@/components/student/PageBand'
 import { studentAction } from '@/components/student/ui'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
-import { AUTH_PATHS, AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
@@ -28,6 +29,7 @@ export const metadata = { title: 'Profile | CampusIntell', robots: { index: fals
 
 /** Read identity, academic details and deletion eligibility from the live server session. */
 export default async function AccountPage(): Promise<ReactElement> {
+  const diagnostic = createAuthDiagnostic('/account')
   if (!isStudentAuthEnabled()) return <StudentPage><AuthUnavailable /></StudentPage>
   let verified: {
     client: Awaited<ReturnType<typeof createClient>>
@@ -43,7 +45,7 @@ export default async function AccountPage(): Promise<ReactElement> {
     verified = context && lifecycle?.status === 'active' ? { client, context,
       continuityToken: issueAccountContinuityToken(context.user.id, context.sessionId),
       deletionAllowed: lifecycle?.status === 'active' && lifecycle.deletionAllowed } : null
-  } catch { return <StudentPage><Feedback message={AUTH_MESSAGES.unavailable} tone="error" /></StudentPage> }
+  } catch (error) { return <StudentPage><Feedback message={authUnavailableMessage('/account', error, diagnostic)} tone="error" /></StudentPage> }
   if (!verified) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
   const { client, context, continuityToken, deletionAllowed } = verified
   const profile = await getCurrentStudentProfileForVerifiedStudent(client, context.user)
@@ -73,7 +75,7 @@ export default async function AccountPage(): Promise<ReactElement> {
             </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure'
               ? <>{profile.status === 'missing-profile' ? 'We couldn’t find your profile.' : 'We couldn’t load your profile.'}{' '}
                 <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
-                  {STUDENT_DESTINATIONS.contact.label}</Link></> : AUTH_MESSAGES.unavailable} /></div>}
+                  {STUDENT_DESTINATIONS.contact.label}</Link></> : authUnavailableMessage('/account', null, diagnostic)} /></div>}
           </section>
         </div>
         <div className="grid min-w-0 content-start gap-4">

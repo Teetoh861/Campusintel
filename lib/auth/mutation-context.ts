@@ -4,13 +4,14 @@ import { createClient } from '@/lib/supabase/server'
 import { isStudentAuthEnabled } from './config'
 import { getStudentSessionContext } from './student-state'
 import { matchesAccountContinuityToken } from './account-continuity'
+import { authUnavailableReason, type AuthUnavailableReason } from './unavailable'
 
 export type LiveMutationContext = NonNullable<Awaited<ReturnType<typeof getStudentSessionContext>>> & {
   client: Awaited<ReturnType<typeof createClient>>
 }
 type SessionResult = { status: 'ready'; context: LiveMutationContext }
   | { status: 'signed-out'; client: Awaited<ReturnType<typeof createClient>> }
-  | { status: 'unavailable' }
+  | { status: 'unavailable'; reason?: AuthUnavailableReason }
 export type MutationContextResult = SessionResult | { status: 'session-changed' }
 
 /** Establish the live cookie-bound identity on the client carrying this request's cookie changes.
@@ -25,7 +26,7 @@ export async function getLiveSessionContext(response?: NextResponse, allowRestri
     // Retain the request-scoped client so logout can clean conclusively invalid
     // residual credentials. Unexpected validation errors never reach this state.
     return session === null ? { status: 'signed-out', client } : { status: 'ready', context: { ...session, client } }
-  } catch { return { status: 'unavailable' } }
+  } catch (error) { return { status: 'unavailable', reason: authUnavailableReason(error) } }
 }
 
 /** Require the exact session that rendered the action; never infer the actor from client data. */
@@ -39,5 +40,5 @@ export async function getAuthenticatedMutationContext(
       return { status: 'session-changed' }
     }
     return live
-  } catch { return { status: 'unavailable' } }
+  } catch (error) { return { status: 'unavailable', reason: authUnavailableReason(error) } }
 }

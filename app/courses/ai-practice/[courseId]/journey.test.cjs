@@ -245,7 +245,7 @@ test('every server result has student-safe copy; unknown or broken replies degra
     assert.doesNotMatch(notEntitled(wording) + notEntitled(wording, true), /Early Access/)
   }
   const broken = await generateFromDocument(DOC, harness([{ status: 502, json: 'not an object' }]).deps)
-  assert.equal(broken.title, 'Something went wrong.')
+  assert.equal(broken.title, 'Campus Bot couldn’t prepare your questions.')
 })
 
 test('Campus Bot limits replace the generic allowance message: session, week and undelivered, with reset times', () => {

@@ -14,6 +14,6 @@ export function AuthShell({ title, children }: { title: string; children: ReactN
 }
 
 /** Disabled rollout renders no operational form. */
-export function AuthUnavailable() {
-  return <Feedback message={AUTH_MESSAGES.comingSoon} />
+export function AuthUnavailable({ message = AUTH_MESSAGES.comingSoon }: { message?: string }) {
+  return <Feedback message={message} />
 }

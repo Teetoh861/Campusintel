@@ -180,7 +180,7 @@ export const CHECKOUT_PROBLEM: Record<string, string> = {
   'plan-unavailable': 'That plan isn’t available right now.',
   'account-restricted': 'Plans can’t be bought while this account is scheduled for deletion.',
   'session-changed': 'We couldn’t open the payment page. Try again.',
-  'invalid-request': 'Something went wrong. Try again.',
+  'invalid-request': "We couldn’t open the payment page. Refresh the page and try again.",
 }
 
 export const RETURN_COPY = {

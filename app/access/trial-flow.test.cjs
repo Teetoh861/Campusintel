@@ -47,7 +47,7 @@ test('a pass refused because the courses changed in another tab says so and relo
 })
 
 test('a started pass says so in the approved words', () => {
-  assert.equal(describeResult({ status: 'invalid-request' }).message.text, 'Something went wrong. Try again.')
+  assert.equal(describeResult({ status: 'invalid-request' }).message.text, "That didn’t go through. Refresh the page and try again.")
   assert.equal(describeResult({ status: 'pass-activated', endsAt: 'x' }).message.text, 'Your free pass has started.')
   assert.equal(describeResult({ status: 'already-activated', endsAt: 'x' }).message.text, 'You’ve already used your free pass.')
 })
@@ -63,7 +63,7 @@ test('the free month: started needs no words; the claim closing or the account n
 
 test('the free month: anything that started nothing says "Couldn’t start your free month. Try again." and stays open', () => {
   // Faults, and any free pass answer (which this command never produces): nothing is assumed to have started.
-  for (const result of [{ status: 'unavailable' }, { status: 'capacity' }, { status: 'invalid-request' },
+  for (const result of [{ status: 'unavailable' }, { status: 'capacity' },
     { status: 'pass-activated', endsAt: 'x' }, { status: 'already-activated', endsAt: 'x' }, { status: 'already-claimed' },
     { status: 'trial-not-offered' }, { status: 'early-access-active', availableFrom: 'x' }]) {
     assert.deepEqual(describeFreeMonthResult(result),
@@ -85,4 +85,9 @@ test('the free month: a changed sign-in or changed courses reload the page, and 
     if (message === null) { assert.equal(status, 'month-started'); continue }
     assert.doesNotMatch(message.text, /@|email|address|already|used|paid|domain|Early Access|window|\d{4}/i, `${status}: no reason`)
   }
+})
+
+ test('a free month invalid request asks for a refresh without claiming it started', () => {
+  assert.deepEqual(describeFreeMonthResult({ status: 'invalid-request' }), { next: 'stay', message: { tone: 'error',
+    text: "That didn’t go through. Refresh the page and try again." } })
 })

@@ -19,5 +19,5 @@ function Content() {
 
 /** Apply the server session guard before rendering the identity-entry page. */
 export default function Page() {
-  return <SignedOutGate><Content /></SignedOutGate>
+  return <SignedOutGate route="/resend-confirmation"><Content /></SignedOutGate>
 }

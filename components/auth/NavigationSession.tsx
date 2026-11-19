@@ -4,6 +4,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { onStudentChange } from '@/lib/auth/client-events'
 import { AUTH_API, AUTH_LOGOUT_CONTEXT_HEADER, AUTH_STATUS_EVENT } from '@/lib/auth/constants'
+import { fetchAuthReply } from '@/lib/auth/client-request'
 import type { ChromeState } from '@/lib/auth/chrome-state'
 import type { ReactElement, ReactNode } from 'react'
 
@@ -14,11 +15,10 @@ type Answer = { status: Exclude<ChromeState, 'unknown'>; continuityToken: string
 
 /** Read only a complete status answer; anything else is no answer. */
 async function lookup(signal: AbortSignal): Promise<Answer | null> {
-  const response = await fetch(AUTH_API.session, {
+  const { response, value: result } = await fetchAuthReply(AUTH_API.session, {
     cache: 'no-store', credentials: 'same-origin', signal,
     headers: { [AUTH_LOGOUT_CONTEXT_HEADER]: 'true' },
   })
-  const result: unknown = await response.json()
   if (!response.ok || !result || typeof result !== 'object' ||
       !('enabled' in result) || typeof result.enabled !== 'boolean' ||
       !('signedIn' in result) || typeof result.signedIn !== 'boolean') return null

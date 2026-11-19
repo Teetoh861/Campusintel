@@ -9,6 +9,7 @@ import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import { ACCOUNT_DELETION_PATH } from '@/lib/account/constants'
 import type { User } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
+import { authUnavailable } from './unavailable'
 
 type StudentClient = Awaited<ReturnType<typeof createClient>>
 
@@ -47,7 +48,7 @@ export async function getStudentSessionContext(
   const { data, error } = await client.auth.getClaims()
   const claims = data?.claims
   if (error || claims?.sub !== user.id || typeof claims.session_id !== 'string' || !claims.session_id) {
-    throw new Error('Session validation failed')
+    throw authUnavailable(error, 'identity')
   }
   return { user, sessionId: claims.session_id }
 }

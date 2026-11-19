@@ -2,6 +2,7 @@
 import 'server-only'
 import { classifyEmailInitiation, classifyEmailSend } from './errors'
 import type { EmailInitiationAction, EmailInitiationFailure, EmailSendOutcome } from './errors'
+import { authUnavailable, AuthUnavailableError } from './unavailable'
 
 type Acknowledgment = { data: unknown; error: unknown }
 type DiagnosticOutcome = Exclude<EmailSendOutcome, 'sent'> | 'exception' | 'invalid-acknowledgment'
@@ -18,18 +19,20 @@ export async function initiateAuthEmail(
   validateAcknowledgment: (data: unknown) => void,
 ): Promise<EmailInitiationFailure | null> {
   let result: Acknowledgment
-  try { result = await send() } catch {
+  try { result = await send() } catch (error) {
+    if (error instanceof AuthUnavailableError && error.reason.step === 'timeout') throw error
     diagnose(action, 'exception')
     return null
   }
   if (result.error !== null) {
+    if (authUnavailable(result.error, 'provider').reason.step === 'timeout') throw authUnavailable(result.error, 'provider')
     const outcome = classifyEmailSend(result.error)
     if (outcome !== 'sent') diagnose(action, outcome)
     return classifyEmailInitiation(result.error, action)
   }
   try { validateAcknowledgment(result.data) } catch {
     diagnose(action, 'invalid-acknowledgment')
-    throw new Error('Auth email acknowledgment invalid')
+    throw authUnavailable(null, 'provider', 'Auth email acknowledgment invalid')
   }
   return null
 }

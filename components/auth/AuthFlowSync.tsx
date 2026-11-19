@@ -3,6 +3,7 @@
 import { onStudentChange } from '@/lib/auth/client-events'
 import { useEffect, useRef } from 'react'
 import { AUTH_API, AUTH_CONTINUITY_HEADER, AUTH_STATUS_EVENT, STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { fetchAuthReply } from '@/lib/auth/client-request'
 
 type Props = { signedIn: true; continuityToken: string } | { signedIn?: false; continuityToken?: never }
 
@@ -26,12 +27,11 @@ export function AuthFlowSync(props: Props) {
     }
     const check = async () => {
       try {
-        const response = await fetch(AUTH_API.session, {
+        const { response, value: state } = await fetchAuthReply(AUTH_API.session, {
           cache: 'no-store', credentials: 'same-origin',
           ...(continuityToken ? { headers: { [AUTH_CONTINUITY_HEADER]: continuityToken } } : {}),
         })
         if (!response.ok) return
-        const state: unknown = await response.json()
         if (!active || navigating) return
         if (state === null || typeof state !== 'object' || !('enabled' in state) || !('signedIn' in state) ||
             typeof state.enabled !== 'boolean' || typeof state.signedIn !== 'boolean') {

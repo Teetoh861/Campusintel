@@ -134,7 +134,7 @@ export function describeResult(result: AiPracticeResult, trial: TrialWording = N
     case 'session-changed': return { ...problem(SIGNED_IN_ON_ANOTHER_TAB, '', 'none'), signedOut: true }
     case 'disabled': return problem('Campus Bot is unavailable.', 'Try again later.', 'none', 'info')
     case 'not-found': return problem('We couldn’t find your file.', 'Choose it again.')
-    default: return problem('Something went wrong.', 'Check your connection and try again.', 'same-file')
+    default: return problem('Campus Bot couldn’t prepare your questions.', 'Check your connection and try again.', 'same-file')
   }
 }
 

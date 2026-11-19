@@ -20,6 +20,8 @@ const SHARED = new Set(['lib/auth/verified-user.ts', 'lib/auth/render-session.ts
   'lib/account/lifecycle.ts', 'lib/profile/student-profile.ts', 'lib/profile/course-selection.ts'])
 // Reachable from pages but not identity reads. Each is counted, so a second call in the same file still fails.
 const EXEMPT = {
+  // Names the RPC only to select its transport deadline; it never reads identity.
+  'lib/auth/deadline.ts': { 'read_account_lifecycle': 1 },
   // Non-render (route handler) fallback; render clients take the shared snapshot on the line above it.
   'lib/entitlements/server.ts': { 'auth.getUser()': 1, guard: /isStudentRenderClient\(client\) \? await readRenderStudentSession/ },
   // The course reader's own selection recheck against its course rows, not the page's initial profile.

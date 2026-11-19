@@ -54,8 +54,9 @@ window are removed on subsequent consume calls; idle tables do not grow.
 | Verify recovery OTP | 5 / 15 minutes | 20 / 15 minutes |
 
 Requester-address handling assumes direct Vercel ingress and trusts only the
-platform's `x-vercel-forwarded-for` header when `VERCEL=1`, validating a single IP.
-It does not parse arbitrary forwarding chains. Non-Vercel development uses a stable
+platform's `x-vercel-forwarded-for` header when `VERCEL=1`, taking its first valid IP.
+When none exists, requests share one stricter `unknown` bucket, log only the header shape,
+and omit Auth IP forwarding. Other forwarding headers are never trusted. Non-Vercel development uses a stable
 local bucket and omits IP forwarding. Other production deployments fail closed.
 See [Vercel request headers](https://vercel.com/docs/headers/request-headers) and
 [Supabase IP forwarding](https://supabase.com/docs/guides/auth/rate-limits).
@@ -147,14 +148,13 @@ Email initiation acknowledges a request, never mailbox delivery. An eligible rec
 delivery failure, provider exception, recipient cooldown and an ineligible/nonexistent
 recipient's no-op all receive the same neutral response. Signup and resend have the same
 property: an existing confirmed signup or an ineligible resend can skip mail transport.
-The line a screen shows after Resend code ("We sent a new code to {email}.") is built
-from that one response and the address the student typed, so it reads the same for
-every address.
+The line after Resend code is "Check your email for a new code." It is the same for
+every address and does not claim that a message was delivered.
 Recipient-independent application/provider limits still return 429; signup password
 policy still returns 400. Application configuration failures and invalid SDK success
 envelopes fail closed. Verification and recovery grants retain their separate authority.
 
-Server diagnostics record only action and a bounded outcome (failed, exception,
+Email-initiation diagnostics record only action and a bounded outcome (failed, exception,
 cooldown, limited, policy or invalid-acknowledgment). They contain no recipient, IP,
 password, OTP, token, provider message or raw acknowledgment. Monitor these events
 alongside private Supabase Auth and Resend delivery evidence. Do not capture request
@@ -168,3 +168,25 @@ local inbox URL reported by `supabase status` to read confirmation and recovery
 codes. Return to the registration/login confirmation screen to enter the code.
 If that in-memory flow was lost, start again from sign up or sign in.
 This local setup does not change hosted Supabase or production SMTP delivery.
+
+## Availability diagnostics and deadlines
+
+Auth routes carry a server-generated eight-character reference through their response
+boundary. Unavailable responses and failed page guards log only the static route, bounded
+step and error code, reference, deployment identifier and elapsed milliseconds. Error
+objects, request bodies, email addresses, IPs, cookies and credentials are never logged.
+The same reference appears in the unavailable message; route responses also carry it in
+`X-CampusIntell-Auth-Reference`. Expected email outcomes remain uniform across addresses.
+
+Each outbound Auth/RPC call has a ten-second deadline, including SDK waits and response
+bodies. The browser deadline is twenty seconds. Timeout reconciliation stays under the
+cross-document lock: confirmation checks the live session; password replacement never
+infers success from sign-out and requires a fresh recovery flow when its result is unknown.
+Neither mutation is replayed automatically. Missing Web Locks support has a specific
+browser-update message and never enables competing cookie writers.
+
+Confirmed invalid credentials, including `bad_jwt`, clear only the selected Auth cookie
+namespace at the proxy/route response boundary. The selector and unrelated cookies remain;
+removing the selector could enable legacy fallback. Network and ambiguous failures retain
+cookies and remain unavailable. No assurance-level, hosted-setting or session-lifetime
+policy is changed here.

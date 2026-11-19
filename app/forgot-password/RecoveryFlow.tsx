@@ -67,7 +67,7 @@ function RecoveryCodeForm({ email, onVerified, onStartOver, onFailure }: {
     <FormField id="code" label="Code" inputMode="numeric" autoComplete="one-time-code" maxLength={OTP_MAX_LENGTH}
       {...register('code')} error={errors.code?.message} disabled={pending} />
       </>}
-      feedback={{ message: error || (resent ? codeSentMessage(email) : ''), tone: error ? 'error' : 'info' }}
+      feedback={{ message: error || (resent ? codeSentMessage() : ''), tone: error ? 'error' : 'info' }}
       primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Checking…' : 'Continue'}</button>}
       secondaryActions={<>
         <button type="button" disabled={pending} className={cx(btnBase, btnSm, btnGhost, focusRingNavy,

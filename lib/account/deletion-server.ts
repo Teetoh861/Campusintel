@@ -8,6 +8,8 @@ import { requireVerifiedSession } from '@/lib/auth/verified-session'
 import { AuthRequestError } from '@/lib/auth/request'
 import { AUTH_MESSAGES } from '@/lib/auth/constants'
 import type { LiveMutationContext } from '@/lib/auth/mutation-context'
+import { authDeadline, authFetch, bindStudentAuthDeadlines } from '@/lib/auth/deadline'
+import { authUnavailable } from '@/lib/auth/unavailable'
 
 const scheduled = z.object({ status: z.literal('scheduled'), deadline: z.string().datetime({ offset: true }), requestId: z.string().uuid() }).strict()
 const scheduleResult = z.union([scheduled, z.object({ status: z.enum(['operator-excluded', 'expired']) }).strict()])
@@ -22,7 +24,7 @@ export async function scheduleStudentDeletion(context: LiveMutationContext, pass
   if (error) {
     if (error.code === 'invalid_credentials' || error.code === 'user_banned') return { status: 'password-invalid' } as const
     if (error.code === 'over_request_rate_limit') throw new AuthRequestError(429, AUTH_MESSAGES.limited)
-    throw new Error('Password verification unavailable')
+    throw authUnavailable(error, 'provider', 'Password verification unavailable')
   }
   // Capture only the revocation capability before validating the provider envelope.
   // An invalid identity/session response can still have created an Auth session.
@@ -31,22 +33,24 @@ export async function scheduleStudentDeletion(context: LiveMutationContext, pass
   // Revoke the proof session on every outcome, including an unexpected RPC failure.
   try {
     const session = requireVerifiedSession(data, email.toLowerCase())
-    if (session.user.id !== context.user.id) throw new Error('Password identity mismatch')
+    if (session.user.id !== context.user.id) throw authUnavailable(null, 'identity', 'Password identity mismatch')
     const { url, key } = getSupabaseConfig()
     const proofClient = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+      global: { fetch: authFetch, headers: { Authorization: `Bearer ${session.access_token}` } },
     })
+    bindStudentAuthDeadlines(proofClient.auth)
     const { data: verified, error: claimError } = await proofClient.auth.getClaims(session.access_token)
     const proofId = z.string().uuid().parse(verified?.claims.session_id)
-    if (claimError || verified?.claims.sub !== context.user.id) throw new Error('Password verification failed')
+    if (claimError || verified?.claims.sub !== context.user.id) throw authUnavailable(claimError, 'identity', 'Password verification failed')
     const service = createClient(url, getAuthSecretKey(), {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: authFetch },
     })
-    const result = await service.rpc('schedule_student_deletion', {
+    const result = await authDeadline(() => service.rpc('schedule_student_deletion', {
       p_session_id: context.sessionId, p_verified_session_id: proofId,
-    })
-    if (result.error) throw new Error('Deletion scheduling failed')
+    }), 'identity')
+    if (result.error) throw authUnavailable(result.error, 'identity', 'Deletion scheduling failed')
     const scheduledResult = scheduleResult.parse(result.data)
     proofRevoked = scheduledResult.status === 'scheduled'
     return scheduledResult

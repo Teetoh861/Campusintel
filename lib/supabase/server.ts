@@ -6,6 +6,9 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies, headers } from 'next/headers'
 import { getSupabaseConfig } from '@/lib/auth/config'
 import { getStudentCookieOptions } from '@/lib/auth/cookies'
+import { bindStudentAuthDeadlines, studentAuthFetch } from '@/lib/auth/deadline'
+import { isActiveStudentAuthCookie, registerInvalidSessionCleanup } from '@/lib/auth/invalid-session'
+import { queueInvalidAuthCookie } from '@/lib/auth/unavailable'
 import { advanceStudentSessionGeneration, resolveStudentSessionNamespace,
   resolveStudentSessionNamespaceFromCookieHeader } from '@/lib/auth/session-generation'
 import type { NextResponse } from 'next/server'
@@ -22,7 +25,8 @@ async function clientForRequest(response?: NextResponse, freshGeneration?: strin
   const store = await cookies()
   const jar = new Map(store.getAll().map(cookie => [cookie.name, cookie.value]))
   const { url, key } = getSupabaseConfig()
-  return createServerClient(url, key, {
+  const client = createServerClient(url, key, {
+    global: { fetch: studentAuthFetch },
     ...(namespace.storageName ? { cookieOptions: { name: namespace.storageName } } : {}),
     cookies: {
       getAll: () => namespace.mode === 'invalid' ? [] : Array.from(jar, ([name, value]) => ({ name, value })),
@@ -38,6 +42,20 @@ async function clientForRequest(response?: NextResponse, freshGeneration?: strin
         if (response) Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value))
       },
     },
+  })
+  bindStudentAuthDeadlines(client.auth)
+  const storageName = namespace.storageName ?? `sb-${new URL(url).hostname.split('.')[0]}-auth-token`
+  return registerInvalidSessionCleanup(client, () => {
+    for (const name of jar.keys()) {
+      if (!isActiveStudentAuthCookie(name, storageName)) continue
+      jar.delete(name)
+      const options = getStudentCookieOptions({ maxAge: 0, expires: new Date(0) })
+      if (response) response.cookies.set(name, '', options)
+      else {
+        queueInvalidAuthCookie(name)
+        try { store.set(name, '', options) } catch { /* The page's response boundary is the proxy. */ }
+      }
+    }
   })
 }
 

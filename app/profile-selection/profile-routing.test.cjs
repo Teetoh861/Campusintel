@@ -134,7 +134,7 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
   for (const [status, onAccount, onForm] of [
     ['missing-profile', 'We couldn’t find your profile. Help & Support', 'We couldn’t find your profile'],
     ['invariant-failure', 'We couldn’t load your profile. Help & Support', 'We couldn’t load your profile'],
-    ['unavailable', 'Something went wrong', 'Something went wrong'],
+    ['unavailable', "We couldn’t complete your request", "We couldn’t complete your request"],
   ]) {
     f.state.profile = { status }
     for (const [page, expected] of [[await f.account(), onAccount], [await f.selectionPage(), onForm]]) {

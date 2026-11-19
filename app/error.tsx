@@ -9,7 +9,7 @@ import type { ReactElement } from 'react'
 
 /** No error detail reaches the student; `retry` fetches and renders the failed page again. */
 export default function ErrorPage({ retry }: { error: Error & { digest?: string }; retry: () => void }): ReactElement {
-  return <StudentPage band={<PageBand title="Something went wrong." />}>
+  return <StudentPage band={<PageBand title="We couldn’t load this page" />}>
     <button type="button" className={studentAction(btnNavy, studentFocusDark)} onClick={() => retry()}>Try again</button>
   </StudentPage>
 }

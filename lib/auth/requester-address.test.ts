@@ -5,15 +5,17 @@ import { getRequesterAddress } from './request'
 
 test('requester address preserves deployed boundaries and allows configured loopback production', () => {
   const previous = { NODE_ENV: process.env.NODE_ENV, VERCEL: process.env.VERCEL, NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL }
+  const originalError = console.error
   const request = (headers: Record<string, string> = {}) => new Request('http://localhost/api/auth/register', { headers })
   try {
+    console.error = () => {}
     Object.assign(process.env, { NODE_ENV: 'production', VERCEL: '1', NEXT_PUBLIC_SITE_URL: 'http://localhost:3000' })
     assert.equal(getRequesterAddress(request({ 'x-vercel-forwarded-for': '203.0.113.10' })), '203.0.113.10')
     assert.equal(getRequesterAddress(request({ 'x-vercel-forwarded-for': '2001:db8::1' })), '2001:db8::1')
-    assert.throws(() => getRequesterAddress(request()), { status: 503 })
-    for (const ip of ['invalid', '203.0.113.10, 203.0.113.11']) {
-      assert.throws(() => getRequesterAddress(request({ 'x-vercel-forwarded-for': ip })), { status: 503 })
-    }
+    assert.equal(getRequesterAddress(request()), 'unknown')
+    assert.equal(getRequesterAddress(request({ 'x-vercel-forwarded-for': 'invalid' })), 'unknown')
+    assert.equal(getRequesterAddress(request({ 'x-vercel-forwarded-for': '203.0.113.10, 203.0.113.11' })), '203.0.113.10')
+    assert.equal(getRequesterAddress(request({ 'x-vercel-forwarded-for': 'invalid, 2001:0db8::1, 203.0.113.11' })), '2001:db8::1')
 
     delete process.env.VERCEL
     for (const origin of ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000', 'https://localhost']) {
@@ -31,6 +33,7 @@ test('requester address preserves deployed boundaries and allows configured loop
       assert.equal(getRequesterAddress(request()), 'local')
     }
   } finally {
+    console.error = originalError
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value

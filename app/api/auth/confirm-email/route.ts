@@ -1,7 +1,9 @@
+import { withAuthDiagnostics } from '@/lib/auth/route-boundary'
 // app/api/auth/confirm-email/route.ts — Server authentication with HttpOnly session transfer.
 import { rejectExistingStudent } from '@/lib/auth/student-state'
 import { readAuthRequest, getRequesterAddress } from '@/lib/auth/request'
 import { authJson, authError } from '@/lib/auth/response'
+import { authUnavailable, authUnavailableReason } from '@/lib/auth/unavailable'
 import { consumeAuthLimit } from '@/lib/auth/rate-limit'
 import { getAuthGateway } from '@/lib/supabase/auth-gateway'
 import { AUTH_OTP_TYPES, AUTH_MESSAGES } from '@/lib/auth/constants'
@@ -14,31 +16,33 @@ import { recordConfirmedSignup } from '@/lib/analytics/server'
 
 /** Verify credentials server-side; serialize only a validated destination. */
 export async function POST(request: Request) {
-  let confirmed = false
-  try {
-    const body = await readAuthRequest(request, confirmSchema)
-    const existing = await rejectExistingStudent()
-    if (existing) return existing
-    const address = getRequesterAddress(request)
-    await consumeAuthLimit('CONFIRM_EMAIL', body.email, address)
-    // The provider's broader "email" type also accepts recovery codes as login credentials.
-    const { data, error } = await getAuthGateway(address).verifyOtp({ email: body.email, token: body.code, type: AUTH_OTP_TYPES.confirmation })
-    if (error) {
-      const failure = mapAuthFailure(error, 'otp')
-      return authJson({ error: failure.error }, failure.status)
+  return withAuthDiagnostics('/api/auth/confirm-email', async () => {
+    let confirmed = false
+    try {
+      const body = await readAuthRequest(request, confirmSchema)
+      const existing = await rejectExistingStudent()
+      if (existing) return existing
+      const address = getRequesterAddress(request)
+      await consumeAuthLimit('CONFIRM_EMAIL', body.email, address)
+      // The provider's broader "email" type also accepts recovery codes as login credentials.
+      const { data, error } = await getAuthGateway(address).verifyOtp({ email: body.email, token: body.code, type: AUTH_OTP_TYPES.confirmation })
+      if (error) {
+        const failure = mapAuthFailure(error, 'otp')
+        return authJson({ error: failure.error }, failure.status, { route: '/api/auth/confirm-email', reason: authUnavailableReason(error, 'provider') })
+      }
+      const session = requireVerifiedSession(data, body.email)
+      confirmed = true
+      const response = authJson({ next: getSafeReturnPath(body.next) })
+      const client = await createFreshStudentSessionClient(response)
+      const { data: transferred, error: sessionError } = await client.auth.setSession({
+        access_token: session.access_token, refresh_token: session.refresh_token,
+      })
+      if (sessionError) throw authUnavailable(sessionError, 'identity')
+      if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw authUnavailable(null, 'identity')
+      await recordConfirmedSignup()
+      return response
+    } catch (error) {
+      return confirmed ? authJson({ error: AUTH_MESSAGES.confirmationSignIn }, 503, { route: '/api/auth/confirm-email', reason: authUnavailableReason(error) }) : authError(error, '/api/auth/confirm-email')
     }
-    const session = requireVerifiedSession(data, body.email)
-    confirmed = true
-    const response = authJson({ next: getSafeReturnPath(body.next) })
-    const client = await createFreshStudentSessionClient(response)
-    const { data: transferred, error: sessionError } = await client.auth.setSession({
-      access_token: session.access_token, refresh_token: session.refresh_token,
-    })
-    if (sessionError) throw new Error('Session transfer failed')
-    if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw new Error('Session transfer identity mismatch')
-    await recordConfirmedSignup()
-    return response
-  } catch (error) {
-    return confirmed ? authJson({ error: AUTH_MESSAGES.confirmationSignIn }, 503) : authError(error)
-  }
+  })
 }

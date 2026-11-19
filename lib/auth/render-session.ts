@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { lifecycleSchema } from '@/lib/account/lifecycle-contract'
 import { readVerifiedStudentUser } from './verified-user'
 import type { StudentClient } from '@/lib/supabase/server'
+import { authDeadline } from './deadline'
+import { authUnavailable } from './unavailable'
 
 // Only the no-response render-client factory opts in. Explicit mutation/refresh clients keep fresh checks.
 const renderClients = new WeakSet<StudentClient>()
@@ -33,20 +35,22 @@ export const readRenderStudentSession = cache(async (client: StudentClient) => {
   const jwt = transport.data.session?.access_token
   if (transport.error || !jwt) {
     if (await readVerifiedStudentUser(client) === null) return null
-    throw new Error('Session validation failed')
+    throw authUnavailable(transport.error, 'identity')
   }
   const [user, { data: claimsData, error: claimsError }, { data, error }] = await Promise.all([
-    readVerifiedStudentUser(client, jwt), client.auth.getClaims(jwt), client.rpc('read_student_context'),
+    readVerifiedStudentUser(client, jwt), client.auth.getClaims(jwt), authDeadline(() => client.rpc('read_student_context'), 'identity'),
   ])
   if (user === null) return null
   if (error?.code === '42501') return null
-  if (error) throw new Error('Student context unavailable')
+  if (error) throw authUnavailable(error, 'identity')
   const claims = claimsData?.claims
   if (claimsError || claims?.sub !== user.id || typeof claims.session_id !== 'string' || !claims.session_id) {
-    throw new Error('Session validation failed')
+    throw authUnavailable(claimsError, 'identity')
   }
-  const snapshot = snapshotSchema.parse(data)
-  if (snapshot.user_id !== user.id || snapshot.session_id !== claims.session_id) throw new Error('Session validation failed')
+  const parsed = snapshotSchema.safeParse(data)
+  if (!parsed.success) throw authUnavailable(null, 'identity')
+  const snapshot = parsed.data
+  if (snapshot.user_id !== user.id || snapshot.session_id !== claims.session_id) throw authUnavailable(null, 'identity')
   if (snapshot.lifecycle.status === 'signed-out') return null
   return { user, sessionId: claims.session_id, snapshot }
 })

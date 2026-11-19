@@ -23,5 +23,5 @@ async function Content({ searchParams }: { searchParams: Promise<{ next?: string
 
 /** Apply the server session guard before rendering the identity-entry page. */
 export default function Page(props: Parameters<typeof Content>[0]) {
-  return <SignedOutGate><Content {...props} /></SignedOutGate>
+  return <SignedOutGate route="/login"><Content {...props} /></SignedOutGate>
 }

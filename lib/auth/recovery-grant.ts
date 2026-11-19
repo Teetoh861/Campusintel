@@ -5,6 +5,8 @@ import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 import type { NextResponse } from 'next/server'
 import { getAuthSecretKey, getSupabaseConfig } from './config'
+import { authDeadline, authFetch } from './deadline'
+import { authUnavailable } from './unavailable'
 import { isRecoveryCredential, recoveryDigest, makeRecoveryGrant,
   RECOVERY_GRANT_COOKIE, RECOVERY_GRANT_PATH, RECOVERY_GRANT_LIFETIME_SECONDS, type RecoveryIdentity } from './recovery-crypto'
 
@@ -13,7 +15,7 @@ function store() {
   // This private client exposes no general-purpose data layer; only the grant RPCs are used.
   return createClient(url, getAuthSecretKey(), { auth: {
     persistSession: false, autoRefreshToken: false, detectSessionInUrl: false,
-  } })
+  }, global: { fetch: authFetch } })
 }
 
 function cookieOptions() {
@@ -28,10 +30,10 @@ export function clearRecoveryCookie(response: NextResponse): void {
 async function takeIdentity(binding: string | null): Promise<{ userId: string } | null> {
   const credential = (await cookies()).get(RECOVERY_GRANT_COOKIE)?.value
   if (!isRecoveryCredential(credential)) return null
-  const { data, error } = await store().rpc('consume_recovery_grant', {
+  const { data, error } = await authDeadline(() => store().rpc('consume_recovery_grant', {
     p_hash: recoveryDigest(credential, 'credential'), p_binding: binding,
-  })
-  if (error) throw new Error('Recovery store unavailable')
+  }), 'identity')
+  if (error) throw authUnavailable(error, 'identity')
   if (data === null) return null
   return { userId: z.string().uuid().parse(data) }
 }
@@ -51,10 +53,10 @@ export async function discardRecoveryGrantForFlow(email: string): Promise<boolea
 /** Mint only after server verification; the response receives a random opaque credential, never tokens. */
 export async function issueRecoveryGrant(identity: RecoveryIdentity, response: NextResponse): Promise<void> {
   const grant = makeRecoveryGrant(identity)
-  const { error } = await store().rpc('issue_recovery_grant', {
+  const { error } = await authDeadline(() => store().rpc('issue_recovery_grant', {
     p_hash: grant.hash, p_user_id: grant.userId, p_binding: grant.binding,
-  })
-  if (error) throw new Error('Recovery store unavailable')
+  }), 'identity')
+  if (error) throw authUnavailable(error, 'identity')
   response.cookies.set(RECOVERY_GRANT_COOKIE, grant.credential, { ...cookieOptions(), maxAge: RECOVERY_GRANT_LIFETIME_SECONDS })
 }
 
@@ -78,19 +80,20 @@ export async function claimRecoveryGrant(email: string): Promise<HeldRecoveryGra
   const credential = (await cookies()).get(RECOVERY_GRANT_COOKIE)?.value
   if (!isRecoveryCredential(credential)) return null
   const hash = recoveryDigest(credential, 'credential'), binding = recoveryDigest(email, 'flow')
-  const { data, error } = await store().rpc('claim_recovery_grant', { p_hash: hash, p_binding: binding })
-  if (error) throw new Error('Recovery store unavailable')
+  const { data, error } = await authDeadline(() => store().rpc('claim_recovery_grant', { p_hash: hash, p_binding: binding }), 'identity')
+  if (error) throw authUnavailable(error, 'identity')
   const [held] = heldGrant.parse(data ?? [])
   if (!held) return null
   return {
     userId: held.holder,
     async restore() {
-      const answer = await store().rpc('restore_recovery_grant', { p_hash: hash, p_binding: binding, p_claim: held.claim })
-      return answer.error === null && answer.data === true
+      const answer = await authDeadline(() => store().rpc('restore_recovery_grant', { p_hash: hash, p_binding: binding, p_claim: held.claim }), 'identity')
+      if (answer.error) throw authUnavailable(answer.error, 'identity')
+      return answer.data === true
     },
     async finish() {
-      const answer = await store().rpc('finish_recovery_grant', { p_hash: hash, p_claim: held.claim })
-      if (answer.error) throw new Error('Recovery store unavailable')
+      const answer = await authDeadline(() => store().rpc('finish_recovery_grant', { p_hash: hash, p_claim: held.claim }), 'identity')
+      if (answer.error) throw authUnavailable(answer.error, 'identity')
     },
   }
 }

@@ -1,3 +1,4 @@
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 import { redirect } from 'next/navigation'
 import { StudentPage } from '@/components/student/StudentPage'
 import { PageBand } from '@/components/student/PageBand'
@@ -17,6 +18,7 @@ export const metadata = { title: 'Account deletion | CampusIntell', robots: { in
 
 /** This is the only student page available to an authenticated scheduled account. */
 export default async function AccountDeletionPage() {
+  const diagnostic = createAuthDiagnostic('/account/deletion')
   if (!isStudentAuthEnabled()) return <StudentPage><Feedback message={AUTH_MESSAGES.comingSoon} /></StudentPage>
   let state
   try {
@@ -24,7 +26,7 @@ export default async function AccountDeletionPage() {
     const context = await getStudentSessionContext(undefined, client, { allowRestricted: true })
     state = context ? { lifecycle: await readAccountLifecycle(client),
       token: issueAccountContinuityToken(context.user.id, context.sessionId) } : null
-  } catch { return <StudentPage><Feedback tone="error" message={AUTH_MESSAGES.unavailable} /></StudentPage> }
+  } catch (error) { return <StudentPage><Feedback tone="error" message={authUnavailableMessage('/account/deletion', error, diagnostic)} /></StudentPage> }
   if (!state || state.lifecycle.status === 'signed-out') redirect(AUTH_PATHS.login)
   if (state.lifecycle.status === 'active') redirect(AUTH_PATHS.account)
   const { lifecycle, token } = state
