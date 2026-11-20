@@ -340,19 +340,20 @@ test('each row is a course link and a sibling toggle: two independent targets, n
     }
   }, { catalog: catalogOf(2), snapshot: { mode: 'account', keys: keysOf(2) } }))
 
-test('inert rows keep the shared status copy, stay removable, and offer no row-level recovery actions', async () =>
+test('missing materials keep a plain course target; temporary rows stay removable without recovery actions', async () =>
   bookmarks(async f => {
     const html = f.html()
     assert.match(html, /Study materials are temporarily unavailable\./)
-    assert.match(html, /Study materials are not available\./)
+    assert.match(html, /No study materials yet/)
     assert.doesNotMatch(html, /Try again|Request Material|\/materials/)
-    assert.equal((html.match(/<a\b/g) || []).length, 1, 'only the ready row links')
+    assert.equal((html.match(/<a\b/g) || []).length, 2, 'ready and missing-material rows each have one course target')
+    assert.doesNotMatch(html, /Practise from your notes|Campus Bot|student-ai-practice-link/)
     assert.equal(f.toggles().length, 3)
     await f.press(titleOf(2))
     assert.deepEqual(f.visibleKeys(), keys(1, 3))
     assert.equal(f.feedback(), 'removed')
   }, { catalog: [entry(1), entry(2, { code: 'BUA002', title: 'Course 2', unavailable: 'temporary' }),
-    entry(3, { code: 'BUA003', title: 'Course 3', unavailable: 'missing' })], snapshot: { mode: 'account', keys: keysOf(3) } }))
+    entry(3, { code: 'BUA003', title: 'Course 3', unavailable: 'missing', href: '/courses/course-3' })], snapshot: { mode: 'account', keys: keysOf(3) } }))
 
 test('repository-only rows present the shared label, never a code, and name the toggle by title', async () =>
   bookmarks(async f => {

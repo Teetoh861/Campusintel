@@ -183,19 +183,17 @@ async function fixture(run) {
   })
 }
 
-test('All Courses: a 100 Level student gets the Campus Bot link on their own courses and on none outside their list', async () => fixture(async f => {
+test('All Courses: missing materials have one plain row target and need no extra access reads', async () => fixture(async f => {
   const rows = await f.allCourses()
   assert.deepEqual([...rows.keys()], ['ACC101', 'BUA102', 'BUA302', 'GST102', 'GST111', 'GST302'])
-  for (const item of [GST102, BUA102]) {
-    assert.ok(rows.get(item.code).includes(linkTo(item)), `${item.code} is on their list`)
-    assert.match(rows.get(item.code), /Practise from your notes <span class="student-ai-practice-tag">Campus Bot<\/span>/)
+  for (const item of WITHOUT_MATERIALS) {
+    assert.ok(rows.get(item.code).includes(linkTo(item)))
+    assert.match(rows.get(item.code), /No study materials yet/)
+    assert.doesNotMatch(rows.get(item.code), /student-ai-practice-link|Campus Bot|Practise from your notes|underline/)
+    assert.equal((rows.get(item.code).match(/<a\b/g) ?? []).length, 1)
   }
-  for (const item of [BUA302, ACC101, GST302]) {
-    assert.match(rows.get(item.code), /Study materials are not available\./)
-    assert.doesNotMatch(rows.get(item.code), /<a\b|Campus Bot|Practise from your notes/, `${item.code} is outside their list`)
-  }
-  assert.deepEqual(linked(rows), ['BUA102', 'GST102'])
-  assert.deepEqual(f.state.reads, ['access 5', 'courses with sets'], 'one access read for the rows without materials, one light look for kept sets')
+  assert.deepEqual(linked(rows), [])
+  assert.deepEqual(f.state.reads, [], 'the row target needs no separate entitlement or question-set read')
 }))
 
 // Each situation, and the rows that carry the link in it.
@@ -231,42 +229,44 @@ const SITUATIONS = [
     ['GST302']],
 ]
 
-test('the link is on a row exactly where the Campus Bot page opens', async t => fixture(async f => {
+test('Campus Bot still enforces its server access rules behind the plain row targets', async t => fixture(async f => {
   for (const [situation, arrange, expected] of SITUATIONS) {
     await t.test(situation, async () => {
       f.reset()
       arrange(f)
       const rows = await f.allCourses()
-      assert.deepEqual(linked(rows), expected)
+      assert.deepEqual(linked(rows), [])
+      assert.deepEqual(f.state.reads, [])
+      const opened = []
       for (const item of WITHOUT_MATERIALS) {
-        const shown = rows.get(item.code).includes(linkTo(item))
-        assert.equal(await f.opens(item), shown, `${item.code}: the page ${shown ? 'opens' : 'sends the student back to My Courses'}`)
+        assert.ok(rows.get(item.code).includes(linkTo(item)))
+        assert.match(rows.get(item.code), /No study materials yet/)
+        assert.doesNotMatch(rows.get(item.code), /Practise from your notes|Campus Bot|student-ai-practice-link/)
+        if (await f.opens(item)) opened.push(item.code)
       }
-      assert.doesNotMatch(rows.get('GST111'), /student-ai-practice-link/, 'a course with materials opens its own page')
+      assert.deepEqual(opened.sort(), expected)
     })
   }
 }))
 
-test('My Courses: a paid course without materials shows no link while the student’s courses need confirming', async () => fixture(async f => {
+test('My Courses: one plain row target does not change whether Campus Bot can open', async () => fixture(async f => {
   f.state.decisions.set(BUA102.institutionalCourseId, decision(BUA102, 'needs-selection'))
   let rows = await f.myCourses()
   assert.deepEqual([...rows.keys()], ['BUA102', 'GST102', 'GST111'])
-  assert.match(rows.get('BUA102'), /Study materials are not available\./)
-  assert.doesNotMatch(rows.get('BUA102'), /<a\b|Campus Bot/)
+  assert.match(rows.get('BUA102'), /No study materials yet/)
+  assert.ok(rows.get('BUA102').includes(linkTo(BUA102)))
+  assert.deepEqual(f.state.reads, [])
   assert.equal(await f.opens(BUA102), false)
-  assert.ok(rows.get('GST102').includes(linkTo(GST102)), 'the free course on their list still opens')
   assert.equal(await f.opens(GST102), true)
-  assert.deepEqual(f.state.reads.slice(0, 2), ['access 2', 'courses with sets'])
-
-  // Once confirmed, the database names the list again and both rows carry the link.
   f.state.decisions = decisions()
   f.state.reads.length = 0
   rows = await f.myCourses()
-  assert.deepEqual(linked(rows), ['BUA102', 'GST102'])
-  assert.deepEqual(f.state.reads, ['access 2'], 'every row is covered: kept sets are not looked for')
+  assert.deepEqual(linked(rows), [])
+  assert.ok(rows.get('BUA102').includes(linkTo(BUA102)))
+  assert.deepEqual(f.state.reads, [])
 }))
 
-test('Bookmarks: a bookmarked course without materials carries the link only on the student’s own list', async () => fixture(async f => {
+test('Bookmarks: every missing-material row opens its course page without an inline Campus Bot link', async () => fixture(async f => {
   // A shelved course the student may read, with nothing published in it: the one bookmarkable row that can carry the link.
   const empty = { state: 'no-published-learning', study: study({}) }
   const saved = (item, slug) => [slug, { status: 'ok', learning: null, practice: null,
@@ -278,14 +278,14 @@ test('Bookmarks: a bookmarked course without materials carries the link only on 
       course: { repository: shelved('old-shelf'), content: empty } }]])
   const rows = await f.bookmarks()
   assert.deepEqual(rows.get('philosophy-and-logic'), { code: 'GST102', title: 'Philosophy and Logic', unavailable: 'missing',
-    aiPracticeHref: `/courses/ai-practice/${GST102.institutionalCourseId}` })
+    href: '/courses/philosophy-and-logic' })
   assert.deepEqual(rows.get('principles-of-management'), { code: 'BUA102', title: 'Principles of Management',
-    unavailable: 'missing', aiPracticeHref: `/courses/ai-practice/${BUA102.institutionalCourseId}` })
-  assert.deepEqual(rows.get('entrepreneurship'), { code: 'GST302', title: 'Entrepreneurship', unavailable: 'missing' },
+    unavailable: 'missing', href: '/courses/principles-of-management' })
+  assert.deepEqual(rows.get('entrepreneurship'), { code: 'GST302', title: 'Entrepreneurship', unavailable: 'missing', href: '/courses/entrepreneurship' },
     'a free course of another level is outside their list')
   assert.equal(rows.get('use-of-english').href, '/courses/use-of-english')
-  assert.deepEqual(rows.get('old-shelf'), { repositoryOnly: true, title: 'old-shelf shelf title', unavailable: 'missing' })
-  assert.deepEqual(f.state.reads, ['access 3', 'courses with sets'])
+  assert.deepEqual(rows.get('old-shelf'), { repositoryOnly: true, title: 'old-shelf shelf title', unavailable: 'missing', href: '/courses/old-shelf' })
+  assert.deepEqual(f.state.reads, [])
 }))
 
 test('a list with no row that could carry the link reads nothing more', async () => fixture(async f => {
@@ -300,13 +300,16 @@ test('a list with no row that could carry the link reads nothing more', async ()
   assert.deepEqual(f.state.reads, [])
 }))
 
-test('a catalogue larger than one access read is asked in parts, and only kept sets are read in full', async () => fixture(async f => {
+test('a large catalogue keeps every plain row without extra entitlement or set reads', async () => fixture(async f => {
   const others = Array.from({ length: 199 }, (_, index) => course(1000 + index, `OUT${index}`, `Outside ${index}`, [anotherLevel]))
   for (const item of others) f.state.decisions.set(item.institutionalCourseId, decision(item, 'outside-list'))
   f.state.catalogue = [GST102, BUA102, ...others]
   f.state.generations = [generation(others[198]), generation(BUA102, { id: uuid(801) })]
-  assert.deepEqual(linked(await f.allCourses()), ['BUA102', 'GST102', 'OUT198'])
-  assert.deepEqual(f.state.reads, ['access 200', 'access 1', 'courses with sets', `sets of ${others[198].institutionalCourseId}`])
+  const rows = await f.allCourses()
+  assert.equal(rows.size, 201)
+  assert.deepEqual(linked(rows), [])
+  assert.ok(rows.get('OUT198').includes(linkTo(others[198])))
+  assert.deepEqual(f.state.reads, [])
 }))
 
 test('a read that breaks shows no link and leaves the list as it was', async () => fixture(async f => {

@@ -308,8 +308,9 @@ test('actionability needs a shelved route and ready content; overview alone is n
   const overviewOnly = course('overview-id', 'BUA211', shelved('overview-slug'),
     { state: 'no-published-learning', study: study({ overview: true }) })
   const inert = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: overviewOnly }))
-  assert.doesNotMatch(inert, /<a\b|href=|Notes/)
-  assert.match(inert, /Study materials are not available/)
+  assert.match(inert, /href="\/courses\/overview-slug"/)
+  assert.doesNotMatch(inert, /Notes|Campus Bot|Practise from your notes/)
+  assert.match(inert, /No study materials yet/)
   const unshelvedReady = renderToStaticMarkup(React.createElement(f.StudentCourseRow, { course: broken }))
   assert.doesNotMatch(unshelvedReady, /<a\b|href=|Notes|provisioned/)
   assert.match(unshelvedReady, /Study materials are temporarily unavailable/)
@@ -318,7 +319,7 @@ test('actionability needs a shelved route and ready content; overview alone is n
   f.state.result = { status: 'ok', selection, courses: [ready, broken, overviewOnly, unavailable] }
   const html = await f.render()
   assert.match(html, /4 courses · 1 ready to study/)
-  assert.equal(anchors(html).filter(link => link.includes('href="/courses/')).length, 1)
+  assert.equal(anchors(html).filter(link => link.includes('href="/courses/')).length, 2)
   assert.equal(anchors(html).filter(link => link.includes('href="/materials"')).length, 1, 'overview-only is missing content')
   f.state.result = { status: 'ok', selection, courses: [broken, unavailable] }
   assert.equal(anchors(await f.render()).filter(link => link.includes('href="/materials"')).length, 0, 'temporary states do not request material')

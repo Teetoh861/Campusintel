@@ -1,5 +1,5 @@
 // app/access/payment-screens.test.cjs — The part 3 client screens driven through their own handlers: the Semester |
-// Session switch and the Semester prompt, the free pass modal, Confirm and pay (disabled while submitting, no amount in
+// Session switch and direct choices, the free pass modal, Confirm and pay (disabled while submitting, no amount in
 // the form), and every return-page state, including two minutes of polling, "still confirming" and Check again.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -84,31 +84,41 @@ const label = node => text(renderToStaticMarkup(React.createElement(React.Fragme
 test('plans: Semester first; the switch shows Session prices with the saving line; every card line is the approved copy', async () => {
   await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue }, async ({ render, html }) => {
     const semester = text(html())
-    assert.match(semester, /Standard · Semester ₦4,000 a semester Your courses: notes, practice, exams and Campus Bot\./)
-    assert.match(semester, /Plus · Semester ₦6,000 a semester Everything in Standard, with twice the Campus Bot use\./)
-    assert.doesNotMatch(semester, /save|Session ₦/)
+    assert.match(semester, /Standard For studying all your courses\. ₦4,000 \/ semester/)
+    assert.match(semester, /Plus For students who use Campus Bot a lot\. ₦6,000 \/ semester/)
+    assert.match(semester, /All your courses for this semester Course notes, practice questions and timed exams Campus Bot: explains answers, helps while you read and makes practice from your notes/)
+    assert.match(semester, /Everything in Standard, plus: 2× Campus Bot use Choose Plus/)
+    assert.match(semester, /Session Save ₦1,000/)
     assert.match(html(), /<legend class="sr-only">Billing period<\/legend>/)
     find(render(), node => node.type === 'input' && node.props.value === 'session').props.onChange()
     const session = text(html())
-    assert.match(session, /Standard · Session ₦7,000 a session Both semesters · save ₦1,000/)
-    assert.match(session, /Plus · Session ₦11,000 a session Both semesters · save ₦1,000/)
+    assert.match(session, /Standard For studying all your courses\. ₦7,000 \/ session ₦3,500 a semester · Save ₦1,000/)
+    assert.match(session, /Plus For students who use Campus Bot a lot\. ₦11,000 \/ session ₦5,500 a semester · Save ₦1,000/)
+    assert.match(session, /All your courses for both semesters/)
     // Session Pay goes straight to Confirm courses.
-    assert.match(html(), /href="\/access\/checkout\?plan=standard_session"[^>]*>Pay ₦7,000<\/a>/)
+    assert.match(html(), /href="\/access\/checkout\?plan=standard_session"[^>]*>Choose Standard<\/a>/)
     assert.doesNotMatch(session, /token|\b\d+ sets?\b|limit/i)
   })
 })
 
-test('choosing Semester shows the prompt first: Switch to Session or Keep Semester, both to Confirm courses', async () => {
+test('every card links straight to Confirm courses for the selected period, without a dialog', async () => {
   await drive('./PlanChooser.tsx', 'PlanChooser', { plans: catalogue }, async ({ render, html }) => {
-    assert.doesNotMatch(html(), /dialog-open/)
-    find(render(), node => node.type === 'button' && /Pay ₦4,000/.test(label(node))).props.onClick()
-    const prompt = html().match(/<dialog-open>[\s\S]*<\/dialog-open>/)[0]
-    assert.match(text(prompt), /Standard · Session Both semesters for ₦7,000, save ₦1,000\./)
-    assert.match(prompt, /href="\/access\/checkout\?plan=standard_semester"[^>]*>Keep Semester<\/a>/)
-    assert.match(prompt, /href="\/access\/checkout\?plan=standard_session"[^>]*>Switch to Session<\/a>/)
-    find(render(), node => node.type === Object.getPrototypeOf(node).type || typeof node.props.onOpenChange === 'function')
-      .props.onOpenChange(false)
-    assert.doesNotMatch(html(), /dialog-open/, 'closing the prompt keeps the student on the plans')
+    for (const period of ['semester', 'session']) {
+      find(render(), node => node.type === 'input' && node.props.value === period).props.onChange()
+      for (const tier of ['standard', 'plus']) {
+        const link = find(render(), node => node.props.href === `/access/checkout?plan=${tier}_${period}`)
+        assert.ok(link)
+        assert.equal(label(link), tier === 'standard' ? 'Choose Standard' : 'Choose Plus')
+      }
+      assert.doesNotMatch(html(), /dialog-open|role="dialog"|Keep Semester|Switch to Session|Most popular/i)
+    }
+  })
+})
+
+test('the switch saving is computed from the catalogue and says up to when tier savings differ', async () => {
+  const unequal = catalogue.map(plan => plan.plan === 'plus_session' ? { ...plan, price_kobo: 1050000 } : plan)
+  await drive('./PlanChooser.tsx', 'PlanChooser', { plans: unequal }, async ({ html }) => {
+    assert.match(text(html()), /Session Save up to ₦1,500/)
   })
 })
 
@@ -117,7 +127,7 @@ test('outside a First Semester only Semester plans are sold: no switch and no pr
   await drive('./PlanChooser.tsx', 'PlanChooser', { plans: semesterOnly }, async ({ html }) => {
     const markup = html()
     assert.doesNotMatch(markup, /Billing period|Session/)
-    assert.match(markup, /href="\/access\/checkout\?plan=plus_semester"[^>]*>Pay ₦6,000<\/a>/)
+    assert.match(markup, /href="\/access\/checkout\?plan=plus_semester"[^>]*>Choose Plus<\/a>/)
   })
 })
 
@@ -177,15 +187,15 @@ test('Confirm and pay posts the plan, revision, request id and token only, and i
       assert.deepEqual(fields, [['plan', 'plus_session'], ['expected_profile_revision', '7'],
         ['request_id', 'b7c6d5e4-0000-4000-8000-000000000001'], ['return_path', '/access'], ['continuity', 'page-token']])
       assert.doesNotMatch(markup, /name="(amount|price)/, 'no amount ever comes from the browser')
-      assert.match(text(markup), /Confirm and pay ₦11,000/)
+      assert.match(text(markup), /Pay ₦11,000 Secure payment by Bachs\./)
       const prevented = []
       const form = () => find(render(), node => node.type === 'form')
       form().props.onSubmit({ preventDefault: () => prevented.push('first') })
       assert.equal(starts.length, 1, 'the confirm screen hears the attempt start')
       const busy = html()
       assert.match(busy, /<button type="submit" disabled="" aria-busy="true"/)
-      assert.match(text(busy), /Opening payment…/)
-      assert.match(busy, /role="status"[^>]*>Opening payment…/)
+      assert.match(text(busy), /Please wait…/)
+      assert.match(busy, /role="status"[^>]*>Please wait…/)
       form().props.onSubmit({ preventDefault: () => prevented.push('second') })
       assert.deepEqual(prevented, ['second'], 'a double tap sends one request')
       assert.equal(starts.length, 1, 'and starts one attempt')
@@ -196,11 +206,11 @@ test('Confirm and pay posts the plan, revision, request id and token only, and i
 })
 
 test('the checkout reason is read in the browser and shows once: never in the first render, out of the address on the next task, gone on Pay or Back', async () => {
-  const lines = { 'unavailable': 'We couldn’t open the payment page. Try again in a moment.',
-    'checkout-expired': 'That payment page expired. Try again to open a new one.',
+  const lines = { 'unavailable': 'Payment couldn’t start. Please try again.',
+    'checkout-expired': 'Your payment session expired. Please try again.',
     'selection-changed': 'Your courses changed. Check the list below, then try again.',
-    'session-changed': 'We couldn’t open the payment page. Try again.', 'invalid-request': "We couldn’t open the payment page. Refresh the page and try again.",
-    'something-new': 'We couldn’t open the payment page. Try again in a moment.' }
+    'session-changed': 'Reload this page to continue.', 'invalid-request': "Payment couldn’t start. Refresh the page and try again.",
+    'something-new': 'Payment couldn’t start. Please try again.' }
   const line = lines.unavailable
   const CheckoutForm = props => React.createElement('checkout-form', { 'data-plan': props.plan, 'data-price': String(props.priceKobo),
     'data-revision': String(props.expectedRevision), 'data-request': props.requestId, 'data-token': props.continuityToken })
@@ -349,8 +359,9 @@ test('confirming: role="status", polls our order every 3 seconds with no-store, 
     const paid = html()
     assert.match(paid, /data-return-state="paid"/)
     assert.match(text(paid), /You’re subscribed Standard · Semester keeps your courses open until Mon, 8 Mar 2027\./)
-    // The courses were read while still locked: nothing is listed until the page reads them again, once.
-    assert.doesNotMatch(text(paid), /Now open in your|Notes by topic|Theory questions/)
+    // Campus Bot is included with the paid plan; course-material claims wait for their refreshed read.
+    assert.match(text(paid), /Now open in your 6 courses Campus Bot: explains answers, helps while you read and makes practice from your notes/)
+    assert.doesNotMatch(text(paid), /Notes by topic|Theory questions/)
     assert.equal(refreshes.length, 1, 'the page reads the now-open courses again')
     assert.match(paid, /href="\/my-courses"[^>]*>Start studying<\/a>/)
     assert.match(paid, new RegExp(`href="/access/receipts/${ORDER}"[^>]*>View receipt</a>`))
@@ -374,7 +385,10 @@ test('You\'re subscribed lists only what the student\'s courses have', async () 
     assert.doesNotMatch(text(html()), /Notes by topic|Exam mode/)
   }, { features: ['Theory questions with suggested answers'] })
   await returnPage({ kind: 'order', order: order('paid') }, async ({ html }) => {
-    assert.doesNotMatch(text(html()), /Now open in your/, 'nothing to list: no list at all')
+    assert.match(text(html()), /Now open in your 6 courses Campus Bot: explains answers, helps while you read and makes practice from your notes/)
+  }, { features: [] })
+  await returnPage({ kind: 'order', order: order('paid', { plan: 'plus_session', tier: 'plus', period: 'session' }) }, async ({ html }) => {
+    assert.match(text(html()), /Campus Bot: explains answers, helps while you read and makes practice from your notes/)
   }, { features: [] })
 })
 

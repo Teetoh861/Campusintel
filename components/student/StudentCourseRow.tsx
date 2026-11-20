@@ -1,7 +1,6 @@
 // components/student/StudentCourseRow.tsx — The one adapter from central course truth to the shared course row.
 import { getStudentCourseUnavailability, isActionableStudentCourse, isInstitutionalStudentCourse,
   isLockedStudentCourse } from '@/lib/courses/read-model'
-import { isCampusBotRow } from '@/lib/ai-practice/campus-bot-courses'
 import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { CourseRow } from './CourseRow'
 import { getStudyFamilyLabels } from './study-families'
@@ -12,7 +11,7 @@ import type { ReactElement, ReactNode } from 'react'
 
 /** Derive the serializable row presentation: identity, actionability, canonical route and study labels. */
 export function presentStudentCourseRow(course: PresentableStudentCourse,
-  { plansOnSale = false, campusBotLinks }: { plansOnSale?: boolean; campusBotLinks?: ReadonlySet<string> } = {}):
+  { plansOnSale = false }: { plansOnSale?: boolean } = {}):
   CourseRowPresentation {
   // A repository-only identity never gains an institutional code; its title is the shelved route's.
   const identity: CourseRowIdentity = isInstitutionalStudentCourse(course)
@@ -24,25 +23,22 @@ export function presentStudentCourseRow(course: PresentableStudentCourse,
   if (!isActionableStudentCourse(course)) {
     const reason = getStudentCourseUnavailability(course)
     const unavailable = reason === 'missing' ? 'missing' : 'temporary'
-    // PRD 4.3: an institutional course with no built content offers the secondary, personal AI path, on the rows
-    // where its page opens for this student.
-    const aiPracticeHref = isInstitutionalStudentCourse(course) && isCampusBotRow(course) &&
-      campusBotLinks?.has(course.institutionalCourseId) ? aiPracticePath(course.institutionalCourseId) : undefined
-    return { ...identity, unavailable, ...(aiPracticeHref ? { aiPracticeHref } : {}) }
+    // The course page owns the explanation and actions. A course without a page opens its protected practice page.
+    const href = unavailable !== 'missing' ? undefined : course.repository.state === 'shelved'
+      ? course.repository.route.href : isInstitutionalStudentCourse(course) ? aiPracticePath(course.institutionalCourseId) : undefined
+    return { ...identity, unavailable, ...(href ? { href } : {}) }
   }
   return { ...identity, href: course.repository.route.href, learningTypes: getStudyFamilyLabels(course.content.study) }
 }
 
 /** Present actionability, canonical route and study labels without reconstructing any of them. */
-export function StudentCourseRow({ course, progress, trailingAction, plansOnSale = false, campusBotLinks }: {
+export function StudentCourseRow({ course, progress, trailingAction, plansOnSale = false }: {
   course: PresentableStudentCourse
   progress?: string
   trailingAction?: ReactNode
   /** The copy switch (plans_on_sale). */
   plansOnSale?: boolean
-  /** The courses whose Campus Bot link opens for this student (readCampusBotLinks). Without it no row shows the link. */
-  campusBotLinks?: ReadonlySet<string>
 }): ReactElement {
-  return <CourseRow {...presentStudentCourseRow(course, { plansOnSale, campusBotLinks })} progress={progress}
+  return <CourseRow {...presentStudentCourseRow(course, { plansOnSale })} progress={progress}
     trailingAction={trailingAction} />
 }

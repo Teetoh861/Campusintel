@@ -2,6 +2,7 @@
 // Every comparison uses the database's `now`, so the notice never depends on the viewer's clock.
 import { discoveryOffered } from './contract'
 import { DISCOVERY_KINDS } from './discovery-contract'
+import { SIGNED_IN_ON_ANOTHER_TAB } from '@/lib/auth/constants'
 import type { AccessSource, EntitlementSummary, PaidPlan, PlanKey, PlanOnSale, PlanPeriod, PlanTier, Receipt, TrialPolicy }
   from './contract'
 import type { DiscoveryKind } from './discovery-contract'
@@ -98,6 +99,7 @@ export function naira(kobo: number): string {
 
 export const PLAN_TIER_NAME: Record<PlanTier, string> = { standard: 'Standard', plus: 'Plus' }
 export const PLAN_PERIOD_NAME: Record<PlanPeriod, string> = { semester: 'Semester', session: 'Session' }
+export const CAMPUS_BOT_PLAN_LINE = 'Campus Bot: explains answers, helps while you read and makes practice from your notes'
 
 /** "Standard · Semester": a plan's name wherever the frames said Semester plan or Session plan. */
 export function planName(tier: PlanTier, period: PlanPeriod): string {
@@ -108,24 +110,39 @@ export const PLAN_COPY = {
   heading: 'Choose a plan',
   periodSwitchLabel: 'Billing period',
   cardLine: {
-    standard: 'Your courses: notes, practice, exams and Campus Bot.',
-    plus: 'Everything in Standard, with twice the Campus Bot use.',
+    standard: 'For studying all your courses.',
+    plus: 'For students who use Campus Bot a lot.',
   } satisfies Record<PlanTier, string>,
-  perPeriod: { semester: 'a semester', session: 'a session' } satisfies Record<PlanPeriod, string>,
+  perPeriod: { semester: '/ semester', session: '/ session' } satisfies Record<PlanPeriod, string>,
+  courses: { semester: 'All your courses for this semester', session: 'All your courses for both semesters' },
+  study: 'Course notes, practice questions and timed exams',
+  plusIntro: 'Everything in Standard, plus:',
+  plusBenefit: '2× Campus Bot use',
+  choose: (tier: PlanTier) => `Choose ${PLAN_TIER_NAME[tier]}`,
   payment: 'Pay by card or bank transfer.',
   refund: 'Full refund within 48 hours of paying, as long as you haven’t made a Campus Bot question set or used a large part of your plan.',
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
-  keepSemester: 'Keep Semester',
 } as const
 
-/** "Both semesters · save ₦1,000" under a Session card. */
-export function sessionSavingLine(savingKobo: number): string {
-  return `Both semesters · save ${naira(savingKobo)}`
+/** The Session price per semester and its saving, both from the catalogue. */
+export function sessionSavingLine(sessionPriceKobo: number, savingKobo: number): string {
+  return `${naira(sessionPriceKobo / 2)} a semester${savingKobo > 0 ? ` · Save ${naira(savingKobo)}` : ''}`
 }
-/** The prompt after choosing Semester: "Both semesters for ₦7,000, save ₦1,000." */
-export function semesterPromptLine(sessionPriceKobo: number, savingKobo: number): string {
-  return `Both semesters for ${naira(sessionPriceKobo)}, save ${naira(savingKobo)}.`
+/** The optional alternative above Pay; it never interrupts the Semester checkout. */
+export function sessionUpgradeLine(sessionPriceKobo: number, savingKobo: number): string {
+  return `Pay for the whole session instead: ${naira(sessionPriceKobo)} for both semesters${savingKobo > 0 ? `, save ${naira(savingKobo)}` : ''}.`
+}
+
+/** One saving on the period switch; unequal tier savings name their maximum honestly. */
+export function sessionSavingBadge(plans: ReadonlyArray<PlanOnSale>): string | null {
+  const savings = (['standard', 'plus'] as const).flatMap(tier => {
+    const prices = tierPrices(plans, tier)
+    return prices.semester !== null && prices.session !== null ? [prices.savingKobo] : []
+  })
+  const largest = Math.max(0, ...savings)
+  if (largest === 0) return null
+  return `Save ${new Set(savings).size > 1 ? 'up to ' : ''}${naira(largest)}`
 }
 
 /** A tier's Semester and Session prices from the catalogue, and what the Session saves. */
@@ -162,8 +179,9 @@ export const CONFIRM_COPY = {
   coursesHeading: (count: number) => `Your ${count} ${count === 1 ? 'course' : 'courses'}`,
   // The one sentence before any commitment that fixes the student's courses (a plan, a free pass, a free month).
   setAfterPaying: COURSES_FIXED_LINE,
-  pay: (priceKobo: number) => `Confirm and pay ${naira(priceKobo)}`,
-  opening: 'Opening payment…',
+  pay: (priceKobo: number) => `Pay ${naira(priceKobo)}`,
+  opening: 'Please wait…',
+  securePayment: 'Secure payment by Bachs.',
   notNow: 'Not now',
   free: 'Free',
   needsSelection: 'Confirm your courses for this semester to choose a plan.',
@@ -172,15 +190,15 @@ export const CONFIRM_COPY = {
 
 /** Why the payment page could not open, by the reason the checkout route sent back (never a promise about charges). */
 export const CHECKOUT_PROBLEM: Record<string, string> = {
-  'unavailable': 'We couldn’t open the payment page. Try again in a moment.',
-  'checkout-expired': 'That payment page expired. Try again to open a new one.',
+  'unavailable': 'Payment couldn’t start. Please try again.',
+  'checkout-expired': 'Your payment session expired. Please try again.',
   'selection-changed': 'Your courses changed. Check the list below, then try again.',
   'needs-selection': 'Confirm your courses for this semester first.',
   'sales-closed': 'Plans aren’t on sale right now.',
   'plan-unavailable': 'That plan isn’t available right now.',
   'account-restricted': 'Plans can’t be bought while this account is scheduled for deletion.',
-  'session-changed': 'We couldn’t open the payment page. Try again.',
-  'invalid-request': "We couldn’t open the payment page. Refresh the page and try again.",
+  'session-changed': SIGNED_IN_ON_ANOTHER_TAB,
+  'invalid-request': 'Payment couldn’t start. Refresh the page and try again.',
 }
 
 export const RETURN_COPY = {
