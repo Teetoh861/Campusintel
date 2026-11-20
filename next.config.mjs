@@ -1,3 +1,5 @@
+import { bachsCheckoutOrigin } from './lib/payments/checkout-origin.cjs'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -39,7 +41,7 @@ const nextConfig = {
       "frame-ancestors 'none'",
       "base-uri 'self'",
       // The plan checkout form answers 303 to Bachs' hosted page, and browsers apply form-action to that redirect.
-      "form-action 'self' https://checkout.bachs.io",
+      `form-action 'self' ${bachsCheckoutOrigin(process.env.BACHS_API_KEY)}`,
     ].join('; ')
 
     return [
