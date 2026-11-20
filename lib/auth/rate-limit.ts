@@ -3,7 +3,8 @@ import 'server-only'
 import { createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { getAuthSecretKey, getSupabaseConfig } from './config'
-import { AUTH_MESSAGES, RATE_LIMIT_POLICIES, AUTH_INTERNAL_SECRET_MIN_BYTES } from './constants'
+import { AUTH_MESSAGES, RATE_LIMIT_POLICIES } from './constants'
+import { readAuthInternalSecret } from './settings.cjs'
 import { AuthRequestError } from './request'
 import { AuthUnavailableError, authUnavailable, rateLimitUnavailable } from './unavailable'
 import { authDeadline, authFetch } from './deadline'
@@ -11,10 +12,8 @@ import type { AuthAction } from './constants'
 
 /** The keyed bucket name for one action, purpose and value; the raw email or address never leaves the server. */
 export function getBucket(action: AuthAction | 'DISCOVERY_ACTIVATION', purpose: 'account' | 'origin', value: string): string {
-  const secret = process.env.AUTH_INTERNAL_SECRET
-  if (!secret || Buffer.byteLength(secret) < AUTH_INTERNAL_SECRET_MIN_BYTES) {
-    throw new AuthUnavailableError('configuration', 'Auth configuration unavailable')
-  }
+  const secret = readAuthInternalSecret({ AUTH_INTERNAL_SECRET: process.env.AUTH_INTERNAL_SECRET },
+    () => new AuthUnavailableError('configuration', 'Auth configuration unavailable'))
   return createHmac('sha256', secret).update(JSON.stringify(['campusintell:auth-rate-limit:v1', action, purpose, value])).digest('hex')
 }
 

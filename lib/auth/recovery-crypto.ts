@@ -2,7 +2,7 @@
 import 'server-only'
 import { createHmac, randomBytes } from 'node:crypto'
 import { z } from 'zod'
-import { AUTH_INTERNAL_SECRET_MIN_BYTES } from './constants'
+import { readAuthInternalSecret } from './settings.cjs'
 import { AuthUnavailableError } from './unavailable'
 
 export const RECOVERY_GRANT_LIFETIME_SECONDS = 600
@@ -16,10 +16,8 @@ export type RecoveryIdentity = z.infer<typeof identitySchema>
 
 /** Separate grant indexes from a non-reversible email binding used to prevent cross-tab identity mixing. */
 export function recoveryDigest(value: string, domain: 'credential' | 'flow'): string {
-  const secret = process.env.AUTH_INTERNAL_SECRET
-  if (!secret || Buffer.byteLength(secret) < AUTH_INTERNAL_SECRET_MIN_BYTES) {
-    throw new AuthUnavailableError('configuration', 'Recovery configuration unavailable')
-  }
+  const secret = readAuthInternalSecret({ AUTH_INTERNAL_SECRET: process.env.AUTH_INTERNAL_SECRET },
+    () => new AuthUnavailableError('configuration', 'Recovery configuration unavailable'))
   return createHmac('sha256', secret).update(JSON.stringify([PURPOSE, domain, value])).digest('hex')
 }
 
