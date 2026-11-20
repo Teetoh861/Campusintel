@@ -10,7 +10,7 @@ export const EMAIL_MAX_LENGTH = 254
 export const OTP_MAX_LENGTH = 32
 export const AUTH_BODY_MAX_BYTES = 4096
 export const AUTH_RETURN_PATH_MAX_LENGTH = 2048
-export const AUTH_INTERNAL_SECRET_MIN_BYTES = 32
+export { AUTH_INTERNAL_SECRET_MIN_BYTES } from './settings.cjs'
 export const AUTH_PATHS = {
   login: '/login', register: '/register', confirm: '/confirm-email',
   resend: '/resend-confirmation', forgot: '/forgot-password',
