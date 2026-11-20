@@ -119,10 +119,10 @@ export function authUnavailableBody(body: Record<string, unknown>, status: numbe
     ...(unavailable?.reason?.step === 'timeout' ? { status: 'timeout' } : {}) }
 }
 
-/** Failed page guards show the same bounded reference as their log event. */
+/** Failed page guards log their diagnostic and show only the student-facing message. */
 export function authUnavailableMessage(route: string, error: unknown, diagnostic?: AuthDiagnostic): string {
-  const reported = logAuthUnavailable({ route, reason: authUnavailableReason(error, 'identity') }, diagnostic)
-  return `${AUTH_MESSAGES.unavailable} Reference: ${reported.reference}`
+  logAuthUnavailable({ route, reason: authUnavailableReason(error, 'identity') }, diagnostic)
+  return AUTH_MESSAGES.unavailable
 }
 
 /** PostgREST and PostgreSQL codes only; malformed or absent codes disclose nothing. */

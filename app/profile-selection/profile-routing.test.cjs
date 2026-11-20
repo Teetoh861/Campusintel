@@ -140,6 +140,7 @@ test('missing, invariant, unavailable and disabled states remain controlled', as
     for (const [page, expected] of [[await f.account(), onAccount], [await f.selectionPage(), onForm]]) {
       const message = nodes(page).find(node => node.type?.name === 'Feedback').props.message
       assert.ok(textOf(message).includes(expected), `${status}: ${textOf(message)}`)
+      if (status === 'unavailable') assert.equal(textOf(message), 'We couldn’t complete your request right now. Please try again in a minute.')
       // A profile only support can fix links to support, in the message itself.
       assert.deepEqual(hrefsOf(message), status === 'unavailable' ? [] : ['/contact'], status)
     }
