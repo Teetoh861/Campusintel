@@ -2,7 +2,7 @@
 'use client'
 import { notifyStudentChange } from '@/lib/auth/client-events'
 import { isStudentAuthTransition, runAuthTransition } from '@/lib/auth/client-transition'
-import { AuthClientFailure, authMessageReference, fetchAuthReply } from '@/lib/auth/client-request'
+import { AuthClientFailure, fetchAuthReply } from '@/lib/auth/client-request'
 import { useRef, useState } from 'react'
 import { safeAuthMessage } from '@/lib/auth/errors'
 import { parseAuthOutcome } from '@/lib/auth/outcomes'
@@ -39,7 +39,6 @@ export function useAuthSubmit() {
     lock.current = true
     setPending(true)
     setError('')
-    let reference: unknown
     try {
       if (!/^\/api\/auth\/[a-z-]+$/.test(endpoint)) throw new Error('Invalid auth endpoint')
       return await runAuthTransition(endpoint, async () => {
@@ -54,8 +53,8 @@ export function useAuthSubmit() {
             const recovered = await reconcileTimeout(endpoint)
             if (recovered) { notifyStudentChange(); return recovered }
           }
-          const message = authMessageReference(failure instanceof AuthClientFailure && failure.kind === 'connection'
-            ? AUTH_MESSAGES.connection : AUTH_MESSAGES.unavailable, failure instanceof AuthClientFailure ? failure.reference : undefined)
+          const message = failure instanceof AuthClientFailure && failure.kind === 'connection'
+            ? AUTH_MESSAGES.connection : AUTH_MESSAGES.unavailable
           setError(message)
           if (timedOut && (endpoint === AUTH_API.reset || endpoint === AUTH_API.verifyRecovery)) {
             onFailure?.({ message, code: RECOVERY_FAILURE.restart })
@@ -63,8 +62,6 @@ export function useAuthSubmit() {
           return null
         }
         const { response, value } = reply
-        reference = value && typeof value === 'object' && 'reference' in value
-          ? value.reference : response.headers?.get('X-CampusIntell-Auth-Reference')
         if (!value || typeof value !== 'object') throw new Error('Invalid response')
         if (!response.ok) {
           if (response.status === 409 && 'status' in value && value.status === 'session-changed') {
@@ -85,9 +82,8 @@ export function useAuthSubmit() {
           const supplied = 'error' in value ? value.error : undefined
           const outcomeInstruction = endpoint === AUTH_API.confirm && supplied === AUTH_MESSAGES.confirmationSignIn ||
             (endpoint === AUTH_API.reset || endpoint === AUTH_API.verifyRecovery) && supplied === AUTH_MESSAGES.recoveryRestart
-          const text = response.status === 503 && !outcomeInstruction && supplied !== AUTH_MESSAGES.comingSoon
+          const message = response.status === 503 && !outcomeInstruction && supplied !== AUTH_MESSAGES.comingSoon
             ? AUTH_MESSAGES.unavailable : safeAuthMessage(supplied)
-          const message = authMessageReference(text, reference, response.status === 503)
           const code = timedOut && endpoint === AUTH_API.reset ? RECOVERY_FAILURE.restart :
             'code' in value && (value.code === RECOVERY_FAILURE.invalidCode || value.code === RECOVERY_FAILURE.restart ||
               value.code === RECOVERY_FAILURE.password) ? value.code : undefined
@@ -102,7 +98,7 @@ export function useAuthSubmit() {
         return result
       })
     } catch (failure) {
-      setError(failure instanceof AuthClientFailure && failure.kind === 'unsupported' ? AUTH_MESSAGES.browser : authMessageReference(AUTH_MESSAGES.unavailable, reference))
+      setError(failure instanceof AuthClientFailure && failure.kind === 'unsupported' ? AUTH_MESSAGES.browser : AUTH_MESSAGES.unavailable)
       return null
     } finally { lock.current = false; setPending(false) }
   }

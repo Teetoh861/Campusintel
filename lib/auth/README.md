@@ -175,8 +175,8 @@ Auth routes carry a server-generated eight-character reference through their res
 boundary. Unavailable responses and failed page guards log only the static route, bounded
 step and error code, reference, deployment identifier and elapsed milliseconds. Error
 objects, request bodies, email addresses, IPs, cookies and credentials are never logged.
-The same reference appears in the unavailable message; route responses also carry it in
-`X-CampusIntell-Auth-Reference`. Expected email outcomes remain uniform across addresses.
+The reference stays in the response body and `X-CampusIntell-Auth-Reference` header;
+student-facing messages never show it. Expected email outcomes remain uniform across addresses.
 
 Each outbound Auth/RPC call has a ten-second deadline, including SDK waits and response
 bodies. The browser deadline is twenty seconds. Timeout reconciliation stays under the
