@@ -20,7 +20,7 @@ test('lib/landing/figures.ts is what the generator writes', () => {
 
 test('the build generates the figures before it compiles the page', () => {
   const { scripts } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
-  assert.equal(scripts.build, 'node scripts/landing/figures.cjs && next build')
+  assert.equal(scripts.build, 'node scripts/auth/check-settings.cjs && node scripts/landing/figures.cjs && next build')
 })
 
 test('the figures equal what the content pipeline publishes for courses on the catalogue', () => {
