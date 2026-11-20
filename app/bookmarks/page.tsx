@@ -3,6 +3,7 @@ import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { presentStudentCourseRow } from '@/components/student/StudentCourseRow'
+import { readCampusBotLinks } from '@/lib/ai-practice/campus-bot-courses'
 import { readPlansOnSale } from '@/lib/entitlements/server'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
@@ -31,6 +32,7 @@ async function Bookmarks(): Promise<ReactElement> {
   let result: { status: 'ok'; courses: (RoutedStudentCourse | RepositoryOnlyCourse)[] }
     | { status: 'signed-out' | 'unavailable' | 'invariant-failure' }
   let plansOnSale = false
+  let campusBotLinks: ReadonlySet<string> | undefined
   try {
     const client = await createClient()
     plansOnSale = await readPlansOnSale(client)
@@ -47,6 +49,7 @@ async function Bookmarks(): Promise<ReactElement> {
         if (lookup.status === 'ok' || lookup.status === 'repository-only') resolved.push(lookup.course)
         else if (lookup.status !== 'not-found') { result = { status: lookup.status }; break }
       }
+      if (result.status === 'ok') campusBotLinks = await readCampusBotLinks(client, context.user, resolved)
     }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'signed-out') redirectForStudentState('signed-out', BOOKMARKS_PATH)
@@ -55,7 +58,7 @@ async function Bookmarks(): Promise<ReactElement> {
       ? <BookmarksClient catalog={result.courses.map(course => ({
         // Legacy device aliases come from the shelved route; presentation comes from the shared adapter.
         slug: course.repository.route.slug, code: course.repository.route.course.code,
-        contentKey: course.repository.contentKey, row: presentStudentCourseRow(course, { plansOnSale }),
+        contentKey: course.repository.contentKey, row: presentStudentCourseRow(course, { plansOnSale, campusBotLinks }),
       }))} />
       : <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'courses-unavailable'}
         retryHref={BOOKMARKS_PATH} />}

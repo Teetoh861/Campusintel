@@ -55,13 +55,13 @@ test('ready rows are one canonical link and advertise only existing families in 
   }
 })
 
-test('missing materials keep one plain row target; temporary failures keep the recovery mark', async () => {
+test('missing materials keep a plain row with a course target only when available; temporary failures keep the recovery mark', async () => {
   const { STUDY_COPY } = await subject()
   for (const item of [unbuilt, noLearning, unshelved, unavailable]) {
     const html = await render(item)
     assert.ok(html.includes(item.code) && html.includes(item.title))
     if (item === unbuilt || item === noLearning) {
-      assert.equal(anchors(html).length, 1)
+      assert.equal(anchors(html).length, item === noLearning ? 1 : 0)
       assert.match(html, /No study materials yet/)
       assert.doesNotMatch(html, /student-status-rail|student-ai-practice|Practise from your notes|Campus Bot|underline/)
       assert.ok(!html.includes(STUDY_COPY.temporarilyUnavailable))
@@ -85,8 +85,7 @@ test('the serializable presentation adapter is the one derivation every consumer
   const { presentStudentCourseRow } = await subject()
   assert.deepEqual(presentStudentCourseRow(ready), { code: 'BUA201', title: 'BUA201 institutional title',
     href: '/courses/resolved-slug', learningTypes: ['Notes', 'Practice', 'Theory'] })
-  assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'BUA203', title: 'BUA203 institutional title', unavailable: 'missing',
-    href: '/courses/ai-practice/BUA203-id' })
+  assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'BUA203', title: 'BUA203 institutional title', unavailable: 'missing' })
   assert.deepEqual(presentStudentCourseRow(unshelved), { code: 'BUA205', title: 'BUA205 institutional title', unavailable: 'temporary' })
   assert.deepEqual(presentStudentCourseRow(noLearning), { code: 'BUA207', title: 'BUA207 institutional title', unavailable: 'missing',
     href: '/courses/empty-slug' })

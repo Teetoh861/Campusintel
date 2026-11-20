@@ -57,7 +57,7 @@ const generation = (item, extra = {}) => ({ id: uuid(800), user_id: STUDENT, sta
   expires_at: '2999-01-01T00:00:00.000Z', question_set: storedSet, ...extra })
 
 const linkTo = item => `href="/courses/ai-practice/${item.institutionalCourseId}"`
-const linked = rows => [...rows].filter(([, html]) => html.includes('student-ai-practice-link')).map(([code]) => code).sort()
+const linked = rows => [...rows].filter(([, html]) => html.includes('href="/courses/ai-practice/')).map(([code]) => code).sort()
 
 /** The student's cookie-bound client: the access answer, their stored sets and nothing else. */
 function studentClient(state) {
@@ -183,17 +183,18 @@ async function fixture(run) {
   })
 }
 
-test('All Courses: missing materials have one plain row target and need no extra access reads', async () => fixture(async f => {
+test('All Courses: only missing-material courses where Campus Bot opens have a plain row target', async () => fixture(async f => {
   const rows = await f.allCourses()
   assert.deepEqual([...rows.keys()], ['ACC101', 'BUA102', 'BUA302', 'GST102', 'GST111', 'GST302'])
   for (const item of WITHOUT_MATERIALS) {
-    assert.ok(rows.get(item.code).includes(linkTo(item)))
+    const allowed = item === GST102 || item === BUA102
+    assert.equal(rows.get(item.code).includes(linkTo(item)), allowed)
     assert.match(rows.get(item.code), /No study materials yet/)
     assert.doesNotMatch(rows.get(item.code), /student-ai-practice-link|Campus Bot|Practise from your notes|underline/)
-    assert.equal((rows.get(item.code).match(/<a\b/g) ?? []).length, 1)
+    assert.equal((rows.get(item.code).match(/<a\b/g) ?? []).length, allowed ? 1 : 0)
   }
-  assert.deepEqual(linked(rows), [])
-  assert.deepEqual(f.state.reads, [], 'the row target needs no separate entitlement or question-set read')
+  assert.deepEqual(linked(rows), ['BUA102', 'GST102'])
+  assert.deepEqual(f.state.reads, ['access 5', 'courses with sets'], 'one batched access read and one look for kept sets')
 }))
 
 // Each situation, and the rows that carry the link in it.
@@ -229,45 +230,47 @@ const SITUATIONS = [
     ['GST302']],
 ]
 
-test('Campus Bot still enforces its server access rules behind the plain row targets', async t => fixture(async f => {
+test('a plain Campus Bot row links exactly where its page opens for the student', async t => fixture(async f => {
   for (const [situation, arrange, expected] of SITUATIONS) {
     await t.test(situation, async () => {
       f.reset()
       arrange(f)
       const rows = await f.allCourses()
-      assert.deepEqual(linked(rows), [])
-      assert.deepEqual(f.state.reads, [])
+      assert.deepEqual(linked(rows), expected)
       const opened = []
       for (const item of WITHOUT_MATERIALS) {
-        assert.ok(rows.get(item.code).includes(linkTo(item)))
+        const shown = rows.get(item.code).includes(linkTo(item))
         assert.match(rows.get(item.code), /No study materials yet/)
         assert.doesNotMatch(rows.get(item.code), /Practise from your notes|Campus Bot|student-ai-practice-link/)
-        if (await f.opens(item)) opened.push(item.code)
+        const opens = await f.opens(item)
+        assert.equal(opens, shown, `${item.code}: only link where the page opens`)
+        if (opens) opened.push(item.code)
       }
       assert.deepEqual(opened.sort(), expected)
     })
   }
 }))
 
-test('My Courses: one plain row target does not change whether Campus Bot can open', async () => fixture(async f => {
+test('My Courses: a missing-material course has no link while its Campus Bot page would redirect', async () => fixture(async f => {
   f.state.decisions.set(BUA102.institutionalCourseId, decision(BUA102, 'needs-selection'))
   let rows = await f.myCourses()
   assert.deepEqual([...rows.keys()], ['BUA102', 'GST102', 'GST111'])
   assert.match(rows.get('BUA102'), /No study materials yet/)
-  assert.ok(rows.get('BUA102').includes(linkTo(BUA102)))
-  assert.deepEqual(f.state.reads, [])
+  assert.doesNotMatch(rows.get('BUA102'), /<a\b|Campus Bot/)
+  assert.ok(rows.get('GST102').includes(linkTo(GST102)))
+  assert.deepEqual(f.state.reads, ['access 2', 'courses with sets'])
   assert.equal(await f.opens(BUA102), false)
   assert.equal(await f.opens(GST102), true)
   f.state.decisions = decisions()
   f.state.reads.length = 0
   rows = await f.myCourses()
-  assert.deepEqual(linked(rows), [])
+  assert.deepEqual(linked(rows), ['BUA102', 'GST102'])
   assert.ok(rows.get('BUA102').includes(linkTo(BUA102)))
-  assert.deepEqual(f.state.reads, [])
+  assert.deepEqual(f.state.reads, ['access 2'], 'covered courses need no kept-set read')
 }))
 
 test('Bookmarks: every missing-material row opens its course page without an inline Campus Bot link', async () => fixture(async f => {
-  // A shelved course the student may read, with nothing published in it: the one bookmarkable row that can carry the link.
+  // Course pages remain the row destination even outside the student’s Campus Bot list.
   const empty = { state: 'no-published-learning', study: study({}) }
   const saved = (item, slug) => [slug, { status: 'ok', learning: null, practice: null,
     course: { ...item, repository: shelved(slug), content: empty } }]
@@ -285,7 +288,7 @@ test('Bookmarks: every missing-material row opens its course page without an inl
     'a free course of another level is outside their list')
   assert.equal(rows.get('use-of-english').href, '/courses/use-of-english')
   assert.deepEqual(rows.get('old-shelf'), { repositoryOnly: true, title: 'old-shelf shelf title', unavailable: 'missing', href: '/courses/old-shelf' })
-  assert.deepEqual(f.state.reads, [])
+  assert.deepEqual(f.state.reads, ['access 3', 'courses with sets'])
 }))
 
 test('a list with no row that could carry the link reads nothing more', async () => fixture(async f => {
@@ -300,16 +303,16 @@ test('a list with no row that could carry the link reads nothing more', async ()
   assert.deepEqual(f.state.reads, [])
 }))
 
-test('a large catalogue keeps every plain row without extra entitlement or set reads', async () => fixture(async f => {
+test('a large catalogue batches access reads and links only covered courses or readable kept sets', async () => fixture(async f => {
   const others = Array.from({ length: 199 }, (_, index) => course(1000 + index, `OUT${index}`, `Outside ${index}`, [anotherLevel]))
   for (const item of others) f.state.decisions.set(item.institutionalCourseId, decision(item, 'outside-list'))
   f.state.catalogue = [GST102, BUA102, ...others]
   f.state.generations = [generation(others[198]), generation(BUA102, { id: uuid(801) })]
   const rows = await f.allCourses()
   assert.equal(rows.size, 201)
-  assert.deepEqual(linked(rows), [])
+  assert.deepEqual(linked(rows), ['BUA102', 'GST102', 'OUT198'])
   assert.ok(rows.get('OUT198').includes(linkTo(others[198])))
-  assert.deepEqual(f.state.reads, [])
+  assert.deepEqual(f.state.reads, ['access 200', 'access 1', 'courses with sets', `sets of ${others[198].institutionalCourseId}`])
 }))
 
 test('a read that breaks shows no link and leaves the list as it was', async () => fixture(async f => {

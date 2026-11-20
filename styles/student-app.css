@@ -536,6 +536,7 @@ body[data-screen='active'] > footer { display: none; }
 .student-plan-switch-option input:checked + span { background: var(--student-primary); color: #fff; }
 .student-plan-switch-option input:checked + span::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
 .student-plan-switch-option input:focus-visible + span { outline: 3px solid var(--ci-brand-blue); outline-offset: 2px; }
+.student-plan-dialog { max-width: 28rem; gap: 12px; }
 .student-usage-bar { position: relative; height: 10px; overflow: hidden; border-radius: 999px; background: var(--student-border); }
 .student-usage-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--student-primary); }
 .student-pay-bar { margin: 0; padding: 0; }

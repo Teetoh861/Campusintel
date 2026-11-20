@@ -22,16 +22,21 @@ test('a missing-material course opens its own course page whenever one exists', 
   })
 }))
 
-test('without a course page the whole row opens protected Campus Bot practice', async () => subject(({ presentStudentCourseRow }) => {
-  assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'MKT 201', title: 'Principles of Marketing',
+test('without a course page the whole row opens Campus Bot only when the student’s link set includes it', async () => subject(({ presentStudentCourseRow }) => {
+  assert.deepEqual(presentStudentCourseRow(unbuilt, { campusBotLinks: new Set([COURSE]) }), { code: 'MKT 201', title: 'Principles of Marketing',
     unavailable: 'missing', href: `/courses/ai-practice/${COURSE}` })
+  for (const campusBotLinks of [undefined, new Set(), new Set(['another-course'])]) {
+    assert.deepEqual(presentStudentCourseRow(unbuilt, { campusBotLinks }), { code: 'MKT 201',
+      title: 'Principles of Marketing', unavailable: 'missing' })
+  }
 }))
 
 test('a missing-material row has one target, code, title and one plain status, without an inline action or tag', async () => subject(({ StudentCourseRow }) => {
-  for (const repository of [unbuilt.repository, shelved]) {
+  for (const [repository, campusBotLinks, targets] of [[unbuilt.repository, new Set([COURSE]), 1],
+    [unbuilt.repository, new Set(), 0], [shelved, new Set(), 1]]) {
     const html = renderToStaticMarkup(React.createElement(StudentCourseRow, { course: { ...unbuilt, repository,
-      content: repository === shelved ? empty : unbuilt.content }, progress: 'Old progress' }))
-    assert.equal((html.match(/<a\b/g) ?? []).length, 1)
+      content: repository === shelved ? empty : unbuilt.content }, campusBotLinks, progress: 'Old progress' }))
+    assert.equal((html.match(/<a\b/g) ?? []).length, targets)
     assert.match(html, /MKT 201/)
     assert.match(html, /Principles of Marketing/)
     assert.match(html, /<p>No study materials yet<\/p>/)
@@ -42,5 +47,6 @@ test('a missing-material row has one target, code, title and one plain status, w
 test('temporary failures do not turn into practice links', async () => subject(({ presentStudentCourseRow }) => {
   const temporary = { ...unbuilt, repository: { state: 'unshelved-repository', repositoryCourseId: COURSE,
     contentKey: 'marketing', isShared: false } }
-  assert.deepEqual(presentStudentCourseRow(temporary), { code: 'MKT 201', title: 'Principles of Marketing', unavailable: 'temporary' })
+  assert.deepEqual(presentStudentCourseRow(temporary, { campusBotLinks: new Set([COURSE]) }),
+    { code: 'MKT 201', title: 'Principles of Marketing', unavailable: 'temporary' })
 }))

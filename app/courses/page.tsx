@@ -3,6 +3,7 @@ import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentCourseRow } from '@/components/student/StudentCourseRow'
+import { readCampusBotLinks } from '@/lib/ai-practice/campus-bot-courses'
 import { readPlansOnSale } from '@/lib/entitlements/server'
 import { StudentPage } from '@/components/student/StudentPage'
 import { redirectForStudentState } from '@/components/student/result-state'
@@ -25,11 +26,15 @@ export default function CoursesPage(): ReactElement {
 async function CourseDirectoryPage(): Promise<ReactElement> {
   let result: StudentCatalogueResult
   let plansOnSale = false
+  let campusBotLinks: ReadonlySet<string> | undefined
   try {
     const client = await createClient()
     const context = await getStudentSessionContext(undefined, client)
     ;[result, plansOnSale] = context === null ? [{ status: 'signed-out' }, false]
       : await Promise.all([getStudentCatalogueForVerifiedStudent(client), readPlansOnSale(client)])
+    if (context !== null && result.status === 'ok') {
+      campusBotLinks = await readCampusBotLinks(client, context.user, result.courses)
+    }
   } catch { result = { status: 'unavailable' } }
   if (result.status === 'signed-out') redirectForStudentState('signed-out', STUDENT_DESTINATIONS.courses.href)
   return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.courses.label}
@@ -40,7 +45,7 @@ async function CourseDirectoryPage(): Promise<ReactElement> {
       ? <CourseDirectory items={result.courses.map(course => ({
         institutionalCourseId: course.institutionalCourseId, code: course.code, title: course.title,
         applicability: course.applicability, row: <StudentCourseRow key={course.institutionalCourseId} course={course}
-          plansOnSale={plansOnSale} />,
+          plansOnSale={plansOnSale} campusBotLinks={campusBotLinks} />,
       }))} />
       : <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'courses-unavailable'}
         retryHref={STUDENT_DESTINATIONS.courses.href} />}

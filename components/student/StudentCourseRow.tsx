@@ -11,7 +11,7 @@ import type { ReactElement, ReactNode } from 'react'
 
 /** Derive the serializable row presentation: identity, actionability, canonical route and study labels. */
 export function presentStudentCourseRow(course: PresentableStudentCourse,
-  { plansOnSale = false }: { plansOnSale?: boolean } = {}):
+  { plansOnSale = false, campusBotLinks }: { plansOnSale?: boolean; campusBotLinks?: ReadonlySet<string> } = {}):
   CourseRowPresentation {
   // A repository-only identity never gains an institutional code; its title is the shelved route's.
   const identity: CourseRowIdentity = isInstitutionalStudentCourse(course)
@@ -23,22 +23,25 @@ export function presentStudentCourseRow(course: PresentableStudentCourse,
   if (!isActionableStudentCourse(course)) {
     const reason = getStudentCourseUnavailability(course)
     const unavailable = reason === 'missing' ? 'missing' : 'temporary'
-    // The course page owns the explanation and actions. A course without a page opens its protected practice page.
+    // Prefer the course page; without one, link only where Campus Bot opens for this student.
     const href = unavailable !== 'missing' ? undefined : course.repository.state === 'shelved'
-      ? course.repository.route.href : isInstitutionalStudentCourse(course) ? aiPracticePath(course.institutionalCourseId) : undefined
+      ? course.repository.route.href : isInstitutionalStudentCourse(course) && campusBotLinks?.has(course.institutionalCourseId)
+        ? aiPracticePath(course.institutionalCourseId) : undefined
     return { ...identity, unavailable, ...(href ? { href } : {}) }
   }
   return { ...identity, href: course.repository.route.href, learningTypes: getStudyFamilyLabels(course.content.study) }
 }
 
 /** Present actionability, canonical route and study labels without reconstructing any of them. */
-export function StudentCourseRow({ course, progress, trailingAction, plansOnSale = false }: {
+export function StudentCourseRow({ course, progress, trailingAction, plansOnSale = false, campusBotLinks }: {
   course: PresentableStudentCourse
   progress?: string
   trailingAction?: ReactNode
   /** The copy switch (plans_on_sale). */
   plansOnSale?: boolean
+  /** The courses where Campus Bot opens for this student (readCampusBotLinks). */
+  campusBotLinks?: ReadonlySet<string>
 }): ReactElement {
-  return <CourseRow {...presentStudentCourseRow(course, { plansOnSale })} progress={progress}
+  return <CourseRow {...presentStudentCourseRow(course, { plansOnSale, campusBotLinks })} progress={progress}
     trailingAction={trailingAction} />
 }
