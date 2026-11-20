@@ -10,8 +10,9 @@ import { parseEventEnvelope, ProviderRejectedError, ProviderUnavailableError } f
 import type { CheckoutRequest, CheckoutSnapshot, CreatedCheckout, PaymentMethod, PaymentProvider, RefundRequest,
   RefundSnapshot, WebhookCheck } from './provider'
 import { SIGNATURE_HEADER, verifySignature } from './signature'
+import { bachsCheckoutOrigin } from './checkout-origin.cjs'
 
-export const BACHS_CHECKOUT_ORIGIN = 'https://checkout.bachs.io'
+export { BACHS_CHECKOUT_ORIGIN } from './checkout-origin.cjs'
 const LIVE_API = 'https://api.bachs.io'
 const SANDBOX_API = 'https://sandbox-api.bachs.io'
 const OPAQUE_ID = /^[A-Za-z0-9_.:-]{1,128}$/
@@ -32,6 +33,10 @@ function opaque(value: unknown): string | null {
   return typeof value === 'string' && OPAQUE_ID.test(value) ? value : null
 }
 
+function rejectCheckoutAnswer(check: 'origin' | 'reference' | 'expiry' | 'id' | 'length'): never {
+  throw new ProviderRejectedError(`Bachs checkout answer did not match the request: ${check}`)
+}
+
 // Bachs reports cards as CARD and other methods by corridor; a general request can come back as BANK_TRANSFER.
 function methodOf(value: unknown): PaymentMethod | 'other' | null {
   if (value === null || value === undefined) return null
@@ -50,6 +55,7 @@ export function createBachsProvider(options: BachsOptions): PaymentProvider {
   const configuredBase = bachsApiBase(options.apiKey)
   if (configuredBase === null) throw new Error('Bachs configuration unavailable')
   const base: string = configuredBase
+  const checkoutOrigin = bachsCheckoutOrigin(options.apiKey)
   const send = options.fetch ?? fetch
   const now = options.now ?? Date.now
 
@@ -102,10 +108,11 @@ export function createBachsProvider(options: BachsOptions): PaymentProvider {
       let origin = ''
       try { origin = new URL(checkoutUrl).origin } catch { origin = '' }
       // Only Bachs' own hosted page, the one origin the CSP lets a form redirect to, for this order.
-      if (checkoutId === null || origin !== BACHS_CHECKOUT_ORIGIN || checkoutUrl.length > 2048 || expiresAt === null
-          || json.reference !== input.orderId) {
-        throw new ProviderRejectedError('Bachs checkout answer did not match the request')
-      }
+      if (checkoutId === null) rejectCheckoutAnswer('id')
+      if (origin !== checkoutOrigin) rejectCheckoutAnswer('origin')
+      if (checkoutUrl.length > 2048) rejectCheckoutAnswer('length')
+      if (expiresAt === null) rejectCheckoutAnswer('expiry')
+      if (json.reference !== input.orderId) rejectCheckoutAnswer('reference')
       return { checkoutId, checkoutUrl, expiresAt }
     },
 

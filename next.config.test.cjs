@@ -39,10 +39,23 @@ test('normal pages retain their referrer policy and other security headers', asy
 })
 
 test('forms may post to our own origin and redirect to Bachs\' hosted checkout only', async () => {
-  const { headers } = await configuredResponse('/access/checkout')
-  const formAction = headers.get('content-security-policy').split(';').map(part => part.trim())
-    .find(part => part.startsWith('form-action'))
-  assert.equal(formAction, "form-action 'self' https://checkout.bachs.io")
+  const previous = process.env.BACHS_API_KEY
+  try {
+    for (const [key, origin] of [[undefined, 'https://checkout.bachs.io'], ['', 'https://checkout.bachs.io'],
+      ['sk_live_unit_test_key_only', 'https://checkout.bachs.io'],
+      ['sk_sandbox_unit_test_key_only', 'https://sandbox-checkout.bachs.io']]) {
+      if (key === undefined) delete process.env.BACHS_API_KEY
+      else process.env.BACHS_API_KEY = key
+      const { headers } = await configuredResponse('/access/checkout')
+      const formAction = headers.get('content-security-policy').split(';').map(part => part.trim())
+        .find(part => part.startsWith('form-action'))
+      assert.equal(formAction, `form-action 'self' ${origin}`)
+      if (key) assert.equal(JSON.stringify([...headers]).includes(key), false, 'the key never appears in headers')
+    }
+  } finally {
+    if (previous === undefined) delete process.env.BACHS_API_KEY
+    else process.env.BACHS_API_KEY = previous
+  }
 })
 
 test('API config overrides the page policy for every handler, nested path and API root', async () => {
