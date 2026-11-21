@@ -32,7 +32,6 @@ async function CourseDirectoryPage(): Promise<ReactElement> {
     const context = await getStudentSessionContext(undefined, client)
     ;[result, plansOnSale] = context === null ? [{ status: 'signed-out' }, false]
       : await Promise.all([getStudentCatalogueForVerifiedStudent(client), readPlansOnSale(client)])
-    // The catalogue lists every department's courses; Campus Bot opens only for the student's own.
     if (context !== null && result.status === 'ok') {
       campusBotLinks = await readCampusBotLinks(client, context.user, result.courses)
     }

@@ -2,7 +2,6 @@
 import Link from 'next/link'
 import type { CourseLockReason } from '@/lib/courses/read-model'
 import { CircleAlert, Lock } from 'lucide-react'
-import { StatusRail } from './StatusRail'
 import { STUDY_COPY } from './study-families'
 import { studentFocusRow } from './ui'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
@@ -23,9 +22,7 @@ export type CourseRowPresentation = CourseRowIdentity & (
   | { href: string; locked: true; lockReason?: CourseLockReason; learningTypes?: never; unavailable?: never
       /** The copy switch's wording for a course the plan does not include (default: today's). */
       lockedLabel?: string }
-  | { href?: never; learningTypes?: never; locked?: never; unavailable: 'missing' | 'temporary'
-      /** Personal AI practice for a course with no built content; always presented as secondary. */
-      aiPracticeHref?: string }
+  | { href?: string; learningTypes?: never; locked?: never; unavailable: 'missing' | 'temporary' }
 )
 
 type CourseRowProps = CourseRowPresentation & {
@@ -37,33 +34,24 @@ type CourseRowProps = CourseRowPresentation & {
   problem?: { text: string; action?: ReactNode }
 }
 
-/** Make usable learning one row target; keep unavailable institutional identity inert. */
+/** One course target and one status line, including courses whose materials are not available yet. */
 export function CourseRow(props: CourseRowProps): ReactElement {
   const body = <div className="student-course-row-body">
     {props.repositoryOnly
       ? <p className="student-course-row-code" data-identity="repository">{REPOSITORY_COURSE_LABEL}</p>
       : <p className="student-course-row-code">{props.code}</p>}
     <h3 className="student-course-row-title">{props.title}</h3>
-    {props.progress !== undefined && <p className="student-course-row-progress">{props.progress}</p>}
+    {props.progress !== undefined && props.unavailable !== 'missing' && <p className="student-course-row-progress">{props.progress}</p>}
     <div className="student-course-row-meta">
-      {props.locked ? <p className="student-course-row-locked">
+      {props.unavailable === 'missing' ? <p>{STUDY_COPY.rowNoMaterials}</p>
+        : props.unavailable === 'temporary' ? <p className="student-course-row-error">
+          <CircleAlert aria-hidden="true" size={14} strokeWidth={1.75} /><span>{STUDY_COPY.temporarilyUnavailable}</span>
+        </p> : props.locked ? <p className="student-course-row-locked">
         <Lock aria-hidden="true" size={14} strokeWidth={1.75} /><span>{props.lockReason === 'outside-list' ? STUDY_COPY.outsideList
           : props.lockReason === 'needs-selection' ? STUDY_COPY.confirmCourses
           : props.lockReason === 'selection-locked' ? STUDY_COPY.selectionLocked : props.lockedLabel ?? STUDY_COPY.locked}</span>
       </p>
-        : props.href !== undefined ? <p>{props.learningTypes.join(' · ')}</p>
-        : props.unavailable === 'missing'
-          ? <>
-            <StatusRail status="unavailable">{STUDY_COPY.notYetAvailable}</StatusRail>
-            {props.aiPracticeHref !== undefined && <Link href={props.aiPracticeHref} prefetch={false}
-              className={'student-ai-practice-link ' + studentFocusRow}>
-              Practise from your notes <span className="student-ai-practice-tag">Campus Bot</span>
-            </Link>}
-          </>
-          : <p className="student-course-row-error">
-            <CircleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
-            <span>{STUDY_COPY.temporarilyUnavailable}</span>
-          </p>}
+        : props.learningTypes !== undefined ? <p>{props.learningTypes.join(' · ')}</p> : null}
     </div>
   </div>
 

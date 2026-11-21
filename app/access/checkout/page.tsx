@@ -15,10 +15,10 @@ import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
 import { CHECKOUT_PROBLEM, CONFIRM_COPY, FREE_MONTH_COPY, RETURN_COPY, formatAccessDay, formatAccessLastDay, freeMonthClaim,
-  naira, paidPlanName, planName, planOf }
+  naira, paidPlanName, planName, planOf, sessionUpgradeLine, tierPrices, PLAN_COPY }
   from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
-import { CHECKOUT_PATH } from '@/lib/payments/paths'
+import { CHECKOUT_PATH, checkoutHref } from '@/lib/payments/paths'
 import { readCourseSelection, readProfileRevision } from '@/lib/profile/course-selection'
 import { profileSelectionHref } from '@/lib/profile/paths'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
@@ -101,6 +101,8 @@ async function ConfirmCourses({ plan, continuityToken, here }: { plan: PlanKey; 
   const early = entitlement.access?.source === 'early_access' ? entitlement.access.ends_at : null
   // A free month this student could claim instead of paying, only when the database says so now.
   const freeMonth = freeMonthClaim(entitlement, continuityToken, revision)
+  const prices = tierPrices(entitlement.plans, tier)
+  const sessionOffer = period === 'semester' && entitlement.plans_on_sale ? prices.session : null
   return <StudentPage band={band(lede)}>
     <div className="mx-auto grid w-full max-w-[680px] gap-6">
       <ConfirmAndPay plan={plan} priceKobo={onSale.price_kobo} expectedRevision={revision}
@@ -127,6 +129,12 @@ async function ConfirmCourses({ plan, continuityToken, here }: { plan: PlanKey; 
           {early !== null ? `${FREE_MONTH_COPY.continues(formatAccessDay(early))} Your plan then keeps your ` +
             `courses open${term === null ? '' : ` until ${formatAccessLastDay(term.ends_at)}`}.` : null}
         </Notice>
+        {sessionOffer !== null && <p className="text-sm text-student-text-secondary">
+          {sessionUpgradeLine(sessionOffer.price_kobo, prices.savingKobo)}{' '}
+          <Link href={checkoutHref(sessionOffer.plan)} prefetch={false}
+            className="inline-flex min-h-11 items-center font-semibold text-student-primary underline underline-offset-2">
+            {PLAN_COPY.switchToSession}</Link>
+        </p>}
         {/* The last thing above Pay. Paying stays possible. */}
         {freeMonth !== null && <FreeMonthInstead {...freeMonth} />}
       </ConfirmAndPay>

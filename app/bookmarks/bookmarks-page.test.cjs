@@ -102,7 +102,7 @@ test('the page composes StudentPage, the locked PageBand copy and the client cat
   assert.deepEqual(catalog.map(item => [item.key, item.slug, item.code]),
     [['owned-course-key', 'owned-course', 'BUA201'], ['repo-course-key', 'repo-course', 'REPO101']])
   assert.deepEqual(catalog[0].row, { code: 'BUA201', title: 'BUA201 institutional title', href: '/courses/owned-course', learningTypes: ['Notes', 'Theory'] })
-  assert.deepEqual(catalog[1].row, { repositoryOnly: true, title: 'repo-course shelf title', unavailable: 'missing' })
+  assert.deepEqual(catalog[1].row, { repositoryOnly: true, title: 'repo-course shelf title', unavailable: 'missing', href: '/courses/repo-course' })
   assert.doesNotMatch(html, /Free|credits|difficulty|Exam-critical|BUA999|Unlinked institutional/, 'no Bookmarks-local metadata, no unbookmarkable identity')
   assert.ok(elementNodes(tree).some(node => node.type?.name === 'BookmarksClient'))
   assert.deepEqual([f.state.clientReads, f.state.catalogueCalls], [1, 0])

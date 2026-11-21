@@ -94,8 +94,8 @@ test('gated server page reads the full central catalogue once on its verified cl
 
 test('no published learning, unlinked, unshelved-ready and publication failure keep every identity in the register', async () => fixture(async f => {
   const inputs = [
-    [course('empty', 'EMPTY', shelved, { state: 'no-published-learning', study: study({}) }), 'Study materials are not available.'],
-    [course('unlinked', 'UNLINKED', { state: 'unlinked' }, { state: 'not-built', reason: 'unlinked' }), 'Study materials are not available.'],
+    [course('empty', 'EMPTY', shelved, { state: 'no-published-learning', study: study({}) }), 'No study materials yet'],
+    [course('unlinked', 'UNLINKED', { state: 'unlinked' }, { state: 'not-built', reason: 'unlinked' }), 'No study materials yet'],
     [course('unshelved', 'UNSHELVED', { state: 'unshelved-repository', repositoryCourseId: 'provisioned', contentKey: 'new-key', isShared: null },
       { state: 'ready', study: study({ notes: true, theory: true }) }), 'Study materials are temporarily unavailable.'],
     [course('failed', 'FAILED', shelved, { state: 'temporarily-unavailable', reason: 'publication-read-failed' }), 'Study materials are temporarily unavailable.'],
@@ -103,7 +103,7 @@ test('no published learning, unlinked, unshelved-ready and publication failure k
   f.state.result = { status: 'ok', courses: [course('ready','READY'), ...inputs.map(([input]) => input)] }
   const html = f.html(await f.granted())
   assert.equal((html.match(/<li\b/g) || []).length, 5, 'one individual failure never hides other identities')
-  assert.equal((html.match(/href="\/courses\/central-route"/g) || []).length, 1)
+  assert.equal((html.match(/href="\/courses\/central-route"/g) || []).length, 2)
 }))
 
 test('catalogue unavailable and invariant failure retain the PageBand and safe recovery without fallback', async () => fixture(async f => {

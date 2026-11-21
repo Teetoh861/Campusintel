@@ -117,7 +117,6 @@ export default async function MyCoursesPage(): Promise<ReactElement> {
 
   const progressByCourse = new Map(homeCoursesFrom(result.courses, result.cbtBankSizes, progress).courses
     .map(course => [course.id, course.progress === null ? undefined : formatCourseProgress(course.progress)]))
-  // A course on this list can still be closed to Campus Bot, as when the semester's courses need confirming.
   const campusBotLinks = await readCampusBotLinks(client, context.user, result.courses)
 
   return <>{continuity}<StudentPage band={<SemesterContext selection={profile.selection} total={result.courses.length}

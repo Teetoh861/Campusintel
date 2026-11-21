@@ -55,17 +55,18 @@ test('ready rows are one canonical link and advertise only existing families in 
   }
 })
 
-test('unavailable identities stay inert: missing content gets the rail, lost route or publication the temporary mark', async () => {
+test('missing materials keep a plain row with a course target only when available; temporary failures keep the recovery mark', async () => {
   const { STUDY_COPY } = await subject()
   for (const item of [unbuilt, noLearning, unshelved, unavailable]) {
     const html = await render(item)
     assert.ok(html.includes(item.code) && html.includes(item.title))
-    assert.doesNotMatch(html, /<a\b|<button\b|href=|chevron|tabindex=/)
     if (item === unbuilt || item === noLearning) {
-      assert.match(html, /data-status="unavailable"/)
-      assert.ok(html.includes(STUDY_COPY.notYetAvailable))
+      assert.equal(anchors(html).length, item === noLearning ? 1 : 0)
+      assert.match(html, /No study materials yet/)
+      assert.doesNotMatch(html, /student-status-rail|student-ai-practice|Practise from your notes|Campus Bot|underline/)
       assert.ok(!html.includes(STUDY_COPY.temporarilyUnavailable))
     } else {
+      assert.doesNotMatch(html, /<a\b|<button\b|href=|chevron|tabindex=/)
       assert.ok(html.includes(STUDY_COPY.temporarilyUnavailable))
       assert.match(html, /student-course-row-error/)
       assert.doesNotMatch(html, /student-status-rail|Coming soon/)
@@ -86,7 +87,8 @@ test('the serializable presentation adapter is the one derivation every consumer
     href: '/courses/resolved-slug', learningTypes: ['Notes', 'Practice', 'Theory'] })
   assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'BUA203', title: 'BUA203 institutional title', unavailable: 'missing' })
   assert.deepEqual(presentStudentCourseRow(unshelved), { code: 'BUA205', title: 'BUA205 institutional title', unavailable: 'temporary' })
-  assert.deepEqual(presentStudentCourseRow(noLearning), { code: 'BUA207', title: 'BUA207 institutional title', unavailable: 'missing' })
+  assert.deepEqual(presentStudentCourseRow(noLearning), { code: 'BUA207', title: 'BUA207 institutional title', unavailable: 'missing',
+    href: '/courses/empty-slug' })
   assert.deepEqual(presentStudentCourseRow(unavailable), { code: 'BUA209', title: 'BUA209 institutional title', unavailable: 'temporary' })
 })
 
@@ -101,8 +103,9 @@ test('repository-only courses present honestly: shelved AND ready links, otherwi
   assert.match(html, /Shelved repository title/)
   assert.doesNotMatch(html, /BUA|undefined/)
   const missing = repositoryTitle(repositoryOnly('repo-empty', { state: 'no-published-learning', study: study({}) }))
-  assert.deepEqual(presentStudentCourseRow(missing), { repositoryOnly: true, title: 'Shelved repository title', unavailable: 'missing' })
-  assert.match(await render(missing), /Study materials are not available\./)
+  assert.deepEqual(presentStudentCourseRow(missing), { repositoryOnly: true, title: 'Shelved repository title', unavailable: 'missing',
+    href: '/courses/repo-empty' })
+  assert.match(await render(missing), /No study materials yet/)
   const temporary = repositoryTitle(repositoryOnly('repo-failed', { state: 'temporarily-unavailable', reason: 'projection-failed' }))
   assert.deepEqual(presentStudentCourseRow(temporary), { repositoryOnly: true, title: 'Shelved repository title', unavailable: 'temporary' })
   const inert = await render(temporary)
@@ -150,10 +153,12 @@ test('the student row adapter preserves outside-list and both selection recovery
   }
 })
 
-test('repository-only not-available rows stay inert and offer neither a plan nor an addition', async () => {
+test('repository-only missing materials open their own page without any inline action', async () => {
   const unavailable = repositoryTitle(repositoryOnly('repo-unavailable', { state: 'not-available' }))
   const html = await render(unavailable)
   assert.match(html, /Shelved repository title|Additional study material/)
-  assert.match(html, /Study materials are not available./)
-  assert.doesNotMatch(html, /<a\b|<button\b|Included with a plan|Message us|Practise from your notes/)
+  assert.match(html, /No study materials yet/)
+  assert.equal(anchors(html).length, 1)
+  assert.match(html, /href="\/courses\/repo-unavailable"/)
+  assert.doesNotMatch(html, /<button\b|Included with a plan|Message us|Practise from your notes|Campus Bot|underline/)
 })

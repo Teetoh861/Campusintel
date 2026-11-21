@@ -93,6 +93,21 @@ async function page(file, args, state = {}) {
 
 const confirm = (plan, state, status) => page('./page.tsx', { searchParams: Promise.resolve({ plan, status }) }, state)
 
+test('the Session alternative appears only for a Semester tier with its own Session plan on sale', async () => {
+  for (const [tier, price, saving] of [['standard', '₦7,000', '₦1,000'], ['plus', '₦11,000', '₦1,000']]) {
+    const { html } = await confirm(`${tier}_semester`, {})
+    assert.ok(text(html).includes(`Pay for the whole session instead: ${price} for both semesters, save ${saving}.`))
+    assert.match(html, new RegExp(`href="/access/checkout\\?plan=${tier}_session"[^>]*>Switch to Session</a>`))
+    assert.match(html, /<checkout-form/, 'the alternative never replaces or blocks paying')
+    const session = await confirm(`${tier}_session`, {})
+    assert.doesNotMatch(session.html, /Pay for the whole session|Switch to Session/)
+    const semesterOnly = await confirm(`${tier}_semester`, { entitlement: { plans: catalogue.filter(plan => plan.plan !== `${tier}_session`) } })
+    assert.doesNotMatch(semesterOnly.html, /Pay for the whole session|Switch to Session/)
+  }
+  const closed = await confirm('standard_semester', { entitlement: { plans_on_sale: false } })
+  assert.doesNotMatch(closed.html, /Pay for the whole session|Switch to Session/)
+})
+
 test('Confirm courses: the plan, its catalogue price, the study context, the course list and one form with no amount', async () => {
   const { html } = await confirm('standard_semester', {})
   const words = text(html)

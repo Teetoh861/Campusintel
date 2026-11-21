@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
-import { RETURN_COPY, naira, paymentReference, paymentSupportMessage, planName, subscribedBody }
+import { CAMPUS_BOT_PLAN_LINE, RETURN_COPY, naira, paymentReference, paymentSupportMessage, planName, subscribedBody }
   from '@/lib/entitlements/presentation'
 import { readOrderAnswer } from '@/lib/payments/order-view'
 import { RECEIPTS_PATH, checkoutHref } from '@/lib/payments/paths'
@@ -126,26 +126,30 @@ export function ReturnStatus({ orderId, initial, courseCount, features }: { orde
               className="font-semibold text-student-primary underline underline-offset-2">{RETURN_COPY.messageUs}</a></p> : null}
         </>} />
     }
-    case 'paid': return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state="paid">
-      <div className="grid gap-3">
-        <CircleCheck aria-hidden="true" size={24} className="text-student-success" />
-        <h1 className="student-page-band-title">{RETURN_COPY.subscribedTitle}</h1>
-        <p className="text-student-text-secondary">{subscribedBody({ tier: order.tier, period: order.period,
-          ends_at: order.ends_at, second_starts_at: order.second_starts_at })}</p>
+    case 'paid': {
+      // Both paid tiers include Campus Bot, even while the course-material read is still catching up.
+      const nowOpen = [...new Set([...(features ?? []), CAMPUS_BOT_PLAN_LINE])]
+      return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state="paid">
+        <div className="grid gap-3">
+          <CircleCheck aria-hidden="true" size={24} className="text-student-success" />
+          <h1 className="student-page-band-title">{RETURN_COPY.subscribedTitle}</h1>
+          <p className="text-student-text-secondary">{subscribedBody({ tier: order.tier, period: order.period,
+            ends_at: order.ends_at, second_starts_at: order.second_starts_at })}</p>
+        </div>
+        <div className="student-surface">
+          <h2 className="font-bold text-student-text-primary">{RETURN_COPY.nowOpen(courseCount)}</h2>
+          <ul className="mt-3 grid gap-2.5">{nowOpen.map(item => <li key={item}
+            className="flex items-start gap-2.5 text-sm text-student-text-primary">
+            <Check aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-student-primary" /><span>{item}</span></li>)}</ul>
+        </div>
+        <div className="grid gap-2 tablet:flex">
+          <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+            className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.startStudying}</Link>
+          <Link href={`${RECEIPTS_PATH}/${order.order_id}`} prefetch={false}
+            className={studentAction(btnGhost, 'bg-student-surface')}>{RETURN_COPY.viewReceipt}</Link>
+        </div>
       </div>
-      {features !== null && features.length > 0 && <div className="student-surface">
-        <h2 className="font-bold text-student-text-primary">{RETURN_COPY.nowOpen(courseCount)}</h2>
-        <ul className="mt-3 grid gap-2.5">{features.map(item => <li key={item}
-          className="flex items-start gap-2.5 text-sm text-student-text-primary">
-          <Check aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-student-primary" /><span>{item}</span></li>)}</ul>
-      </div>}
-      <div className="grid gap-2 tablet:flex">
-        <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
-          className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.startStudying}</Link>
-        <Link href={`${RECEIPTS_PATH}/${order.order_id}`} prefetch={false}
-          className={studentAction(btnGhost, 'bg-student-surface')}>{RETURN_COPY.viewReceipt}</Link>
-      </div>
-    </div>
+    }
     case 'failed': return <Outcome icon="alert" title={RETURN_COPY.failedTitle} body={RETURN_COPY.failedBody} alert order={order}
       actions={<><Link href={checkoutHref(order.plan)} prefetch={false}
         className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.tryAgain}</Link>{support()}</>} />

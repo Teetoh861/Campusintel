@@ -49,7 +49,6 @@ async function Bookmarks(): Promise<ReactElement> {
         if (lookup.status === 'ok' || lookup.status === 'repository-only') resolved.push(lookup.course)
         else if (lookup.status !== 'not-found') { result = { status: lookup.status }; break }
       }
-      // A bookmarked course may be outside the student's current list, where Campus Bot does not open.
       if (result.status === 'ok') campusBotLinks = await readCampusBotLinks(client, context.user, resolved)
     }
   } catch { result = { status: 'unavailable' } }

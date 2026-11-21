@@ -1,7 +1,6 @@
 // components/student/StudentCourseRow.tsx — The one adapter from central course truth to the shared course row.
 import { getStudentCourseUnavailability, isActionableStudentCourse, isInstitutionalStudentCourse,
   isLockedStudentCourse } from '@/lib/courses/read-model'
-import { isCampusBotRow } from '@/lib/ai-practice/campus-bot-courses'
 import { aiPracticePath } from '@/lib/ai-practice/routes'
 import { CourseRow } from './CourseRow'
 import { getStudyFamilyLabels } from './study-families'
@@ -24,11 +23,11 @@ export function presentStudentCourseRow(course: PresentableStudentCourse,
   if (!isActionableStudentCourse(course)) {
     const reason = getStudentCourseUnavailability(course)
     const unavailable = reason === 'missing' ? 'missing' : 'temporary'
-    // PRD 4.3: an institutional course with no built content offers the secondary, personal AI path, on the rows
-    // where its page opens for this student.
-    const aiPracticeHref = isInstitutionalStudentCourse(course) && isCampusBotRow(course) &&
-      campusBotLinks?.has(course.institutionalCourseId) ? aiPracticePath(course.institutionalCourseId) : undefined
-    return { ...identity, unavailable, ...(aiPracticeHref ? { aiPracticeHref } : {}) }
+    // Prefer the course page; without one, link only where Campus Bot opens for this student.
+    const href = unavailable !== 'missing' ? undefined : course.repository.state === 'shelved'
+      ? course.repository.route.href : isInstitutionalStudentCourse(course) && campusBotLinks?.has(course.institutionalCourseId)
+        ? aiPracticePath(course.institutionalCourseId) : undefined
+    return { ...identity, unavailable, ...(href ? { href } : {}) }
   }
   return { ...identity, href: course.repository.route.href, learningTypes: getStudyFamilyLabels(course.content.study) }
 }
@@ -40,7 +39,7 @@ export function StudentCourseRow({ course, progress, trailingAction, plansOnSale
   trailingAction?: ReactNode
   /** The copy switch (plans_on_sale). */
   plansOnSale?: boolean
-  /** The courses whose Campus Bot link opens for this student (readCampusBotLinks). Without it no row shows the link. */
+  /** The courses where Campus Bot opens for this student (readCampusBotLinks). */
   campusBotLinks?: ReadonlySet<string>
 }): ReactElement {
   return <CourseRow {...presentStudentCourseRow(course, { plansOnSale, campusBotLinks })} progress={progress}

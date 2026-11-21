@@ -34,14 +34,17 @@ export function CheckoutForm({ plan, priceKobo, expectedRevision, requestId, con
     <input type="hidden" name="request_id" value={requestId} />
     <input type="hidden" name="return_path" value={STUDENT_DESTINATIONS.access.href} />
     <input type="hidden" name="continuity" value={continuityToken} />
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-start justify-end gap-2">
       <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
         className={studentAction(btnGhost, 'bg-student-surface')}>{CONFIRM_COPY.notNow}</Link>
-      <button type="submit" disabled={submitting} aria-busy={submitting}
-        className={studentAction(btnNavy, studentFocusDark, 'min-w-0 flex-1 tablet:flex-none tablet:min-w-[280px]')}>
-        {submitting ? <><LoaderCircle aria-hidden="true" size={16} className="mr-2 animate-spin motion-reduce:animate-none" />
-          {CONFIRM_COPY.opening}</> : CONFIRM_COPY.pay(priceKobo)}
-      </button>
+      <div className="min-w-0 flex-1 tablet:flex-none">
+        <button type="submit" disabled={submitting} aria-busy={submitting}
+          className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:min-w-[280px] disabled:text-student-primary')}>
+          {submitting ? <><LoaderCircle aria-hidden="true" size={16} className="mr-2 animate-spin motion-reduce:animate-none" />
+            {CONFIRM_COPY.opening}</> : CONFIRM_COPY.pay(priceKobo)}
+        </button>
+        <p className="mt-2 text-center text-xs text-student-text-secondary">{CONFIRM_COPY.securePayment}</p>
+      </div>
     </div>
     <p className="sr-only" role="status" aria-live="polite">{submitting ? CONFIRM_COPY.opening : ''}</p>
   </form>
