@@ -1,507 +1,200 @@
-// Course detail (/courses/[slug]) — Variant B "continuous blue" reskin.
-// Server-rendered. Section order and conditional rendering are unchanged from
-// the dossier version. The cover leads into a compact accordion of the visible
-// study sections, followed by the navy closing quiz CTA. Real course/quiz data
-// throughout.
+// app/courses/[slug]/page.tsx — Account-gated Course Detail study hub composed from central one-course truth.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { courses, getCourseBySlug } from '@/lib/data/courses'
-import { getQuizByCourseSlug } from '@/lib/data/quizzes'
-import {
-  getTheoryContentBySlug,
-  type TheoryQuestion,
-} from '@/lib/data/theory-questions'
-import type {
-  Course,
-  Topic,
-  Textbook,
-  KeyTakeaway,
-  Resource,
-  FormulaEntry,
-} from '@/lib/types'
-import { SignalBar, type DifficultyLevel } from '@/components/chrome/SignalBar'
-import { btnAccent, btnBase, btnGhostOnBlue, btnNavy, btnSm, cx } from '@/components/chrome/ui'
+import { cache } from 'react'
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { DiscoveryOffer } from '@/components/student/DiscoveryOffer'
+import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
+import { Notice } from '@/components/student/Notice'
+import { REPOSITORY_COURSE_LABEL } from '@/components/student/CourseRow'
+import { PageBand } from '@/components/student/PageBand'
+import { ResultNotice } from '@/components/student/ResultNotice'
+import { StudentPage } from '@/components/student/StudentPage'
+import { redirectForStudentState } from '@/components/student/result-state'
+import { STUDY_COPY } from '@/components/student/study-families'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { buildTimeStudy } from '@/lib/courses/build-time-study'
+import { getStudentCourseBySlugForVerifiedStudent, hasActiveCourseOffering } from '@/lib/courses/read-model'
+import { courses } from '@/lib/data/courses'
+import { discoveryOffered } from '@/lib/entitlements/contract'
+import { freeMonthClaim, trialWording } from '@/lib/entitlements/presentation'
+import type { FreeMonthClaim } from '@/lib/entitlements/presentation'
+import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
+import { readProfileRevision } from '@/lib/profile/course-selection'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { createClient } from '@/lib/supabase/server'
 import { BookmarkButton } from './BookmarkButton'
-import {
-  CourseAccordion,
-  type CourseAccordionSection,
-} from './CourseAccordion'
+import { CourseViewTracker } from './CourseViewTracker'
+import { readTopicRows } from './practice/load'
+import { NotesCard, OverviewSection, PracticeCard, ReadingList, StudyNav, TheoryCard, studySections } from './sections'
+import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
+import type { DiscoveryPass } from '@/components/student/DiscoveryOffer'
+import type { PracticeTopicRow } from '@/lib/practice/topics'
+import type { StudySectionId } from './sections'
+import type { Metadata } from 'next'
+import type { ReactElement } from 'react'
 
 type PageProps = { params: Promise<{ slug: string }> }
+type ResolvedCourse = Extract<StudentCourseLookupResult, { status: 'ok' | 'repository-only' }>
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
 
-export function generateStaticParams() {
-  return courses.map((c) => ({ slug: c.slug }))
-}
+// Legacy local bookmark aliases only; course identity never comes from this list.
+const BOOKMARK_CATALOG = courses.map(({ slug, code, contentKey }) => ({ slug, code, contentKey }))
 
-const toLevel = (d: Course['difficulty']): DifficultyLevel =>
-  d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
+/**
+ * The one verified course read of a request, shared by the browser tab's title and the page. Course identity is read
+ * only for a live student session, here as everywhere.
+ */
+const readCourse = cache(async (slug: string) => {
+  const client = await createClient()
+  const context = await getStudentSessionContext(undefined, client)
+  const result: StudentCourseLookupResult = context === null ? { status: 'signed-out' }
+    : await getStudentCourseBySlugForVerifiedStudent(client, slug)
+  return { client, context, result }
+})
 
-const semesterLabel = (n: number) =>
-  n === 1 ? 'First' : n === 2 ? 'Second' : String(n)
-
-// Section descriptors — each appears only when its data is present. Numbers are
-// assigned at render time from the visible subset.
-type SectionId =
-  | 'overview'
-  | 'takeaways'
-  | 'topics'
-  | 'exam'
-  | 'formulas'
-  | 'textbooks'
-  | 'theory'
-  | 'resources'
-
-type SectionDescriptor = {
-  id: SectionId
-  tocLabel: string
-}
-
-const SECTION_ORDER: ReadonlyArray<SectionDescriptor> = [
-  { id: 'overview', tocLabel: 'Overview' },
-  { id: 'takeaways', tocLabel: 'Key takeaways' },
-  { id: 'topics', tocLabel: 'Topics' },
-  { id: 'exam', tocLabel: 'Exam focus' },
-  { id: 'formulas', tocLabel: 'Formula sheet' },
-  { id: 'textbooks', tocLabel: 'Textbooks' },
-  { id: 'theory', tocLabel: 'Theory questions' },
-  { id: 'resources', tocLabel: 'Resources' },
-]
-
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
-export default async function CourseDetailPage({ params }: PageProps) {
+/** The tab names the course as the page does: the student's own course code and title, never an unverified one. */
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params
-  const course = getCourseBySlug(slug)
-  if (!course) notFound()
-  const quiz = getQuizByCourseSlug(slug)
-  const theory = getTheoryContentBySlug(slug)
+  const robots = { index: false, follow: false }
+  try {
+    const { result } = await readCourse(slug)
+    if (result.status === 'ok') return { title: `${result.course.code} ${result.course.title} | CampusIntell`, robots }
+    if (result.status === 'repository-only') {
+      const { code, title } = result.course.repository.route.course
+      return { title: `${code} ${title} | CampusIntell`, robots }
+    }
+  } catch { /* The page says what went wrong; the tab keeps the site's own title. */ }
+  return { robots }
+}
 
-  const takeaways = course.keyTakeaways ?? []
-  const theoryQuestions = theory?.theoryQuestions ?? []
-  const formulaSheet = course.formulaSheet ?? []
+/** Cross the student account boundary before any course content is read. */
+export default async function CourseDetailPage({ params }: PageProps): Promise<ReactElement> {
+  const { slug } = await params
+  return <StudentAccessGate returnPath={`/courses/${slug}`}>
+    {continuityToken => <CourseDetail slug={slug} continuityToken={continuityToken} />}
+  </StudentAccessGate>
+}
 
-  const visible: ReadonlyArray<SectionDescriptor> = SECTION_ORDER.filter((s) => {
-    if (s.id === 'overview') return Boolean(course.overview)
-    if (s.id === 'takeaways') return takeaways.length > 0
-    if (s.id === 'topics') return course.topics.length > 0
-    if (s.id === 'exam') return course.examFocus.length > 0
-    if (s.id === 'formulas') return formulaSheet.length > 0
-    if (s.id === 'textbooks') return course.textbooks.length > 0
-    if (s.id === 'theory') return theoryQuestions.length > 0
-    if (s.id === 'resources') return true // resources renders its empty-state when none
-    return false
+/** Resolve the one-course truth on a fresh request-scoped client after the gate. */
+async function CourseDetail({ slug, continuityToken }: { slug: string; continuityToken: string }): Promise<ReactElement> {
+  let result: StudentCourseLookupResult
+  // Read only for a locked course that is offered now: an active Discovery Pass offers previews in place of the locked
+  // notice. Repository-only and retired courses have no previews.
+  let pass: DiscoveryPass | null = null
+  // Mentioned only when this account can still start a pass: the database offers one (a database from before the
+  // pass offers none) and the account has not had its one trial.
+  let passHours: number | null = null
+  // The free month, only when the database says this student can claim it now (and never without the profile revision
+  // the month would be bound to). Read only for a locked course on the student's own list.
+  let freeMonth: FreeMonthClaim | null = null
+  // The copy switch for the lock notice (plans_on_sale), read only for a locked course.
+  let plansOnSale = false
+  // The course's practice topics with this student's progress. A topic read that fails leaves Exam mode only, never the
+  // page unavailable.
+  let topics: PracticeTopicRow[] = []
+  try {
+    const { client, context, result: read } = await readCourse(slug)
+    result = read
+    if (result.status === 'ok' && result.course.content.state === 'locked' && result.course.content.reason === undefined && hasActiveCourseOffering(result.course)) {
+      const [read, profileRevision] = await Promise.all([readEntitlementForVerifiedStudent(client, { freeMonth: true }),
+        context === null ? null : readProfileRevision(client, context.user.id)])
+      const entitlement = read.status === 'ok' ? read.entitlement : null
+      passHours = entitlement !== null && trialWording(entitlement).passAvailable ? entitlement.trial_hours : null
+      freeMonth = entitlement === null ? null : freeMonthClaim(entitlement, continuityToken, profileRevision)
+      pass = discoveryOffered(entitlement) && entitlement.trial.status === 'active' && entitlement.trial.policy === 'discovery'
+        ? { discovery: entitlement.discovery, endsAt: entitlement.trial.ends_at } : null
+    }
+    if ((result.status === 'ok' || result.status === 'repository-only') && result.course.content.state === 'locked') {
+      plansOnSale = await readPlansOnSale(client)
+    }
+    if (context !== null && (result.status === 'ok' || result.status === 'repository-only') && result.practice !== null) {
+      const { repositoryCourseId, route } = result.course.repository
+      topics = await readTopicRows(client, context.sessionId, { slug: route.slug, repositoryCourseId }) ?? []
+    }
+  } catch { result = { status: 'unavailable' } }
+  if (result.status === 'ok' || result.status === 'repository-only') {
+    return <CourseStudyHub result={result} pass={pass} passHours={passHours} topics={topics}
+      continuityToken={continuityToken} plansOnSale={plansOnSale} freeMonth={freeMonth} />
+  }
+  if (result.status === 'not-found') return notFound()
+  if (result.status === 'signed-out') return redirectForStudentState('signed-out', `/courses/${slug}`)
+  return <CourseUnavailable status={result.status} slug={slug} />
+}
+
+/** Fail closed without any unverified course identity. */
+function CourseUnavailable({ status, slug }: { status: 'unavailable' | 'invariant-failure'; slug: string }): ReactElement {
+  return <StudentPage band={<PageBand title="Course" />}>
+    <ResultNotice state={status === 'invariant-failure' ? 'course-invariant' : 'course-unavailable'}
+      retryHref={`/courses/${encodeURIComponent(slug)}`}
+      extra={status === 'unavailable' && <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false}
+        className={studentAction(btnGhost, 'bg-student-surface')}>{STUDENT_DESTINATIONS.materials.label}</Link>} />
+  </StudentPage>
+}
+
+function RequestMaterialLink({ href, prominent = false }: { href: string; prominent?: boolean }): ReactElement {
+  return <Link href={href} prefetch={false}
+    className={prominent ? studentAction(btnNavy, studentFocusDark) : studentAction(btnGhost, 'bg-student-surface')}>
+    Request material
+  </Link>
+}
+
+/** Compose institutional or repository identity, availability and the study families from central truth. */
+function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plansOnSale, freeMonth }: {
+  result: ResolvedCourse; pass: DiscoveryPass | null; passHours: number | null; topics: ReadonlyArray<PracticeTopicRow>
+  continuityToken: string; plansOnSale: boolean; freeMonth: FreeMonthClaim | null
+}): ReactElement {
+  const { learning, practice } = result
+  const { repository, content } = result.course
+  const institutional = result.status === 'ok' ? result.course : null
+  const { route } = repository
+  const code = institutional?.code ?? route.course.code
+  const title = institutional?.title ?? route.course.title
+  const materialsHref = `${route.href}/materials`
+  const locked = content.state === 'locked'
+  const scopeNotice = content.state === 'locked' && content.reason !== undefined
+  const study = content.state === 'ready' ? content.study : null
+  const sections = locked || content.state === 'not-available' ? [] : studySections({
+    study, learning, practice, textbooks: route.course.textbooks.length,
   })
-
-  const quizHref = `/courses/${course.slug}/quiz`
-  const materialsHref = `/courses/${course.slug}/materials`
-  const questionsValue = quiz
-    ? `${Math.min(quiz.maxQuizQuestions, quiz.totalQuestions)} questions per attempt · ${quiz.totalQuestions}-question bank`
-    : 'N/A'
-  const quizTimeValue = quiz ? `${quiz.quizDurationMinutes} min` : 'N/A'
-
-  const accordionSections: ReadonlyArray<CourseAccordionSection> = visible.flatMap<CourseAccordionSection>((section) => {
-    if (section.id === 'overview') return []
-    if (section.id === 'takeaways') {
-      return [{
-        id: section.id,
-        label: section.tocLabel,
-        content: (
-          <AccordionSectionContent h2="Core principles">
-            <Takeaways items={takeaways} />
-          </AccordionSectionContent>
-        ),
-      }]
-    }
-    if (section.id === 'topics') {
-      return [{
-        id: section.id,
-        label: section.tocLabel,
-        content: (
-          <AccordionSectionContent h2="Syllabus contents">
-            <Topics items={course.topics} />
-          </AccordionSectionContent>
-        ),
-      }]
-    }
-    if (section.id === 'exam') {
-      return [{
-        id: section.id,
-        label: section.tocLabel,
-        content: (
-          <div className="rounded-[20px] border border-ci-accent-100 bg-[linear-gradient(180deg,var(--ci-accent-50),var(--ci-white)_42%)] p-[30px_26px] shadow-ci-card">
-            <span className="inline-flex items-center gap-[9px] rounded-full border border-ci-accent-100 bg-ci-white px-[13px] py-[6px] text-[12px] font-bold uppercase tracking-[0.12em] text-ci-accent-600">
-              <span className="h-[6px] w-[6px] rounded-full bg-ci-accent" />
-              Exam intelligence
-            </span>
-            <h2 className="mt-[18px] text-[clamp(22px,3.4vw,28px)] font-extrabold tracking-[-0.025em] text-ci-navy-900">
-              Areas worth reviewing
-            </h2>
-            <p className="mt-3 max-w-[60ch] text-[16px] leading-[1.55] text-ci-gray-600">
-              High-yield areas pulled from past papers. If your time is short, study these first.
-            </p>
-            <ExamFocus items={course.examFocus} />
-          </div>
-        ),
-      }]
-    }
-    if (section.id === 'formulas') {
-      return [{
-        id: section.id,
-        label: section.tocLabel,
-        content: (
-          <AccordionSectionContent h2="Formulas & worked examples">
-            <FormulaSheet items={formulaSheet} />
-          </AccordionSectionContent>
-        ),
-      }]
-    }
-    if (section.id === 'textbooks') {
-      return [{
-        id: section.id,
-        label: section.tocLabel,
-        content: (
-          <AccordionSectionContent h2="The reading">
-            <Textbooks items={course.textbooks} />
-          </AccordionSectionContent>
-        ),
-      }]
-    }
-    if (section.id === 'theory') {
-      return [{
-        id: section.id,
-        label: section.tocLabel,
-        content: (
-          <AccordionSectionContent h2="Likely written questions">
-            <TheoryList items={theoryQuestions} />
-          </AccordionSectionContent>
-        ),
-      }]
-    }
-    return [{
-      id: section.id,
-      label: section.tocLabel,
-      content: (
-        <AccordionSectionContent h2="Files to download">
-          <Resources items={course.resources} slug={course.slug} />
-        </AccordionSectionContent>
-      ),
-    }]
-  })
-
-  // Closing-band kicker, built from the real attempt cap and bank size.
-  const closingKicker = [
-    course.code,
-    quiz ? questionsValue : null,
-    quiz ? `${quiz.quizDurationMinutes} minutes` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
-
-  return (
-    <>
-      {/* ===================== COVER (continuous blue) ===================== */}
-      <header
-        className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ci-navy),var(--ci-navy-900))] text-white"
-        data-screen-label="Cover"
-      >
-        <DashedRing className="absolute right-[-60px] top-[-40px] z-0 h-[300px] w-[300px] text-ci-blue-600 opacity-50" />
-        <div className={cx(WRAP, 'relative z-[1] pb-11 pt-[30px] min-[900px]:pb-[60px] min-[900px]:pt-10')}>
-          <nav className="mb-[30px] flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200" aria-label="Breadcrumb">
-            <Link href="/" className="transition-colors hover:text-white">Home</Link>
-            <span className="text-white/35">/</span>
-            <Link href="/courses" className="transition-colors hover:text-white">Courses</Link>
-            <span className="text-white/35">/</span>
-            <span className="text-white">{course.title}</span>
-          </nav>
-
-          <div className="text-[13px] font-bold uppercase tracking-[0.14em] text-ci-accent">{course.code}</div>
-          <h1 className="mt-3 text-balance text-[clamp(38px,7vw,64px)] font-extrabold leading-none tracking-[-0.035em] text-white">
-            {course.title}
-          </h1>
-          <p className="mt-5 max-w-[54ch] text-[clamp(17px,2.2vw,20px)] leading-[1.5] text-ci-blue-150">
-            {course.overview}
-          </p>
-
-          <div className="mt-[30px] flex w-full max-w-[560px] flex-col gap-3">
-            <Link className={cx(btnBase, btnAccent, 'w-full')} href={quizHref}>
-              Start quiz
-            </Link>
-            <div className="flex w-full items-center gap-3">
-              <Link className={cx(btnBase, btnGhostOnBlue, 'min-w-0 flex-1')} href={materialsHref}>
-                Request material privately
-              </Link>
-              <BookmarkButton slug={course.slug} variant="cover" />
-            </div>
-          </div>
-
-          <div className="mt-10 grid grid-cols-2 gap-px overflow-hidden rounded-[14px] border border-white/[0.14] bg-white/[0.14] min-[680px]:grid-cols-3 min-[900px]:grid-cols-6">
-            <Meta k="Level" v={String(course.level)} />
-            <Meta k="Semester" v={semesterLabel(course.semester)} />
-            <Meta k="Credits" v={`${course.credits} CR`} />
-            <Meta k="Difficulty">
-              <SignalBar level={toLevel(course.difficulty)} tone="on-blue" />
-              {course.difficulty}
-            </Meta>
-            <Meta k="Practice quiz" v={questionsValue} />
-            <Meta k="Quiz time" v={quizTimeValue} />
-          </div>
-        </div>
-      </header>
-
-      {/* ===================== BODY: course accordion ===================== */}
-      <div className="pt-14 min-[900px]:pt-[72px]">
-        <div className={WRAP}>
-          <CourseAccordion sections={accordionSections} />
-        </div>
-      </div>
-
-      {/* ===================== CLOSING QUIZ CTA ===================== */}
-      <section className="pb-20 pt-16" id="quiz" data-screen-label="Quiz entry">
-        <div className={WRAP}>
-          <div className="relative overflow-hidden rounded-[24px] bg-ci-navy p-[48px_26px] text-center text-white min-[900px]:p-[72px_40px]">
-            <DashedRing className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 text-ci-blue-600 opacity-45" />
-            <div className="relative z-[1] flex flex-col items-center">
-              <span className="text-[12px] font-bold uppercase tracking-[0.14em] text-ci-accent">{closingKicker}</span>
-              <h2 className="mt-[14px] text-[clamp(30px,5vw,48px)] font-extrabold leading-none tracking-[-0.03em] text-white">
-                Sit the mock.
-              </h2>
-              <p className="mt-4 max-w-[46ch] text-[17px] leading-[1.55] text-ci-blue-200">
-                Practice a fresh selection under exam conditions. You will know exactly where you stand before the hall does.
-              </p>
-              <div className="mt-[30px] flex flex-wrap justify-center gap-[13px]">
-                <Link className={cx(btnBase, btnAccent)} href={quizHref}>
-                  Start practice quiz
-                </Link>
-                <BookmarkButton slug={course.slug} variant="closing" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </>
-  )
-}
-
-// ---- accordion content scaffolding ----
-function AccordionSectionContent({
-  h2,
-  children,
-}: {
-  h2: string
-  children: React.ReactNode
-}) {
-  return (
-    <>
-      <h2 className="text-[clamp(26px,4vw,34px)] font-extrabold leading-[1.05] tracking-[-0.03em] text-ci-navy-900">
-        {h2}
-      </h2>
-      <div className="mt-5">{children}</div>
-    </>
-  )
-}
-
-function Prose({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="[&>p]:mt-4 [&>p]:max-w-[64ch] [&>p]:text-[17px] [&>p]:leading-[1.65] [&>p]:text-ci-gray-600 [&>p:first-child]:mt-0">
-      {children}
+  const contents = sections.length >= 2
+  const number = (id: StudySectionId) => sections.indexOf(id) + 1
+  return <StudentPage workspaceClassName="student-detail-workspace" band={<>
+    <CourseViewTracker courseSlug={route.slug} />
+    <PageBand title={title}
+      context={<p>{institutional ? <>{code}{institutional.isFree && ' · Free'}</> : <>{REPOSITORY_COURSE_LABEL} · {code}</>}</p>}
+      aside={<div className="student-band-actions">
+        {content.state === 'ready' ? <RequestMaterialLink href={materialsHref} /> : <span />}
+        <BookmarkButton slug={route.slug} code={route.course.code} contentKey={repository.contentKey} catalog={BOOKMARK_CATALOG} />
+      </div>} />
+  </>}>
+    {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}
+    <div className="student-detail-reading">
+      {!institutional && content.state !== 'not-available'
+        && <Notice tone="info" title="Check this against your course outline." />}
+      {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
+        plansOnSale={plansOnSale} has={buildTimeStudy(route.slug)} freeMonth={scopeNotice ? null : freeMonth} />
+        : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
+      {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
+        <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
+        <RequestMaterialLink href={materialsHref} />
+      </>} />}
+      {content.state === 'not-available' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}>{null}</Notice>}
+      {content.state === 'no-published-learning' && <Notice tone="info" title={STUDY_COPY.notYetAvailable}
+        action={<RequestMaterialLink href={materialsHref} prominent />} />}
+      {sections.includes('notes') && learning && <NotesCard notes={learning.notes} href={`${route.href}/notes`}
+        number={number('notes')} />}
+      {sections.includes('cbtPractice') && practice && <PracticeCard practice={practice} topics={topics}
+        topicsHref={`${route.href}/practice`} number={number('cbtPractice')} />}
+      {sections.includes('theory') && learning && <TheoryCard questions={learning.theoryQuestions.length}
+        href={`${route.href}/theory`} number={number('theory')} />}
+      {sections.includes('overview') && learning?.overview && <OverviewSection overview={learning.overview}
+        number={number('overview')} />}
+      {sections.includes('reading') && <ReadingList textbooks={route.course.textbooks} number={number('reading')} />}
     </div>
-  )
-}
-
-function Meta({ k, v, children }: { k: string; v?: string; children?: React.ReactNode }) {
-  return (
-    <div className="bg-ci-navy p-[16px_18px]">
-      <div className="text-[11px] font-bold uppercase tracking-[0.13em] text-ci-blue-200">{k}</div>
-      <div className="mt-2 flex items-center gap-[9px] text-[17px] font-bold text-white">{children ?? v}</div>
-    </div>
-  )
-}
-
-function Takeaways({ items }: { items: ReadonlyArray<KeyTakeaway> }) {
-  return (
-    <ol className="grid grid-cols-1 gap-[14px]">
-      {items.map((t, i) => (
-        <li
-          key={i}
-          className="flex gap-[18px] rounded-[16px] border border-ci-border bg-ci-white p-[22px_24px] shadow-ci-card"
-        >
-          <span className="flex-none pt-[3px] text-[13px] font-bold tracking-[0.06em] text-ci-accent-600">{pad2(i + 1)}</span>
-          <div className="min-w-0">
-            <h3 className="text-[18px] font-bold tracking-[-0.015em] text-ci-navy-900">{t.title}</h3>
-            <p className="mt-[7px] text-[15px] leading-[1.55] text-ci-gray-600">{t.description}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function Topics({ items }: { items: ReadonlyArray<Topic> }) {
-  return (
-    <div className="overflow-hidden rounded-[16px] border border-ci-border bg-ci-white shadow-ci-card">
-      {items.map((t, i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[auto_1fr] items-baseline gap-3 border-b border-ci-border p-[16px_22px] last:border-b-0 min-[640px]:grid-cols-[88px_1fr] min-[640px]:gap-[18px]"
-        >
-          <span className="whitespace-nowrap text-[12px] font-bold uppercase tracking-[0.06em] text-ci-navy">CH {t.chapter}</span>
-          <span className="text-[15.5px] leading-[1.5] text-ci-gray-700">{t.description}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ExamFocus({ items }: { items: ReadonlyArray<string> }) {
-  return (
-    <ol className="mt-6 grid grid-cols-1 gap-4">
-      {items.map((line, i) => (
-        <li key={i} className="flex gap-4">
-          <span className="flex-none pt-[2px] text-[13px] font-bold text-ci-accent-600">/{pad2(i + 1)}</span>
-          <h3 className="text-[17px] font-bold tracking-[-0.01em] text-ci-navy-900">{line}</h3>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function Textbooks({ items }: { items: ReadonlyArray<Textbook> }) {
-  return (
-    <div className="grid grid-cols-1 gap-[14px]">
-      {items.map((b, i) => (
-        <div
-          key={i}
-          className="flex flex-col gap-3 rounded-[14px] border border-ci-border bg-ci-white p-[20px_22px] shadow-ci-card min-[640px]:flex-row min-[640px]:items-center min-[640px]:justify-between min-[640px]:gap-4"
-        >
-          <div className="min-w-0">
-            <h3 className="text-[17px] font-bold tracking-[-0.01em] text-ci-navy-900">{b.title}</h3>
-            <div className="mt-[6px] text-[13.5px] text-ci-gray-500">
-              {b.author}
-              {b.edition ? (
-                <>
-                  {' '}<span className="mx-1 text-ci-gray-400">·</span> {b.edition}
-                </>
-              ) : null}
-            </div>
-          </div>
-          {/* First entry is the core text per the comp; the rest are references.
-              self-start keeps the tag hugging the left when stacked on mobile. */}
-          <span className="flex-none self-start rounded-[7px] border border-ci-blue-100 bg-ci-blue-50 px-[10px] py-[5px] text-[11px] font-bold uppercase tracking-[0.08em] text-ci-navy min-[640px]:self-auto">
-            {i === 0 ? 'Core text' : 'Reference'}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// Formula sheet — one card per formula. The formula string is kept as clean
-// Unicode text (σ, μ, Σ, √, ±, ≤, ≥, superscripts — no LaTeX) and rides in an
-// overflow-x-auto rail so a long formula scrolls inside its own card rather
-// than forcing the page to scroll on mobile.
-function FormulaSheet({ items }: { items: ReadonlyArray<FormulaEntry> }) {
-  return (
-    <div className="grid grid-cols-1 gap-[14px] min-[720px]:grid-cols-2">
-      {items.map((f, i) => (
-        <div
-          key={i}
-          className="flex flex-col rounded-[16px] border border-ci-border bg-ci-white p-[22px_24px] shadow-ci-card"
-        >
-          <h3 className="text-[17px] font-bold tracking-[-0.015em] text-ci-navy-900">{f.name}</h3>
-          <div className="mt-3 overflow-x-auto rounded-[10px] border border-ci-blue-100 bg-ci-blue-50 px-[14px] py-[12px]">
-            <code className="block whitespace-nowrap font-mono text-[15px] font-semibold leading-[1.5] text-ci-navy">
-              {f.formula}
-            </code>
-          </div>
-          <p className="mt-3 text-[14.5px] leading-[1.55] text-ci-gray-600">{f.explanation}</p>
-          {f.example ? (
-            <div className="mt-[14px] border-t border-ci-border pt-[12px]">
-              <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-ci-accent-600">Example</div>
-              <p className="mt-[6px] text-[14px] leading-[1.55] text-ci-gray-700">{f.example}</p>
-            </div>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function TheoryList({ items }: { items: ReadonlyArray<TheoryQuestion> }) {
-  return (
-    <ol className="grid grid-cols-1 gap-3">
-      {items.map((q) => (
-        <li
-          key={q.id}
-          className="flex gap-4 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] shadow-ci-card"
-        >
-          <span className="flex-none pt-[2px] text-[13px] font-bold tracking-[0.04em] text-ci-accent-600">Q{q.id}</span>
-          <p className="text-[15.5px] leading-[1.55] text-ci-gray-700">{q.question}</p>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function Resources({ items, slug }: { items: ReadonlyArray<Resource>; slug: string }) {
-  const materialsHref = `/courses/${slug}/materials`
-  return (
-    <>
-      {items.length === 0 ? (
-        <div className="rounded-[16px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[40px_24px] text-center">
-          <div className="text-[17px] font-bold text-ci-navy-900">No materials yet</div>
-          <p className="mx-auto mt-2 max-w-[42ch] text-[14.5px] text-ci-gray-600">
-            Lecture notes, past questions and worked examples will appear here as coverage expands. Check back soon.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {items.map((r) => (
-            // Mobile: two stacked rows — [tag + full-width title] then
-            // [size · Request]. At >=640px the inner groups become `contents`
-            // so tag/title/size/action collapse into one horizontal flex row.
-            <Link
-              key={r.id}
-              href={materialsHref}
-              className="flex flex-col gap-3 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] shadow-ci-card transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-[2px] hover:border-ci-border-2 hover:shadow-ci-soft min-[640px]:flex-row min-[640px]:items-center min-[640px]:gap-4"
-            >
-              <div className="flex flex-col gap-2 min-[640px]:contents">
-                <span className="flex-none self-start rounded-[7px] bg-ci-blue-50 px-[9px] py-[6px] text-[12px] font-bold tracking-[0.04em] text-ci-navy min-[640px]:self-auto">
-                  {resourceTag(r.type)}
-                </span>
-                <span className="min-w-0 text-[15.5px] font-semibold text-ci-navy-900 min-[640px]:flex-1">{r.title}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4 min-[640px]:contents">
-                <span className="text-[13px] font-medium text-ci-gray-500">{r.fileSize ?? ''}</span>
-                <span className="whitespace-nowrap text-[14px] font-semibold text-ci-navy">Request</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-[18px] flex flex-wrap items-center justify-between gap-4 border-t border-ci-border pt-[18px]">
-        <span className="text-[14px] text-ci-gray-600">Have notes or past questions for this course?</span>
-        <Link className={cx(btnBase, btnSm, btnNavy)} href={materialsHref}>
-          Request or share materials
-        </Link>
-      </div>
-    </>
-  )
-}
-
-function resourceTag(type: Resource['type']) {
-  if (type === 'pdf') return 'PDF'
-  if (type === 'past-question') return 'PQ'
-  if (type === 'notes') return 'NOTES'
-  return 'LINK'
-}
-
-function DashedRing({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 200 200" fill="none" aria-hidden="true">
-      <circle cx="100" cy="100" r="90" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 12" strokeLinecap="round" />
-    </svg>
-  )
+  </StudentPage>
 }

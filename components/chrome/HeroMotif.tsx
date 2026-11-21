@@ -19,9 +19,9 @@ type Props = {
 export function HeroMotif({ tone = 'on-cream', shape, className, style }: Props) {
   const blobBg =
     tone === 'on-blue'
-      ? 'radial-gradient(120% 120% at 70% 20%, rgba(255,255,255,.12), rgba(255,255,255,.02))'
-      : 'radial-gradient(120% 120% at 70% 20%, var(--ci-blue-50), var(--ci-paper-2))'
-  const ringColor = tone === 'on-blue' ? 'text-ci-blue-400' : 'text-ci-blue-200'
+      ? 'radial-gradient(120% 120% at 70% 20%, var(--student-navigation-wash-start), var(--student-navigation-wash-end))'
+      : 'radial-gradient(120% 120% at 70% 20%, var(--student-motif-light-start), var(--student-motif-light-end))'
+  const ringColor = tone === 'on-blue' ? 'text-student-navigation-ring' : 'text-student-motif-light-ring'
 
   return (
     <div

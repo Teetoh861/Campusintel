@@ -1,10 +1,7 @@
-// SignalBar — Variant B difficulty indicator: three rising bars (4px wide,
-// heights 6/9/13px). "off" bars are ci-blue-100, lit bars ci-navy. Easy=1 lit,
-// Medium=2, Hard=3. Never colored pills. (component-spec.md → Card · Difficulty)
+// Shared three-bar difficulty indicator. Easy=1 lit, Medium=2, Hard=3.
 export type DifficultyLevel = 'easy' | 'medium' | 'hard'
 
-// tone controls the palette: the default warm-surface variant (navy lit bars on
-// ci-blue-100) and the on-blue cover variant (white lit bars on white-alpha).
+// Tone selects semantic colors for light surfaces or the navigation field.
 type Tone = 'navy' | 'on-blue'
 
 type Props = {
@@ -22,8 +19,8 @@ const LIT_FOR: Record<DifficultyLevel, number> = {
 const BAR_HEIGHTS = ['h-[6px]', 'h-[9px]', 'h-[13px]']
 
 const TONE: Record<Tone, { on: string; off: string }> = {
-  navy: { on: 'bg-ci-navy', off: 'bg-ci-blue-100' },
-  'on-blue': { on: 'bg-white', off: 'bg-white/[0.26]' },
+  navy: { on: 'bg-student-primary', off: 'bg-student-signal-track' },
+  'on-blue': { on: 'bg-student-navigation-text', off: 'bg-student-signal-track-inverse' },
 }
 
 export function SignalBar({ level, tone = 'navy', className }: Props) {

@@ -5,8 +5,15 @@
 import { BlueCover } from '@/components/chrome/BlueCover'
 import { buildWhatsAppUrl, WHATSAPP_NUMBER } from '@/lib/whatsapp'
 import { CONTACT_EMAIL } from '@/lib/contact'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+import type { ReactElement } from 'react'
+
+// Per-request, so a signed-in student's header is right from the first render.
+export const dynamic = 'force-dynamic'
+export const metadata = { title: `${STUDENT_DESTINATIONS.contact.label} | CampusIntell` }
+
+const WRAP = 'app-container'
 
 // Pretty-print a digits-only number for display. Conservatively NG-specific:
 // +234 ### ### #### when the input is a 13-digit number starting 234,
@@ -20,20 +27,20 @@ function formatPhone(digits: string): string {
   return `+${digits}`
 }
 
-export default function ContactPage() {
+/** Render the existing public information with shared responsive gutters. */
+export default function ContactPage(): ReactElement {
   const phoneDisplay = formatPhone(WHATSAPP_NUMBER)
   const telHref = `tel:+${WHATSAPP_NUMBER}`
   const waHref = buildWhatsAppUrl()
   return (
     <>
       <BlueCover
-        crumbs={[{ label: 'Home', href: '/' }, { label: 'Contact' }]}
-        kicker="Direct line · We read everything"
-        title="Get in touch"
-        lede="Questions, a course you want decoded, or a correction on the intel: reach us on whichever line suits you. WhatsApp is fastest."
+        crumbs={[{ label: 'Home', href: '/' }, { label: STUDENT_DESTINATIONS.contact.label }]}
+        title={STUDENT_DESTINATIONS.contact.label}
+        lede="Questions, missing materials or an error to report?"
       />
 
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Contact methods">
+      <section className="bg-ci-paper student-page" data-screen-label="Contact methods">
         <div className={WRAP}>
           <div className="mx-auto flex max-w-[680px] flex-col gap-4">
             {/* WhatsApp: the highlighted/primary method (amber-tinted) */}
@@ -74,7 +81,7 @@ export default function ContactPage() {
           </div>
 
           <p className="mx-auto mt-6 max-w-[680px] text-[14px] text-ci-gray-600">
-            Typical response · within a day on WhatsApp · Mon to Sat, 9:00 to 18:00 WAT
+            We reply within a day, Monday to Saturday, 9 am to 6 pm.
           </p>
         </div>
       </section>

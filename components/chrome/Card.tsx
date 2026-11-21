@@ -1,11 +1,11 @@
-// Card — Variant B course card (.ccard). White-on-warm surface, 1px border,
-// soft hover lift; the exam-critical flag adds an amber tag + warm gradient
-// wash. Reskin only: CardProps is unchanged so the homepage grid, the course
-// directory and the bookmarks list keep passing the same data. The 3-bar
-// difficulty indicator lives in <SignalBar>. (component-spec.md → Card)
+// Public-home course card. Compact on phone; the exam-critical flag adds an
+// accent wash. The 3-bar difficulty indicator lives in <SignalBar>.
+// (component-spec.md → Card)
 import Link from 'next/link'
-import { SignalBar, type DifficultyLevel } from './SignalBar'
+import { SignalBar } from './SignalBar'
 import { cx } from './ui'
+import type { DifficultyLevel } from './SignalBar'
+import type { ReactElement } from 'react'
 
 export type CardFlag = {
   // 'critical' is the lone amber accent for an exam-critical course;
@@ -18,7 +18,6 @@ export type CardCta = {
   label: string
   href: string
   variant?: 'primary' | 'secondary'
-  withArrow?: boolean
 }
 
 export type CardProps = {
@@ -32,7 +31,7 @@ export type CardProps = {
   flag?: CardFlag
   level: string
   credits: string
-  questions: string
+  questions?: string
   questionsRange?: string
   timeLimit: string
   difficulty: DifficultyLevel
@@ -42,20 +41,13 @@ export type CardProps = {
   // exam-critical treatment where "View course" stays primary and "Start
   // quiz" is offered as an additional amber action.
   secondaryCta?: CardCta
-  updated?: string
   ticks?: boolean
-  // Optional interactive node appended to the right of the card footer. Only
-  // the bookmarks list sets this (a Remove control); when absent the footer
-  // renders exactly as before.
-  footerAction?: React.ReactNode
-  // Optional control pinned to the card's top-right corner (the bookmarks
-  // Remove ×). Absolutely positioned over the card; the header padding leaves
-  // room so it never collides with the exam-critical tag.
-  cornerAction?: React.ReactNode
+
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
+/** Render a course card for the public home. */
 export function Card({
   code,
   title,
@@ -69,40 +61,36 @@ export function Card({
   difficultyLabel,
   cta,
   secondaryCta,
-  updated,
-  footerAction,
-  cornerAction,
-}: CardProps) {
+}: CardProps): ReactElement {
   const critical = flag?.kind === 'critical'
   const diffLabel = difficultyLabel ?? titleCase(difficulty)
 
   return (
     <article
       className={cx(
-        'relative flex flex-col rounded-[16px] border p-[26px_24px] transition-[transform,box-shadow,border-color] duration-200',
-        'hover:-translate-y-[3px] hover:shadow-ci-card hover:border-ci-border-2',
+        'relative flex flex-col rounded-ci-card border p-[var(--student-card-padding)] transition-[transform,box-shadow,border-color] duration-150',
+        'hover:-translate-y-[2px] hover:shadow-ci-card hover:border-student-border-hover motion-reduce:transform-none motion-reduce:transition-none',
         critical
-          ? 'border-ci-accent-100 bg-[linear-gradient(180deg,var(--ci-accent-50),var(--ci-white)_38%)]'
-          : 'border-ci-border bg-ci-white',
+          ? 'border-student-accent-border bg-[linear-gradient(180deg,var(--student-accent-surface),var(--student-elevated-surface)_38%)]'
+          : 'border-student-border bg-student-elevated-surface',
       )}
     >
       <Link
         href={cta.href}
         aria-label={`View ${code}: ${title}`}
-        className="absolute inset-0 z-[1] rounded-[16px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ci-accent focus-visible:ring-offset-2"
+        className="absolute inset-0 z-[1] rounded-ci-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-student-focus focus-visible:ring-offset-2"
       />
-      {cornerAction ? <div className="absolute right-3 top-3 z-10">{cornerAction}</div> : null}
-      <div className={cx('mb-4 flex items-start justify-between gap-[14px]', Boolean(cornerAction) && 'pr-12')}>
-        <span className="text-[13px] font-bold tracking-[0.08em] text-ci-navy">{code}</span>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <span className="text-[13px] font-bold tracking-[0.08em] text-student-primary">{code}</span>
         {critical && flag ? (
-          <span className="inline-flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.09em] text-ci-accent-600">
-            <span className="h-[6px] w-[6px] rounded-full bg-ci-accent" />
+          <span className="inline-flex items-center gap-[6px] text-[11px] font-bold uppercase tracking-[0.09em] text-student-accent-strong">
+            <span className="h-[6px] w-[6px] rounded-full bg-student-accent" />
             {flag.label}
           </span>
         ) : null}
       </div>
 
-      <h3 className="text-[22px] font-bold leading-[1.12] tracking-[-0.02em] text-ci-navy-900">
+      <h3 className="text-[19px] font-bold leading-[1.2] tracking-[-0.02em] text-student-text-primary tablet:text-[21px]">
         {title}
       </h3>
 
@@ -111,19 +99,23 @@ export function Card({
           meta + footer pinned to the bottom and aligned across the grid row,
           whether or not a card has a description. */}
       {desc ? (
-        <p className="mt-[11px] line-clamp-2 text-[15px] leading-[1.5] text-ci-gray-600">{desc}</p>
+        <p className="mt-2 line-clamp-2 text-[14px] leading-[1.45] text-student-text-secondary tablet:text-[15px]">{desc}</p>
       ) : null}
       <div className="flex-1" />
 
-      <div className="mt-5 flex flex-wrap items-center gap-[7px] text-[13px] font-medium text-ci-gray-500">
+      <div className="mt-4 flex flex-wrap items-center gap-[7px] text-[13px] font-medium text-student-text-muted">
         <span>{level} level</span>
-        <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
+        <span className="h-[3px] w-[3px] rounded-full bg-student-text-faint" />
         <span>{credits}</span>
-        <span className="h-[3px] w-[3px] rounded-full bg-ci-gray-400" />
-        <span>
-          {questions} questions
-          {questionsRange ? <span className="ml-1 text-ci-gray-400">{questionsRange}</span> : null}
-        </span>
+        {questions ? (
+          <>
+            <span className="h-[3px] w-[3px] rounded-full bg-student-text-faint" />
+            <span>
+              {questions} questions
+              {questionsRange ? <span className="ml-1 text-student-text-faint">{questionsRange}</span> : null}
+            </span>
+          </>
+        ) : null}
       </div>
 
       {/* Footer is two stacked rows: the difficulty indicator sits ABOVE a
@@ -133,26 +125,20 @@ export function Card({
           have the same footer height and stay aligned across the grid at every
           breakpoint. The exam-critical card's extra button never pushes its
           footer out of line with its row-mates. */}
-      <div className="mt-5 border-t border-ci-border pt-[18px]">
+      <div className="mt-4 border-t border-student-border pt-3 tablet:pt-4">
         <div className="flex items-center justify-between gap-3">
           <span className="inline-flex items-center gap-[9px]">
             <SignalBar level={difficulty} />
-            <span className="text-[12.5px] font-semibold tracking-[0.04em] text-ci-gray-600">
+            <span className="text-[12.5px] font-semibold tracking-[0.04em] text-student-text-secondary">
               {diffLabel}
             </span>
           </span>
-          {footerAction ? (
-            <span className="relative z-10 inline-flex items-center gap-3 whitespace-nowrap">
-              {updated ? <span className="text-[12.5px] text-ci-gray-500">{updated}</span> : null}
-              {footerAction}
-            </span>
-          ) : null}
         </div>
 
-        <div className="mt-[15px] flex min-h-[38px] flex-nowrap items-center gap-[10px]">
+        <div className="mt-2 flex min-h-11 flex-nowrap items-center gap-2">
           {/* Primary action — always present on every card, never replaced.
               Navy text cue for the card-wide link. */}
-          <span className="inline-flex items-center whitespace-nowrap text-[15px] font-semibold text-ci-navy">
+          <span className="inline-flex items-center whitespace-nowrap text-[15px] font-semibold text-student-primary">
             {cta.label}
           </span>
           {/* Exam-critical only — the lone amber "Start quiz", added alongside
@@ -160,7 +146,7 @@ export function Card({
           {secondaryCta ? (
             <Link
               href={secondaryCta.href}
-              className="relative z-10 inline-flex min-h-[36px] items-center gap-[6px] whitespace-nowrap rounded-[8px] bg-ci-accent px-3 py-2 text-[13px] font-bold text-ci-navy-900 transition-[background-color,transform] duration-150 hover:-translate-y-px hover:bg-ci-accent-600"
+              className="relative z-10 inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-ci-btn-sm bg-student-accent px-3 py-2 text-[13px] font-bold text-student-accent-text transition-colors duration-150 hover:bg-student-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-student-focus motion-reduce:transition-none"
             >
               {secondaryCta.label}
             </Link>

@@ -1,0 +1,240 @@
+// Current-student profile domain. No client-supplied profile identity enters this module.
+import 'server-only'
+import { isStudentRenderClient, readRenderStudentSession } from '@/lib/auth/render-session'
+import { z } from 'zod'
+import { getStudentSessionContext, getStudentSessionUser } from '@/lib/auth/student-state'
+import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
+import { isStudentAuthEnabled } from '@/lib/auth/config'
+import { createClient } from '@/lib/supabase/server'
+import { classifyStoredSelection, parseSubmittedProfileSelection } from './selection'
+import { firstNameSchema } from './first-name'
+import type { User } from '@supabase/supabase-js'
+import type { SelectionIds } from './selection'
+import type { NextResponse } from 'next/server'
+
+type StudentClient = Awaited<ReturnType<typeof createClient>>
+type ReferenceTable = 'departments' | 'academic_levels' | 'academic_periods'
+type StoredState = (Exclude<ReturnType<typeof classifyStoredSelection>, { kind: 'invariant-failure' }> & { firstName: string | null; revision: number }) |
+  { kind: 'unavailable' } | { kind: 'missing-profile' } | { kind: 'invariant-failure' }
+const PROFILE_COLUMNS = 'department_id,academic_level_id,academic_period_id,first_name,revision'
+// The database's refusal of a selection change while the courses are set for the semester (20261026100000).
+const COURSES_SET_CODE = 'CI423'
+const SEMESTER_NOT_RUNNING_CODE = 'CI422'
+const storedProfileSchema = z.object({
+  department_id: z.string().uuid().nullable(),
+  academic_level_id: z.string().uuid().nullable(),
+  academic_period_id: z.string().uuid().nullable(),
+  first_name: firstNameSchema.nullable(),
+  revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+}).strict()
+
+const referenceRowSchema = z.object({
+  id: z.string().uuid(),
+  display_name: z.string().min(1),
+  is_active: z.boolean(),
+}).strict()
+
+type ReferenceRow = z.infer<typeof referenceRowSchema>
+type References = {
+  departments: ReferenceRow[]
+  academicLevels: ReferenceRow[]
+  academicPeriods: ReferenceRow[]
+}
+type Option = { id: string; label: string }
+type SelectedOption = Option & { isActive: boolean }
+type Options = {
+  departments: Option[]
+  academicLevels: Option[]
+  academicPeriods: Option[]
+}
+type Selection = {
+  department: SelectedOption
+  academicLevel: SelectedOption
+  academicPeriod: SelectedOption
+}
+
+export type StudentProfileState =
+  | { status: 'signed-out' | 'session-changed' | 'missing-profile' | 'invariant-failure' | 'unavailable' | 'invalid-selection' | 'conflict' | 'locked' | 'semester-not-running' }
+  | { status: 'incomplete'; revision: number; options: Options; firstName: string | null; selection?: Selection }
+  | { status: 'complete'; revision: number; options: Options; selection: Selection; firstName: string }
+
+async function currentStudent(response?: NextResponse, includeSession = false): Promise<{ client: StudentClient; id: string; sessionId?: string } | null> {
+  const client = await createClient(response)
+  if (includeSession || (response === undefined && isStudentRenderClient(client))) {
+    const context = await getStudentSessionContext(response, client)
+    return context === null ? null : { client, id: context.user.id, sessionId: context.sessionId }
+  }
+  const user = await getStudentSessionUser(response, client)
+  return user === null ? null : { client, id: user.id }
+}
+
+async function readStoredSelection(client: StudentClient, id: string): Promise<StoredState> {
+  const { data, error } = await client.from('profiles')
+    .select(PROFILE_COLUMNS).eq('id', id).maybeSingle()
+  if (error) return { kind: 'unavailable' }
+  if (data === null) return { kind: 'missing-profile' }
+  const parsed = storedProfileSchema.safeParse(data)
+  if (!parsed.success) return { kind: 'invariant-failure' }
+  const { first_name, revision, ...selection } = parsed.data
+  const stored = classifyStoredSelection(selection)
+  return stored.kind === 'invariant-failure' ? stored : { ...stored, firstName: first_name, revision }
+}
+
+async function readReferenceRows(client: StudentClient, table: ReferenceTable): Promise<ReferenceRow[] | null> {
+  const { data, error } = await client.from(table)
+    .select('id,display_name,is_active').order('sort_order', { ascending: true })
+  if (error) return null
+  const result = referenceRowSchema.array().safeParse(data)
+  return result.success && result.data.length > 0 ? result.data : null
+}
+
+async function readReferences(client: StudentClient): Promise<References | null> {
+  const departments = await readReferenceRows(client, 'departments')
+  if (departments === null) return null
+  const academicLevels = await readReferenceRows(client, 'academic_levels')
+  if (academicLevels === null) return null
+  const academicPeriods = await readReferenceRows(client, 'academic_periods')
+  if (academicPeriods === null) return null
+  return { departments, academicLevels, academicPeriods }
+}
+
+function presentOptions(references: References): Options {
+  const activeOptions = (rows: ReferenceRow[]) => rows
+    .filter(row => row.is_active).map(row => ({ id: row.id, label: row.display_name }))
+  return {
+    departments: activeOptions(references.departments),
+    academicLevels: activeOptions(references.academicLevels),
+    academicPeriods: activeOptions(references.academicPeriods),
+  }
+}
+
+function selectedOption(rows: ReferenceRow[], id: string): SelectedOption | null {
+  const row = rows.find(candidate => candidate.id === id)
+  return row ? { id: row.id, label: row.display_name, isActive: row.is_active } : null
+}
+
+function completeState(ids: SelectionIds, references: References, firstName: string | null, revision: number): StudentProfileState {
+  const department = selectedOption(references.departments, ids.departmentId)
+  const academicLevel = selectedOption(references.academicLevels, ids.academicLevelId)
+  const academicPeriod = selectedOption(references.academicPeriods, ids.academicPeriodId)
+  if (!department || !academicLevel || !academicPeriod) return { status: 'invariant-failure' }
+  const selection = { department, academicLevel, academicPeriod }
+  if (firstName === null) return { status: 'incomplete', firstName, revision, options: presentOptions(references), selection }
+  return {
+    status: 'complete', revision,
+    options: presentOptions(references),
+    selection, firstName,
+  }
+}
+
+async function readStudentProfile(client: StudentClient, id: string): Promise<StudentProfileState> {
+  if (isStudentRenderClient(client)) {
+    const context = await readRenderStudentSession(client)
+    if (context === null || context.user.id !== id || context.snapshot.lifecycle.status !== 'active') return { status: 'signed-out' }
+    if (context.snapshot.profile === null) return { status: 'missing-profile' }
+    const profile = storedProfileSchema.extend({ selection_confirmed_at: z.string().datetime({ offset: true }).nullable() })
+      .safeParse(context.snapshot.profile)
+    if (!profile.success) return { status: 'invariant-failure' }
+    const { first_name, revision, selection_confirmed_at, ...ids } = profile.data
+    const stored = classifyStoredSelection(ids)
+    if (stored.kind === 'invariant-failure' || (stored.kind === 'incomplete') !== (selection_confirmed_at === null)) {
+      return { status: 'invariant-failure' }
+    }
+    const references = z.object({ departments: referenceRowSchema.array().min(1),
+      academicLevels: referenceRowSchema.array().min(1), academicPeriods: referenceRowSchema.array().min(1) })
+      .safeParse(context.snapshot.references)
+    if (!references.success) return { status: 'unavailable' }
+    return stored.kind === 'incomplete'
+      ? { status: 'incomplete', options: presentOptions(references.data), firstName: first_name, revision }
+      : completeState(stored.ids, references.data, first_name, revision)
+  }
+  const stored = await readStoredSelection(client, id)
+  if (stored.kind === 'missing-profile') return { status: 'missing-profile' }
+  if (stored.kind === 'unavailable') return { status: 'unavailable' }
+  if (stored.kind === 'invariant-failure') return { status: 'invariant-failure' }
+  const references = await readReferences(client)
+  if (references === null) return { status: 'unavailable' }
+  return stored.kind === 'incomplete'
+    ? { status: 'incomplete', options: presentOptions(references), firstName: stored.firstName, revision: stored.revision }
+    : completeState(stored.ids, references, stored.firstName, stored.revision)
+}
+
+/** Read labels with the page's already-validated cookie-bound RLS client. */
+export async function getCurrentStudentProfileForVerifiedStudent(
+  client: StudentClient, user: User,
+): Promise<StudentProfileState> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try { return await readStudentProfile(client, user.id) }
+  catch { return { status: 'unavailable' } }
+}
+
+/** Read only the live session owner's existing profile and ordered reference data. */
+export async function getCurrentStudentProfile(response?: NextResponse): Promise<StudentProfileState> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try {
+    const student = await currentStudent(response)
+    if (student === null) return { status: 'signed-out' }
+    return await readStudentProfile(student.client, student.id)
+  } catch { return { status: 'unavailable' } }
+}
+
+/** Update name and selection atomically after continuity, live Auth and catalogue checks. */
+export async function saveCurrentStudentProfileSelection(
+  input: unknown, response: NextResponse | undefined, pageToken: string | null,
+): Promise<StudentProfileState> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try {
+    const student = await currentStudent(response, pageToken != null)
+    if (student === null) return { status: 'signed-out' }
+    // The page token only narrows the live owner; it can never identify the acting student.
+    if (pageToken == null || !student.sessionId ||
+        !matchesAccountContinuityToken(pageToken, student.id, student.sessionId)) return { status: 'session-changed' }
+    const selection = parseSubmittedProfileSelection(input)
+    if (selection === null) return { status: 'invalid-selection' }
+    const stored = await readStoredSelection(student.client, student.id)
+    if (stored.kind === 'missing-profile') return { status: 'missing-profile' }
+    if (stored.kind === 'unavailable') return { status: 'unavailable' }
+    if (stored.kind === 'invariant-failure') return { status: 'invariant-failure' }
+    if (stored.revision !== selection.expectedRevision) return { status: 'conflict' }
+    const references = await readReferences(student.client)
+    if (references === null) return { status: 'unavailable' }
+    const chosen = [
+      selectedOption(references.departments, selection.departmentId),
+      selectedOption(references.academicLevels, selection.academicLevelId),
+      selectedOption(references.academicPeriods, selection.academicPeriodId),
+    ]
+    if (chosen.some(option => option === null || !option.isActive)) return { status: 'invalid-selection' }
+
+    // Recheck immediately before the write; catalogue reads may have taken time.
+    const live = await getStudentSessionContext(response, student.client)
+    if (live === null) return { status: 'signed-out' }
+    if (live.user.id !== student.id || live.sessionId !== student.sessionId) return { status: 'session-changed' }
+    const { data, error } = await student.client.from('profiles').update({
+      department_id: selection.departmentId,
+      academic_level_id: selection.academicLevelId,
+      academic_period_id: selection.academicPeriodId,
+      first_name: selection.first_name,
+    }).eq('id', student.id).eq('revision', selection.expectedRevision).select(PROFILE_COLUMNS).maybeSingle()
+    if (error) return { status: error.code === COURSES_SET_CODE ? 'locked'
+      : error.code === SEMESTER_NOT_RUNNING_CODE ? 'semester-not-running' : 'unavailable' }
+    if (data === null) {
+      // The row existed at preflight. A lost CAS is never a reason to retry a write.
+      // Re-read through the same owner/live-session RLS boundary, not elevated access.
+      const current = await readStoredSelection(student.client, student.id)
+      if (current.kind === 'missing-profile') return { status: 'signed-out' }
+      if (current.kind === 'unavailable') return { status: 'unavailable' }
+      if (current.kind === 'invariant-failure') return { status: 'invariant-failure' }
+      return { status: current.revision !== selection.expectedRevision ? 'conflict' : 'unavailable' }
+    }
+    const parsed = storedProfileSchema.safeParse(data)
+    if (!parsed.success) return { status: 'invariant-failure' }
+    const { first_name, revision, ...ids } = parsed.data
+    const updated = classifyStoredSelection(ids)
+    if (revision !== selection.expectedRevision + 1 || updated.kind !== 'complete' ||
+        updated.ids.departmentId !== selection.departmentId ||
+        updated.ids.academicLevelId !== selection.academicLevelId ||
+        updated.ids.academicPeriodId !== selection.academicPeriodId ||
+        first_name !== selection.first_name) return { status: 'invariant-failure' }
+    return completeState(updated.ids, references, first_name, revision)
+  } catch { return { status: 'unavailable' } }
+}

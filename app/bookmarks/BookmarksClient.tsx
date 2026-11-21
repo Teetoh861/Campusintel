@@ -1,212 +1,192 @@
-// BookmarksClient — Variant B client island for /bookmarks. VISUAL RESKIN
-// ONLY: the localStorage read/write, validation, catalogue intersection, the
-// Remove control and the hydration/empty logic are all unchanged. Saved courses
-// render in the shared .ccard grid with a top-right Remove (×); when nothing is
-// saved (or pre-hydration) the warm dashed empty state shows alone.
+// app/bookmarks/BookmarksClient.tsx — The bookmark register over the shared store: snapshot order, ten per page, confirmed removal only.
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
-import { Card, type CardProps } from '@/components/chrome/Card'
-import { btnAccent, btnBase, cx } from '@/components/chrome/ui'
+import { Bookmark } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { BookmarkFeedback, useBookmarkFeedback } from '@/components/student/BookmarkFeedback'
+import { BookmarkToggle } from '@/components/student/BookmarkToggle'
+import { CourseRegisterSkeleton } from '@/components/student/CourseRegisterSkeleton'
+import { CourseRegister, CourseRow } from '@/components/student/CourseRow'
+import { EmptyState } from '@/components/student/EmptyState'
+import { Notice } from '@/components/student/Notice'
+import { Pagination } from '@/components/student/Pagination'
+import { StudentLoadingState } from '@/components/student/StudentLoadingState'
+import { studentAction, studentFocusControl, studentFocusDark } from '@/components/student/ui'
+import { useBookmarks } from '@/lib/bookmarks/client'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { BOOKMARKS_LOADING_MESSAGE, BOOKMARKS_PER_PAGE, BOOKMARKS_COPY } from './presentation'
+import type { CourseRowPresentation } from '@/components/student/CourseRow'
+import type { BookmarkCourseAlias, BookmarkSnapshot } from '@/lib/bookmarks/contract'
+import type { ReactElement } from 'react'
 
-// Storage shape mirrors the comp's bookmarks.js: a JSON array of course
-// codes (e.g. ["ACC201", "BUA203"]). We also accept slugs so a future
-// "save" toggle on the course page can write whichever is most convenient.
-const STORAGE_KEY = 'ci_bookmarks_v1'
-// Same-tab sync signal shared with app/courses/[slug]/BookmarkButton.tsx, so
-// removing here updates a bookmark button mounted elsewhere on the page.
-const CHANGE_EVENT = 'ci:bookmarks-changed'
+/** Legacy device aliases plus the central row presentation; the page derives no course truth itself. */
+export type BookmarkableCourse = BookmarkCourseAlias & { row: CourseRowPresentation }
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+// Stable snapshot neighbors survive refills, clamping and intervening store updates.
+type FocusRequest = { kind: 'after-removal'; next: string[]; previous: string[] }
+  | { kind: 'retain'; contentKey: string }
 
-export type BookmarkableCourse = {
-  id: string
-  code: string
-  slug: string
-  cardProps: CardProps
-}
+// The row whose removal failed; `neighbors` place focus if a later read shows the removal landed after all.
+type Failure = { key: string; neighbors: FocusRequest }
 
-type Props = {
-  catalog: ReadonlyArray<BookmarkableCourse>
-}
-
-type HydrationStatus = 'pending' | 'ready'
-
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
-export function BookmarksClient({ catalog }: Props) {
-  const [status, setStatus] = useState<HydrationStatus>('pending')
-  const [savedKeys, setSavedKeys] = useState<ReadonlyArray<string>>([])
-
-  // Read on mount only. Anything thrown — JSON.parse failure, non-array
-  // payload, mixed types — collapses to an empty set so the UI lands on the
-  // empty state rather than a broken render.
-  useEffect(() => {
-    setSavedKeys(readSavedKeysSafe())
-    setStatus('ready')
-    // Stay in step if the set changes elsewhere (another tab, or a bookmark
-    // button on this same document).
-    const resync = () => setSavedKeys(readSavedKeysSafe())
-    window.addEventListener('storage', resync)
-    window.addEventListener(CHANGE_EVENT, resync)
-    return () => {
-      window.removeEventListener('storage', resync)
-      window.removeEventListener(CHANGE_EVENT, resync)
-    }
-  }, [])
-
-  // Remove a course from the saved set: drop both its slug and code (storage
-  // accepts either form), persist, update the list in place, and notify any
-  // bookmark button mounted on this document.
-  const removeCourse = useCallback((course: BookmarkableCourse) => {
-    const next = readSavedKeysSafe().filter(
-      (k) => k !== course.slug && k !== course.code,
-    )
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      // Storage unavailable — still drop it from the in-memory list below so
-      // the UI responds to the click.
-    }
-    setSavedKeys(next)
-    window.dispatchEvent(new Event(CHANGE_EVENT))
-  }, [])
-
+/** Snapshot order, deduplicated: account keys are content keys, legacy device keys are slugs or codes. */
+function orderBookmarks(snapshot: BookmarkSnapshot, catalog: ReadonlyArray<BookmarkableCourse>): BookmarkableCourse[] {
   const byKey = new Map<string, BookmarkableCourse>()
-  for (const c of catalog) {
-    byKey.set(c.code, c)
-    byKey.set(c.slug, c)
+  const byAlias = new Map<string, BookmarkableCourse>()
+  for (const course of catalog) {
+    byKey.set(course.contentKey, course)
+    byAlias.set(course.slug, course)
+    byAlias.set(course.code, course)
   }
-
-  // Preserve storage order, dedupe, drop any unknown keys.
   const seen = new Set<string>()
-  const matches: BookmarkableCourse[] = []
-  for (const key of savedKeys) {
-    const c = byKey.get(key)
-    if (!c) continue
-    if (seen.has(c.id)) continue
-    seen.add(c.id)
-    matches.push(c)
+  const ordered: BookmarkableCourse[] = []
+  for (const key of snapshot.keys) {
+    const course = snapshot.mode === 'account' ? byKey.get(key) : byAlias.get(key)
+    if (!course || seen.has(course.contentKey)) continue
+    seen.add(course.contentKey)
+    ordered.push(course)
   }
-
-  const count = matches.length
-  const countLabel = pad2(count)
-  // Treat the pre-hydration pass the same as "no bookmarks": render the empty
-  // state alone. Avoids the SSR'd "00 Saved" cover flashing before the
-  // localStorage read completes, and keeps the empty case a single clean block.
-  const showEmpty = status !== 'ready' || count === 0
-
-  if (showEmpty) {
-    return (
-      <section className="bg-ci-paper pb-20 pt-12 min-[900px]:pt-16" data-screen-label="Saved grid">
-        <div className={WRAP}>
-          <nav className="mb-10 flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-gray-500" aria-label="Breadcrumb">
-            <Link href="/" className="transition-colors hover:text-ci-navy">Home</Link>
-            <span className="text-ci-gray-400">/</span>
-            <span className="text-ci-navy-900">Bookmarks</span>
-          </nav>
-          <div className="mx-auto max-w-[540px] rounded-[20px] border border-dashed border-ci-border-2 bg-ci-paper-2 p-[48px_28px] text-center">
-            <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-ci-gray-500">No saved files yet</div>
-            <h3 className="mt-[14px] text-[26px] font-extrabold tracking-[-0.02em] text-ci-navy-900">Your bookmarks are empty</h3>
-            <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-[1.55] text-ci-gray-600">
-              Bookmark a course from its page and it lands here, ready for your next study run.
-            </p>
-            <div className="mt-6 inline-flex">
-              <Link className={cx(btnBase, btnAccent)} href="/courses">
-                Browse courses
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-    )
-  }
-
-  return (
-    <>
-      <header
-        className="relative overflow-hidden bg-[linear-gradient(180deg,var(--ci-navy),var(--ci-navy-900))] text-white"
-        data-screen-label="Cover"
-      >
-        <svg
-          className="absolute right-[-60px] top-[-50px] z-0 h-[300px] w-[300px] text-ci-blue-600 opacity-50"
-          viewBox="0 0 200 200"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="100" cy="100" r="90" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 12" strokeLinecap="round" />
-        </svg>
-        <div className={`${WRAP} relative z-[1] pb-[42px] pt-[30px] min-[900px]:pb-[52px] min-[900px]:pt-10`}>
-          <nav className="mb-[26px] flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200" aria-label="Breadcrumb">
-            <Link href="/" className="transition-colors hover:text-white">Home</Link>
-            <span className="text-white/35">/</span>
-            <span className="text-white">Bookmarks</span>
-          </nav>
-          <div className="flex items-baseline gap-[10px]">
-            <span className="text-[clamp(46px,8vw,68px)] font-extrabold leading-[0.9] tracking-[-0.02em] text-ci-accent [font-variant-numeric:tabular-nums]">
-              {countLabel}
-            </span>
-            <span className="text-[14px] font-semibold tracking-[0.04em] text-ci-blue-200">Saved</span>
-          </div>
-          <h1 className="mt-3 text-balance text-[clamp(36px,6.5vw,58px)] font-extrabold leading-none tracking-[-0.035em] text-white">
-            Saved files
-          </h1>
-          <p className="mt-5 max-w-[54ch] text-[clamp(16px,2.1vw,19px)] leading-[1.5] text-ci-blue-150">
-            Your shortlist of courses. Bookmarks are kept on this device, ready for the next study run.
-          </p>
-        </div>
-      </header>
-
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Saved grid">
-        <div className={WRAP}>
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-[13.5px] font-medium text-ci-gray-600">
-            <span>Saved to this device</span>
-            <span className="[font-variant-numeric:tabular-nums]">
-              {countLabel} {count === 1 ? 'file' : 'files'}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-5 min-[680px]:grid-cols-2 min-[900px]:grid-cols-3 min-[900px]:gap-6">
-            {matches.map((c) => (
-              <Card
-                key={c.id}
-                {...c.cardProps}
-                cornerAction={
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 items-center justify-center rounded-full border border-ci-border-2 bg-ci-white text-[24px] font-medium leading-none text-ci-gray-600 shadow-sm transition-[background-color,border-color,color,transform] hover:-translate-y-px hover:border-r-600 hover:bg-r-50 hover:text-r-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-r-600 focus-visible:ring-offset-2"
-                    onClick={() => removeCourse(c)}
-                    aria-label={`Remove ${c.code} from bookmarks`}
-                  >
-                    <span aria-hidden="true">&times;</span>
-                  </button>
-                }
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
-  )
+  return ordered
 }
 
-// Defensive read: anything malformed becomes []. Treat storage as untrusted
-// since another tab, an extension, or a corrupted disk can mutate it.
-function readSavedKeysSafe(): ReadonlyArray<string> {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) return []
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    const out: string[] = []
-    for (const item of parsed) {
-      if (typeof item === 'string' && item.length > 0 && item.length < 64) {
-        out.push(item)
-      }
+/** Render only confirmed store state; the row stays, pressed and busy, until removal is confirmed.
+ * A failed removal shows its message on that row only: when the store must re-read the list after an
+ * uncertain write, the list confirmed when the removal started stays on screen until the read is back.
+ */
+export function BookmarksClient({ catalog }: { catalog: ReadonlyArray<BookmarkableCourse> }): ReactElement {
+  const { snapshot, remove, refresh } = useBookmarks(catalog)
+  const [feedback, showFeedback] = useBookmarkFeedback()
+  const [requestedPage, setPage] = useState(1)
+  const [pending, setPending] = useState<string | null>(null)
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null)
+  const [failure, setFailure] = useState<Failure | null>(null)
+  const [held, setHeld] = useState<BookmarkableCourse[] | null>(null)
+  const pendingKey = useRef<string | null>(null)
+  const toggles = useRef(new Map<string, HTMLButtonElement>())
+  const emptyHeading = useRef<HTMLHeadingElement>(null)
+  const head = useRef<HTMLDivElement>(null)
+
+  const loading = snapshot.mode === 'loading'
+  const unavailable = snapshot.mode === 'unavailable'
+  const ready = !loading && !unavailable
+  const holding = !ready && held !== null
+  const shown = ready || holding
+  const ordered = holding ? held : orderBookmarks(snapshot, catalog)
+  const total = ordered.length
+  const totalPages = Math.ceil(total / BOOKMARKS_PER_PAGE)
+  const page = Math.min(requestedPage, Math.max(1, totalPages))
+  // Clamp before slicing as well as settling state, so a shrinking set never flashes an empty page.
+  useEffect(() => { if (requestedPage !== page) setPage(page) }, [page, requestedPage])
+  const start = (page - 1) * BOOKMARKS_PER_PAGE
+  const visible = ordered.slice(start, start + BOOKMARKS_PER_PAGE)
+
+  // Once the store is back with nothing in flight, its own list replaces the held one.
+  useEffect(() => { if (ready && pending === null && held !== null) setHeld(null) }, [held, pending, ready])
+
+  useEffect(() => {
+    if (failure === null || !ready || ordered.some(course => course.contentKey === failure.key)) return
+    // The store's list no longer has the course: the removal landed after all.
+    setFailure(null)
+    showFeedback('removed')
+    setFocusRequest(failure.neighbors)
+  }, [failure, ordered, ready, showFeedback])
+
+  useEffect(() => {
+    if (focusRequest === null || !shown || pending !== null) return
+    // Logical identity chooses the page first; attached refs are only the final focus destination.
+    const remaining = new Set(ordered.map(course => course.contentKey))
+    const key = focusRequest.kind === 'retain' ? focusRequest.contentKey
+      : [...focusRequest.next, ...focusRequest.previous].find(candidate => remaining.has(candidate))
+    let target: HTMLButtonElement | HTMLHeadingElement | null | undefined
+    if (key === undefined) {
+      if (total !== 0 || focusRequest.kind === 'retain') return
+      target = emptyHeading.current
+    } else {
+      const index = ordered.findIndex(course => course.contentKey === key)
+      if (index < 0) return
+      const targetPage = Math.floor(index / BOOKMARKS_PER_PAGE) + 1
+      if (page !== targetPage) { setPage(targetPage); return }
+      target = toggles.current.get(key)
     }
-    return out
-  } catch {
-    return []
+    if (!target?.isConnected || ('disabled' in target && target.disabled)) return
+    target.focus()
+    if (target.ownerDocument.activeElement === target) setFocusRequest(null)
+  }, [focusRequest, ordered, page, pending, shown, total])
+
+  const removeBookmark = async (course: BookmarkableCourse) => {
+    if (pendingKey.current !== null) return
+    const index = ordered.findIndex(item => item.contentKey === course.contentKey)
+    const neighbors: FocusRequest = { kind: 'after-removal',
+      next: ordered.slice(index + 1).map(item => item.contentKey),
+      previous: ordered.slice(0, index).reverse().map(item => item.contentKey) }
+    pendingKey.current = course.contentKey
+    const initiatingToggle = toggles.current.get(course.contentKey)
+    const activeElement = initiatingToggle?.ownerDocument.activeElement
+    // Move focus off another toggle before global serialization disables it.
+    if ([...toggles.current.values()].some(toggle => toggle !== initiatingToggle && toggle === activeElement)) {
+      initiatingToggle?.focus()
+    }
+    setPending(course.contentKey)
+    setFocusRequest(null)
+    setFailure(null)
+    setHeld(ordered)
+    showFeedback(null)
+    let removed = false
+    // After an uncertain write the store accepts nothing until it has read the list again.
+    try { removed = await (ready ? remove(course) : refresh().then(() => remove(course))) }
+    catch { /* A rejected transport is the same failed mutation; confirmed state stays authoritative. */ }
+    finally {
+      pendingKey.current = null
+      setPending(null)
+    }
+    if (removed) showFeedback('removed')
+    else setFailure({ key: course.contentKey, neighbors })
+    setFocusRequest(removed ? neighbors : { kind: 'retain', contentKey: course.contentKey })
   }
+
+  const retry = () => {
+    showFeedback(null)
+    void refresh()
+  }
+
+  const populated = (shown && total > 0) || feedback !== null
+  return <div className="student-bookmarks">
+    <div ref={head} tabIndex={-1} className={'student-bookmarks-head ' + studentFocusControl} data-populated={populated}>
+      {shown && populated && <h2 className="student-bookmarks-count">{total} {total === 1 ? 'course' : 'courses'}</h2>}
+      <BookmarkFeedback state={feedback} onDismiss={() => showFeedback(null)} />
+    </div>
+    {loading && !holding && <StudentLoadingState message={BOOKMARKS_LOADING_MESSAGE}>
+      <CourseRegisterSkeleton rows={BOOKMARKS_PER_PAGE} columns="single" />
+    </StudentLoadingState>}
+    {unavailable && !holding && <Notice title={BOOKMARKS_COPY.unavailable} action={
+      <button type="button" className={studentAction(btnGhost, 'bg-student-surface')} onClick={retry}>Try again</button>
+    } />}
+    {shown && total === 0 && <EmptyState headingRef={emptyHeading} title="No bookmarks yet."
+      icon={<Bookmark aria-hidden="true" size={22} strokeWidth={1.75} />} actions={<>
+        <Link href={STUDENT_DESTINATIONS.courses.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>
+          Browse {STUDENT_DESTINATIONS.courses.label}
+        </Link>
+        <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false} className={studentAction(btnGhost)}>
+          {STUDENT_DESTINATIONS.myCourses.label}
+        </Link>
+      </>}>{null}</EmptyState>}
+    {shown && total > 0 && <>
+      <CourseRegister label="Bookmarked courses" columns="single">
+        {visible.map(course => <CourseRow key={course.contentKey} {...course.row}
+          problem={failure?.key === course.contentKey ? { text: BOOKMARKS_COPY.removeFailed, action:
+            <button type="button" className={studentAction(btnGhost, 'border-transparent px-2')}
+              disabled={pending !== null} onClick={() => { void removeBookmark(course) }}>Try again</button> } : undefined}
+          trailingAction={<BookmarkToggle pressed busy={pending === course.contentKey} label={`Bookmark ${course.row.title}`}
+            disabled={pending !== null && pending !== course.contentKey}
+            ref={node => {
+              if (node) toggles.current.set(course.contentKey, node)
+              else toggles.current.delete(course.contentKey)
+            }}
+            onClick={() => { void removeBookmark(course) }} />} />)}
+      </CourseRegister>
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} label="Bookmarks pages" scrollTarget={head} />
+    </>}
+  </div>
 }

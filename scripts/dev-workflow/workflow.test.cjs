@@ -1,0 +1,841 @@
+// scripts/dev-workflow/workflow.test.cjs — Exercise workflow safety with disposable Git fixtures.
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { spawn, spawnSync } = require('node:child_process')
+const { test } = require('node:test')
+const { repository } = require('./repo.cjs')
+const { packageReview } = require('./review.cjs')
+const { collectTestFiles, runVerification, scope, testCommand } = require('./verify.cjs')
+
+const CLI = path.join(__dirname, 'cli.cjs')
+const RUNNER = path.join(__dirname, 'run-tests.cjs')
+const TAP_PASS = '# tests 1\n# pass 1\n# fail 0\n'
+/** Mocked commands answer test batches with a real TAP summary so discovery guards see executed tests. */
+const mockExecute = fn => (program, args, options) => {
+  const result = fn(program, args, options)
+  return args.includes(RUNNER) && !result.stdout ? { ...result, stdout: TAP_PASS } : result
+}
+const ORIGIN = 'https://github.com/Teetoh861/Campusintel.git'
+
+const WORKFLOW = path.join(__dirname, '../../.github/workflows/pr-verification.yml')
+// Services the database tests need; everything else in a full start is excluded.
+const SUPABASE_KEPT = ['postgres', 'gotrue', 'storage-api', 'imgproxy', 'postgrest', 'kong']
+const SUPABASE_EXCLUDED = ['logflare', 'vector', 'studio', 'postgres-meta', 'mailpit', 'edge-runtime', 'realtime', 'supavisor']
+
+/** The database start step: its env and its script, as GitHub Actions runs it. */
+function startStep() {
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8')
+  const step = workflow.split('      - name: Start local database for SQL tests\n')[1]
+    ?.split('      - name: Verify application and applicable optional checks\n')[0]
+  assert.ok(step, 'the local Supabase startup step exists')
+  const env = Object.fromEntries([...step.split('        run: |\n')[0].matchAll(/^ {10}([A-Z_]+): '?([^'\n]*)'?$/gm)]
+    .map(match => [match[1], match[2]]))
+  const script = step.split('        run: |\n')[1].split('\n').map(line => line.slice(10)).join('\n')
+  return { workflow, step, env, script }
+}
+
+test('PR verification runs the real-database recovery tests only when the local database is started', () => {
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8')
+  const step = workflow.split('      - name: Verify application and applicable optional checks\n')[1]
+  assert.ok(step, 'the verification step exists')
+  assert.match(step, /^ {8}env:\n(?: {10}#.*\n)* {10}RECOVERY_FLOW_ISOLATION_DB_TEST: \$\{\{ steps\.scope\.outputs\.db == 'true' && '1' \|\| '0' \}\}\n {8}run: node scripts\/dev-workflow\/cli\.cjs verify\n/)
+  assert.match(workflow, /- name: Start local database for SQL tests\n {8}if: steps\.scope\.outputs\.db == 'true'\n/,
+    'the same condition starts the database the tests use')
+  // The tests name the container of the project in supabase/config.toml.
+  const config = fs.readFileSync(path.join(__dirname, '../../supabase/config.toml'), 'utf8')
+  assert.match(config, /^project_id = "Campusintel"$/m)
+  assert.match(fs.readFileSync(path.join(__dirname, '../../lib/auth/recovery-flow-isolation.database.test.cjs'), 'utf8'),
+    /'supabase_db_Campusintel'/)
+})
+
+test('PR verification starts scoped Supabase with the pinned CLI and shows startup failures', () => {
+  const { workflow, step, env, script } = startStep()
+  assert.match(workflow, /uses: supabase\/setup-cli@v3\s+if: steps\.scope\.outputs\.db == 'true'\s+with:\s+version: 2\.109\.1/)
+  assert.match(step, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(script, /supabase start -x "\$SUPABASE_EXCLUDE"/)
+  assert.match(script, /cat "\$RUNNER_TEMP\/supabase-start\.log"/)
+  assert.match(script, /echo 'Local Supabase service setup failed; database tests did not run\.'\n\s*exit 1/)
+  assert.doesNotMatch(workflow, /supabase db start/)
+  assert.deepEqual(env.SUPABASE_EXCLUDE.split(','), SUPABASE_EXCLUDED, 'exactly the services the checks do not need')
+  for (const kept of SUPABASE_KEPT) assert.ok(!env.SUPABASE_EXCLUDE.split(',').includes(kept), `${kept} still starts`)
+  assert.equal(env.PG_PROVE_IMAGE, 'ghcr.io/supabase/pg_prove:3.36', 'the pgTAP runner of the pinned CLI')
+  assert.match(workflow, /run: node scripts\/dev-workflow\/cli\.cjs verify/, 'every check still runs through the verifier')
+})
+
+test('every image is pulled from GitHub\'s registry, signed in with the workflow\'s own token before the database starts', () => {
+  const { workflow } = startStep()
+  // The CLI reads SUPABASE_INTERNAL_IMAGE_REGISTRY for every pull; set for the whole job, so supabase test db uses it too.
+  assert.match(workflow, /\n {4}env:\n(?: {6}#.*\n)* {6}SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr\.io\n {4}steps:/)
+  assert.match(workflow, /\npermissions:\n {2}contents: read\n(?: {2}#.*\n)* {2}packages: read\n\n/, 'only reading packages is added')
+  const login = workflow.split('      - name: Sign in to GitHub\'s container registry\n')[1]?.split('\n      - ')[0]
+  assert.ok(login, 'the job signs in to ghcr.io')
+  assert.match(login, /if: steps\.scope\.outputs\.db == 'true'/)
+  assert.match(login, /REGISTRY_TOKEN: \$\{\{ github\.token \}\}/)
+  assert.match(login, /echo "\$REGISTRY_TOKEN" \| docker login ghcr\.io -u "\$GITHUB_ACTOR" --password-stdin/, 'the token is never on the command line')
+  assert.doesNotMatch(workflow, /secrets\./, 'no new secret')
+  assert.ok(workflow.indexOf('Sign in to GitHub\'s container registry') < workflow.indexOf('name: Start local database for SQL tests'))
+})
+
+/** Run the start step's script with stub supabase, docker and sleep commands. */
+function runStartStep(t, { start = [], pull = [] } = {}) {
+  const { env, script } = startStep()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-start-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const bin = path.join(dir, 'bin')
+  fs.mkdirSync(bin)
+  // Each stub answers its next scripted outcome ("ok", or text it prints before failing) and records its call.
+  const stub = (name, outcomes) => {
+    fs.writeFileSync(path.join(dir, `${name}.outcomes`), outcomes.join('\n') + '\n')
+    fs.writeFileSync(path.join(bin, name), `#!/bin/bash
+echo "$*" >> "${dir}/${name}.calls"
+if [ "$1" = stop ]; then exit 0; fi
+outcome=$(head -n 1 "${dir}/${name}.outcomes"); sed -i.bak 1d "${dir}/${name}.outcomes"
+if [ -z "$outcome" ] || [ "$outcome" = ok ]; then echo started; exit 0; fi
+echo "$outcome"; exit 1
+`, { mode: 0o755 })
+  }
+  stub('supabase', start)
+  stub('docker', pull)
+  fs.writeFileSync(path.join(bin, 'sleep'), `#!/bin/bash\necho "$1" >> "${dir}/sleep.calls"\n`, { mode: 0o755 })
+  const result = spawnSync('bash', ['-e', '-c', script], { encoding: 'utf8',
+    env: { ...process.env, ...env, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: dir } })
+  const calls = name => fs.existsSync(path.join(dir, `${name}.calls`))
+    ? fs.readFileSync(path.join(dir, `${name}.calls`), 'utf8').trim().split('\n') : []
+  return { status: result.status, output: result.stdout + result.stderr, calls }
+}
+
+const REFUSED = 'failed to pull docker image: Error response from daemon: toomanyrequests: Data limit exceeded'
+
+test('a refused image pull is retried with a growing wait, then the database starts', t => {
+  const run = runStartStep(t, { start: [REFUSED, REFUSED, 'ok'] })
+  assert.equal(run.status, 0, run.output)
+  assert.deepEqual(run.calls('supabase').filter(call => call.startsWith('start')),
+    Array(3).fill(`start -x ${SUPABASE_EXCLUDED.join(',')}`))
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('stop')).length, 2, 'a failed start is cleaned up first')
+  assert.deepEqual(run.calls('sleep'), ['30', '60'])
+  assert.match(run.output, /Image pull refused by the registry \(attempt 1 of 4\); retrying in 30s\./)
+  assert.deepEqual(run.calls('docker'), ['pull ghcr.io/supabase/pg_prove:3.36'])
+})
+
+test('pulls refused on every attempt fail the step with a clear message', t => {
+  const run = runStartStep(t, { start: [REFUSED, REFUSED, REFUSED, REFUSED, 'ok'] })
+  assert.equal(run.status, 1)
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('start')).length, 4)
+  assert.deepEqual(run.calls('sleep'), ['30', '60', '90'])
+  assert.match(run.output, /toomanyrequests/, 'the start log is shown')
+  assert.match(run.output, /Image registries refused pulls 4 times \(rate limit\)\. Re-run this job later\./)
+  assert.match(run.output, /Local Supabase service setup failed; database tests did not run\./)
+  assert.deepEqual(run.calls('docker'), [], 'nothing else runs after a failed start')
+})
+
+test('any other start failure is reported at once, without retrying', t => {
+  const run = runStartStep(t, { start: ['Bind for 0.0.0.0:54322 failed: port is already allocated', 'ok'] })
+  assert.equal(run.status, 1)
+  assert.equal(run.calls('supabase').filter(call => call.startsWith('start')).length, 1)
+  assert.deepEqual(run.calls('sleep'), [])
+  assert.match(run.output, /port is already allocated/)
+  assert.doesNotMatch(run.output, /rate limit/)
+  assert.match(run.output, /Local Supabase service setup failed; database tests did not run\./)
+})
+
+test('the pgTAP runner pull is retried too; a refusal fails clearly, any other miss leaves the pull to supabase test db', t => {
+  const refused = runStartStep(t, { pull: [REFUSED, REFUSED, REFUSED, REFUSED] })
+  assert.equal(refused.status, 1)
+  assert.equal(refused.calls('docker').length, 4)
+  assert.match(refused.output, /Image registries refused the pgTAP runner 4 times \(rate limit\)\. Re-run this job later\./)
+  const retried = runStartStep(t, { pull: [REFUSED, 'ok'] })
+  assert.equal(retried.status, 0, retried.output)
+  assert.deepEqual(retried.calls('sleep'), ['30'])
+  const missing = runStartStep(t, { pull: ['manifest unknown'] })
+  assert.equal(missing.status, 0, missing.output)
+  assert.match(missing.output, /::warning::Could not pull ghcr\.io\/supabase\/pg_prove:3\.36 in advance/)
+})
+
+function run(program, args, cwd, allowed = [0]) {
+  const result = spawnSync(program, args, { cwd, encoding: 'utf8' })
+  assert.ok(allowed.includes(result.status), `${program} ${args[0]}: ${result.stderr}`)
+  return result
+}
+
+function git(cwd, ...args) {
+  return run('git', args, cwd).stdout.trim()
+}
+
+function fixture(t) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'campusintel-workflow-test-'))
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }))
+  const bare = path.join(home, 'origin.git')
+  const root = path.join(home, 'repo')
+  fs.mkdirSync(root)
+  run('git', ['init', '--bare', bare], home)
+  git(root, 'init', '-b', 'develop')
+  git(root, 'config', 'user.name', 'Workflow Test')
+  git(root, 'config', 'user.email', 'workflow@example.test')
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"campusintel"}\n')
+  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n.env*.local\n')
+  fs.writeFileSync(path.join(root, 'source.ts'), 'export const value = 1\n')
+  fs.mkdirSync(path.join(root, 'lib', 'auth'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'lib', 'auth', 'sample.test.cjs'), 'test fixture\n')
+  git(root, 'add', '.')
+  git(root, 'commit', '-m', 'fixture base')
+  git(root, 'remote', 'add', 'origin', ORIGIN)
+  git(root, 'config', `url.file://${bare}.insteadOf`, ORIGIN)
+  git(root, 'push', '-u', 'origin', 'develop')
+  git(root, 'fetch', 'origin')
+  return { home, root, bare, base: git(root, 'rev-parse', 'HEAD') }
+}
+
+function cli(root, ...args) {
+  return run(process.execPath, [CLI, ...args], root, [0, 1])
+}
+
+test('Git origin rejects a different repository even with the campusintel package name', t => {
+  const f = fixture(t)
+  git(f.root, 'remote', 'set-url', 'origin', 'https://github.com/Teetoh861/StayFocus.git')
+  const result = cli(f.root, 'scope')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /origin is not the expected/)
+})
+
+test('start refuses dirty source, invalid names, and an existing branch', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'draft.ts'), 'draft\n')
+  assert.match(cli(f.root, 'start', 'feature/one').stderr, /source worktree is dirty/)
+  fs.unlinkSync(path.join(f.root, 'draft.ts'))
+  assert.match(cli(f.root, 'start', 'feature/../unsafe').stderr, /invalid branch name/)
+  git(f.root, 'branch', 'feature/existing')
+  assert.match(cli(f.root, 'start', 'feature/existing').stderr, /already exists/)
+  assert.equal(git(f.root, 'rev-parse', 'HEAD'), f.base)
+})
+
+test('start creates an isolated branch from fetched origin/develop', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'isolated')
+  const result = cli(f.root, 'start', 'feature/isolated', '--worktree', target)
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, new RegExp(f.base))
+  assert.equal(git(target, 'branch', '--show-current'), 'feature/isolated')
+  assert.equal(git(target, 'rev-parse', 'HEAD'), f.base)
+  assert.equal(git(f.root, 'branch', '--show-current'), 'develop')
+  assert.match(cli(f.root, 'start', 'feature/another', '--worktree', target).stderr,
+    /path already exists/)
+})
+
+test('start tolerates unrelated prunable worktree records and rejects control characters in paths', t => {
+  const f = fixture(t)
+  const stale = path.join(f.home, 'stale-worktree')
+  git(f.root, 'worktree', 'add', '--detach', stale)
+  fs.rmSync(stale, { recursive: true })
+  const target = path.join(f.home, 'new-worktree')
+  assert.match(cli(f.root, 'start', 'feature/bad-path', '--worktree', `${target}\nother`).stderr,
+    /invalid worktree path/)
+  const result = cli(f.root, 'start', 'feature/fresh', '--worktree', target)
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(git(target, 'rev-parse', 'HEAD'), f.base)
+})
+
+test('review includes committed, working-tree, and untracked source without ignored files or staging', t => {
+  const f = fixture(t)
+  git(f.root, 'switch', '-c', 'feature/review')
+  fs.writeFileSync(path.join(f.root, 'source.ts'), 'export const value = 2\n')
+  git(f.root, 'add', 'source.ts')
+  git(f.root, 'commit', '-m', 'committed feature')
+  fs.appendFileSync(path.join(f.root, 'source.ts'), 'export const next = 3\n')
+  fs.writeFileSync(path.join(f.root, 'new.ts'), 'export const untracked = true\n')
+  fs.writeFileSync(path.join(f.root, '.env.local'), 'PRIVATE_VALUE=ignored\n')
+  fs.mkdirSync(path.join(f.root, 'node_modules'))
+  fs.writeFileSync(path.join(f.root, 'node_modules', 'ignored.ts'), 'ignored\n')
+  const before = git(f.root, 'status', '--porcelain=v1')
+  const result = packageReview(repository(f.root))
+  t.after(() => fs.rmSync(result.directory, { recursive: true, force: true }))
+  const patch = fs.readFileSync(path.join(result.directory, 'review.patch'), 'utf8')
+  const summary = fs.readFileSync(path.join(result.directory, 'summary.md'), 'utf8')
+  assert.match(patch, /export const value = 2/)
+  assert.match(patch, /export const next = 3/)
+  assert.match(patch, /export const untracked = true/)
+  assert.doesNotMatch(patch, /PRIVATE_VALUE|ignored\.ts/)
+  assert.match(summary, /new\.ts/)
+  assert.match(summary, /Diff stat/)
+  assert.equal(git(f.root, 'status', '--porcelain=v1'), before)
+  assert.equal(git(f.root, 'diff', '--cached', '--name-only'), '')
+})
+
+test('review refuses sensitive paths and credential-looking content', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, '.env.production'), 'PRIVATE_VALUE=unsafe\n')
+  assert.match(cli(f.root, 'review').stderr, /sensitive or generated path/)
+  fs.unlinkSync(path.join(f.root, '.env.production'))
+  fs.writeFileSync(path.join(f.root, 'token.ts'),
+    'const token = "ghp_' + 'A'.repeat(36) + '"\n')
+  assert.match(cli(f.root, 'review').stderr, /possible credential/)
+})
+
+test('verification propagates a failed required check and explains skipped checks', t => {
+  const f = fixture(t)
+  const execute = mockExecute((program, args) => ({ status: args.includes('tsc') ? 1 : 0,
+    stdout: '', stderr: '' }))
+  const report = runVerification(repository(f.root), { execute })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+TypeScript/)
+  assert.match(report.output, /PASS\s+Application tests/)
+  assert.match(report.output, /SKIP\s+Database tests/)
+  assert.match(report.output, /Result: FAIL/)
+})
+
+test('verification names every failing test with its location and first error lines', t => {
+  const f = fixture(t)
+  const file = path.join(f.root, 'lib', 'auth', 'sample.test.cjs')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(file, [
+    "const { test } = require('node:test')",
+    "const assert = require('node:assert/strict')",
+    "test('queue timing failure', () => assert.equal(1, 2, 'first error line\\nsecond error line\\nthird error line\\nfourth error line'))",
+    "test('nested suite failure', async t => {",
+    "  await t.test('nested test failure', () => assert.ok(false, 'nested error'))",
+    "})",
+    "test('passing fixture test', () => {})",
+    '',
+  ].join('\n'))
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, args, options)
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests — 1 passed, 3 failed, 0 skipped/)
+  for (const title of ['queue timing failure', 'nested test failure', 'nested suite failure']) {
+    assert.ok(report.output.includes(title), title)
+  }
+  for (const line of [3, 4, 5]) assert.ok(report.output.includes(`sample.test.cjs:${line}:`), `location on line ${line}`)
+  assert.match(report.output, /first error line\n\s+second error line\n\s+third error line/)
+  assert.match(report.output, /error: 'nested error'/)
+  assert.doesNotMatch(report.output, /fourth error line|passing fixture test|node:internal|duration_ms:/)
+})
+
+test('a test that runs out of its own time fails and its file still exits, so the verifier names it', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+    "const { test } = require('node:test')",
+    // A ref'd interval left behind would keep the file's process alive forever without forceExit.
+    "test('stuck parser wait', { timeout: 500 }, () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })",
+    "test('passing fixture test', () => {})",
+    '',
+  ].join('\n'))
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, args, options)
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests — 1 passed, 1 failed, 0 skipped/)
+  assert.match(report.output, /stuck parser wait\n\s+location: .*sample\.test\.cjs:2:1/)
+  assert.match(report.output, /error: 'test timed out after 500ms'/)
+})
+
+test('a stuck test without a timeout is named and the batch stopped, instead of hanging the verifier', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+  fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+    "const { test } = require('node:test')",
+    "test('passing fixture test', () => {})",
+    "test('stuck parser wait', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })",
+    '',
+  ].join('\n'))
+  // The production limit is two minutes; this runs the same watchdog with one second. A file, not -e: the runner's
+  // file processes inherit this process's execArgv.
+  const runner = path.join(f.root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { testTimeoutMs: 1_000 })\n`)
+  const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+    args.includes(RUNNER) ? spawnSync(program, [runner, args.at(-1)], { ...options, timeout: 60_000 })
+      : { status: 0, stdout: '', stderr: '' },
+  })
+  assert.equal(report.exitCode, 1)
+  assert.match(report.output, /FAIL\s+Application tests/)
+  assert.match(report.output, /run-tests: "stuck parser wait" \(lib\/auth\/sample\.test\.cjs:3\) ran for more than 1 s; the batch was stopped/)
+})
+
+for (const [hook, expected] of [
+  ['after', 'lib/auth/sample\\.test\\.cjs: the after hook at lib/auth/sample\\.test\\.cjs:2 ran for more than 1 s after its last test'],
+  ['before', '"passing fixture test" \\(lib/auth/sample\\.test\\.cjs:3\\), or the before hook at lib/auth/sample\\.test\\.cjs:2, ran for more than 1 s'],
+]) {
+  test(`a hanging ${hook} hook is named with its file and the batch stopped, instead of hanging the verifier`, t => {
+    const f = fixture(t)
+    fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'test-loader.cjs'), '')
+    fs.writeFileSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'), [
+      `const { ${hook}, test } = require('node:test')`,
+      `${hook}(() => { setInterval(() => {}, 1_000); return new Promise(() => {}) })`,
+      "test('passing fixture test', () => {})",
+      '',
+    ].join('\n'))
+    const runner = path.join(f.root, 'watchdog-runner.cjs')
+    fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { testTimeoutMs: 1_000 })\n`)
+    const report = runVerification(repository(f.root), { execute: (program, args, options) =>
+      args.includes(RUNNER) ? spawnSync(program, [runner, args.at(-1)], { ...options, timeout: 60_000 })
+        : { status: 0, stdout: '', stderr: '' },
+    })
+    assert.equal(report.exitCode, 1)
+    assert.match(report.output, /FAIL\s+Application tests/)
+    assert.match(report.output, new RegExp(`run-tests: ${expected}; the batch was stopped`))
+  })
+}
+
+/** Run runFiles in a fresh process with a 1 s watchdog; `serial` lists the files it runs as the real-parser batch. */
+function startRunner(root, files, serial = []) {
+  const runner = path.join(root, 'watchdog-runner.cjs')
+  fs.writeFileSync(runner, `const [files, serial] = JSON.parse(process.argv[2])\n` +
+    `require(${JSON.stringify(RUNNER)}).runFiles(files, { testTimeoutMs: 1_000, serialFiles: serial })\n`)
+  const child = spawn(process.execPath, [runner, JSON.stringify([files, serial])], { cwd: root })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.on('data', chunk => { stdout += chunk })
+  child.stderr.on('data', chunk => { stderr += chunk })
+  // A runner that never stops is the failure being tested for; it is killed rather than left to hang this test.
+  const limit = setTimeout(() => child.kill('SIGKILL'), 60_000)
+  return new Promise(resolve => child.on('close', (status, signal) => { clearTimeout(limit); resolve({ status, signal, stdout, stderr }) }))
+}
+
+test('two test runs at once: the second waits for the first real-parser batch outside any test, and both pass', async t => {
+  const f = fixture(t)
+  const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
+  // Each test stays under the 1 s watchdog, but the batch holds the lock for 2.4 s: the second run waits twice the
+  // watchdog's limit. Under the runner the file must not take the lock itself, or it would wait for its own runner.
+  const file = path.join(f.root, 'real.test.cjs')
+  fs.writeFileSync(file, [
+    "const { after, before, test } = require('node:test')",
+    `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+    'before(holdRealParsers)',
+    'after(releaseRealParsers)',
+    ...[1, 2, 3, 4].map(step => `test('step ${step}', () => new Promise(resolve => setTimeout(resolve, 600)))`),
+    '',
+  ].join('\n'))
+  const runs = await Promise.all([startRunner(f.root, [file], [file]), startRunner(f.root, [file], [file])])
+  for (const run of runs) {
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /^# pass 4$/m)
+    assert.doesNotMatch(run.stderr, /the batch was stopped|waiting for another real-parser test run/)
+  }
+  assert.equal(runs.filter(run => /^run-tests: waiting for the real-parser lock \(127\.0\.0\.1:47291\)/m.test(run.stderr)).length,
+    1, 'exactly one run waited for the other')
+})
+
+test('a serial worker whose runner is killed stops its child processes and exits, instead of parsing unlocked', async t => {
+  const f = fixture(t)
+  const lock = path.join(__dirname, '../../lib/ai-practice/fixtures/real-parsers.cjs')
+  const marker = path.join(f.root, 'worker.json')
+  const heartbeat = path.join(f.root, 'heartbeat')
+  const file = path.join(f.root, 'serial.test.cjs')
+  // The worker starts a child standing in for a parser, records both pids and beats until it is stopped.
+  fs.writeFileSync(file, [
+    "const fs = require('node:fs')",
+    "const { spawn } = require('node:child_process')",
+    "const { after, before, test } = require('node:test')",
+    `const { holdRealParsers, releaseRealParsers } = require(${JSON.stringify(lock)})`,
+    'before(holdRealParsers)',
+    'after(releaseRealParsers)',
+    "test('serial worker parsing', () => {",
+    "  const parser = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], { stdio: 'ignore' })",
+    `  fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ worker: process.pid, parser: parser.pid }))`,
+    `  setInterval(() => fs.appendFileSync(${JSON.stringify(heartbeat)}, '.'), 20)`,
+    '  return new Promise(() => {})',
+    '})',
+    '',
+  ].join('\n'))
+  const runner = path.join(f.root, 'serial-runner.cjs')
+  fs.writeFileSync(runner, `require(${JSON.stringify(RUNNER)}).runFiles([process.argv[2]], { serialFiles: [process.argv[2]] })\n`)
+  const child = spawn(process.execPath, [runner, file], { cwd: f.root, stdio: 'ignore' })
+  const alive = pid => { try { process.kill(pid, 0); return true } catch (error) { return error.code !== 'ESRCH' } }
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+  let pids = {}
+  t.after(() => { for (const pid of [child.pid, pids.worker, pids.parser]) if (pid && alive(pid)) process.kill(pid, 'SIGKILL') })
+  for (let wait = 0; wait < 600 && !(fs.existsSync(marker) && fs.existsSync(heartbeat)); wait += 1) await pause(50)
+  pids = JSON.parse(fs.readFileSync(marker, 'utf8'))
+  child.kill('SIGKILL')
+  await new Promise(resolve => child.once('exit', resolve))
+  // The worker checks for its runner every 250 ms; 5 s is generous for a loaded machine.
+  const until = Date.now() + 5_000
+  while (Date.now() < until && (alive(pids.worker) || alive(pids.parser))) await pause(25)
+  assert.equal(alive(pids.worker), false, 'the worker exited')
+  assert.equal(alive(pids.parser), false, 'its child process was stopped')
+  const beats = fs.statSync(heartbeat).size
+  await pause(300)
+  assert.equal(fs.statSync(heartbeat).size, beats, 'nothing keeps running after the runner died')
+})
+
+test('a stray "run-tests: waiting for" line does not pause the watchdog', async t => {
+  const f = fixture(t)
+  const file = path.join(f.root, 'unrelated.test.cjs')
+  fs.writeFileSync(file, "const { test } = require('node:test')\nprocess.stderr.write('run-tests: waiting for unrelated IO\\n')\n" +
+    "test('ordinary hung test', () => { setInterval(() => {}, 1_000); return new Promise(() => {}) })\n")
+  const run = await startRunner(f.root, [file])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /^run-tests: "ordinary hung test" \(unrelated\.test\.cjs:3\) ran for more than 1 s; the batch was stopped$/m)
+})
+
+test('a file that exits early does not shield a silent stuck file, which is named', async t => {
+  const f = fixture(t)
+  const exits = path.join(f.root, 'exits.test.cjs')
+  const silent = path.join(f.root, 'silent.test.cjs')
+  fs.writeFileSync(exits, "const { before, test } = require('node:test')\n" +
+    "before(() => { setTimeout(() => process.exit(1), 300); return new Promise(() => {}) })\ntest('never started', () => {})\n")
+  fs.writeFileSync(silent, 'setInterval(() => {}, 1_000)\n')
+  const run = await startRunner(f.root, [exits, silent])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /^run-tests: silent\.test\.cjs reported nothing for more than 1 s; the batch was stopped$/m)
+})
+
+test('exactly the test files that use the real-parser fixture run in the serial batch', () => {
+  const root = path.join(__dirname, '../..')
+  // Read in another process: loading the runner here would clear this test process's node:test child marker.
+  const serial = JSON.parse(spawnSync(process.execPath, ['-p', `JSON.stringify(require(${JSON.stringify(RUNNER)}).SERIAL_TEST_FILES)`],
+    { encoding: 'utf8' }).stdout)
+  const users = collectTestFiles(root).application
+    .filter(file => fs.readFileSync(path.join(root, file), 'utf8').includes('fixtures/real-parsers.cjs'))
+  assert.deepEqual([...serial].sort(), users.sort(), 'every fixture user is in the batch, and nothing else is')
+})
+
+test('verification reports a build environment block without claiming a build pass', t => {
+  const f = fixture(t)
+  const report = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
+    status: args.includes('build') ? 1 : 0,
+    stdout: '',
+    stderr: args.includes('build') ? 'binding to a port\nOperation not permitted' : '',
+  })) })
+  assert.equal(report.rows.find(row => row.name === 'Production build').status, 'BLOCKED')
+  assert.equal(report.exitCode, 1)
+})
+
+test('verification asks a finished build whether the landing page is static, and never a build that failed', t => {
+  const f = fixture(t)
+  const LANDING = 'scripts/landing/static-check.cjs'
+  const order = []
+  const verify = (landing, build = 0) => runVerification(repository(f.root), { execute: mockExecute((program, args) => {
+    if (args.includes('build')) order.push('build')
+    if (args.includes(LANDING)) { order.push('landing'); assert.equal(program, process.execPath); return landing }
+    return { status: args.includes('build') ? build : 0, stdout: '', stderr: '' }
+  }) })
+  const row = report => report.rows.find(entry => entry.name === 'Landing page build')
+
+  const passed = verify({ status: 0, stdout: 'The landing page (/) is a static page: built once, never re-rendered.\n', stderr: '' })
+  assert.deepEqual(order, ['build', 'landing'], 'the check reads the build that has just finished')
+  assert.deepEqual(row(passed), { name: 'Landing page build', status: 'PASS',
+    detail: 'The landing page (/) is a static page: built once, never re-rendered.' })
+  assert.equal(passed.exitCode, 0)
+  assert.match(passed.output, /^PASS {4}Landing page build — The landing page \(\/\) is a static page/m)
+
+  const failed = verify({ status: 1, stdout: '',
+    stderr: 'The landing page (/) is not a static page: the build renders it again for every request.\n' })
+  assert.deepEqual(row(failed), { name: 'Landing page build', status: 'FAIL',
+    detail: 'The landing page (/) is not a static page: the build renders it again for every request.' })
+  assert.equal(failed.exitCode, 1)
+  assert.match(failed.output, /Result: FAIL/)
+
+  // A check that says nothing still reports plainly.
+  assert.equal(row(verify({ status: 0, stdout: '', stderr: '' })).detail, 'the build lists / as a static page')
+  assert.equal(row(verify({ status: 3, stdout: '', stderr: '' })).detail, 'exit 3')
+
+  order.length = 0
+  const unbuilt = verify({ status: 0, stdout: 'stale answer\n', stderr: '' }, 1)
+  assert.deepEqual(order, ['build'], 'a failed build is never asked: its folder holds an older build')
+  assert.deepEqual(row(unbuilt), { name: 'Landing page build', status: 'SKIP', detail: 'the production build did not finish' })
+  assert.equal(unbuilt.exitCode, 1)
+})
+
+test('verification checks whitespace in untracked files without treating a normal diff as failure', t => {
+  const f = fixture(t)
+  const file = path.join(f.root, 'new.ts')
+  const execute = mockExecute((program, args, options) => program === 'git'
+    ? spawnSync(program, args, options)
+    : { status: 0, stdout: '', stderr: '' })
+  fs.writeFileSync(file, 'export const clean = true\n')
+  const cleanReport = runVerification(repository(f.root), { execute })
+  assert.equal(cleanReport.rows.find(row => row.name === 'Diff whitespace').status, 'PASS')
+  fs.writeFileSync(file, 'export const dirty = true  \n')
+  const dirtyReport = runVerification(repository(f.root), { execute })
+  assert.equal(dirtyReport.rows.find(row => row.name === 'Diff whitespace').status, 'FAIL')
+  assert.equal(dirtyReport.exitCode, 1)
+})
+
+test('scope requires SQL tests and generated parity for managed-content sources', () => {
+  assert.deepEqual(scope(['lib/data/courses.ts']), { db: true, content: true })
+  assert.deepEqual(scope(['supabase/tests/profile_selection.test.sql']), { db: true, content: false })
+  assert.deepEqual(scope(['components/ui/button.tsx']), { db: false, content: false })
+})
+
+test('verification distinguishes an unavailable DB service from failed SQL tests', t => {
+  const f = fixture(t)
+  fs.mkdirSync(path.join(f.root, 'supabase', 'tests'), { recursive: true })
+  fs.writeFileSync(path.join(f.root, 'supabase', 'tests', 'new.test.sql'), '-- fixture\n')
+  let testRan = false
+  const blocked = runVerification(repository(f.root), { execute: mockExecute((program, args) => {
+    if (program === 'supabase' && args[0] === 'status') return { status: 1 }
+    if (program === 'supabase' && args[0] === 'test') testRan = true
+    return { status: 0 }
+  }) })
+  assert.equal(blocked.rows.find(row => row.name === 'Database tests').status, 'BLOCKED')
+  assert.match(blocked.output, /local Supabase service unavailable; run supabase start/)
+  assert.doesNotMatch(blocked.output, /supabase db start/)
+  assert.equal(blocked.exitCode, 1)
+  assert.equal(testRan, false)
+
+  const failed = runVerification(repository(f.root), { execute: mockExecute((program, args) =>
+    ({ status: program === 'supabase' && args[0] === 'test' ? 1 : 0 })) })
+  assert.equal(failed.rows.find(row => row.name === 'Database tests').status, 'FAIL')
+  assert.equal(failed.exitCode, 1)
+
+  const interrupted = runVerification(repository(f.root), { execute: mockExecute((program, args) => ({
+    status: program === 'supabase' && args[0] === 'test' ? 1 : 0,
+    stderr: program === 'supabase' && args[0] === 'test' ? 'connection refused' : '',
+  })) })
+  assert.equal(interrupted.rows.find(row => row.name === 'Database tests').status, 'BLOCKED')
+})
+
+test('cleanup from an unrelated worktree leaves unmerged work intact', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'unmerged-worktree')
+  const caller = path.join(f.home, 'unrelated-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/unmerged', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const work = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'unmerged work')
+  git(target, 'push', '-u', 'origin', 'feature/unmerged')
+  git(f.root, 'worktree', 'add', '-b', 'chore/unrelated', caller, f.base)
+  const result = cli(caller, 'cleanup', 'feature/unmerged')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /not merged into origin\/develop/)
+  assert.match(git(caller, 'branch', '--list', 'feature/unmerged'), /feature\/unmerged/)
+  assert.ok(fs.existsSync(target))
+  assert.equal(git(f.root, 'rev-parse', 'develop'), f.base)
+})
+
+test('cleanup refuses dirty feature worktrees before touching branches', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'feature-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/dirty', '--worktree', target).status, 0)
+  git(target, 'push', '-u', 'origin', 'feature/dirty')
+  fs.writeFileSync(path.join(target, 'draft.ts'), 'draft\n')
+  const result = cli(f.root, 'cleanup', 'feature/dirty')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /feature worktree is dirty/)
+  assert.match(git(f.root, 'branch', '--list', 'feature/dirty'), /feature\/dirty/)
+  assert.ok(fs.existsSync(target))
+})
+
+test('cleanup preserves ignored private files in a feature worktree', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'private-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/private', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, '.env.local'), 'PRIVATE_VALUE=fixture\n')
+  const result = cli(f.root, 'cleanup', 'feature/private')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /ignored private files/)
+  assert.ok(fs.existsSync(path.join(target, '.env.local')))
+})
+
+test('cleanup removes only a merged disposable feature worktree and branch', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'merged-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/merged', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const merged = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'merged fixture work')
+  git(f.root, 'merge', '--ff-only', 'feature/merged')
+  git(f.root, 'push', 'origin', 'develop')
+  fs.mkdirSync(path.join(target, 'node_modules'))
+  fs.writeFileSync(path.join(target, 'node_modules', 'ignored.txt'), 'dependency fixture\n')
+  const result = cli(f.root, 'cleanup', 'feature/merged')
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(!fs.existsSync(target))
+  assert.equal(git(f.root, 'branch', '--list', 'feature/merged'), '')
+  assert.equal(git(f.root, 'rev-parse', 'develop'), git(f.root, 'rev-parse', 'origin/develop'))
+})
+
+test('cleanup succeeds from an unrelated clean worktree when the merged feature has no upstream', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'merged-worktree')
+  const caller = path.join(f.home, 'unrelated-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/merged', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const merged = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'merged fixture work')
+  git(f.root, 'merge', '--ff-only', 'feature/merged')
+  git(f.root, 'push', 'origin', 'develop')
+  assert.equal(git(f.root, 'for-each-ref', '--format=%(upstream)', 'refs/heads/feature/merged'), '')
+  git(f.root, 'worktree', 'add', '-b', 'chore/unrelated', caller, f.base)
+  const result = cli(caller, 'cleanup', 'feature/merged')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Removed local feature branch: feature\/merged/)
+  assert.ok(!fs.existsSync(target))
+  assert.equal(git(caller, 'branch', '--list', 'feature/merged'), '')
+  assert.equal(git(caller, 'branch', '--show-current'), 'chore/unrelated')
+  assert.equal(git(f.root, 'rev-parse', 'develop'), git(f.root, 'rev-parse', 'origin/develop'))
+})
+
+test('cleanup removes a merged pushed branch with an origin feature upstream', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'pushed-worktree')
+  const caller = path.join(f.home, 'caller-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/pushed', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const merged = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'pushed fixture work')
+  git(target, 'push', '-u', 'origin', 'feature/pushed')
+  const featureTip = git(target, 'rev-parse', 'HEAD')
+  assert.equal(git(f.root, 'for-each-ref', '--format=%(upstream)',
+    'refs/heads/feature/pushed'), 'refs/remotes/origin/feature/pushed')
+
+  git(f.root, 'worktree', 'add', '-b', 'chore/caller', caller, f.base)
+  git(caller, 'merge', '--no-ff', '--no-edit', 'feature/pushed')
+  git(caller, 'push', 'origin', 'HEAD:develop')
+  const remoteFeature = git(f.root, 'ls-remote', '--heads', 'origin',
+    'refs/heads/feature/pushed')
+  assert.equal(git(f.root, 'rev-parse', 'develop'), f.base)
+
+  const result = cli(caller, 'cleanup', 'feature/pushed')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Removed local feature branch: feature\/pushed/)
+  assert.ok(!fs.existsSync(target))
+  assert.equal(git(caller, 'branch', '--list', 'feature/pushed'), '')
+  assert.equal(git(f.root, 'rev-parse', 'develop'), git(f.root, 'rev-parse', 'origin/develop'))
+  assert.equal(git(f.root, 'ls-remote', '--heads', 'origin',
+    'refs/heads/feature/pushed'), remoteFeature)
+  assert.match(remoteFeature, new RegExp(featureTip))
+})
+
+test('cleanup uses local develop when the pushed feature upstream is stale', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'stale-upstream-worktree')
+  const caller = path.join(f.home, 'caller-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/stale', '--worktree', target).status, 0)
+  git(target, 'push', '-u', 'origin', 'feature/stale')
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const merged = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'merged after pushing feature')
+  git(f.root, 'worktree', 'add', '-b', 'chore/caller', caller, f.base)
+  git(caller, 'merge', '--no-ff', '--no-edit', 'feature/stale')
+  git(caller, 'push', 'origin', 'HEAD:develop')
+  assert.equal(git(f.root, 'rev-parse', 'origin/feature/stale'), f.base)
+
+  const result = cli(caller, 'cleanup', 'feature/stale')
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(!fs.existsSync(target))
+  assert.equal(git(caller, 'branch', '--list', 'feature/stale'), '')
+  assert.equal(git(f.root, 'rev-parse', 'develop'), git(f.root, 'rev-parse', 'origin/develop'))
+})
+
+test('cleanup refuses a multi-valued feature upstream before removing its worktree', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'ambiguous-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/ambiguous', '--worktree', target).status, 0)
+  git(target, 'push', '-u', 'origin', 'feature/ambiguous')
+  git(f.root, 'config', '--add', 'branch.feature/ambiguous.merge', 'refs/heads/develop')
+  const result = cli(f.root, 'cleanup', 'feature/ambiguous')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /unsupported upstream configuration/)
+  assert.ok(fs.existsSync(target))
+  assert.match(git(f.root, 'branch', '--list', 'feature/ambiguous'), /feature\/ambiguous/)
+  assert.equal(git(f.root, 'rev-parse', 'develop'), f.base)
+})
+
+test('cleanup restores a pushed upstream when local develop cannot advance', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'blocked-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/blocked', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const merged = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'merged fixture work')
+  git(target, 'push', '-u', 'origin', 'feature/blocked')
+  git(target, 'push', 'origin', 'HEAD:develop')
+  git(f.root, 'switch', '-c', 'chore/caller')
+  fs.writeFileSync(path.join(f.root, '.git', 'refs', 'heads', 'develop.lock'), '')
+
+  const result = cli(f.root, 'cleanup', 'feature/blocked')
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /git branch failed/)
+  assert.equal(git(f.root, 'for-each-ref', '--format=%(upstream)',
+    'refs/heads/feature/blocked'), 'refs/remotes/origin/feature/blocked')
+  assert.ok(fs.existsSync(target))
+  assert.equal(git(f.root, 'rev-parse', 'develop'), f.base)
+})
+
+test('cleanup advances local develop when the caller is on another local branch', t => {
+  const f = fixture(t)
+  const target = path.join(f.home, 'merged-worktree')
+  assert.equal(cli(f.root, 'start', 'feature/remote-merged', '--worktree', target).status, 0)
+  fs.writeFileSync(path.join(target, 'work.ts'), 'export const merged = true\n')
+  git(target, 'add', 'work.ts')
+  git(target, 'commit', '-m', 'merged fixture work')
+  const featureTip = git(target, 'rev-parse', 'HEAD')
+  git(target, 'push', 'origin', 'HEAD:develop')
+  git(f.root, 'switch', '-c', 'chore/unrelated')
+  assert.equal(git(f.root, 'rev-parse', 'develop'), f.base)
+  const result = cli(f.root, 'cleanup', 'feature/remote-merged')
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(git(f.root, 'rev-parse', 'develop'), featureTip)
+  assert.equal(git(f.root, 'branch', '--list', 'feature/remote-merged'), '')
+  assert.equal(git(f.root, 'branch', '--show-current'), 'chore/unrelated')
+  assert.ok(!fs.existsSync(target))
+})
+
+test('test batches pass literal paths through the runner so bracketed route suites execute', t => {
+  const f = fixture(t)
+  const body = "const { test } = require('node:test')\ntest('runs', () => {})\n"
+  fs.mkdirSync(path.join(f.root, 'app', '[param]'), { recursive: true })
+  fs.writeFileSync(path.join(f.root, 'normal.test.cjs'), body)
+  fs.writeFileSync(path.join(f.root, 'app', '[param]', 'inner.test.cjs'), body)
+  fs.writeFileSync(path.join(f.root, 'empty.test.cjs'), 'module.exports = {}\n')
+  const bracket = 'app/[param]/inner.test.cjs'
+  const command = testCommand([bracket, 'normal.test.cjs'], { loader: './loader.cjs' })
+  assert.equal(command.program, process.execPath)
+  assert.deepEqual(command.args, ['--require', './loader.cjs', RUNNER, bracket, 'normal.test.cjs'],
+    'paths are passed byte for byte in one pass; nothing is escaped or rewritten')
+  assert.deepEqual(testCommand(['a[b]*?{c}.test.cjs']).args, [RUNNER, 'a[b]*?{c}.test.cjs'])
+  const execute = files => spawnSync(process.execPath, testCommand(files).args, { cwd: f.root, encoding: 'utf8' })
+  const normal = execute(['normal.test.cjs'])
+  assert.equal(normal.status, 0); assert.match(normal.stdout, /^# tests 1$/m)
+  const inner = execute([bracket])
+  assert.equal(inner.status, 0); assert.match(inner.stdout, /^# tests 1$/m)
+  const both = execute([bracket, 'normal.test.cjs'])
+  assert.equal(both.status, 0); assert.match(both.stdout, /^# tests 2$/m); assert.match(both.stdout, /^# pass 2$/m)
+  const nothing = execute(['empty.test.cjs'])
+  assert.equal(nothing.status, 1)
+  assert.match(nothing.stderr, /1 file\(s\) supplied but no tests executed/)
+  assert.equal(spawnSync(process.execPath, [RUNNER], { cwd: f.root, encoding: 'utf8' }).status, 1)
+  const collected = collectTestFiles(f.root)
+  assert.deepEqual(collected.application.sort(), [bracket, 'empty.test.cjs', 'lib/auth/sample.test.cjs', 'normal.test.cjs'])
+  assert.deepEqual(collected.workflow, [])
+})
+
+test('a suite deleted in the working tree but still in the index is not collected', t => {
+  const f = fixture(t)
+  fs.writeFileSync(path.join(f.root, 'normal.test.cjs'), 'test fixture\n')
+  assert.deepEqual(collectTestFiles(f.root).application.sort(), ['lib/auth/sample.test.cjs', 'normal.test.cjs'])
+  fs.rmSync(path.join(f.root, 'lib', 'auth', 'sample.test.cjs'))
+  assert.equal(git(f.root, 'diff', '--cached', '--name-only'), '', 'nothing is staged')
+  assert.deepEqual(git(f.root, 'ls-files', '--deleted'), 'lib/auth/sample.test.cjs')
+  assert.deepEqual(collectTestFiles(f.root).application, ['normal.test.cjs'])
+})
+
+test('the production collection reaches the bracketed Course Detail, tracker and API suites', () => {
+  const { application, workflow } = collectTestFiles(path.join(__dirname, '../..'))
+  for (const file of ['app/courses/[slug]/course-detail.test.cjs', 'app/courses/[slug]/CourseViewTracker.test.cjs',
+    'app/courses/[slug]/quiz/practice-client.test.cjs', 'app/courses/[slug]/theory/page.test.cjs']) {
+    assert.ok(application.includes(file), file)
+  }
+  assert.equal(application.some(file => file.startsWith('scripts/dev-workflow/')), false)
+  assert.ok(workflow.includes('scripts/dev-workflow/workflow.test.cjs'))
+})
+
+test('a test batch with input files that executes nothing fails the verifier instead of reporting green', t => {
+  const f = fixture(t)
+  const report = runVerification(repository(f.root), { execute: (program, args) => ({
+    status: 0, stderr: '',
+    stdout: args.includes(RUNNER) ? '# tests 0\n# pass 0\n# fail 0\n' : '',
+  }) })
+  const row = report.rows.find(row => row.name === 'Application tests')
+  assert.equal(row.status, 'FAIL')
+  assert.equal(row.detail, 'no tests executed for the supplied files')
+  assert.equal(report.exitCode, 1)
+  const silent = runVerification(repository(f.root), { execute: () => ({ status: 0, stdout: '', stderr: '' }) })
+  assert.equal(silent.rows.find(row => row.name === 'Application tests').status, 'FAIL')
+})

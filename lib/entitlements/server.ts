@@ -1,0 +1,251 @@
+// lib/entitlements/server.ts — Server reads of the student's entitlement and the verified command entry point.
+// Whether a Discovery Pass may be offered, and whether a free month (Early Access) can be claimed, are read here too,
+// before any page renders, and fail closed. Nothing here grants anything on a read.
+// Reads use the student's own cookie-bound client; each command is a service-role function given the verified
+// session id, so the database derives the student itself (the same contract as AI practice and quiz attempts).
+// No time is read from this process or from the browser: the database decides every window on its own clock.
+import 'server-only'
+import { cache } from 'react'
+import { isStudentRenderClient, readRenderStudentSession } from '@/lib/auth/render-session'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { track } from '@vercel/analytics/server'
+import type { NextResponse } from 'next/server'
+import { matchesAccountContinuityToken } from '@/lib/auth/account-continuity'
+import { PRODUCT_EVENTS } from '@/lib/analytics/product-events'
+import { getAuthSecretKey, getSupabaseConfig, isStudentAuthEnabled } from '@/lib/auth/config'
+import { getBucket } from '@/lib/auth/rate-limit'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
+import { claimHashes, normalizeClaimEmail, readClaimHashKeys } from './claim-hash'
+import { discoveryOffered, entitlementCommandSchema, entitlementSummarySchema, freeMonthCouldBeClaimed } from './contract'
+import { activationRow, claimRow, eligibilityRow, executeEntitlementCommand, freeMonthEligibilityRow } from './service'
+import type { ClaimHash, ClaimKeys } from './claim-hash'
+import type { CourseAccess, EntitlementResult, EntitlementSummary, FreeMonthOffer } from './contract'
+import type { EntitlementEnv } from './service'
+
+type StudentClient = Awaited<ReturnType<typeof createClient>>
+
+// private.require_live_account() and get_my_entitlement() raise this when the session is no longer live.
+const LIVE_SESSION_REQUIRED_CODE = '42501'
+// Activation requests: a hard limit per account (keyed by the confirmed email), and per-address monitoring only. The
+// database holds the same figures and refuses any others (consume_discovery_activation_limit). A shared campus address
+// is never a barrier: one noisy account can add at most its own five requests to the address's count, and crossing
+// the notice threshold writes an audit row for the operator instead of refusing anyone.
+export const ACTIVATION_LIMIT = { account: [5, 900], originNotice: [60, 900] } as const
+const activationLimitRow = z.object({ allowed: z.boolean(), origin_requests: z.number().int().nonnegative() })
+
+export type EntitlementRead =
+  | { status: 'ok'; entitlement: EntitlementSummary }
+  | { status: 'signed-out' | 'unavailable' }
+
+function createServiceRoleClient() {
+  // Server-only client for the service-role entitlement functions; mirrors lib/auth/rate-limit.ts.
+  return createServiceClient(getSupabaseConfig().url, getAuthSecretKey(), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  })
+}
+
+// One eligibility read per request: the request-scoped client is the key, so every surface of one page shares it.
+const eligibilityByRequest = new WeakMap<StudentClient, Promise<boolean>>()
+
+/**
+ * Whether this student may be offered a Discovery Pass: the same rules activation applies (one pass per account, one
+ * per confirmed address within the retention period, never while the free month claim is open, never for an account
+ * or an address that has had a free month, a key configuration that can verify every claim), read without a lock.
+ * Missing keys, a session that
+ * cannot be verified, an error or a malformed answer all mean false: no offer is shown that activation might refuse.
+ */
+function readDiscoveryEligibility(client: StudentClient): Promise<boolean> {
+  let pending = eligibilityByRequest.get(client)
+  if (pending === undefined) {
+    pending = askDiscoveryEligibility(client)
+    eligibilityByRequest.set(client, pending)
+  }
+  return pending
+}
+
+/** The verified session and the keyed hashes of its confirmed address, or null when either is missing. */
+async function readClaimIdentity(client: StudentClient): Promise<{ sessionId: string; hashes: ClaimHash[] } | null> {
+  const keys = readClaimHashKeys()
+  if (keys === null) return null
+  const context = isStudentRenderClient(client) ? await readRenderStudentSession(client) : undefined
+  const [{ data: userData, error: userError }, { data: claimsData, error: claimsError }] =
+    context !== undefined ? [
+      { data: { user: context?.user }, error: null },
+      { data: { claims: context ? { sub: context.user.id, session_id: context.sessionId } : null }, error: null },
+    ] :
+    await Promise.all([client.auth.getUser(), client.auth.getClaims()])
+  const user = userData?.user
+  const claims = claimsData?.claims
+  if (userError || claimsError || !user?.email || claims?.sub !== user.id || typeof claims.session_id !== 'string'
+    || !claims.session_id) return null
+  return { sessionId: claims.session_id, hashes: claimHashes(keys, user.email) }
+}
+
+async function askDiscoveryEligibility(client: StudentClient): Promise<boolean> {
+  try {
+    const identity = await readClaimIdentity(client)
+    if (identity === null) return false
+    const { data, error } = await createServiceRoleClient().rpc('discovery_pass_eligibility', {
+      p_session_id: identity.sessionId, p_claim_hashes: identity.hashes })
+    const parsed = eligibilityRow.safeParse(data)
+    return !error && parsed.success && parsed.data.eligible
+  } catch {
+    return false
+  }
+}
+
+// One free month read per request, as for the pass.
+const freeMonthByRequest = new WeakMap<StudentClient, Promise<FreeMonthOffer | null>>()
+
+/**
+ * The free month this student can claim now, or null: the same rules the claim applies (the claim is open, the account
+ * has never had a month and has no paid plan, its courses are set, its address has not claimed, the keys can verify
+ * every claim), read without a lock. The end date is the database's, from its own clock. Missing keys, a session that
+ * cannot be verified, an error or a malformed answer all mean null: no offer is shown that the claim might refuse.
+ */
+function readFreeMonthOffer(client: StudentClient): Promise<FreeMonthOffer | null> {
+  let pending = freeMonthByRequest.get(client)
+  if (pending === undefined) {
+    pending = askFreeMonthOffer(client)
+    freeMonthByRequest.set(client, pending)
+  }
+  return pending
+}
+
+async function askFreeMonthOffer(client: StudentClient): Promise<FreeMonthOffer | null> {
+  try {
+    const identity = await readClaimIdentity(client)
+    if (identity === null) return null
+    const { data, error } = await createServiceRoleClient().rpc('early_access_claim_eligibility', {
+      p_session_id: identity.sessionId, p_claim_hashes: identity.hashes })
+    const parsed = freeMonthEligibilityRow.safeParse(data)
+    if (error || !parsed.success || !parsed.data.eligible || parsed.data.ends_at === undefined
+      || parsed.data.closes_at === undefined) return null
+    return { endsAt: parsed.data.ends_at, closesAt: parsed.data.closes_at }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The verified student's entitlement, read on the same client as the content it decides. Surfaces that can render a
+ * Discovery offer read eligibility too (at most once per request); a caller that only needs course access (course
+ * lists, lib/courses/read-model.ts) passes `discoveryEligibility: false` and gets `discovery_eligible: false`.
+ * A surface that offers the free month passes `freeMonth: true`; every other caller gets `free_month: null`.
+ */
+const readRenderEntitlement = cache(async (client: StudentClient) => client.rpc('get_my_entitlement'))
+
+export async function readEntitlementForVerifiedStudent(client: StudentClient,
+  { discoveryEligibility = true, freeMonth = false }: { discoveryEligibility?: boolean; freeMonth?: boolean } = {}):
+  Promise<EntitlementRead> {
+  try {
+    const { data, error } = await (isStudentRenderClient(client)
+      ? readRenderEntitlement(client) : client.rpc('get_my_entitlement'))
+    if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
+    const parsed = entitlementSummarySchema.safeParse(data)
+    if (!parsed.success) return { status: 'unavailable' }
+    // Only a student the database could still give a pass is asked about; everyone else is simply not eligible.
+    const askable = discoveryEligibility && discoveryOffered(parsed.data) && parsed.data.trial.status === 'available'
+    // The month is asked about only while the database's own instants say the claim could be open for this account.
+    const claimable = freeMonth && freeMonthCouldBeClaimed(parsed.data)
+    const [discoveryEligible, offer] = await Promise.all([
+      askable ? readDiscoveryEligibility(client) : false, claimable ? readFreeMonthOffer(client) : null])
+    return { status: 'ok', entitlement: { ...parsed.data, discovery_eligible: discoveryEligible, free_month: offer } }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+/** Full when a grant is active now, free otherwise; unknown when the read failed. */
+export function courseAccessFrom(read: EntitlementRead): CourseAccess {
+  if (read.status !== 'ok') return 'unknown'
+  return read.entitlement.tier === 'full' ? 'full' : 'free'
+}
+
+function createSupabaseEntitlementEnv(sessionId: string, email: string, address: string, keys: ClaimKeys):
+  EntitlementEnv {
+  const service = createServiceRoleClient()
+  return {
+    async limit() {
+      // The same purpose-separated buckets as the auth routes: the raw address and email never enter the database.
+      const { data, error } = await service.rpc('consume_discovery_activation_limit', {
+        p_account: getBucket('DISCOVERY_ACTIVATION', 'account', normalizeClaimEmail(email)),
+        p_origin: getBucket('DISCOVERY_ACTIVATION', 'origin', address),
+        p_account_limit: ACTIVATION_LIMIT.account[0], p_account_window: ACTIVATION_LIMIT.account[1],
+        p_origin_notice: ACTIVATION_LIMIT.originNotice[0], p_origin_window: ACTIVATION_LIMIT.originNotice[1],
+      })
+      const parsed = activationLimitRow.safeParse(data)
+      // A limiter outage fails closed: the request is not admitted without the limit.
+      if (error || !parsed.success) throw new Error('Activation rate limit unavailable')
+      return parsed.data.allowed ? 'allowed' : 'limited'
+    },
+    async activate(profileRevision) {
+      // Only keyed hashes of the confirmed address reach the database, current key first. With a revision the pass sets
+      // exactly the courses the student saw (20261026100000); without one (a tab from before) it is unbound.
+      const { data, error } = await service.rpc('activate_discovery_pass', { p_session_id: sessionId,
+        p_claim_hashes: claimHashes(keys, email),
+        ...(profileRevision === undefined ? {} : { p_expected_profile_revision: profileRevision }) })
+      const parsed = activationRow.safeParse(data)
+      return error || !parsed.success ? null : parsed.data
+    },
+    async claimFreeMonth(profileRevision) {
+      // The session, the keyed hashes and the revision the page showed. No date or time: the database starts the
+      // month, and ends it, on its own clock.
+      const { data, error } = await service.rpc('claim_early_access', { p_session_id: sessionId,
+        p_claim_hashes: claimHashes(keys, email), p_expected_profile_revision: profileRevision })
+      const parsed = claimRow.safeParse(data)
+      return error || !parsed.success ? null : parsed.data
+    },
+  }
+}
+
+/** Count a new pass. No identity or header leaves the server. A free month is counted by the operator report. */
+async function recordGrant(result: EntitlementResult): Promise<void> {
+  if (result.status !== 'pass-activated') return
+  try { await track(PRODUCT_EVENTS.trialActivated, undefined, { headers: { 'user-agent': 'CampusIntel product events' } }) }
+  catch { /* Analytics availability must never reverse a granted entitlement. */ }
+}
+
+/**
+ * Verify the live session and page continuity, apply the request limit, then run one command for that student only.
+ * `address` is the trusted requester address (lib/auth/request.ts getRequesterAddress) for the per-origin limit.
+ */
+export async function runEntitlementRequest(input: unknown, response: NextResponse, pageToken: string | null,
+  address: string): Promise<EntitlementResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  // Fail closed before any session or database work when the claim key is not configured.
+  const keys = readClaimHashKeys()
+  if (keys === null) return { status: 'unavailable' }
+  try {
+    const client = await createClient(response)
+    const context = await getStudentSessionContext(response, client)
+    if (context === null) return { status: 'signed-out' }
+    if (pageToken === null || !matchesAccountContinuityToken(pageToken, context.user.id, context.sessionId)) {
+      return { status: 'session-changed' }
+    }
+    const parsed = entitlementCommandSchema.safeParse(input)
+    if (!parsed.success) return { status: 'invalid-request' }
+    // A live student session always carries its confirmed address; without one nothing can be limited or claimed.
+    if (!context.user.email) return { status: 'unavailable' }
+    const env = createSupabaseEntitlementEnv(context.sessionId, context.user.email, address, keys)
+    const result = await executeEntitlementCommand(env, parsed.data)
+    await recordGrant(result)
+    return result
+  } catch (error) {
+    console.error('entitlements: request failed', error instanceof Error ? error.name : 'unknown')
+    return { status: 'unavailable' }
+  }
+}
+
+/** The copy switch (payment_policy.sales_open) for pages that read nothing else from the plan. Fails closed: false
+ *  keeps today's wording and shows no plans. */
+export async function readPlansOnSale(client: StudentClient): Promise<boolean> {
+  try {
+    const { data, error } = await client.rpc('plans_on_sale')
+    return !error && data === true
+  } catch {
+    return false
+  }
+}

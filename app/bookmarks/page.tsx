@@ -1,58 +1,66 @@
-// Bookmarks (/bookmarks) — server-rendered shell. The actual saved set lives
-// in localStorage, so the count + grid + empty state are owned by the client
-// child. Precomputing CardProps for every course on the server keeps the
-// client island free of data-shaping logic.
+// app/bookmarks/page.tsx — Account-gated bookmark register: central course truth composed over the shared bookmark store.
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { PageBand } from '@/components/student/PageBand'
+import { ResultNotice } from '@/components/student/ResultNotice'
+import { presentStudentCourseRow } from '@/components/student/StudentCourseRow'
+import { readCampusBotLinks } from '@/lib/ai-practice/campus-bot-courses'
+import { readPlansOnSale } from '@/lib/entitlements/server'
+import { StudentPage } from '@/components/student/StudentPage'
+import { redirectForStudentState } from '@/components/student/result-state'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
 import { courses } from '@/lib/data/courses'
-import { quizzes } from '@/lib/data/quizzes'
-import type { Course } from '@/lib/types'
-import type { CardProps } from '@/components/chrome/Card'
-import type { DifficultyLevel } from '@/components/chrome/SignalBar'
-import {
-  BookmarksClient,
-  type BookmarkableCourse,
-} from './BookmarksClient'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { createClient } from '@/lib/supabase/server'
+import { BookmarksClient } from './BookmarksClient'
+import type { RepositoryOnlyCourse, RoutedStudentCourse } from '@/lib/courses/read-model'
+import type { ReactElement } from 'react'
 
-const toLevel = (d: Course['difficulty']): DifficultyLevel =>
-  d === 'Easy' ? 'easy' : d === 'Hard' ? 'hard' : 'medium'
+const BOOKMARKS_PATH = STUDENT_DESTINATIONS.bookmarks.href
 
-function buildCardProps(course: Course): CardProps {
-  const quiz = quizzes[course.slug]
-  const critical = course.examCritical === true
-  return {
-    code: course.code,
-    title: course.title,
-    desc: course.tagline ?? course.overview,
-    flag: critical
-      ? { kind: 'critical', label: 'Exam-critical' }
-      : { kind: 'tracked', label: 'Tracked' },
-    level: String(course.level),
-    credits: `${course.credits} credits`,
-    questions: quiz ? String(quiz.totalQuestions) : '0',
-    timeLimit: quiz ? `${quiz.quizDurationMinutes} min` : '',
-    difficulty: toLevel(course.difficulty),
-    cta: {
-      label: 'View course',
-      href: `/courses/${course.slug}`,
-      variant: 'primary',
-      withArrow: true,
-    },
-    secondaryCta: critical
-      ? {
-          label: 'Start quiz',
-          href: `/courses/${course.slug}/quiz`,
-          variant: 'secondary',
-          withArrow: true,
-        }
-      : undefined,
-  }
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Bookmarks | CampusIntell', robots: { index: false, follow: false } }
+
+/** Cross the student account boundary before any bookmark state renders. */
+export default function BookmarksPage(): ReactElement {
+  return <StudentAccessGate returnPath={BOOKMARKS_PATH}><Bookmarks /></StudentAccessGate>
 }
 
-export default function BookmarksPage() {
-  const catalog: BookmarkableCourse[] = courses.map((c) => ({
-    id: c.id,
-    code: c.code,
-    slug: c.slug,
-    cardProps: buildCardProps(c),
-  }))
-  return <BookmarksClient catalog={catalog} />
+/** Preload the bookmarkable shelf through the central model; the client maps the live snapshot onto it. */
+async function Bookmarks(): Promise<ReactElement> {
+  let result: { status: 'ok'; courses: (RoutedStudentCourse | RepositoryOnlyCourse)[] }
+    | { status: 'signed-out' | 'unavailable' | 'invariant-failure' }
+  let plansOnSale = false
+  let campusBotLinks: ReadonlySet<string> | undefined
+  try {
+    const client = await createClient()
+    plansOnSale = await readPlansOnSale(client)
+    const context = await getStudentSessionContext(undefined, client)
+    if (context === null) result = { status: 'signed-out' }
+    else {
+      // The small shelf bounds this preload. The existing route reader owns both institutional
+      // and repository-only truth; saved courses are independent of the current academic selection.
+      const lookups = await Promise.all(courses.map(course => getStudentCourseBySlugForVerifiedStudent(client, course.slug, { readRepositoryOnly: false })))
+      const resolved: (RoutedStudentCourse | RepositoryOnlyCourse)[] = []
+      result = { status: 'ok', courses: resolved }
+      if (lookups.some(lookup => lookup.status === 'signed-out')) result = { status: 'signed-out' }
+      else for (const lookup of lookups) {
+        if (lookup.status === 'ok' || lookup.status === 'repository-only') resolved.push(lookup.course)
+        else if (lookup.status !== 'not-found') { result = { status: lookup.status }; break }
+      }
+      if (result.status === 'ok') campusBotLinks = await readCampusBotLinks(client, context.user, resolved)
+    }
+  } catch { result = { status: 'unavailable' } }
+  if (result.status === 'signed-out') redirectForStudentState('signed-out', BOOKMARKS_PATH)
+  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.bookmarks.label} />}>
+    {result.status === 'ok'
+      ? <BookmarksClient catalog={result.courses.map(course => ({
+        // Legacy device aliases come from the shelved route; presentation comes from the shared adapter.
+        slug: course.repository.route.slug, code: course.repository.route.course.code,
+        contentKey: course.repository.contentKey, row: presentStudentCourseRow(course, { plansOnSale, campusBotLinks }),
+      }))} />
+      : <ResultNotice state={result.status === 'invariant-failure' ? 'course-invariant' : 'courses-unavailable'}
+        retryHref={BOOKMARKS_PATH} />}
+  </StudentPage>
 }

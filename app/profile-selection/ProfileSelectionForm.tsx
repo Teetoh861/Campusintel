@@ -1,0 +1,299 @@
+// app/profile-selection/ProfileSelectionForm.tsx — Real name and academic setup through the continuity-bound server API.
+'use client'
+
+import Link from 'next/link'
+import { useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
+import { Feedback } from '@/components/chrome/Feedback'
+import { btnBase, buttonClassName, btnGhost, btnNavy, btnSm, cx } from '@/components/chrome/ui'
+import { studentFocusControl, studentFocusDark } from '@/components/student/ui'
+import { SelectionSummary } from '@/components/profile/SelectionSummary'
+import { AUTH_CONTINUITY_HEADER, AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { PROFILE_SELECTION_PATH, selectionReturnPath } from '@/lib/profile/paths'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { FIRST_NAME_ERROR, FIRST_NAME_MAX_LENGTH, firstNameSchema } from '@/lib/profile/first-name'
+import type { StudentProfileState } from '@/lib/profile/student-profile'
+import { CoursesSetNotice } from './CoursesSetNotice'
+import type { FormEvent, ReactElement } from 'react'
+
+const focusRingNavy = studentFocusControl
+
+type ProfileView = Extract<StudentProfileState, { status: 'incomplete' | 'complete' }>
+type Draft = { departmentId: string; academicLevelId: string; academicPeriodId: string; first_name: string }
+type Choice = { id: string; label: string }
+type Field = keyof Draft
+// field: shown under that field while it is on screen. support: the one way on is Help & Support.
+type Notice = { message: string; reload?: boolean; field?: Field; support?: boolean }
+/** open: courses can change; first-pick: a plan is running, so this first save sets them; locked: set for the semester. */
+export type CourseSelectionMode = 'open' | 'first-pick' | 'locked'
+
+export const FIRST_PICK_WARNING = 'Once you save, you can’t change your department, level or semester until the semester ends.'
+export const CHANGED_ELSEWHERE = 'Your courses were just updated. Check them and try again.'
+
+const FIELD_ERRORS: Record<Field, { id: string; message: string }> = {
+  first_name: { id: 'first-name-error', message: FIRST_NAME_ERROR },
+  departmentId: { id: 'department-error', message: 'Choose a department.' },
+  academicLevelId: { id: 'academic-level-error', message: 'Choose a level.' },
+  academicPeriodId: { id: 'academic-period-error', message: 'Choose a semester.' },
+}
+
+const PROFILE_API = '/api/profile-selection'
+const savedResponseSchema = z.object({
+  status: z.literal('complete'),
+  firstName: firstNameSchema,
+  revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  selection: z.object({
+    department: z.object({ id: z.string().uuid(), label: z.string().min(1), isActive: z.literal(true) }),
+    academicLevel: z.object({ id: z.string().uuid(), label: z.string().min(1), isActive: z.literal(true) }),
+    academicPeriod: z.object({ id: z.string().uuid(), label: z.string().min(1), isActive: z.literal(true) }),
+  }),
+})
+
+const selectClass = cx('h-12 w-full rounded-ci-btn border border-student-control-border bg-student-elevated-surface px-3 py-2 text-base text-student-text-primary',
+  'disabled:cursor-not-allowed disabled:opacity-60', focusRingNavy)
+
+function selectedId(choice: { id: string }, options: Choice[]): string {
+  return options.some(option => option.id === choice.id) ? choice.id : ''
+}
+
+function initialDraft(initial: ProfileView): Draft {
+  if (!initial.selection) return { first_name: initial.firstName ?? '', departmentId: '', academicLevelId: '', academicPeriodId: '' }
+  return {
+    first_name: initial.firstName ?? '',
+    departmentId: selectedId(initial.selection.department, initial.options.departments),
+    academicLevelId: selectedId(initial.selection.academicLevel, initial.options.academicLevels),
+    academicPeriodId: selectedId(initial.selection.academicPeriod, initial.options.academicPeriods),
+  }
+}
+
+function isSelectable(options: Choice[], id: string): boolean {
+  return id !== '' && options.some(option => option.id === id)
+}
+
+/** Keep only a draft in browser memory; successful navigation requires a confirmed server save. */
+export function ProfileSelectionForm({ initial, continuityToken, mode = 'open', returnPath = null }: {
+  initial: ProfileView; continuityToken: string; mode?: CourseSelectionMode
+  /** An allow-listed page to return to after a save (Confirm courses, a practice result); otherwise home. */
+  returnPath?: string | null
+}): ReactElement {
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(initial))
+  // Only a saved selection can be shown as set; the database refusal (CI423) switches an open form to this view.
+  const [locked, setLocked] = useState(mode === 'locked' && initial.selection !== undefined)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  // A field's own error sits under that field, which names it in aria-describedby.
+  const fieldError = (field: Field) => notice?.field === field
+    ? <div id={FIELD_ERRORS[field].id}><Feedback compact tone="error" message={notice.message} /></div> : null
+  // While the courses are set only the name is on screen: a refusal about another field has no field to sit under.
+  const offScreen = notice?.field !== undefined && notice.field !== 'first_name' && locked
+  const [pending, setPending] = useState(false)
+  const [ready, setReady] = useState(false)
+  const lock = useRef(false)
+  const conflict = useRef(false)
+  const [stale, setStale] = useState(false)
+  // A later RSC payload must not re-label this mounted draft as another account's.
+  const pageToken = useRef(continuityToken).current
+  const expectedRevision = useRef(initial.revision).current
+  const reloadRef = useRef<HTMLButtonElement>(null)
+  const departmentRef = useRef<HTMLSelectElement>(null)
+  const firstNameRef = useRef<HTMLInputElement>(null)
+  const academicLevelRef = useRef<HTMLSelectElement>(null)
+  const academicPeriodRef = useRef<HTMLSelectElement>(null)
+  const { departments, academicLevels, academicPeriods } = initial.options
+  const choicesAvailable = departments.length > 0 && academicLevels.length > 0 && academicPeriods.length > 0
+
+  useEffect(() => { setReady(true) }, [])
+  useEffect(() => { if (stale) reloadRef.current?.focus() }, [stale])
+  useEffect(() => {
+    if (notice?.field === 'first_name') firstNameRef.current?.focus()
+    else if (notice?.field === 'departmentId') departmentRef.current?.focus()
+    else if (notice?.field === 'academicLevelId') academicLevelRef.current?.focus()
+    else if (notice?.field === 'academicPeriodId') academicPeriodRef.current?.focus()
+  }, [notice?.field])
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!ready || lock.current || conflict.current) return
+    const name = firstNameSchema.safeParse(draft.first_name)
+    const missingField: Field | null = !name.success ? 'first_name'
+      : locked ? null
+      : !isSelectable(departments, draft.departmentId) ? 'departmentId'
+      : !isSelectable(academicLevels, draft.academicLevelId) ? 'academicLevelId'
+        : !isSelectable(academicPeriods, draft.academicPeriodId) ? 'academicPeriodId' : null
+    if (missingField) {
+      setNotice({ message: FIELD_ERRORS[missingField].message, field: missingField })
+      if (notice?.field === missingField) {
+        if (missingField === 'first_name') firstNameRef.current?.focus()
+        else if (missingField === 'departmentId') departmentRef.current?.focus()
+        else if (missingField === 'academicLevelId') academicLevelRef.current?.focus()
+        else academicPeriodRef.current?.focus()
+      }
+      return
+    }
+    lock.current = true
+    setPending(true)
+    setNotice(null)
+    let navigating = false
+    // While the courses are set only the name changes; the saved selection is sent back as it is.
+    const submitted = locked && initial.selection ? { ...draft, departmentId: initial.selection.department.id,
+      academicLevelId: initial.selection.academicLevel.id, academicPeriodId: initial.selection.academicPeriod.id } : draft
+    try {
+      const response = await fetch(PROFILE_API, {
+        method: 'PUT', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', [AUTH_CONTINUITY_HEADER]: pageToken }, body: JSON.stringify({ ...submitted, expectedRevision }),
+      })
+      const body: unknown = await response.json()
+      if (response.status === 401 && body && typeof body === 'object' && 'status' in body && body.status === 'signed-out') {
+        navigating = true
+        window.location.replace(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
+        return
+      }
+      if (response.status === 409 && body && typeof body === 'object' && 'status' in body && body.status === 'session-changed') {
+        navigating = true
+        window.location.reload()
+        return
+      }
+      if (response.status === 409 && body && typeof body === 'object' && 'status' in body && body.status === 'conflict') {
+        conflict.current = true
+        setStale(true)
+        setNotice(null)
+        return
+      }
+      if (response.status === 409 && body && typeof body === 'object' && 'status' in body && body.status === 'locked' &&
+          initial.selection !== undefined) {
+        setLocked(true)
+        setDraft(value => ({ ...value, ...initialDraft(initial), first_name: value.first_name }))
+        // The courses-set notice says why; this says what happened to the save, under the name that can still be saved.
+        setNotice({ message: 'Your name wasn’t saved.', field: 'first_name' })
+        return
+      }
+      if (response.ok) {
+        const parsed = savedResponseSchema.safeParse(body)
+        if (parsed.success && parsed.data.revision > expectedRevision && parsed.data.selection.department.id === submitted.departmentId &&
+            parsed.data.selection.academicLevel.id === submitted.academicLevelId &&
+            parsed.data.selection.academicPeriod.id === submitted.academicPeriodId &&
+            parsed.data.firstName === draft.first_name.trim()) {
+          navigating = true
+          window.location.replace(selectionReturnPath(returnPath) ?? STUDENT_HOME_PATH)
+          return
+        }
+        setNotice({ message: 'We couldn’t confirm your changes were saved. Reload the page to check.', reload: true })
+      } else if (body && typeof body === 'object' && 'status' in body && body.status === 'semester-not-running') {
+        setNotice({ message: 'That semester isn’t running now. Choose the current semester.', field: 'academicPeriodId' })
+      } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invalid-selection') {
+        setNotice({ message: 'Check your details and try again.', reload: true })
+      } else if (body && typeof body === 'object' && 'status' in body && body.status === 'missing-profile') {
+        setNotice({ message: 'We couldn’t find your profile.', support: true })
+      } else if (body && typeof body === 'object' && 'status' in body && body.status === 'invariant-failure') {
+        setNotice({ message: 'We couldn’t load your profile.', support: true })
+      } else {
+        setNotice({ message: 'We couldn’t save your changes. Try again.' })
+      }
+    } catch {
+      setNotice({ message: 'We couldn’t save your changes. Try again.' })
+    } finally {
+      if (!navigating) { lock.current = false; setPending(false) }
+    }
+  }
+
+  if (!choicesAvailable) return <div className="student-surface student-surface-raised space-y-3">
+    {initial.status === 'complete' && <div className="space-y-2">
+      <h2 className="font-semibold text-student-text-primary">Academic details</h2>
+      <SelectionSummary selection={initial.selection} />
+    </div>}
+    <Feedback tone="error" message="We couldn’t load your academic details. Please try again later." />
+    {initial.status === 'complete' && <Link href={AUTH_PATHS.account} className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}>Back to profile</Link>}
+  </div>
+
+  return <form noValidate onSubmit={save} className="student-surface student-surface-raised grid gap-4">
+    {/* The fields below show the saved details. They are listed here only when the fields cannot: once they can no
+        longer be changed, or when a saved choice is no longer offered (its field then starts empty). */}
+    {initial.status === 'complete' && (locked || [initial.selection.department, initial.selection.academicLevel,
+      initial.selection.academicPeriod].some(option => !option.isActive)) && <section aria-labelledby="academic-details-heading" className="space-y-2">
+      <h2 id="academic-details-heading" className="font-semibold text-student-text-primary">Academic details</h2>
+      <SelectionSummary selection={initial.selection} />
+    </section>}
+    {locked && <CoursesSetNotice />}
+    <div className="grid gap-3 tablet:grid-cols-2 tablet:gap-4">
+      <div className="space-y-1 tablet:col-span-2">
+        <label htmlFor="first-name" className="block font-semibold text-student-text-primary">First name</label>
+        <input id="first-name" name="first_name" ref={firstNameRef} type="text" autoComplete="given-name"
+          required maxLength={FIRST_NAME_MAX_LENGTH * 2} disabled={!ready || pending} className={selectClass}
+          aria-invalid={notice?.field === 'first_name'}
+          aria-describedby={notice?.field === 'first_name' ? FIELD_ERRORS.first_name.id : undefined}
+          value={draft.first_name} onChange={event => { setDraft(value => ({ ...value, first_name: event.target.value })); setNotice(null) }} />
+        {fieldError('first_name')}
+      </div>
+      {!locked && <>
+      <div className="space-y-1 tablet:col-span-2">
+        <label htmlFor="department" className="block font-semibold text-student-text-primary">Department</label>
+        <select id="department" ref={departmentRef} required disabled={!ready || pending} className={selectClass}
+          aria-invalid={notice?.field === 'departmentId'}
+          aria-describedby={notice?.field === 'departmentId' ? FIELD_ERRORS.departmentId.id : undefined}
+          value={draft.departmentId}
+          onChange={event => {
+            setDraft(value => ({ ...value, departmentId: event.target.value, academicLevelId: '', academicPeriodId: '' }))
+            setNotice(null)
+          }}>
+          <option value="">Choose department</option>
+          {departments.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+        {fieldError('departmentId')}
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="academic-level" className="block font-semibold text-student-text-primary">Level</label>
+        <select id="academic-level" ref={academicLevelRef} required disabled={!ready || pending || !draft.departmentId}
+          className={selectClass} aria-invalid={notice?.field === 'academicLevelId'}
+          aria-describedby={notice?.field === 'academicLevelId' ? FIELD_ERRORS.academicLevelId.id : undefined}
+          value={draft.academicLevelId}
+          onChange={event => {
+            setDraft(value => ({ ...value, academicLevelId: event.target.value, academicPeriodId: '' }))
+            setNotice(null)
+          }}>
+          <option value="">Choose level</option>
+          {academicLevels.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+        {fieldError('academicLevelId')}
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="academic-period" className="block font-semibold text-student-text-primary">Semester</label>
+        <select id="academic-period" ref={academicPeriodRef}
+          required disabled={!ready || pending || !draft.departmentId || !draft.academicLevelId}
+          className={selectClass} aria-invalid={notice?.field === 'academicPeriodId'}
+          aria-describedby={notice?.field === 'academicPeriodId' ? FIELD_ERRORS.academicPeriodId.id : undefined}
+          value={draft.academicPeriodId}
+          onChange={event => {
+            setDraft(value => ({ ...value, academicPeriodId: event.target.value }))
+            setNotice(null)
+          }}>
+          <option value="">Choose semester</option>
+          {academicPeriods.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+        {fieldError('academicPeriodId')}
+      </div>
+      </>}
+    </div>
+    {stale && <div className="space-y-1">
+      <Feedback compact tone="error" message={CHANGED_ELSEWHERE} />
+      <button ref={reloadRef} type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)}
+        onClick={() => window.location.reload()}>Reload</button>
+    </div>}
+    {/* What belongs to no one field shows here; a field's own error sits under it. So does the error of a field that
+        is not on screen, with the reload that brings the choices back once they can change. */}
+    {notice && (!notice.field || offScreen) && <div className="space-y-1">
+      <Feedback compact tone="error" message={notice.support ? <>{notice.message} <Link href={STUDENT_DESTINATIONS.contact.href}
+        prefetch={false} className="whitespace-nowrap underline underline-offset-2">{STUDENT_DESTINATIONS.contact.label}</Link></> : notice.message} />
+      {(notice.reload || offScreen) && <button type="button" className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy)} onClick={() => window.location.reload()}>Reload</button>}
+    </div>}
+    {mode === 'first-pick' && !locked && <p className="text-sm text-student-text-secondary" data-first-pick="">{FIRST_PICK_WARNING}</p>}
+    <div className="flex flex-col gap-2 tablet:flex-row tablet:items-center">
+      <button type="submit" disabled={!ready || pending || stale} aria-busy={pending}
+        className={buttonClassName(btnBase, btnSm, btnNavy, 'w-full disabled:cursor-wait disabled:opacity-60 tablet:w-auto', studentFocusDark)}>
+        {pending ? 'Saving…' : locked ? 'Save name' : 'Save'}
+      </button>
+      {initial.status === 'complete' && <Link href={AUTH_PATHS.account}
+        className={buttonClassName(btnBase, btnSm, btnGhost, focusRingNavy, 'w-full tablet:w-auto')}>
+        Back to profile
+      </Link>}
+    </div>
+  </form>
+}

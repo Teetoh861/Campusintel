@@ -1,15 +1,20 @@
-// Root layout — Variant B ("continuous blue"). Loads Hanken Grotesk via
-// next/font (exposed as --font-hanken, the var tailwind's font-sans points at)
-// and loads the design CSS globally. Instrument Serif / Geist are gone.
-import type { Metadata, Viewport } from 'next'
+// Root layout — shared navigation, student design tokens, and legacy styles.
 import { Hanken_Grotesk } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { readStudentChromeState } from '@/lib/auth/server-chrome'
 
 import '../styles/campusintel.css'
 import './globals.css'
+import '../styles/student-app.css'
+import '../styles/ai-practice.css'
+import '../styles/instant-practice.css'
+import '../styles/campus-bot.css'
 
 import { Nav } from '@/components/chrome/Nav'
 import { Footer } from '@/components/chrome/Footer'
+import { NavigationSessionProvider } from '@/components/auth/NavigationSession'
+import type { Metadata, Viewport } from 'next'
+import type { ReactElement, ReactNode } from 'react'
 
 const hanken = Hanken_Grotesk({
   subsets: ['latin'],
@@ -18,39 +23,47 @@ const hanken = Hanken_Grotesk({
   variable: '--font-hanken',
 })
 
+const SITE_TITLE = 'CampusIntell'
+const SITE_DESCRIPTION =
+  'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.'
+
 export const metadata: Metadata = {
-  title: 'CampusIntel · The inside track on every paper',
-  description:
-    'Academic intelligence for the University of Lagos. Past questions, decoded exam patterns and the materials that actually move your grade.',
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
   openGraph: {
-    title: 'CampusIntel · Academic Intelligence',
-    description: 'The inside track on every paper.',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     type: 'website',
     locale: 'en_NG',
-    siteName: 'CampusIntel',
+    siteName: 'CampusIntell',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CampusIntel · Academic Intelligence',
-    description: 'The inside track on every paper.',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#003E7E',
 }
 
-export default function RootLayout({
+/** Share presentation state while keeping route authorization in the existing server boundaries.
+ * The first render shares verified identity and lifecycle with the gate and page.
+ */
+export default async function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+}: Readonly<{ children: ReactNode }>): Promise<ReactElement> {
+  const chrome = await readStudentChromeState()
   return (
     <html lang="en" className={hanken.variable}>
-      <body className="font-sans bg-ci-paper text-ci-ink">
-        <Nav />
-        <main id="top">{children}</main>
-        <Footer />
+      <body className="flex min-h-dvh flex-col font-sans">
+        <NavigationSessionProvider initial={chrome}>
+          <Nav />
+          <main id="top" className="flex-1">{children}</main>
+          <Footer year={new Date().getFullYear()} />
+        </NavigationSessionProvider>
         <Analytics />
       </body>
     </html>

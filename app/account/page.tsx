@@ -1,0 +1,100 @@
+import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
+// app/account/page.tsx — The student's Profile page: personal and academic details, their plan, signing out and
+// deleting the account, read from the live server session.
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { AuthUnavailable } from '@/components/auth/AuthShell'
+import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
+import { LogoutButton } from '@/components/auth/LogoutButton'
+import { DeleteAccountForm } from '@/components/account/DeleteAccountForm'
+import { Feedback } from '@/components/chrome/Feedback'
+import { btnGhost } from '@/components/chrome/ui'
+import { StudentPage } from '@/components/student/StudentPage'
+import { PageBand } from '@/components/student/PageBand'
+import { studentAction } from '@/components/student/ui'
+import { isStudentAuthEnabled } from '@/lib/auth/config'
+import { AUTH_PATHS, STUDENT_HOME_PATH } from '@/lib/auth/constants'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
+import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
+import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { SelectionSummary } from '@/components/profile/SelectionSummary'
+import { createClient } from '@/lib/supabase/server'
+import { readAccountLifecycle } from '@/lib/account/lifecycle'
+import type { ReactElement } from 'react'
+
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Profile | CampusIntell', robots: { index: false, follow: false } }
+
+/** Read identity, academic details and deletion eligibility from the live server session. */
+export default async function AccountPage(): Promise<ReactElement> {
+  const diagnostic = createAuthDiagnostic('/account')
+  if (!isStudentAuthEnabled()) return <StudentPage><AuthUnavailable /></StudentPage>
+  let verified: {
+    client: Awaited<ReturnType<typeof createClient>>
+    context: NonNullable<Awaited<ReturnType<typeof getStudentSessionContext>>>
+    continuityToken: string
+    deletionAllowed: boolean
+  } | null
+  try {
+    const client = await createClient()
+    const context = await getStudentSessionContext(undefined, client)
+    const lifecycle = context ? await readAccountLifecycle(client) : null
+    if (context && !context.user.email) throw new Error('Student identity missing')
+    verified = context && lifecycle?.status === 'active' ? { client, context,
+      continuityToken: issueAccountContinuityToken(context.user.id, context.sessionId),
+      deletionAllowed: lifecycle?.status === 'active' && lifecycle.deletionAllowed } : null
+  } catch (error) { return <StudentPage><Feedback message={authUnavailableMessage('/account', error, diagnostic)} tone="error" /></StudentPage> }
+  if (!verified) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(AUTH_PATHS.account))
+  const { client, context, continuityToken, deletionAllowed } = verified
+  const profile = await getCurrentStudentProfileForVerifiedStudent(client, context.user)
+  if (profile.status === 'signed-out') redirect(AUTH_PATHS.login)
+  if (profile.status === 'incomplete') redirect(PROFILE_SELECTION_PATH)
+  return <><AuthFlowSync signedIn continuityToken={continuityToken} />
+    <StudentPage band={<PageBand title="Profile"
+      aside={<Link href={STUDENT_HOME_PATH} className={studentAction(btnGhost)}>Dashboard</Link>} />}>
+      <div className="grid min-w-0 gap-4 tablet:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.9fr)] desktop:gap-6">
+        <div className="grid min-w-0 content-start gap-4">
+          <section aria-labelledby="personal-details-heading" className="student-surface student-surface-raised">
+            <h2 id="personal-details-heading" className="student-section-title">Personal details</h2>
+            <dl className="mt-4 min-w-0">
+              {profile.status === 'complete' && <>
+                <dt className="student-meta">First name</dt>
+                <dd className="mb-4 mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{profile.firstName}</dd>
+              </>}
+              <dt className="student-meta">Email</dt>
+              <dd className="mt-1 font-semibold text-student-text-primary [overflow-wrap:anywhere]">{context.user.email}</dd>
+            </dl>
+          </section>
+          <section aria-labelledby="academic-profile-heading" className="student-surface bg-student-brand-surface">
+            <h2 id="academic-profile-heading" className="student-section-title">Academic details</h2>
+            {profile.status === 'complete' ? <>
+              <div className="mt-4 min-w-0"><SelectionSummary selection={profile.selection} /></div>
+              <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit</Link>
+            </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure'
+              ? <>{profile.status === 'missing-profile' ? 'We couldn’t find your profile.' : 'We couldn’t load your profile.'}{' '}
+                <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">
+                  {STUDENT_DESTINATIONS.contact.label}</Link></> : authUnavailableMessage('/account', null, diagnostic)} /></div>}
+          </section>
+        </div>
+        <div className="grid min-w-0 content-start gap-4">
+          <section aria-labelledby="plan-access-heading" className="student-surface">
+            <h2 id="plan-access-heading" className="student-section-title">{STUDENT_DESTINATIONS.access.label}</h2>
+            <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>View your plan</Link>
+          </section>
+          {/* No heading: the line and the button say it. */}
+          <section aria-label="Sign out" className="student-surface">
+            <p className="mb-4 text-sm text-student-text-secondary">Sign out of CampusIntell on this device.</p>
+            <LogoutButton continuityToken={continuityToken} />
+          </section>
+          {deletionAllowed ? <DeleteAccountForm continuityToken={continuityToken} /> : <section className="student-surface">
+            <p className="text-sm text-student-text-secondary">This account can’t be deleted here.{' '}
+              <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false}
+                className="whitespace-nowrap underline underline-offset-2">Message us</Link> for help.</p>
+          </section>}
+        </div>
+      </div>
+    </StudentPage>
+  </>
+}

@@ -1,0 +1,213 @@
+'use client'
+// app/access/checkout/return/ReturnStatus.tsx — The return page's states. While our order is confirming it polls
+// GET /api/payments/orders/[id] (no-store) for two minutes, then shows "still confirming" with Check again. "You're
+// subscribed" appears only when the order says paid; nothing is inferred from the redirect, a timer or a cache.
+// An order that couldn't be read is never called missing: the page says it couldn't check, and keeps asking the same way.
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { CAMPUS_BOT_PLAN_LINE, RETURN_COPY, naira, paymentReference, paymentSupportMessage, planName, subscribedBody }
+  from '@/lib/entitlements/presentation'
+import { readOrderAnswer } from '@/lib/payments/order-view'
+import { RECEIPTS_PATH, checkoutHref } from '@/lib/payments/paths'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { buildWhatsAppUrl } from '@/lib/whatsapp'
+import type { OrderRead, OrderView } from '@/lib/payments/order-view'
+import type { ReactElement, ReactNode } from 'react'
+
+export const POLL_INTERVAL_MS = 3_000
+export const POLL_FOR_MS = 120_000
+// After this long since the order was created, a student still waiting is offered a message to support.
+const SUPPORT_AFTER_MS = 30 * 60_000
+const LOGIN_PATH = '/login'
+
+async function fetchOrder(orderId: string, signal?: AbortSignal): Promise<OrderRead> {
+  try {
+    const response = await fetch(`/api/payments/orders/${orderId}`, { cache: 'no-store', credentials: 'same-origin', signal })
+    return readOrderAnswer(response.status, await response.json().catch(() => null))
+  } catch {
+    return { kind: 'unavailable' }
+  }
+}
+
+/** A signed-out answer: sign in, then come back to this order. */
+function signInAndReturn(): void {
+  window.location.assign(`${LOGIN_PATH}?next=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+}
+
+export function ReturnStatus({ orderId, initial, courseCount, features }: { orderId: string | null; initial: OrderRead
+  courseCount: number
+  // What the student's own courses offer; null while the server read them locked (the payment was still confirming).
+  features: ReadonlyArray<string> | null }): ReactElement {
+  const router = useRouter()
+  const refreshed = useRef(false)
+  const [read, setRead] = useState<OrderRead>(initial)
+  const [stopped, setStopped] = useState(false)
+  const [checking, setChecking] = useState(false)
+  // The last Check again got no answer; cleared by the next check, or by any answer.
+  const [checkFailed, setCheckFailed] = useState(false)
+  const started = useRef(Date.now())
+  const confirming = read.kind === 'order' && read.order.state === 'confirming'
+  // Our order couldn't be read, so nothing is known about the payment yet. Only a not-found answer means not found.
+  const unread = read.kind !== 'order' && read.kind !== 'not-found'
+
+  useEffect(() => {
+    if (orderId === null || !(confirming || unread) || stopped) return
+    const controller = new AbortController()
+    const timer = window.setInterval(() => {
+      if (Date.now() - started.current >= POLL_FOR_MS) { setStopped(true); return }
+      void fetchOrder(orderId, controller.signal).then(next => {
+        if (controller.signal.aborted) return
+        // A failed check keeps the last answer; the next tick (or Check again) asks again.
+        if (next.kind === 'signed-out') signInAndReturn()
+        else if (next.kind !== 'unavailable') { setRead(next); setCheckFailed(false) }
+      })
+    }, POLL_INTERVAL_MS)
+    return () => { controller.abort(); window.clearInterval(timer) }
+  }, [orderId, confirming, unread, stopped])
+
+  // Haptic: done, once, when the payment is confirmed (where the device supports it).
+  const confirmed = read.kind === 'order' && read.order.state === 'paid'
+  useEffect(() => { if (confirmed) navigator.vibrate?.(20) }, [confirmed])
+  // Confirmed after the server read the courses locked: read them again, once, to list what they actually offer.
+  useEffect(() => {
+    if (!confirmed || features !== null || refreshed.current) return
+    refreshed.current = true
+    router.refresh()
+  }, [confirmed, features, router])
+
+  const checkAgain = useCallback(async () => {
+    if (orderId === null) return
+    setChecking(true)
+    setCheckFailed(false)
+    const next = await fetchOrder(orderId)
+    setChecking(false)
+    if (next.kind === 'signed-out') signInAndReturn()
+    else if (next.kind === 'unavailable') setCheckFailed(true)
+    else setRead(next)
+  }, [orderId])
+
+  const back = <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
+    className={studentAction(btnGhost, 'bg-student-surface')}>{RETURN_COPY.backToAccess}</Link>
+  const check = <button type="button" onClick={() => void checkAgain()} disabled={checking} aria-busy={checking}
+    className={studentAction(btnNavy, studentFocusDark)}>{checking ? RETURN_COPY.checking : RETURN_COPY.checkAgain}</button>
+  const failedCheck = checkFailed
+    ? <p role="alert" className="text-sm font-semibold text-student-error">{RETURN_COPY.checkFailed}</p> : null
+
+  // No order id in the address is the same answer: there is no payment of ours to look for.
+  if (read.kind === 'not-found' || orderId === null) return <Outcome icon="alert" title={RETURN_COPY.notFoundTitle}
+    actions={<Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
+      className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.accessLink}</Link>} />
+  // The spinner runs while the page is still asking on its own; after two minutes only Check again asks.
+  if (read.kind !== 'order') return <Outcome state="unavailable" icon={stopped ? 'alert' : 'busy'}
+    title={RETURN_COPY.unavailableTitle} status actions={<>{check}{back}</>} after={failedCheck} />
+  const order = read.order
+  const support = (label: string = RETURN_COPY.messageUs) => <a href={buildWhatsAppUrl(paymentSupportMessage(order.order_id))}
+    target="_blank" rel="noopener noreferrer" className={studentAction(btnGhost, 'bg-student-surface')}>{label}</a>
+  const courses = <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+    className={studentAction(btnNavy, studentFocusDark)}>Go to your courses</Link>
+
+  switch (order.state) {
+    case 'confirming': {
+      const still = stopped
+      const waitedLong = Date.now() - Date.parse(order.created_at) >= SUPPORT_AFTER_MS
+      // As in "couldn't check": the spinner runs only while the page is still asking on its own.
+      return <Outcome icon={still ? 'alert' : 'busy'} title={still ? RETURN_COPY.stillTitle : RETURN_COPY.confirmingTitle}
+        body={still ? RETURN_COPY.stillBody : RETURN_COPY.confirmingBody} note={still ? RETURN_COPY.stillLeave : undefined}
+        status order={order}
+        actions={<>{still && check}{back}</>}
+        after={<>
+          {still && failedCheck}
+          {still && waitedLong ? <p className="text-sm text-student-text-secondary">{RETURN_COPY.stillWaiting}{' '}
+            <a href={buildWhatsAppUrl(paymentSupportMessage(order.order_id))} target="_blank" rel="noopener noreferrer"
+              className="font-semibold text-student-primary underline underline-offset-2">{RETURN_COPY.messageUs}</a></p> : null}
+        </>} />
+    }
+    case 'paid': {
+      // Both paid tiers include Campus Bot, even while the course-material read is still catching up.
+      const nowOpen = [...new Set([...(features ?? []), CAMPUS_BOT_PLAN_LINE])]
+      return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state="paid">
+        <div className="grid gap-3">
+          <CircleCheck aria-hidden="true" size={24} className="text-student-success" />
+          <h1 className="student-page-band-title">{RETURN_COPY.subscribedTitle}</h1>
+          <p className="text-student-text-secondary">{subscribedBody({ tier: order.tier, period: order.period,
+            ends_at: order.ends_at, second_starts_at: order.second_starts_at })}</p>
+        </div>
+        <div className="student-surface">
+          <h2 className="font-bold text-student-text-primary">{RETURN_COPY.nowOpen(courseCount)}</h2>
+          <ul className="mt-3 grid gap-2.5">{nowOpen.map(item => <li key={item}
+            className="flex items-start gap-2.5 text-sm text-student-text-primary">
+            <Check aria-hidden="true" size={18} className="mt-0.5 shrink-0 text-student-primary" /><span>{item}</span></li>)}</ul>
+        </div>
+        <div className="grid gap-2 tablet:flex">
+          <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+            className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.startStudying}</Link>
+          <Link href={`${RECEIPTS_PATH}/${order.order_id}`} prefetch={false}
+            className={studentAction(btnGhost, 'bg-student-surface')}>{RETURN_COPY.viewReceipt}</Link>
+        </div>
+      </div>
+    }
+    case 'failed': return <Outcome icon="alert" title={RETURN_COPY.failedTitle} body={RETURN_COPY.failedBody} alert order={order}
+      actions={<><Link href={checkoutHref(order.plan)} prefetch={false}
+        className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.tryAgain}</Link>{support()}</>} />
+    case 'cancelled': return <Outcome icon="alert" title={RETURN_COPY.cancelledTitle} body={RETURN_COPY.cancelledBody} order={order}
+      actions={<><Link href={checkoutHref(order.plan)} prefetch={false}
+        className={studentAction(btnNavy, studentFocusDark)}>{RETURN_COPY.tryAgain}</Link>{back}</>} />
+    case 'amount-mismatch': return <Outcome icon="alert" title={RETURN_COPY.mismatchTitle} body={RETURN_COPY.mismatchBody}
+      alert order={order} actions={<>{back}{support()}</>}
+      // What the student actually paid, not the plan price; no amount row when it wasn't naira (or isn't known).
+      amount={order.received_currency === 'NGN' && typeof order.received_kobo === 'number'
+        ? { label: RETURN_COPY.amountReceived, kobo: order.received_kobo } : null} />
+    case 'paid-duplicate': return <Outcome icon="check" title={RETURN_COPY.alreadyTitle} body={RETURN_COPY.duplicateBody}
+      order={order} actions={courses} />
+    case 'refund-pending': return <Outcome icon="check" title={RETURN_COPY.refundPendingTitle}
+      body={`${naira(order.amount_kobo)} is on its way back to you. Your plan has ended, and GST courses stay free.`}
+      order={order} actions={back} />
+    case 'refunded': return <Outcome icon="check" title={RETURN_COPY.refundedTitle}
+      body="Your plan has ended. GST courses stay free." order={order} actions={back} />
+  }
+}
+
+function Outcome({ icon, title, body, note, actions, order, state = 'not-found', status = false, alert = false, after = null,
+  amount }: {
+  icon: 'busy' | 'alert' | 'check'; title: string; body?: string
+  // A second line under the body.
+  note?: string
+  actions: ReactNode; order?: OrderView
+  // What the page reports when there is no order to name its state.
+  state?: 'not-found' | 'unavailable'; status?: boolean
+  alert?: boolean; after?: ReactNode
+  // The amount row: the plan price by default; null leaves the row out.
+  amount?: { label: string; kobo: number } | null
+}): ReactElement {
+  const shown = amount === undefined ? (order ? { label: RETURN_COPY.amount, kobo: order.amount_kobo } : null) : amount
+  const Icon = icon === 'busy' ? LoaderCircle : icon === 'alert' ? CircleAlert : CircleCheck
+  return <div className="mx-auto grid w-full max-w-[560px] gap-6 pt-4" data-return-state={order?.state ?? state}>
+    <div className="grid gap-3" role={status ? 'status' : alert ? 'alert' : undefined} aria-live={status ? 'polite' : undefined}>
+      <Icon aria-hidden="true" size={24} className={icon === 'busy' ? 'animate-spin text-student-primary motion-reduce:animate-none'
+        : icon === 'alert' ? 'text-student-error' : 'text-student-success'} />
+      <h1 className="student-page-band-title">{title}</h1>
+      {body !== undefined && <p className="text-student-text-secondary">{body}</p>}
+      {note !== undefined && <p className="text-student-text-secondary">{note}</p>}
+    </div>
+    {order && <dl className="student-surface grid py-1 text-sm">
+      <div className="flex justify-between gap-3 border-b border-student-border py-3">
+        <dt className="text-student-text-secondary">{RETURN_COPY.plan}</dt>
+        <dd className="font-semibold text-student-text-primary">{planName(order.tier, order.period)}</dd>
+      </div>
+      {shown && <div className="flex justify-between gap-3 border-b border-student-border py-3">
+        <dt className="text-student-text-secondary">{shown.label}</dt>
+        <dd className="font-semibold text-student-text-primary">{naira(shown.kobo)}</dd>
+      </div>}
+      <div className="flex justify-between gap-3 py-3">
+        <dt className="text-student-text-secondary">{RETURN_COPY.reference}</dt>
+        <dd className="font-semibold text-student-text-primary">{paymentReference(order.order_id)}</dd>
+      </div>
+    </dl>}
+    {after}
+    <div className="grid gap-2 tablet:flex">{actions}</div>
+  </div>
+}

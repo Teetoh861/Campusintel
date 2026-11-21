@@ -2,7 +2,9 @@
 // Requests and contributions are private, course-specific email handoffs.
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { courses, getCourseBySlug } from '@/lib/data/courses'
+import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
+import { getCourseBySlug } from '@/lib/data/courses'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { btnAccent, btnBase, btnNavy, cx } from '@/components/chrome/ui'
 import {
   buildMaterialRequestEmailUrl,
@@ -13,12 +15,17 @@ type PageProps = { params: Promise<{ slug: string }> }
 
 const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
 
-export function generateStaticParams() {
-  return courses.map((c) => ({ slug: c.slug }))
-}
+// Account-gated per student; never prerender or share across viewers.
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Request material | CampusIntell', robots: { index: false, follow: false } }
 
+/** Cross the student account boundary before the course request surface renders. */
 export default async function CourseMaterialsPage({ params }: PageProps) {
   const { slug } = await params
+  return <StudentAccessGate returnPath={`/courses/${slug}/materials`}><CourseMaterials slug={slug} /></StudentAccessGate>
+}
+
+function CourseMaterials({ slug }: { slug: string }) {
   const course = getCourseBySlug(slug)
   if (!course) notFound()
 
@@ -34,12 +41,12 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
             className="mb-9 flex flex-wrap items-center gap-[10px] text-[13.5px] font-medium text-ci-blue-200"
             aria-label="Breadcrumb"
           >
-            <Link href="/" className="transition-colors hover:text-white">Home</Link>
+            <Link href={STUDENT_DESTINATIONS.dashboard.href} className="transition-colors hover:text-white">{STUDENT_DESTINATIONS.dashboard.label}</Link>
             <span className="text-white/35">/</span>
-            <Link href="/courses" className="transition-colors hover:text-white">Courses</Link>
+            <Link href={STUDENT_DESTINATIONS.courses.href} className="transition-colors hover:text-white">{STUDENT_DESTINATIONS.courses.label}</Link>
             <span className="text-white/35">/</span>
             <Link
-              href={`/courses/${course.slug}`}
+              href={`${STUDENT_DESTINATIONS.courses.href}/${course.slug}`}
               className="transition-colors hover:text-white"
             >
               {course.code}
@@ -54,9 +61,6 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
           <h1 className="mt-3 max-w-[20ch] text-balance text-[clamp(36px,7vw,56px)] font-extrabold leading-none tracking-[-0.035em]">
             {course.title}
           </h1>
-          <p className="mt-5 max-w-[54ch] text-[17px] leading-[1.6] text-ci-blue-200 min-[900px]:text-[19px]">
-            Request study material privately for this course, or email notes and past questions of your own.
-          </p>
         </div>
       </header>
 
@@ -67,9 +71,9 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
               <a
                 className={cx(btnBase, btnAccent, 'w-full')}
                 href={requestUrl}
-                aria-label={`Request study material privately for ${course.code} by email`}
+                aria-label={`Request study material for ${course.code} by email`}
               >
-                Request material privately
+                Request material
               </a>
               <a
                 className={cx(btnBase, btnNavy, 'w-full')}
@@ -79,10 +83,6 @@ export default async function CourseMaterialsPage({ params }: PageProps) {
                 Send materials
               </a>
             </div>
-
-            <p className="mt-4 text-[13.5px] leading-[1.5] text-ci-gray-500">
-              Opens your email app with {course.code} pre-filled.
-            </p>
           </div>
         </div>
       </section>

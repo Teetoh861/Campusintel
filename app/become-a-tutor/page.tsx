@@ -4,19 +4,26 @@
 import { BlueCover } from '@/components/chrome/BlueCover'
 import { TutorForm } from './TutorForm'
 
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+import type { ReactElement } from 'react'
 
-export default function BecomeTutorPage() {
+// Per-request, so a signed-in student's header is right from the first render.
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Apply to tutor | CampusIntell' }
+
+const WRAP = 'app-container'
+
+/** Render the existing public information with shared responsive gutters. */
+export default function BecomeTutorPage(): ReactElement {
   return (
     <>
       <BlueCover
         crumbs={[{ label: 'Tutors', href: '/tutors' }, { label: 'Apply' }]}
-        kicker="Recruitment · 300L and above"
+        kicker="For 300 Level and above"
         title="Apply to tutor"
-        lede="Know a course cold? Help juniors decode it, and get paid for the sessions you run. Tell us what you can teach."
+        lede="Help other students understand courses you know well. Tell us what you can teach."
       />
 
-      <section className="bg-ci-paper pb-20 pt-10 min-[900px]:pt-12" data-screen-label="Application form">
+      <section className="bg-ci-paper student-page" data-screen-label="Application form">
         <div className={WRAP}>
           <TutorForm />
         </div>

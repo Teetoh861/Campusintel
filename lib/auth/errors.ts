@@ -1,0 +1,63 @@
+// lib/auth/errors.ts — Auth-domain translation; provider text never becomes product copy.
+import { AUTH_MESSAGES, EMAIL_CONFIRMATION_REQUIRED, RECOVERY_FAILURE } from './constants'
+
+type Failure = { status: number; error: string; code?: typeof EMAIL_CONFIRMATION_REQUIRED | typeof RECOVERY_FAILURE.password }
+
+/** Translate only known provider codes in the context where they are actionable. */
+export function mapAuthFailure(error: unknown, action: 'login' | 'otp' | 'recoveryOtp' | 'reset'): Failure {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+  if (action === 'login' && code === 'email_not_confirmed') {
+    return { status: 200, code: EMAIL_CONFIRMATION_REQUIRED, error: AUTH_MESSAGES.confirmationRequired }
+  }
+  if (action === 'login' && (code === 'invalid_credentials' || code === 'user_banned')) return { status: 400, error: AUTH_MESSAGES.credentials }
+  if ((action === 'otp' || action === 'recoveryOtp') && (code === 'otp_expired' || code === 'otp_disabled' || code === 'user_banned')) {
+    return { status: 400, error: action === 'recoveryOtp' ? AUTH_MESSAGES.recoveryCode : AUTH_MESSAGES.code }
+  }
+  // The provider refused the password itself and changed nothing; the reset route lets the student try another.
+  if (action === 'reset' && code === 'same_password') {
+    return { status: 400, error: AUTH_MESSAGES.samePassword, code: RECOVERY_FAILURE.password }
+  }
+  if (action === 'reset' && code === 'weak_password') {
+    return { status: 400, error: AUTH_MESSAGES.weakPassword, code: RECOVERY_FAILURE.password }
+  }
+  if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit') return { status: 429, error: AUTH_MESSAGES.limited }
+  return { status: 503, error: AUTH_MESSAGES.unavailable }
+}
+
+/** Whitelist application copy as a final boundary, including untrusted HTTP error responses. */
+export function safeAuthMessage(message: unknown): string {
+  return typeof message === 'string' && Object.values(AUTH_MESSAGES).some(value => value === message)
+    ? message : AUTH_MESSAGES.unavailable
+}
+
+/** GoTrue reuses over_email_send_rate_limit for its per-recipient cooldown ("For security purposes, you can
+ * only request this after N seconds.", ~30s hosted) and its project-wide send quota ("email rate limit exceeded").
+ * Only the cooldown depends on account state: it is emitted after the recipient lookup, so a nonexistent address
+ * receives a silent 200 instead. The quota and over_request_rate_limit apply before any lookup. */
+const RECIPIENT_COOLDOWN = /^for security purposes/i
+
+export type EmailSendOutcome = 'sent' | 'cooldown' | 'limited' | 'policy' | 'failed'
+export type EmailInitiationAction = 'register' | 'resend' | 'recovery'
+export type EmailInitiationFailure = { status: number; error: string }
+
+/** One authoritative reading of a provider email-send result; callers decide what each outcome means for their flow. */
+export function classifyEmailSend(error: unknown): EmailSendOutcome {
+  if (error === null) return 'sent'
+  const code = typeof error === 'object' && 'code' in error ? error.code : undefined
+  const status = typeof error === 'object' && 'status' in error ? error.status : undefined
+  const message = typeof error === 'object' && 'message' in error && typeof error.message === 'string' ? error.message : ''
+  if (code === 'over_email_send_rate_limit' && RECIPIENT_COOLDOWN.test(message)) return 'cooldown'
+  if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || status === 429) return 'limited'
+  if (code === 'weak_password') return 'policy'
+  return 'failed'
+}
+
+/** Hide recipient-dependent cooldowns and delivery failures behind the same neutral acknowledgment as a no-op.
+ * Only recipient-independent quotas and signup password policy remain outward failures. The acknowledgment is the
+ * same for every address, and the screens say "Check your email for a new code." without claiming delivery; verification alone decides whether a code is usable. */
+export function classifyEmailInitiation(error: unknown, action: EmailInitiationAction): EmailInitiationFailure | null {
+  const outcome = classifyEmailSend(error)
+  if (outcome === 'limited') return { status: 429, error: AUTH_MESSAGES.limited }
+  if (outcome === 'policy' && action === 'register') return { status: 400, error: AUTH_MESSAGES.signupPassword }
+  return null
+}
