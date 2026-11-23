@@ -4,6 +4,10 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 -- The seed's own order: topic notes, then calculator tricks, each by number.
 create temporary table seeded on commit drop as
   select i.id, i.course_id, i.position, row_number() over (partition by i.course_id

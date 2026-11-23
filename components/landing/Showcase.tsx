@@ -1,4 +1,4 @@
-// components/landing/Showcase.tsx — Campus Bot practice from notes and theory practice, each beside real app screens.
+// components/landing/Showcase.tsx — Campus Bot practice from notes, beside real app screens.
 import Image from 'next/image'
 import { Check } from 'lucide-react'
 import { landingContent } from '@/lib/landing/content'

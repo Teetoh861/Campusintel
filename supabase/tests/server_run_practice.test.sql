@@ -7,6 +7,10 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 -- These cases were written for the repository seed: course 01 (ENT211) with 50 questions, course 07 (ACC-CM201)
 -- with 150 and course 08 (GST111) with 100. Their official bank imports are rolled back inside this transaction, which republishes exactly those.
 select is(private.official_bank_ent211('rollback'), 'rolled-back', 'course 01 runs on its 50 seeded questions');

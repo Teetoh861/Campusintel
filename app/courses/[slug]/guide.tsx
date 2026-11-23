@@ -56,7 +56,8 @@ export type GuideLinks = {
 }
 
 /** A whole guide topic: what to know, the lessons (Explain more folded until opened), the recap, the theory question
- * and the practice buttons. Headings start at `level` (2 on a topic page, 4 inside a note card). */
+ * and the practice buttons. The theory question shows only with its link, that is while it is published for this
+ * student. Headings start at `level` (2 on a topic page, 4 inside a note card). */
 export function GuideTopicBody({ topic, links = {}, level = 2 }: {
   topic: GuideTopicPayload; links?: GuideLinks; level?: 2 | 4
 }): ReactElement {
@@ -81,12 +82,12 @@ export function GuideTopicBody({ topic, links = {}, level = 2 }: {
       <Heading className="student-guide-heading">One-minute recap</Heading>
       <GuideBlocks blocks={topic.recap} />
     </section>
-    {topic.theory && <section className="student-guide-lesson" aria-label="Theory question">
+    {topic.theory && links.theoryHref && <section className="student-guide-lesson" aria-label="Theory question">
       <Heading className="student-guide-heading">Theory question</Heading>
       <GuideBlocks blocks={topic.theory.question} />
-      {links.theoryHref && <p><Link href={links.theoryHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
+      <p><Link href={links.theoryHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
         Answer this question
-      </Link></p>}
+      </Link></p>
     </section>}
     {topic.practice && links.practiceHref && <div className="student-guide-practice">
       {topic.practice.map(entry => <Link key={entry.topic} prefetch={false}

@@ -49,9 +49,11 @@ function practiceTarget(ref: PracticeCourseRef, courses: ReadonlyArray<StudentCo
     href: `/courses/${encodeURIComponent(shelf.slug)}/quiz`, locked: listed !== undefined && statusOf(listed) === 'locked' }
 }
 
-/** An open attempt first; otherwise the course of the latest graded attempt, unless the student's plan now locks it. */
+/** An open attempt first; otherwise the course of the latest graded attempt, while it offers practice now (it has a
+ * bank size, which a course the student's plan locks never has). An open attempt is resumed whatever the course offers
+ * now: the practice page finishes it without a brief. */
 function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok' }>,
-  courses: ReadonlyArray<StudentCourse>): ContinuePractice | null {
+  courses: ReadonlyArray<StudentCourse>, cbtBankSizes: ReadonlyMap<string, number>): ContinuePractice | null {
   if (progress.open !== null) {
     const target = practiceTarget(progress.open, courses)
     const left = Date.parse(progress.open.deadlineAt) - Date.parse(progress.now)
@@ -62,8 +64,10 @@ function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok'
   }
   if (progress.latest !== null) {
     const target = practiceTarget(progress.latest, courses)
+    const listed = courses.find(course => repositoryIdOf(course) === progress.latest?.courseId)
+    const practisable = listed !== undefined && (cbtBankSizes.get(listed.institutionalCourseId) ?? 0) > 0
     // Practice continues from the course's topic list, not the practice page.
-    if (target !== null && !target.locked) return { kind: 'continue', code: target.code, title: target.title,
+    if (target !== null && !target.locked && practisable) return { kind: 'continue', code: target.code, title: target.title,
       href: target.href.replace(/\/quiz$/, '#cbtPractice') }
   }
   return null
@@ -84,7 +88,7 @@ export function homeCoursesFrom(courses: ReadonlyArray<StudentCourse>, cbtBankSi
             lastScore: own.lastScore } }
     }),
     // An empty list shows only its sentence: nothing to continue, whatever was practised before.
-    continuePractice: progress.status === 'ok' && courses.length > 0 ? continuePracticeFrom(progress, courses) : null,
+    continuePractice: progress.status === 'ok' && courses.length > 0 ? continuePracticeFrom(progress, courses, cbtBankSizes) : null,
   }
 }
 

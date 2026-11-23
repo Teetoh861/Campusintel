@@ -419,6 +419,28 @@ test('a course without a countable bank has no figures on home and a locked cour
   assert.equal(continueCard(html), undefined, 'no Continue card into a course the plan now locks')
 }))
 
+test('owner content rule: Continue never points at a course that no longer offers practice; an open attempt still resumes', async () => fixture(async f => {
+  // Course 0's practice questions were withdrawn: it still opens (its overview), but it has no bank to practise.
+  f.state.current.courses = [mappedCourse(0, 'overview-only'), mappedCourse(1, 'ready')]
+  f.state.current.cbtBankSizes = new Map([['course-1', 25]])
+  started(f, [['repository-0', { practised: 10, lastScore: { score: 6, total: 10 } }]])
+  f.state.progress = { ...f.state.progress, latest: { courseId: 'repository-0', contentKey: 'course-0' } }
+  assert.equal(continueCard(await f.html()), undefined, 'no Continue card into a course with no practice')
+  // The same course on a list where it still has a bank is offered as before.
+  f.state.current.courses = [mappedCourse(0, 'ready'), mappedCourse(1, 'ready')]
+  f.state.current.cbtBankSizes = new Map([['course-0', 40], ['course-1', 25]])
+  assert.match(continueCard(await f.html()), />Continue practising COURSE0</)
+  // An attempt left open in a course with no practice now is still resumed: the practice page finishes it.
+  f.state.current.courses = [mappedCourse(0, 'overview-only'), mappedCourse(1, 'ready')]
+  f.state.current.cbtBankSizes = new Map([['course-1', 25]])
+  f.state.progress = { ...f.state.progress, open: { courseId: 'repository-0', contentKey: 'course-0',
+    deadlineAt: minutesFromNow(20) } }
+  const resume = continueCard(await f.html())
+  assert.match(resume, /data-continue="resume"/)
+  assert.match(resume, /href="\/courses\/course-0\/quiz"/)
+  assert.match(resume, />Resume exam: COURSE0, 20 min left</)
+}))
+
 test('sprint plan 23 Oct item 2: an unavailable or signed-out practice read shows the day-one list, never guessed figures', async () => fixture(async f => {
   f.state.current.courses = [mappedCourse(0, 'ready')]
   f.state.current.cbtBankSizes = new Map([['course-0', 40]])

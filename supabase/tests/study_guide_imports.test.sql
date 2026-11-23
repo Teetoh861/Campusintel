@@ -6,6 +6,9 @@
 begin;
 select no_plan();
 
+-- What the migrations after the guides changed is rolled back first, so the courses stand as the guides left them.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 create function pg_temp.item(p_course uuid, p_key text) returns uuid language sql stable as $$
   select id from public.managed_content_items where course_id = p_course and source_key = p_key $$;
 -- Everything an import could touch: each study item's pointers, lock and position, the history, and the course lists.
@@ -65,7 +68,7 @@ select is((select count(*)::integer from public.managed_content_items where cour
   and published_revision is null and published_parent_revision is null and current_revision = 1 and approved_revision = 1
   and created_by <> '00000000-0000-4000-8000-000000000045'), 40,
   'ACC-CM201: the 20 theory questions it replaces and their answers are unpublished and kept');
-select is(pg_temp.pointers('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), '[3, 3, 3]'::jsonb, 'ACC-CM201: the overview publishes revision 3');
+select is(pg_temp.pointers('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), '[3, 4, 3]'::jsonb, 'ACC-CM201: the overview publishes revision 3');
 select is(pg_temp.payload('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid)->'outcomes', $expected$["Explain the purpose of the Conceptual Framework, the qualitative characteristics, the elements, recognition and measurement.","Apply the five-step model of IFRS 15 to recognise revenue.","Prepare and present financial statements in line with IAS 1.","Measure inventories at the lower of cost and net realisable value under IAS 2.","Account for changes in accounting policies and estimates, and correct prior period errors, under IAS 8.","Recognise, measure, depreciate, revalue and derecognise property, plant and equipment under IAS 16.","Account for government grants under IAS 20.","Capitalise borrowing costs on qualifying assets under IAS 23."]$expected$::jsonb, 'ACC-CM201: course outcomes');
 select is(pg_temp.payload('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid)->'assessment', $expected$["Expect objective questions and calculations on each standard.","Calculations come up in every topic. Work through every worked example until you can do them quickly.","Every topic is examinable."]$expected$::jsonb, 'ACC-CM201: how you are assessed');
 select is((select (now_published.payload - 'outcomes' - 'assessment') = earlier.payload from public.managed_content_revisions now_published
@@ -170,7 +173,7 @@ select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'model_answ
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000007'::uuid, 'rubric'), array[]::text[], 'ACC-CM201: applied again: rubrics');
 select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000007'::uuid and r.authored_by = '00000000-0000-4000-8000-000000000045'), 25, 'ACC-CM201: no revision was written twice');
-select is(pg_temp.pointers('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), '[3, 3, 3]'::jsonb,
+select is(pg_temp.pointers('fc9a0adc-5f6f-5c98-a35f-7473c94a400a'::uuid), '[3, 4, 3]'::jsonb,
   'ACC-CM201: the guide''s overview is published again');
 
 -- ---------------------------------------------------------------------------------------------------------------
@@ -667,7 +670,7 @@ select is((select count(*)::integer from public.managed_content_items where cour
 select is((select count(*)::integer from public.managed_content_items where course_id = '40000000-0000-4000-8000-000000000002'::uuid and kind = 'note'
   and source_key = any (array['topic-note:1', 'topic-note:2', 'topic-note:3', 'topic-note:4', 'topic-note:5', 'topic-note:6', 'topic-note:7', 'topic-note:8', 'topic-note:9', 'topic-note:10']::text[]) and published_revision is null and current_revision = 1 and approved_revision = 1),
   10, 'BUA201: the 10 notes it replaces are unpublished and kept');
-select is(pg_temp.pointers('393817a6-f4f6-5563-9b22-4614aa481ad9'::uuid), '[3, 3, 3]'::jsonb, 'BUA201: the overview publishes revision 3');
+select is(pg_temp.pointers('393817a6-f4f6-5563-9b22-4614aa481ad9'::uuid), '[3, 4, 3]'::jsonb, 'BUA201: the overview publishes revision 3');
 select is(pg_temp.payload('393817a6-f4f6-5563-9b22-4614aa481ad9'::uuid)->'outcomes', $expected$["Define and explain the key operating elements and functions of business organisations.","Appraise the core management functions (planning, organising, leading and controlling) and show how they relate.","Apply foundational management knowledge to marketing, accounting, finance, human resources and operations.","Explain the impact of the internal and external environment on modern business, with particular reference to Nigeria.","Explain the forms of business ownership, their advantages, limitations and regulation.","Analyse the roles, skills and responsibilities of managers as change agents and leaders.","Evaluate corporate governance principles and ethical leadership practices.","Learn from the careers, leadership styles and decisions of successful Nigerian and global managers."]$expected$::jsonb, 'BUA201: course outcomes');
 select is(pg_temp.payload('393817a6-f4f6-5563-9b22-4614aa481ad9'::uuid)->'assessment', $expected$["Expect a test and an examination, mostly objective questions, plus possible short quizzes during the semester.","Expect definitions, lists, theories and who proposed them, Nigerian examples and facts about the managers studied.","Every topic is examinable."]$expected$::jsonb, 'BUA201: how you are assessed');
 select is((select (now_published.payload - 'outcomes' - 'assessment') = earlier.payload from public.managed_content_revisions now_published
@@ -753,7 +756,7 @@ select is(pg_temp.keys('40000000-0000-4000-8000-000000000002'::uuid, 'model_answ
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000002'::uuid, 'rubric'), array[]::text[], 'BUA201: applied again: rubrics');
 select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000002'::uuid and r.authored_by = '00000000-0000-4000-8000-000000000045'), 31, 'BUA201: no revision was written twice');
-select is(pg_temp.pointers('393817a6-f4f6-5563-9b22-4614aa481ad9'::uuid), '[3, 3, 3]'::jsonb,
+select is(pg_temp.pointers('393817a6-f4f6-5563-9b22-4614aa481ad9'::uuid), '[3, 4, 3]'::jsonb,
   'BUA201: the guide''s overview is published again');
 
 -- ---------------------------------------------------------------------------------------------------------------
@@ -781,7 +784,7 @@ select is((select count(*)::integer from public.managed_content_items where cour
 select is((select count(*)::integer from public.managed_content_items where course_id = '40000000-0000-4000-8000-000000000004'::uuid and kind = 'note'
   and source_key = any (array['topic-note:1', 'topic-note:2', 'topic-note:3', 'topic-note:4', 'topic-note:5', 'topic-note:6', 'topic-note:7', 'topic-note:8', 'topic-note:9', 'topic-note:10']::text[]) and published_revision is null and current_revision = 1 and approved_revision = 1),
   10, 'BUA205: the 10 notes it replaces are unpublished and kept');
-select is(pg_temp.pointers('22b198d9-ebcc-5801-8874-d9dd325124e5'::uuid), '[3, 3, 3]'::jsonb, 'BUA205: the overview publishes revision 3');
+select is(pg_temp.pointers('22b198d9-ebcc-5801-8874-d9dd325124e5'::uuid), '[3, 4, 3]'::jsonb, 'BUA205: the overview publishes revision 3');
 select is(pg_temp.payload('22b198d9-ebcc-5801-8874-d9dd325124e5'::uuid)->'outcomes', $expected$["Discuss the meaning of leadership and governance.","Identify the basic concepts and elements of governance.","Explain governance in the public sector and its challenges.","Identify gaps in public governance and initiatives to improve them.","Identify traditional and contemporary leadership theories and styles.","Apply moral philosophies to leadership and governance problems.","Explain how citizens and civil society can be engaged in governance reform.","Take an active part in public sector reform in Nigeria."]$expected$::jsonb, 'BUA205: course outcomes');
 select is(pg_temp.payload('22b198d9-ebcc-5801-8874-d9dd325124e5'::uuid)->'assessment', $expected$["Expect objective questions, with possible short theory questions. Expect definitions, lists, theories and who proposed them, and Nigerian applications.","Every topic is examinable."]$expected$::jsonb, 'BUA205: how you are assessed');
 select is((select (now_published.payload - 'outcomes' - 'assessment') = earlier.payload from public.managed_content_revisions now_published
@@ -867,7 +870,7 @@ select is(pg_temp.keys('40000000-0000-4000-8000-000000000004'::uuid, 'model_answ
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000004'::uuid, 'rubric'), array[]::text[], 'BUA205: applied again: rubrics');
 select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000004'::uuid and r.authored_by = '00000000-0000-4000-8000-000000000045'), 25, 'BUA205: no revision was written twice');
-select is(pg_temp.pointers('22b198d9-ebcc-5801-8874-d9dd325124e5'::uuid), '[3, 3, 3]'::jsonb,
+select is(pg_temp.pointers('22b198d9-ebcc-5801-8874-d9dd325124e5'::uuid), '[3, 4, 3]'::jsonb,
   'BUA205: the guide''s overview is published again');
 
 -- ---------------------------------------------------------------------------------------------------------------
@@ -987,7 +990,7 @@ select is((select count(*)::integer from public.managed_content_items where cour
 select is((select count(*)::integer from public.managed_content_items where course_id = '40000000-0000-4000-8000-000000000001'::uuid and kind = 'note'
   and source_key = any (array['topic-note:1', 'topic-note:2', 'topic-note:3', 'topic-note:4', 'topic-note:5', 'topic-note:6', 'topic-note:7', 'topic-note:8', 'topic-note:9', 'topic-note:10']::text[]) and published_revision is null and current_revision = 1 and approved_revision = 1),
   10, 'ENT211: the 10 notes it replaces are unpublished and kept');
-select is(pg_temp.pointers('ce24b613-5845-53a2-a748-815347fbc945'::uuid), '[3, 3, 3]'::jsonb, 'ENT211: the overview publishes revision 3');
+select is(pg_temp.pointers('ce24b613-5845-53a2-a748-815347fbc945'::uuid), '[3, 4, 3]'::jsonb, 'ENT211: the overview publishes revision 3');
 select is(pg_temp.payload('ce24b613-5845-53a2-a748-815347fbc945'::uuid)->'outcomes', $expected$["Define entrepreneurship and describe its scope and dimensions, and the characteristics of an entrepreneur.","Explain the traits of an entrepreneur and whether entrepreneurs are born or made.","Define innovation and its dimensions, link knowledge to innovation, and apply the principles of change management.","Identify the forms of business ownership in Nigeria, weigh their advantages and disadvantages, and outline a simple business plan.","Explain business registration in Nigeria, its process and the pitfalls to avoid, and the forms of business collaboration.","Define and distinguish micro and small enterprises, and explain their importance.","Explain the role of knowledge and skills, digital technology and e-commerce in modern entrepreneurship."]$expected$::jsonb, 'ENT211: course outcomes');
 select is(pg_temp.payload('ce24b613-5845-53a2-a748-815347fbc945'::uuid)->'assessment', $expected$["The exam is objective (CBT). Expect definitions, lists and their order, names, figures and Nigerian business cases.","Every topic is examinable."]$expected$::jsonb, 'ENT211: how you are assessed');
 select is((select (now_published.payload - 'outcomes' - 'assessment') = earlier.payload from public.managed_content_revisions now_published
@@ -1073,7 +1076,7 @@ select is(pg_temp.keys('40000000-0000-4000-8000-000000000001'::uuid, 'model_answ
 select is(pg_temp.keys('40000000-0000-4000-8000-000000000001'::uuid, 'rubric'), array[]::text[], 'ENT211: applied again: rubrics');
 select is((select count(*)::integer from public.managed_content_revisions r join public.managed_content_items i on i.id = r.item_id
   where i.course_id = '40000000-0000-4000-8000-000000000001'::uuid and r.authored_by = '00000000-0000-4000-8000-000000000045'), 22, 'ENT211: no revision was written twice');
-select is(pg_temp.pointers('ce24b613-5845-53a2-a748-815347fbc945'::uuid), '[3, 3, 3]'::jsonb,
+select is(pg_temp.pointers('ce24b613-5845-53a2-a748-815347fbc945'::uuid), '[3, 4, 3]'::jsonb,
   'ENT211: the guide''s overview is published again');
 
 -- ---------------------------------------------------------------------------------------------------------------

@@ -146,20 +146,23 @@ function overviewRevisions(manifest) {
 }
 
 /** The migration: one statement publishes every revision or none, and the same function rolls them back. */
-/** A pending revision written by the given actor, with the published revision still approved: a study guide's overview
- *  revision left in the history when the guide rolled back (20261112110000_study_guide_notes.sql). */
-const guidePending = actor => item => `(${item}.approved_revision = ${item}.published_revision and exists (select 1
+/** A pending revision written by one of the given later layers' actors, with the published revision still approved: an
+ *  overview revision a later layer left in the history when it rolled back, such as a study guide's
+ *  (20261112110000_study_guide_notes.sql) or the owner content rule's (20261122120000_owner_content_rule.sql). */
+const laterPending = actors => item => `(${item}.approved_revision = ${item}.published_revision and exists (select 1
           from public.managed_content_revisions g where g.item_id = ${item}.id and g.revision = ${item}.current_revision
-          and g.authored_by = '${actor}'))`
+          and g.authored_by ${actors.length === 1 ? `= '${actors[0]}'`
+            : `in (${actors.map(actor => `'${actor}'`).join(', ')})`}))`
 
-/** The correction's two functions. With a guide actor, they are redefined so that a rolled-back study guide's pending
- *  overview revision is not taken for someone else's edit; nothing else differs. */
-function overviewFunctionsSql(seedActor, revisions, guideActor = null) {
+/** The correction's two functions. With later layers' actors, they are redefined so that a rolled-back later layer's
+ *  pending overview revision is not taken for someone else's edit; nothing else differs. */
+function overviewFunctionsSql(seedActor, revisions, laterActors = []) {
   const data = JSON.stringify({ actor: OVERVIEW_ACTOR, seedActor, items: revisions })
   assert.ok(!data.includes('$overview_source$'), 'overview text contains the SQL delimiter')
+  assert.ok(Array.isArray(laterActors) && laterActors.every(actor => /^[0-9a-f-]{36}$/.test(actor)), 'later actors are UUIDs')
   const fn = 'private.course_overview_revisions'
-  const create = guideActor ? 'create or replace function' : 'create function'
-  const guide = guideActor ? guidePending(guideActor) : null
+  const create = laterActors.length ? 'create or replace function' : 'create function'
+  const guide = laterActors.length ? laterPending(laterActors) : null
   return `-- Where one overview stands: 'before' (publishes the text this correction replaces), 'after' (publishes this
 -- correction's revision) or 'other'. An unpublished edit by anyone else is 'other'.
 ${create} private.course_overview_revision_state(p_item uuid, p_before jsonb, p_after jsonb, p_actor uuid,
@@ -290,4 +293,5 @@ ${overviewFunctionsSql(seedActor, revisions)}select ${fn}('apply');
 `
 }
 
-module.exports = { OVERVIEW_ACTOR, OVERVIEW_EDITS, OVERVIEW_MIGRATION, overviewFunctionsSql, overviewMigrationSql, overviewRevisions }
+module.exports = { OVERVIEW_ACTOR, OVERVIEW_EDITS, OVERVIEW_MIGRATION, laterPending, overviewFunctionsSql, overviewMigrationSql,
+  overviewRevisions }

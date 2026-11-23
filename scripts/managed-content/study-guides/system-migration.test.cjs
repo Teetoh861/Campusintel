@@ -15,7 +15,7 @@ test('the recreated functions differ from 20261110090000 only where a guide revi
   const revisions = overviewRevisions(manifest)
   const original = fs.readFileSync(path.join(MIGRATIONS, OVERVIEW_MIGRATION), 'utf8')
   const system = fs.readFileSync(path.join(MIGRATIONS, SYSTEM_MIGRATION), 'utf8')
-  const redefined = overviewFunctionsSql(manifest.actor, revisions, GUIDE_ACTOR)
+  const redefined = overviewFunctionsSql(manifest.actor, revisions, [GUIDE_ACTOR])
   assert.ok(system.includes(redefined), 'the system migration carries the generated functions')
   // The original migration's functions, as it runs them.
   assert.ok(original.includes(overviewFunctionsSql(manifest.actor, revisions)))

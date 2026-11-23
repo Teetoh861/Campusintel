@@ -11,7 +11,7 @@ const root = path.join(__dirname, '../../..')
 const { buildManifest } = require('../source-manifest.cjs')
 const { overviewRevisions } = require('../overview-revisions.cjs')
 const { buildImports } = require('../official-banks.cjs')
-const { GUIDE_ACTOR, IMPORTS_MIGRATION, assessmentLines, coursesModule, guideDocument, guidePlans, migrationSql, readGuide } = require('../study-guides.cjs')
+const { GUIDE_ACTOR, IMPORTS_MIGRATION, assessmentLines, coursesModule, guideDocument, guidePlan, guidePlans, migrationSql, readGuide } = require('../study-guides.cjs')
 const { GUIDE_IMPORTS, GUIDES_WAITING } = require('./imports.cjs')
 
 const manifest = buildManifest()
@@ -52,6 +52,23 @@ test('nineteen guides are imported, the pilot first; BUA 323 waits', () => {
       assert.ok(question.payload.prompt.trim() && question.answer.payload.body.trim())
     })
   }
+})
+
+test('a guide imported after the owner content rule publishes no theory question and no theory link', () => {
+  // The 19 guides were imported before the rule; their migrations are applied and keep their theory items.
+  const { OWNER_RULE_MIGRATION } = require('../owner-rule.cjs')
+  assert.ok(guides.every(plan => plan.migration < OWNER_RULE_MIGRATION && plan.theory.length === plan.notes.length))
+  // The same guide, imported after the rule (as BUA 323, which waits, would be): its notes as before, with no theory.
+  const entry = GUIDE_IMPORTS.find(row => row.code === 'ACS101')
+  const later = guidePlan({ ...entry, migration: '20261201000000_study_guide_acs101.sql' }, manifest, banks, revisions)
+  const imported = guide('ACS101')
+  assert.deepEqual(later.theory, [])
+  assert.ok(later.notes.length > 0 && later.notes.every(note => !('theory' in note.payload)))
+  assert.deepEqual(later.notes.map(note => note.payload),
+    imported.notes.map(note => Object.fromEntries(Object.entries(note.payload).filter(([key]) => key !== 'theory'))))
+  assert.deepEqual(guideDocument(later).theory, [])
+  // BUA 323's own source still parses, theory sections included.
+  assert.ok(readGuide('BUA323').topics.length > 0)
 })
 
 test('the pilot is what it was: its document has no new key', () => {
