@@ -131,7 +131,7 @@ export const landingContent = {
       { icon: 'upload', title: 'Campus Bot practice from your notes' },
     ] satisfies Feature[],
   },
-  // The only place that explains Campus Bot practice and theory practice.
+  // The only place that explains Campus Bot practice.
   showcase: [
     {
       eyebrow: 'Campus Bot',
@@ -142,17 +142,6 @@ export const landingContent = {
         { src: '/landing/upload-notes.webp', width: 700, height: 696, alt: 'Uploading notes to Practise from your notes' },
         { src: '/landing/campus-bot-question.webp', width: 700, height: 1542, alt: 'A Campus Bot question, answered, with its explanation and a quote from the notes' },
       ],
-    },
-    {
-      eyebrow: 'Theory',
-      title: 'Theory questions with suggested answers.',
-      text: 'Write your answer, then compare it with the suggested answer.',
-      ticks: [],
-      // GST 111, theory question 12 of 15: the study guide's own question and suggested answer, word for word.
-      shots: [
-        { src: '/landing/theory-answer.webp', width: 700, height: 1098, alt: 'A theory question with a typed answer and the suggested answer' },
-      ],
-      flip: true,
     },
   ] satisfies ShowcaseRow[],
   // Counted from the repository's content when the site is built (scripts/landing/figures.cjs).

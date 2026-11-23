@@ -395,6 +395,45 @@ test('the free month is never read or offered for a course off the list, with co
   assert.doesNotMatch(empty, /free month|data-free-month-start/i, 'nothing published: nothing a month would open')
 }))
 
+// An active free pass, as the database reports it, with the previews it has used.
+const passRead = previews => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
+  now: '2026-11-16T12:00:00+00:00', planned_launch_at: '2026-11-14T23:00:00+00:00', actual_launch_at: '2026-11-15T08:00:00+00:00',
+  trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
+  trial: { status: 'active', policy: 'discovery', starts_at: '2026-11-16T10:00:00+00:00', ends_at: '2026-11-19T10:00:00+00:00',
+    available_from: null },
+  discovery: { cbt_questions: 50, ai_sets: 1, previews }, otp: null,
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-25T08:00:00+00:00' },
+}), free_month: null } })
+
+test('owner content rule: a free pass offers only what the locked course publishes, else the locked notice', async () => fixture(async f => {
+  f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
+  f.state.plan = passRead([])
+  const offer = async buildTime => {
+    f.state.buildTime = buildTime
+    const html = await f.html()
+    return { html, offers: [...html.matchAll(/<li[^>]*data-preview-state="([^"]+)"[^>]*>([\s\S]*?)<\/li>/g)]
+      .map(match => `${match[1]}: ${text(match[2]).trim()}`) }
+  }
+  assert.deepEqual((await offer({ notes: true, cbtPractice: true, theory: false })).offers,
+    ['available: Take a 50-question CBT exam', 'available: Choose a notes topic'])
+  assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a notes topic'],
+    'no CBT exam on a course with no practice')
+  assert.deepEqual((await offer({ notes: false, cbtPractice: true, theory: false })).offers, ['available: Take a 50-question CBT exam'],
+    'no notes topic on a course with no notes')
+  // Nothing to try: the existing locked notice, which says so.
+  const empty = await offer({ notes: false, cbtPractice: false, theory: false })
+  assert.doesNotMatch(empty.html, /data-discovery-offer|Try this course/)
+  assert.match(text(empty.html), /Study materials are not available\./)
+  // A CBT exam already opened on this course stays reachable, whatever the course publishes now.
+  f.state.plan = passRead([{ kind: 'cbt', content_key: 'central-key', submitted: false }])
+  assert.deepEqual((await offer({ notes: false, cbtPractice: false, theory: false })).offers, ['opened: Continue your CBT exam'])
+  // A preview used on another course is not mentioned on a course that does not offer that kind.
+  f.state.plan = passRead([{ kind: 'cbt', content_key: 'another-key', submitted: true }])
+  assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a notes topic'])
+  assert.deepEqual((await offer({ notes: true, cbtPractice: true, theory: false })).offers,
+    ['used-elsewhere: Your CBT exam was used.', 'available: Choose a notes topic'])
+}))
+
 test('the browser tab names the course as the page does, and only for a live session', async () => fixture(async f => {
   const noindex = { index: false, follow: false }
   assert.deepEqual(await f.metadata(), { title: 'INST101 Institutional title | CampusIntell', robots: noindex },

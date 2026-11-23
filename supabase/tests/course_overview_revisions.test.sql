@@ -5,8 +5,10 @@ begin;
 select no_plan();
 
 -- The study guides imported after this correction publish later overview revisions (revision three on the five revised
--- overviews that have a guide). They are rolled back here, inside this test's transaction, so the overviews stand as
--- this correction left them.
+-- overviews that have a guide), and the owner content rule (20261122120000) publishes the revision after that on twelve
+-- overviews and unpublishes three. The rule, then the guides, are rolled back here, inside this test's transaction, so
+-- the overviews stand as this correction left them.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('%s rolled back for this test', guide))
   from private.study_guides order by guide;
 
@@ -25,15 +27,21 @@ create function pg_temp.state() returns jsonb language sql as $$
     'revisions', (select count(*) from public.managed_content_revisions),
     'reviews', (select count(*) from public.managed_content_reviews),
     'publications', (select count(*) from public.managed_content_publications)) $$;
--- A rolled-back guide's overview revision stays the current revision, as the history keeps it; that is not a draft.
--- Five of the revised overviews have a guide: GST 111, ACC-CM201, BUA 201, BUA 205 and ENT 211.
+-- A rolled-back later layer's overview revision stays the current revision, as the history keeps it; that is not a
+-- draft. Five of the revised overviews have a guide: GST 111, ACC-CM201, BUA 201, BUA 205 and ENT 211; the guide wrote
+-- their revision three and the owner content rule their revision four. The rule wrote revision three of six more:
+-- GST 112, BUA 202, BUA 204, GST 212, BUA 216 and BUA 218.
 create function pg_temp.current(p_slug text) returns integer language sql as $$
   select case when p_slug in ('use-of-english', 'financial-accounting-1', 'principles-business-administration',
-    'leadership-governance', 'entrepreneurship-innovation') then 3 else 2 end $$;
+    'leadership-governance', 'entrepreneurship-innovation') then 4
+    when p_slug in ('nigerian-peoples-and-culture', 'principles-business-administration-2', 'quantitative-analysis-management',
+      'philosophy-logic-human-existence', 'introduction-financial-management', 'bua218') then 3 else 2 end $$;
 select is((select jsonb_build_array(i.current_revision, r.authored_by) from public.managed_content_items i
     join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.current_revision
-    where i.id = pg_temp.overview('use-of-english')), '[3, "00000000-0000-4000-8000-000000000045"]'::jsonb,
-  'GST111 keeps the rolled-back guide revision as its current one');
+    where i.id = pg_temp.overview('use-of-english')), '[4, "00000000-0000-4000-8000-000000000046"]'::jsonb,
+  'GST111 keeps the rolled-back owner content rule revision as its current one');
+select is((select authored_by from public.managed_content_revisions where item_id = pg_temp.overview('use-of-english')
+    and revision = 3), '00000000-0000-4000-8000-000000000045'::uuid, 'with the rolled-back guide revision before it');
 create temporary table revised (slug text primary key) on commit drop;
 insert into revised values ('introduction-financial-management'), ('quantitative-analysis-management'),
   ('principles-business-administration-2'), ('use-of-english'), ('leadership-governance'), ('entrepreneurship-innovation'),
@@ -88,11 +96,12 @@ select is(pg_temp.state(), (select state from applied), 'the rerun changed nothi
 
 -- An overview edited after the correction is refused by rollback, with nothing changed.
 savepoint edited_after;
+-- Revision four: the owner content rule's rolled-back revision three is kept in the history.
 insert into public.managed_content_revisions (item_id, revision, payload, authored_by)
-  select pg_temp.overview('introduction-financial-management'), 3,
+  select pg_temp.overview('introduction-financial-management'), 4,
     jsonb_set(pg_temp.published('introduction-financial-management'), '{body}', '"Operator draft"'),
     '11111111-1111-4111-8111-111111111111';
-update public.managed_content_items set current_revision = 3, lock_version = lock_version + 1
+update public.managed_content_items set current_revision = 4, lock_version = lock_version + 1
   where id = pg_temp.overview('introduction-financial-management');
 create temporary table edited on commit drop as select pg_temp.state() state;
 select throws_ok($$select private.course_overview_revisions('rollback')$$, 'P0001',
@@ -121,10 +130,10 @@ create temporary table rolled_back on commit drop as select pg_temp.state() stat
 
 savepoint published_edit;
 insert into public.managed_content_revisions (item_id, revision, payload, authored_by)
-  select pg_temp.overview('quantitative-analysis-management'), 3,
+  select pg_temp.overview('quantitative-analysis-management'), 4,
     jsonb_set(pg_temp.published('quantitative-analysis-management'), '{body}', '"Operator text"'),
     '11111111-1111-4111-8111-111111111111';
-update public.managed_content_items set current_revision = 3, approved_revision = 3, published_revision = 3,
+update public.managed_content_items set current_revision = 4, approved_revision = 4, published_revision = 4,
   lock_version = lock_version + 3 where id = pg_temp.overview('quantitative-analysis-management');
 create temporary table published_edit on commit drop as select pg_temp.state() state;
 select throws_ok($$select private.course_overview_revisions('apply')$$, 'P0001',
@@ -137,9 +146,9 @@ rollback to savepoint published_edit;
 
 savepoint draft_edit;
 insert into public.managed_content_revisions (item_id, revision, payload, authored_by)
-  select pg_temp.overview('use-of-english'), 4, jsonb_set(pg_temp.published('use-of-english'), '{body}', '"Draft"'),
+  select pg_temp.overview('use-of-english'), 5, jsonb_set(pg_temp.published('use-of-english'), '{body}', '"Draft"'),
     '11111111-1111-4111-8111-111111111111';
-update public.managed_content_items set current_revision = 4, lock_version = lock_version + 1
+update public.managed_content_items set current_revision = 5, lock_version = lock_version + 1
   where id = pg_temp.overview('use-of-english');
 create temporary table draft_edit on commit drop as select pg_temp.state() state;
 select throws_ok($$select private.course_overview_revisions('apply')$$, 'P0001',

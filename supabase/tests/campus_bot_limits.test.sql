@@ -6,6 +6,10 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 -- The running First Semester began 100 days ago (it ends in about three weeks); nothing else is in the calendar.
 delete from private.academic_term_extensions;
 delete from private.academic_terms where session_label <> '2026/2027';

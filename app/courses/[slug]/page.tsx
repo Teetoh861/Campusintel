@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { cache } from 'react'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
-import { DiscoveryOffer } from '@/components/student/DiscoveryOffer'
+import { DiscoveryOffer, discoveryOffers } from '@/components/student/DiscoveryOffer'
 import { LockedCourseNotice } from '@/components/student/LockedCourseNotice'
 import { Notice } from '@/components/student/Notice'
 import { REPOSITORY_COURSE_LABEL } from '@/components/student/CourseRow'
@@ -163,6 +163,10 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
   })
   const contents = sections.length >= 2
   const number = (id: StudySectionId) => sections.indexOf(id) + 1
+  // What a locked course publishes, from build-time data. An active pass offers only that; with nothing to try, the
+  // course shows the locked notice.
+  const has = buildTimeStudy(route.slug)
+  const offered = pass !== null && !scopeNotice && discoveryOffers(pass, repository.contentKey, route.href, has).length > 0
   return <StudentPage workspaceClassName="student-detail-workspace" band={<>
     <CourseViewTracker courseSlug={route.slug} />
     <PageBand title={title}
@@ -176,9 +180,9 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
     <div className="student-detail-reading">
       {!institutional && content.state !== 'not-available'
         && <Notice tone="info" title="Check this against your course outline." />}
-      {locked && (scopeNotice || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
-        plansOnSale={plansOnSale} has={buildTimeStudy(route.slug)} freeMonth={scopeNotice ? null : freeMonth} />
-        : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} />)}
+      {locked && (!offered || pass === null ? <LockedCourseNotice passHours={passHours} reason={content.reason}
+        plansOnSale={plansOnSale} has={has} freeMonth={scopeNotice ? null : freeMonth} />
+        : <DiscoveryOffer pass={pass} contentKey={repository.contentKey} courseHref={route.href} has={has} />)}
       {content.state === 'temporarily-unavailable' && <Notice title={STUDY_COPY.temporarilyUnavailable} action={<>
         <a href={route.href} className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>
         <RequestMaterialLink href={materialsHref} />

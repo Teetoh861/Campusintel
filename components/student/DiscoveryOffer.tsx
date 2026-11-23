@@ -1,11 +1,13 @@
 // components/student/DiscoveryOffer.tsx — What an active Discovery Pass offers on one locked course.
-// Built from the plan summary only: no course content is read here, and following a link spends nothing.
+// Built from the plan summary and the course's build-time study families only: no course content is read here, and
+// following a link spends nothing.
 import Link from 'next/link'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { getCourseByContentKey } from '@/lib/data/courses'
 import { DISCOVERY_KINDS, PREVIEW_SEGMENT } from '@/lib/entitlements/discovery-contract'
 import { DISCOVERY_PASS_LABEL, formatAccessDate } from '@/lib/entitlements/presentation'
 import { studentAction, studentFocusDark } from './ui'
+import type { BuildTimeStudy } from '@/lib/courses/build-time-study'
 import type { DiscoverySummary } from '@/lib/entitlements/contract'
 import type { DiscoveryKind } from '@/lib/entitlements/discovery-contract'
 import type { ReactElement } from 'react'
@@ -26,6 +28,8 @@ const OPENED_LABEL: Record<DiscoveryKind, string> = {
 }
 // What was used on another course, mid-sentence ("Your … was used on ACC 101.").
 const USED_LABEL: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'notes topic' }
+// The study family each preview needs the course to publish.
+const FAMILY: Record<DiscoveryKind, keyof BuildTimeStudy> = { cbt: 'cbtPractice', study_guide: 'notes' }
 
 function offerFor(kind: DiscoveryKind, pass: DiscoveryPass, contentKey: string, courseHref: string): Offer {
   const used = pass.discovery.previews.find(preview => preview.kind === kind)
@@ -37,9 +41,17 @@ function offerFor(kind: DiscoveryKind, pass: DiscoveryPass, contentKey: string, 
   return { state: used.submitted ? 'graded' : 'opened', href }
 }
 
-/** Shown in place of the locked notice while the student's pass is active. */
-export function DiscoveryOffer({ pass, contentKey, courseHref }: {
-  pass: DiscoveryPass; contentKey: string; courseHref: string
+/** What the pass shows on this course: each preview the course publishes, and a preview of this course the student has
+ *  already opened, whatever the course publishes now. Empty when the course has nothing to try. */
+export function discoveryOffers(pass: DiscoveryPass, contentKey: string, courseHref: string, has: BuildTimeStudy):
+  ReadonlyArray<{ kind: DiscoveryKind; offer: Offer }> {
+  return DISCOVERY_KINDS.map(kind => ({ kind, offer: offerFor(kind, pass, contentKey, courseHref) }))
+    .filter(({ kind, offer }) => has[FAMILY[kind]] || offer.state === 'opened' || offer.state === 'graded')
+}
+
+/** Shown in place of the locked notice while the student's pass is active and the course has something to try. */
+export function DiscoveryOffer({ pass, contentKey, courseHref, has }: {
+  pass: DiscoveryPass; contentKey: string; courseHref: string; has: BuildTimeStudy
 }): ReactElement {
   const endsAt = pass.endsAt
   return <section aria-labelledby="discovery-offer-title" className="student-surface student-surface-raised"
@@ -47,8 +59,7 @@ export function DiscoveryOffer({ pass, contentKey, courseHref }: {
     <h2 id="discovery-offer-title" className="student-section-title">Try this course</h2>
     <p className="student-meta mt-1">{DISCOVERY_PASS_LABEL}{endsAt !== null && <> · ends {formatAccessDate(endsAt)}</>}.</p>
     <ul className="mt-4 grid gap-2">
-      {DISCOVERY_KINDS.map(kind => {
-        const offer = offerFor(kind, pass, contentKey, courseHref)
+      {discoveryOffers(pass, contentKey, courseHref, has).map(({ kind, offer }) => {
         if (offer.state === 'used-elsewhere') {
           return <li key={kind} className="text-sm text-student-text-muted" data-preview-state={offer.state}>
             Your {USED_LABEL[kind]} was used{offer.courseCode !== null && <> on {offer.courseCode}</>}.

@@ -2,6 +2,10 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 select ok((select relrowsecurity from pg_class where oid = 'public.question_reports'::regclass),
   'reports have RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.question_reports', 'SELECT')

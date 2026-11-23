@@ -6,6 +6,10 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 -- Course 08 (GST111) is used with the topics and questions it was seeded with: its official bank import is rolled back
 -- inside this transaction.
 select is(private.official_bank_gst111('rollback'), 'rolled-back', 'course 08 runs on its seeded questions');

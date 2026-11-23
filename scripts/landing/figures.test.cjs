@@ -6,8 +6,11 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { CATALOGUE_MIGRATIONS, figuresModule, landingFigures, readyCourses } = require('./figures.cjs')
 const { buildManifest } = require('../managed-content/source-manifest.cjs')
-const { buildImports, publishedCbt } = require('../managed-content/official-banks.cjs')
+const { buildImports } = require('../managed-content/official-banks.cjs')
 const { IMPORTS } = require('../managed-content/official-banks/imports.cjs')
+const { overviewRevisions } = require('../managed-content/overview-revisions.cjs')
+const { PRACTICE_RETIRED, ownerRulePlan, publishedAfter, publishedBefore } = require('../managed-content/owner-rule.cjs')
+const { guidePlans } = require('../managed-content/study-guides.cjs')
 const { GUIDE_IMPORTS } = require('../managed-content/study-guides/imports.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
@@ -26,29 +29,32 @@ test('the build generates the figures before it compiles the page', () => {
 test('the figures equal what the content pipeline publishes for courses on the catalogue', () => {
   const manifest = buildManifest()
   const { plans } = buildImports(manifest)
-  const imported = new Map(plans.map(plan => [plan.courseId, plan]))
-  // The published question bank of every course: the official bank where one is imported, the seeded bank otherwise.
-  const published = new Map()
-  for (const course of manifest.courses) {
-    const plan = imported.get(course.courseId)
-    published.set(course.contentKey, plan ? publishedCbt(plan).length
-      : manifest.items.filter(item => item.courseId === course.courseId && item.kind === 'cbt_question').length)
-  }
-  for (const plan of plans.filter(plan => plan.shell)) published.set(plan.slug, publishedCbt(plan).length)
-  assert.equal(published.size, manifest.courses.length + plans.filter(plan => plan.shell).length)
+  const revisions = overviewRevisions(manifest)
+  const guides = guidePlans(manifest, plans, revisions)
+  // The published question bank of every course after every migration: the official bank where one is imported, the
+  // seeded bank otherwise, less what the owner content rule withdrew.
+  const before = publishedBefore(manifest, plans, revisions, guides)
+  const after = publishedAfter(before, ownerRulePlan(before, guides))
+  const published = new Map(after.courses.map(course => [course.contentKey, course.kinds.cbt_question.length]))
+  assert.equal(published.size, manifest.courses.length + plans.filter(plan => plan.shell).length + guides.filter(plan => plan.created).length)
 
   const ready = readyCourses()
   for (const course of ready) assert.equal(course.questions, published.get(course.key), course.key)
   assert.equal(new Set(ready.map(course => course.key)).size, ready.length)
-  // Every course with a bank is counted, except the one seeded course no catalogue course links to (BUA 222): no
-  // student can have it on their list, so the page does not count it.
   const counted = new Set(ready.map(course => course.key))
-  assert.deepEqual([...published.keys()].filter(key => !counted.has(key)), ['international-organisational-behaviour'])
+  // Every course that publishes a bank is counted. The one seeded course no catalogue course links to (BUA 222) is not
+  // counted either way: no student can have it on their list, and the owner content rule withdrew its questions.
+  assert.deepEqual([...published].filter(([key, size]) => size > 0 && !counted.has(key)).map(([key]) => key), [])
+  assert.equal(counted.has('international-organisational-behaviour'), false)
+  // A seeded bank the owner content rule withdrew counts as no bank.
+  for (const slug of PRACTICE_RETIRED) assert.equal(published.get(slug), 0, slug)
+  assert.deepEqual(PRACTICE_RETIRED.filter(slug => counted.has(slug)), [])
 
   const figures = landingFigures()
   assert.equal(figures.courses, ready.length)
   assert.equal(figures.questions, ready.reduce((sum, course) => sum + course.questions, 0))
   assert.ok(figures.courses > 0 && figures.questions > figures.courses && figures.departments > 0)
+  assert.deepEqual(figures, { courses: 27, questions: 20988, departments: 8 }, 'the figures as decided on 22 November')
 })
 
 test('the catalogue is changed only by the migrations the figures were checked against', () => {

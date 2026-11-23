@@ -137,6 +137,8 @@ test('a topic covering several bank topics has one button per topic, named after
   const buttons = anchors(second).filter(link => link.includes('/quiz?topic=')).map(link => text(link).trim())
   assert.deepEqual(buttons, ['IAS 2 Inventories', 'IAS 16 Property, Plant and Equipment'])
   assert.ok(!anchors(second).some(link => /Answer this question/.test(link)), 'no link for a question the theory page cannot practise')
+  // The theory question shows only with its link: a question not published for this student is not shown at all.
+  assert.doesNotMatch(second, /Theory question/, 'and no theory question either')
   const last = await topic('3')
   assert.ok(!anchors(last).some(link => /Next topic/.test(link)))
   assert.ok(anchors(last).some(link => link.includes('href="/courses/use-of-english/notes/2"') && /Previous topic/.test(link)))
@@ -183,6 +185,7 @@ test('the guide renderer turns every payload text into escaped text, never HTML'
   const rendered = decode(card)
   for (const span of spans) assert.ok(rendered.includes(span), span.slice(0, 60))
   assert.doesNotMatch(card, /Practise this topic|Answer this question/, 'no buttons without links')
+  assert.doesNotMatch(card, /Theory question/, 'and no theory question without its link')
 }))
 
 test('plain, topic and calculator notes render as before, with formulas and examples byte-identical', async () => withTsx(async () => {

@@ -343,8 +343,11 @@ function parseTopic(source, where) {
       assert.ok(theory.question.length > 0 && theory.answer.length > 0, `${at}: a question and an answer`)
     } else assert.fail(`${at}: unexpected section`)
   }
-  assert.ok(lessons.length > 0 && recap !== null && theory !== null, `${where}: lessons, a recap and a theory question`)
-  return { number, title: plainInline(title), mustKnow, ...(introMore.length ? { introMore } : {}), lessons, recap, theory }
+  // The theory question is optional: under the owner content rule (owner-rule.cjs) no guide imports one, so a guide may
+  // leave the section out. One that is there is checked as above.
+  assert.ok(lessons.length > 0 && recap !== null, `${where}: lessons and a recap`)
+  return { number, title: plainInline(title), mustKnow, ...(introMore.length ? { introMore } : {}), lessons, recap,
+    ...(theory ? { theory } : {}) }
 }
 
 /** Write a parsed topic back out, for the round-trip test. Blank lines are not kept. */
@@ -355,7 +358,9 @@ function topicToMarkdown(topic) {
     lines.push(`### Lesson ${lesson.number}: ${lesson.title}`, '**Must know**', ...blocksToMarkdown(lesson.mustKnow))
     if (lesson.explainMore) lines.push('**Explain more**', ...blocksToMarkdown(lesson.explainMore))
   }
-  lines.push('### One-minute recap', ...blocksToMarkdown(topic.recap), '### Theory practice')
+  lines.push('### One-minute recap', ...blocksToMarkdown(topic.recap))
+  if (!topic.theory) return lines
+  lines.push('### Theory practice')
   const question = blocksToMarkdown(topic.theory.question)
   lines.push(`**Question:** ${question[0]}`, ...question.slice(1))
   const answer = blocksToMarkdown(topic.theory.answer)

@@ -164,4 +164,24 @@ test('a topic out of shape is refused', () => {
   assert.throws(() => parseTopic(topic.replace('**Question:** ', ''), 't'), /Question/)
   assert.throws(() => parseTopic(topic.replace('### One-minute recap', '### Summary'), 't'), /unexpected section/)
   assert.throws(() => parseTopic(topic.replace('**Must know**', 'Must know'), 't'), /Must know/)
+  assert.throws(() => parseTopic(topic.slice(0, topic.indexOf('### One-minute recap')), 't'), /lessons and a recap/)
+})
+
+test('a topic with no theory question parses, and one that has it is still checked', () => {
+  const topic = fs.readFileSync(path.join(SOURCE, 'GST111', 'T1.md'), 'utf8')
+  const withTheory = parseTopic(topic, 't')
+  // The owner content rule (owner-rule.cjs): a guide may leave its theory questions out.
+  const without = topic.slice(0, topic.indexOf('### Theory practice')).replace(/\n+$/, '\n')
+  const parsed = parseTopic(without, 't')
+  assert.equal('theory' in parsed, false)
+  const { theory, ...rest } = withTheory
+  assert.ok(theory.question.length > 0)
+  assert.deepEqual(parsed, rest, 'everything else parses as before')
+  assert.deepEqual(normalizedWritten(topicToMarkdown(parsed)), normalizedSource(without), 'and is written back as it was')
+  // A theory section that is there must still be whole: a question, an answer and the topic's own practice link.
+  assert.throws(() => parseTopic(topic.replace('[[NUDGE:1]]', '[[NUDGE:2]]'), 't'), /practice link/)
+  assert.throws(() => parseTopic(topic.replace('**Question:** ', ''), 't'), /Question/)
+  assert.throws(() => parseTopic(`${without}### Theory practice\n`, 't'), /practice link/)
+  assert.throws(() => parseTopic(topic.replace('### One-minute recap', '### Theory practice\n### One-minute recap'), 't'),
+    /one theory question, after the recap|one recap, before the theory question/)
 })

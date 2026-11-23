@@ -129,7 +129,7 @@ const ruleBody = (css, selector) => cssRules(css).filter(item => item.selector =
 test('the page runs in the agreed order and the retired sections are gone', async () => {
   const html = await renderHome({ env: CONFIGURED })
   const order = ['<header', 'id="landing-title"', 'id="try"', 'id="features"', 'Practice questions from your own notes.',
-    'Theory questions with suggested answers.', 'aria-label="Courses on CampusIntell"', 'id="faq"', 'aria-labelledby="final-cta-title"', '<footer']
+    'aria-label="Courses on CampusIntell"', 'id="faq"', 'aria-labelledby="final-cta-title"', '<footer']
   const positions = order.map(marker => html.indexOf(marker))
   for (const [i, position] of positions.entries()) assert.ok(position >= 0, order[i])
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'header, hero, try a question, what you get, showcase, courses, FAQ, closing, footer')
@@ -142,14 +142,15 @@ test('the page runs in the agreed order and the retired sections are gone', asyn
   }
   noMatch(html, /id="how"|href="#how"|href="\/courses"|class="(?:marquee|track|trust|tagChip|tagline|dangle|blob|stage)\b/)
   for (const file of REMOVED_FILES) assert.equal(fs.existsSync(path.join(__dirname, file)), false, file)
-  // What you get is four cards; the showcase is two rows; the FAQ has three questions.
+  // What you get is four cards; the showcase is one row (the owner content rule, 22 Nov: no theory practice to show);
+  // the FAQ has three questions.
   const features = /<section id="features"[\s\S]*?<\/section>/.exec(html)[0]
   assert.deepEqual([...features.matchAll(/<h3>([^<]*)<\/h3>/g)].map(match => match[1]),
     ['Verified past questions', 'Notes by topic', 'Exam mode', 'Campus Bot practice from your notes'])
   // The Campus Bot card is its name alone; the other three add one sentence.
   assert.deepEqual([...features.matchAll(/<li class="fcard[^"]*">([\s\S]*?)<\/li>/g)].map(card => count(card[1], /<p>/g)), [1, 1, 1, 0])
   const { showcase, faq } = await content()
-  assert.deepEqual(showcase.map(row => row.shots.length), [2, 1])
+  assert.deepEqual(showcase.map(row => row.shots.length), [2])
   assert.equal(faq.items.length, 3)
 })
 
@@ -174,10 +175,9 @@ test('landing copy claims only what the product does', async () => {
   noMatch(text, /3 days|three days|\b\d+ days\b|72 hours/i)
   assert.equal(count(text, /GST courses are free/g), 1)
   assert.equal(count(text, /\bfree for\b/gi), 0, 'GST free is not repeated in other words')
-  // Theory: the student writes an answer and compares it with the suggested answer themselves. Nothing says the
-  // product marks, scores or compares it for them.
-  assert.ok(text.includes('Theory questions with suggested answers.'))
-  assert.ok(text.includes('Write your answer, then compare it with the suggested answer.'))
+  // Theory: the owner content rule (22 Nov) withdrew every theory question, so the page offers none. Nothing says the
+  // product marks, scores or compares an answer either.
+  noMatch(text, /Theory questions|suggested answer|theory practice/i)
   noMatch(text, /\bcompares\b|we compare|key points|mark yourself|self-mark|marking guide|points you made|theory marking|score yourself|rewrite/i)
   // Nothing tells the visitor how to use the page.
   noMatch(text, /\btap\b|\bclick\b|flag button|pick an answer|scroll/i)
@@ -206,8 +206,8 @@ test('the landing reads as decided on 16 November: one name for each thing, and 
   // One name for notes, and the line the sample card already shows is not said above it.
   noMatch(text, /study guide|These come straight from/i)
   assert.ok(text.includes('Notes by topic'))
-  // The two showcase rows are labelled by what they are; the theory row says what the student does.
-  assert.deepEqual(showcase.map(row => row.eyebrow), ['Campus Bot', 'Theory'])
+  // The showcase row is labelled by what it is; the theory row has gone with the theory questions (22 Nov).
+  assert.deepEqual(showcase.map(row => row.eyebrow), ['Campus Bot'])
   assert.equal(showcase[0].shots[0].alt, 'Uploading notes to Practise from your notes')
   // The FAQ answers, as decided.
   assert.deepEqual(faq.items.map(item => item.answer).filter(answer => /UNILAG\.$|free pass/.test(answer)), [
@@ -452,9 +452,9 @@ test('every image fills its frame: the hero has the photograph\'s shape and each
   assert.deepEqual(webpSize(fs.readFileSync(path.join(root, 'public', images.hero.src))), { width: images.hero.width, height: images.hero.height })
   noMatch(css, /object-fit: contain|inset: 0 4%|height: 96%/)
 
-  // Showcase: three real app screens, each 700 px wide, drawn at their own shape with no border or rounding added.
+  // Showcase: two real app screens, each 700 px wide, drawn at their own shape with no border or rounding added.
   const shots = showcase.flatMap(row => row.shots)
-  assert.deepEqual(shots.map(shot => shot.src), ['/landing/upload-notes.webp', '/landing/campus-bot-question.webp', '/landing/theory-answer.webp'])
+  assert.deepEqual(shots.map(shot => shot.src), ['/landing/upload-notes.webp', '/landing/campus-bot-question.webp'])
   for (const shot of shots) {
     const buffer = fs.readFileSync(path.join(root, 'public', shot.src))
     assert.deepEqual(webpSize(buffer), { width: shot.width, height: shot.height }, shot.src)
@@ -605,8 +605,9 @@ test('the FAQ email address stays whole: the help card gives it a line of its ow
 const EMOJI = /(?![©®™])[\p{Extended_Pictographic}\p{Emoji_Presentation}\u{FE0F}]/u
 const WHITE_MARKS = ['whatsapp-glyph-white.png']
 // Retired by the design system or replaced by this page: coloured or black marks, icons with other meanings, the design
-// mock-ups that stood in for app screens, and the pattern's larger PNG copy.
-const RETIRED = /whatsapp-glyph-green|x-logo-black|instagram-glyph(?:\.png|-gradient|-white)|\b(?:Gift|Zap|RotateCcw|ClipboardCheck)\b|answer\.jpg|upload\.jpg|question\.jpg|theory\.webp|pattern-on-navy\.png/
+// mock-ups that stood in for app screens, the pattern's larger PNG copy, and the theory screenshot (the owner content
+// rule, 22 Nov: no theory question is published).
+const RETIRED = /whatsapp-glyph-green|x-logo-black|instagram-glyph(?:\.png|-gradient|-white)|\b(?:Gift|Zap|RotateCcw|ClipboardCheck)\b|answer\.jpg|upload\.jpg|question\.jpg|theory\.webp|theory-answer\.webp|pattern-on-navy\.png/
 
 test('no emoji and no hand-drawn SVG: icons are lucide-react or official brand image files', async () => {
   const sourceFiles = [
@@ -651,7 +652,7 @@ test('marks are white, icons keep one meaning each, and retired assets are gone'
   for (const file of sources) noMatch(fs.readFileSync(file, 'utf8'), RETIRED, path.relative(root, file))
   const html = await renderHome({ env: CONFIGURED })
   noMatch(html, RETIRED)
-  for (const file of ['answer.jpg', 'upload.jpg', 'question.jpg', 'theory.webp', 'pattern-on-navy.png']) {
+  for (const file of ['answer.jpg', 'upload.jpg', 'question.jpg', 'theory.webp', 'theory-answer.webp', 'pattern-on-navy.png']) {
     assert.equal(fs.existsSync(path.join(root, 'public/landing', file)), false, file)
   }
   const x = anchors(html).find(item => item.text.startsWith('X (Twitter)'))

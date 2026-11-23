@@ -5,6 +5,11 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws the guide's theory questions and publishes the overview's revision
+-- four. It is rolled back here, inside this test's transaction, so the course stands as the guide left it. Its revision
+-- four stays the overview's current revision, as the history keeps it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 create function pg_temp.course() returns uuid language sql stable as $$ select id from public.courses where content_key = 'use-of-english' $$;
 create function pg_temp.item(p_key text) returns uuid language sql stable as $$
   select id from public.managed_content_items where course_id = pg_temp.course() and source_key = p_key $$;
@@ -50,7 +55,7 @@ select is((select array_agg(distinct created_by) from public.managed_content_ite
     where course_id = pg_temp.course() and kind in ('note', 'theory_question', 'model_answer')),
   array['00000000-0000-4000-8000-000000000045'::uuid], 'every guide item carries the guide import provenance');
 select is((select jsonb_build_array(published_revision, current_revision, approved_revision) from public.managed_content_items
-    where id = pg_temp.item('course-overview')), '[3,3,3]'::jsonb, 'the overview publishes revision three');
+    where id = pg_temp.item('course-overview')), '[3,4,3]'::jsonb, 'the overview publishes revision three');
 select is((select r.payload->'assessment' from public.managed_content_items i join public.managed_content_revisions r
     on r.item_id = i.id and r.revision = i.published_revision where i.id = pg_temp.item('course-overview')),
   '["The exam is objective (CBT). Questions test definitions, lists and counts, examples, symbols and the exact wording used in this course.", "Every topic is examinable."]'::jsonb,
@@ -112,9 +117,9 @@ select is(private.study_guide('study_guide_gst111', 'rollback'), 'unchanged', 'a
 create temporary table rolled_back on commit drop as select pg_temp.state() state;
 savepoint edited_overview;
 insert into public.managed_content_revisions (item_id, revision, payload, authored_by)
-  select pg_temp.item('course-overview'), 4, '{"title":"Communication in English","body":"Edited"}'::jsonb,
+  select pg_temp.item('course-overview'), 5, '{"title":"Communication in English","body":"Edited"}'::jsonb,
     '11111111-1111-4111-8111-111111111111';
-update public.managed_content_items set current_revision = 4, approved_revision = 4, published_revision = 4,
+update public.managed_content_items set current_revision = 5, approved_revision = 5, published_revision = 5,
   lock_version = lock_version + 3 where id = pg_temp.item('course-overview');
 create temporary table edited_overview on commit drop as select pg_temp.state() state;
 select throws_ok($$select private.study_guide('study_guide_gst111', 'apply')$$, 'P0001',
@@ -162,8 +167,8 @@ select is((select jsonb_build_array(i.published_revision, r.authored_by) from pu
 select is(private.course_overview_revisions('apply'), 'applied', 'the correction applies again');
 select is(private.study_guide('study_guide_gst111', 'apply'), 'applied', 'and then the guide');
 select is((select jsonb_build_array(published_revision, current_revision, approved_revision) from public.managed_content_items
-    where id = pg_temp.item('course-overview')), '[3,3,3]'::jsonb, 'the overview publishes revision three again');
-select is((select count(*)::integer from public.managed_content_revisions where item_id = pg_temp.item('course-overview')), 3,
+    where id = pg_temp.item('course-overview')), '[3,4,3]'::jsonb, 'the overview publishes revision three again');
+select is((select count(*)::integer from public.managed_content_revisions where item_id = pg_temp.item('course-overview')), 4,
   'with no revision written twice');
 
 select ok(not has_function_privilege(r, 'private.study_guide(text, text)', 'execute'), format('%s cannot run the import', r))

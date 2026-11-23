@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { IMPORTS } = require('../managed-content/official-banks/imports.cjs')
+const { PRACTICE_RETIRED } = require('../managed-content/owner-rule.cjs')
 
 const ROOT = path.resolve(__dirname, '../..')
 const MIGRATIONS = 'supabase/migrations'
@@ -90,8 +91,9 @@ function readyCourses() {
   const ready = []
   for (const [id, key] of seeded) {
     assert.ok(banks.has(key), `no seeded bank for ${key}`)
-    // An official bank replaces the seeded one; `bank` is the audited size the import publishes.
-    const questions = imported.get(key)?.expected.bank ?? banks.get(key)
+    // An official bank replaces the seeded one; `bank` is the audited size the import publishes. A seeded bank the owner
+    // content rule withdrew (scripts/managed-content/owner-rule.cjs) counts as no bank.
+    const questions = imported.get(key)?.expected.bank ?? (PRACTICE_RETIRED.includes(key) ? 0 : banks.get(key))
     if (linked.has(id) && questions > 0) ready.push({ key, questions })
   }
   for (const entry of IMPORTS) {

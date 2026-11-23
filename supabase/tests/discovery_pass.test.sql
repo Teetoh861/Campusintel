@@ -9,6 +9,10 @@
 -- tolerance (pg_temp.near).
 begin;
 select no_plan();
+
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 -- Claims and the claim-key registry are global: this transaction starts from an empty ledger (rolled back at the end),
 -- so what other sessions of this database have activated with their own keys cannot change these outcomes.
 delete from private.discovery_pass_claims;

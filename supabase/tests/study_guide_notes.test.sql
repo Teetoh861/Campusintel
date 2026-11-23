@@ -4,6 +4,10 @@
 begin;
 select no_plan();
 
+-- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
+-- this test's transaction, so the content stands as the earlier migrations left it.
+select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
+
 create temporary table guide (payload jsonb) on commit drop;
 insert into guide values ('{"title":"Listening Skills","body":"What to know","noteType":"guide_topic","number":1,
   "mustKnow":[{"text":"what listening is"},{"text":" and why","bold":true}],
