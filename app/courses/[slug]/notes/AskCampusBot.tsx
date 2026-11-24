@@ -5,8 +5,9 @@
 // again after a lost answer repeats the same message.
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { CircleCheck, CircleX, Send } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { btnGhost } from '@/components/chrome/ui'
 import { CampusBotStatus } from '@/components/student/CampusBotStatus'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
@@ -14,8 +15,9 @@ import { useIsDesktop } from '@/components/ui/use-mobile'
 import { sendChatMessage } from '@/lib/campus-bot/client'
 import { CHAT_LIMITS } from '@/lib/campus-bot/contract'
 import { CAMPUS_BOT_COPY } from '@/lib/campus-bot/copy'
-import type { CampusBotProblem } from '@/lib/campus-bot/contract'
-import type { FormEvent, ReactElement } from 'react'
+import { boldSpans } from '@/lib/campus-bot/reply-text'
+import type { CampusBotProblem, ChatVerdict } from '@/lib/campus-bot/contract'
+import type { FormEvent, ReactElement, Ref } from 'react'
 
 type Props = {
   courseSlug: string
@@ -29,26 +31,95 @@ type Props = {
   newId?: () => string
 }
 
-export type Turn = { id: string; role: 'student' | 'bot'; text: string; inNotes?: boolean }
+/** A turn of the chat. A Campus Bot turn carries how it marked the answer before it, the check question it asks next
+ *  and a memory trick; a turn kept from before replies were marked has none of them. */
+export type Turn = { id: string; role: 'student' | 'bot'; text: string; inNotes?: boolean; verdict?: ChatVerdict
+  check?: string | null; memoryTrick?: string | null }
 
-/** The chat so far: each turn under its name, the line for an answer from outside the notes, then the wait or the
- *  notice for whatever stopped the last message. */
+const VERDICT_BADGE = {
+  // The library's icons for a correct and a wrong answer: the icon and the word tell them apart, never the colour.
+  correct: { label: CAMPUS_BOT_COPY.correct, Icon: CircleCheck },
+  'not-quite': { label: CAMPUS_BOT_COPY.notQuite, Icon: CircleX },
+} as const
+
+/** Text with its key words bold: elements built from the parsed spans, never markup from the text. */
+export function BoldText({ text }: { text: string }): ReactElement {
+  return <>{boldSpans(text).map((span, index) => span.bold
+    ? <strong key={index}>{span.text}</strong> : <Fragment key={index}>{span.text}</Fragment>)}</>
+}
+
+/** A reply's paragraphs: after Not quite, "The answer is …" is a paragraph of its own (mock 8). */
+export function replyParagraphs(text: string, verdict: ChatVerdict | undefined): string[] {
+  if (verdict !== 'not-quite') return [text]
+  const split = /^((?:\*\*)?The answer is[\s\S]*?[.!?]["’”)]*(?:\*\*)?)\s+(\S[\s\S]*)$/.exec(text)
+  // Never between a bold term's markers.
+  return split && (split[1]!.split('**').length % 2 === 1) ? [split[1]!, split[2]!] : [text]
+}
+
+/** Whether the chat is waiting for the student's answer: the latest Campus Bot turn asked a check question. */
+export function awaitingAnswer(turns: ReadonlyArray<Turn>): boolean {
+  const lastBot = [...turns].reverse().find(turn => turn.role === 'bot')
+  return Boolean(lastBot?.check)
+}
+
+/** The chat so far (mock 8): Campus Bot's turns as cards, the student's as bubbles on the right, the names for screen
+ *  readers only. A Campus Bot card opens with its verdict (an icon and a word in a pill, never colour alone) or, unmarked,
+ *  with the line for an answer from outside the notes; then the reply, its memory trick, and its check question in a
+ *  card of its own. Then the wait or the notice for whatever stopped the last message. */
 export function ChatLog({ turns, answering, problem, onRetry, signInHref, reloadHref }: {
   turns: ReadonlyArray<Turn>; answering: boolean; problem: CampusBotProblem | null; onRetry?: () => void
   signInHref: string; reloadHref: string
 }): ReactElement {
   return <>
-    {turns.map(turn => <div key={turn.id} className="student-ask-turn" data-role={turn.role}>
-      <p className="student-ask-who">{turn.role === 'student' ? CAMPUS_BOT_COPY.you : CAMPUS_BOT_COPY.name}</p>
-      {turn.role === 'bot' && turn.inNotes === false
-        ? <p className="student-ask-outside">{CAMPUS_BOT_COPY.outsideNotes}</p> : null}
-      <p className="student-ask-text">{turn.text}</p>
-    </div>)}
+    {turns.map(turn => {
+      const verdict = turn.role === 'bot' && (turn.verdict === 'correct' || turn.verdict === 'not-quite')
+        ? turn.verdict : null
+      const badge = verdict === null ? null : VERDICT_BADGE[verdict]
+      return <Fragment key={turn.id}>
+        <div className="student-ask-turn" data-role={turn.role} data-verdict={verdict ?? undefined}>
+          <p className="student-ask-who sr-only">{turn.role === 'student' ? CAMPUS_BOT_COPY.you : CAMPUS_BOT_COPY.name}</p>
+          {badge !== null && verdict !== null
+            ? <p className="student-ask-badge" data-verdict={verdict}>
+              <badge.Icon aria-hidden="true" size={16} strokeWidth={1.75} />{badge.label}</p>
+            : turn.role === 'bot' && turn.inNotes === false
+              ? <p className="student-ask-outside">{CAMPUS_BOT_COPY.outsideNotes}</p> : null}
+          {(turn.role === 'bot' ? replyParagraphs(turn.text, turn.verdict) : [turn.text]).map((paragraph, index) =>
+            <p key={index} className="student-ask-text">
+              {turn.role === 'bot' ? <BoldText text={paragraph} /> : paragraph}</p>)}
+          {turn.role === 'bot' && turn.memoryTrick
+            ? <p className="student-ask-text">{CAMPUS_BOT_COPY.memoryTrick} <BoldText text={turn.memoryTrick} /></p> : null}
+        </div>
+        {turn.role === 'bot' && turn.check
+          ? <div className="student-ask-turn" data-role="bot" data-kind="check">
+            <p className="student-practice-eyebrow student-ask-eyebrow">
+              {verdict !== null ? CAMPUS_BOT_COPY.tryAnother : CAMPUS_BOT_COPY.quickCheck}</p>
+            <p className="student-ask-text"><BoldText text={turn.check} /></p>
+          </div> : null}
+      </Fragment>
+    })}
     {answering ? <p role="status" className="student-practice-help">{CAMPUS_BOT_COPY.answering}</p> : null}
     {problem !== null ? <CampusBotStatus problem={problem} feature="ask" signInHref={signInHref}
       reloadHref={reloadHref} onRetry={onRetry} /> : null}
   </>
 }
+/** The field and Send. While a check question waits, the field asks for the answer, and its label for screen readers
+ *  says the same. */
+export function ChatForm({ turns, topicTitle, draft, closed, answering, fieldRef, onDraft, onSubmit }: {
+  turns: ReadonlyArray<Turn>; topicTitle: string; draft: string; closed: boolean; answering: boolean
+  fieldRef?: Ref<HTMLInputElement>; onDraft: (value: string) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}): ReactElement {
+  const placeholder = awaitingAnswer(turns) ? CAMPUS_BOT_COPY.answerPlaceholder : CAMPUS_BOT_COPY.askPlaceholder(topicTitle)
+  return <form className="student-ask-form" onSubmit={onSubmit}>
+    <label htmlFor="student-ask-field" className="sr-only">{placeholder}</label>
+    <input ref={fieldRef} id="student-ask-field" type="text" className="student-ask-field student-focus-control"
+      value={draft} maxLength={CHAT_LIMITS.messageChars} placeholder={placeholder}
+      autoComplete="off" enterKeyHint="send" disabled={closed} onChange={event => onDraft(event.target.value)} />
+    {/* Mock 8's send button, in our icons and colours: the library's send icon on navy, named Send for screen readers. */}
+    <button type="submit" className={`student-ask-send ${studentFocusDark}`} aria-label={CAMPUS_BOT_COPY.send}
+      disabled={closed || answering || draft.trim() === ''}><Send aria-hidden="true" size={20} strokeWidth={1.75} /></button>
+  </form>
+}
+
 // The message waiting for its answer, with the id every retry of it carries.
 type Pending = { requestId: string; message: string }
 
@@ -82,8 +153,11 @@ export function AskCampusBot({ courseSlug, itemId, topicTitle, continuityToken, 
     const mine = ++run.current
     setAnswering(true)
     setProblem(null)
-    const history = earlier.slice(-CHAT_LIMITS.turns).map(turn => ({ role: turn.role,
-      text: turn.text.slice(0, CHAT_LIMITS.turnChars) }))
+    // Each Campus Bot turn travels with its check question, so the reply to an answer can mark it.
+    const history = earlier.slice(-CHAT_LIMITS.turns).map(turn => turn.role === 'bot' && turn.check
+      ? { role: 'bot' as const, text: turn.text.slice(0, CHAT_LIMITS.turnChars),
+        check: turn.check.slice(0, CHAT_LIMITS.checkChars) }
+      : { role: turn.role, text: turn.text.slice(0, CHAT_LIMITS.turnChars) })
     for (let attempt = 0; ; attempt += 1) {
       const result = await send({ operation: 'ask', courseSlug, itemId, requestId: message.requestId,
         message: message.message, history }, continuityToken)
@@ -97,7 +171,7 @@ export function AskCampusBot({ courseSlug, itemId, topicTitle, continuityToken, 
       if (result.status === 'answered') {
         setPending(null)
         setTurns(current => [...current, { id: `${message.requestId}-reply`, role: 'bot', text: result.text,
-          inNotes: result.inNotes }])
+          inNotes: result.inNotes, verdict: result.verdict, check: result.check, memoryTrick: result.memoryTrick }])
         field.current?.focus()
       } else setProblem(result)
       return
@@ -140,14 +214,8 @@ export function AskCampusBot({ courseSlug, itemId, topicTitle, continuityToken, 
         <ChatLog turns={turns} answering={answering} problem={problem} onRetry={retry} signInHref={signInHref}
           reloadHref={reloadHref} />
       </div>
-      <form className="student-ask-form" onSubmit={submit}>
-        <label htmlFor="student-ask-field" className="sr-only">{CAMPUS_BOT_COPY.askPlaceholder(topicTitle)}</label>
-        <input ref={field} id="student-ask-field" type="text" className="student-ask-field student-focus-control"
-          value={draft} maxLength={CHAT_LIMITS.messageChars} placeholder={CAMPUS_BOT_COPY.askPlaceholder(topicTitle)}
-          autoComplete="off" enterKeyHint="send" disabled={closed} onChange={event => setDraft(event.target.value)} />
-        <button type="submit" className={studentAction(btnNavy, studentFocusDark)}
-          disabled={closed || answering || draft.trim() === ''}>{CAMPUS_BOT_COPY.send}</button>
-      </form>
+      <ChatForm turns={turns} topicTitle={topicTitle} draft={draft} closed={closed} answering={answering}
+        fieldRef={field} onDraft={setDraft} onSubmit={submit} />
     </SheetContent>
   </Sheet>
 }

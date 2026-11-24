@@ -70,9 +70,12 @@ export function CampusBotStatus({ problem, feature, onRetry, signInHref, reloadH
         {CAMPUS_BOT_COPY.reload}</a>} />
     case 'disabled':
       return null
-    default:
+    default: {
+      // Try again only where trying again can help. For Ask, the line says "Try again." only when the button is not there.
+      const action = problem.status === 'failed' || problem.status === 'unavailable' ? retry : undefined
+      const askLine = action === undefined ? CAMPUS_BOT_COPY.askFailedNoRetry : CAMPUS_BOT_COPY.askFailed
       return <Notice title={feature === 'explain' ? CAMPUS_BOT_COPY.explainFailed : feature === 'ask'
-        ? CAMPUS_BOT_COPY.askFailed : CAMPUS_BOT_COPY.quiz.failed}
-        action={problem.status === 'failed' || problem.status === 'unavailable' ? retry : undefined} />
+        ? askLine : CAMPUS_BOT_COPY.quiz.failed} action={action} />
+    }
   }
 }

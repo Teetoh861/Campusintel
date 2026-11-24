@@ -4,13 +4,19 @@
 // detail, and every shape is strict.
 import { z } from 'zod'
 
-/** A chat message, and the earlier turns sent with it: the page keeps the chat, so only the last few travel. */
-export const CHAT_LIMITS = { messageChars: 500, turnChars: 600, turns: 6 } as const
+/** A chat message, and the earlier turns sent with it: the page keeps the chat, so only the last few travel. A bot
+ *  turn carries the check question it asked, if any; a reply's memory trick has its own, shorter limit. */
+export const CHAT_LIMITS = { messageChars: 500, turnChars: 600, turns: 6, checkChars: 300, memoryTrickChars: 200 } as const
 
 const uuid = z.string().uuid().transform(value => value.toLowerCase())
 const courseSlug = z.string().min(1).max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-const chatTurn = z.object({ role: z.enum(['student', 'bot']),
-  text: z.string().min(1).max(CHAT_LIMITS.turnChars) }).strict()
+const turnText = z.string().min(1).max(CHAT_LIMITS.turnChars)
+const checkText = z.string().min(1).max(CHAT_LIMITS.checkChars)
+const chatTurn = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('student'), text: turnText }).strict(),
+  // The check question a Campus Bot turn asked travels with it, so the next reply knows an answer is due.
+  z.object({ role: z.literal('bot'), text: turnText, check: checkText.optional() }).strict(),
+])
 
 export const campusBotCommandSchema = z.discriminatedUnion('operation', [
   // Explain: only the attempt and the question. The choice, the key and the notes are read on the server.
@@ -55,8 +61,14 @@ export const explainResultSchema = z.discriminatedUnion('status', [
 ])
 export type ExplainResult = z.infer<typeof explainResultSchema>
 
+/** How Campus Bot marked the student's answer to its last check question; 'none' when the message was not one. */
+export const chatVerdict = z.enum(['correct', 'not-quite', 'none'])
+export type ChatVerdict = z.infer<typeof chatVerdict>
+
 export const askResultSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('answered'), text: replyText, inNotes: z.boolean() }).strict(),
+  // The reply, how it marked an answer, the check question it asks next and a memory trick. Never the check's answer.
+  z.object({ status: z.literal('answered'), text: replyText, inNotes: z.boolean(), verdict: chatVerdict,
+    check: checkText.nullable(), memoryTrick: z.string().min(1).max(CHAT_LIMITS.memoryTrickChars).nullable() }).strict(),
   ...shared,
 ])
 export type AskResult = z.infer<typeof askResultSchema>

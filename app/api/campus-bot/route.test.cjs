@@ -43,7 +43,7 @@ async function fixture(run) {
   } }
   const fake = createFakeCampusBotProvider(() => state.script)
   const provider = { id: fake.id, model: fake.model, async generate(request) {
-    calls.push({ name: 'provider', model: request.model }); return fake.generate(request)
+    calls.push({ name: 'provider', model: request.model, user: request.user }); return fake.generate(request)
   } }
   const authConfig = { isStudentAuthEnabled: () => true,
     isTrustedAuthOrigin: origin => origin === 'https://campusintell.test',
@@ -124,7 +124,7 @@ test('nothing but the two ids is accepted for explain, and a request that is not
   }
   assert.deepEqual([(await f.post(EXPLAIN, { [AUTH_CONTINUITY_HEADER]: 'another-tab' })).status, 409].slice(0, 1), [409])
   assert.equal((await f.post(EXPLAIN, { Origin: 'https://elsewhere.test' })).status, 403)
-  assert.equal((await f.post({ ...EXPLAIN, padding: 'x'.repeat(17 * 1024) })).status, 413)
+  assert.equal((await f.post({ ...EXPLAIN, padding: 'x'.repeat(25 * 1024) })).status, 413)
   f.state.signedIn = false
   const signedOut = await f.post(EXPLAIN)
   assert.deepEqual([signedOut.status, await signedOut.json()], [401, { status: 'signed-out' }])
@@ -174,12 +174,16 @@ test('ask: the course comes from the slug on the server, the reply is recorded b
   const response = await f.post({ ...ASK, history: [{ role: 'student', text: 'Hello' }, { role: 'bot', text: 'Hi.' }] })
   assert.equal(response.status, 200)
   const body = await response.json()
-  assert.deepEqual(Object.keys(body).sort(), ['inNotes', 'status', 'text'])
-  assert.deepEqual([body.status, body.inNotes], ['answered', true])
+  assert.deepEqual(Object.keys(body).sort(), ['check', 'inNotes', 'memoryTrick', 'status', 'text', 'verdict'])
+  assert.deepEqual([body.status, body.inNotes, body.verdict, body.check, body.memoryTrick],
+    ['answered', true, 'none', 'Which lesson of this topic states its main idea?', null])
   assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat', 'provider', 'finish_campus_bot_chat'])
   assert.deepEqual(f.calls[0].args, { p_session_id: SESSION, p_request_id: REQUEST, p_course_id: COURSE, p_item_id: ITEM,
     p_generate: true })
-  assert.deepEqual(f.calls[2].args.p_reply, { text: body.text, in_notes: true })
+  assert.deepEqual(f.calls[2].args.p_reply, { text: body.text, in_notes: true, verdict: 'none', check: body.check,
+    memory_trick: null })
+  // The stand-in's check question has the answer "the first lesson": it reaches neither the page nor the database.
+  assert.doesNotMatch(JSON.stringify(body) + JSON.stringify(f.calls[2].args), /checkAnswer|the first lesson/i)
   assert.deepEqual([f.calls[2].args.p_user_id, f.calls[2].args.p_reply_id, f.calls[2].args.p_outcome], [USER, REPLY, 'answered'])
 
   // Recorded as not delivered: nothing is shown.
@@ -187,10 +191,54 @@ test('ask: the course comes from the slug on the server, the reply is recorded b
   assert.deepEqual(await (await f.post(ASK)).json(), { status: 'failed' })
 }))
 
+test('ask: an answer to the check question is marked by the server, with its badge, memory trick and next question', async () => fixture(async f => {
+  f.state.replies = { begin_campus_bot_chat: chatStarted, finish_campus_bot_chat: { state: 'finished', outcome: 'answered' } }
+  const history = [{ role: 'student', text: 'Ask me a quick question.' },
+    { role: 'bot', text: 'The main idea comes first.', check: 'Which lesson of this topic states its main idea?' }]
+  const right = await (await f.post({ ...ASK, message: 'The first lesson', history })).json()
+  assert.deepEqual([right.verdict, right.inNotes, right.memoryTrick, right.check],
+    ['correct', true, '**F**irst lesson, **f**irst idea.', 'What do the later lessons do with the main idea?'])
+  assert.match(right.text, /^The opening lesson/, 'the verdict word the reply opened with is removed')
+  assert.match(f.calls[1].user, /Campus Bot: The main idea comes first\.\nQuick check: Which lesson of this topic states its main idea\?/)
+  const wrong = await (await f.post({ ...ASK, message: 'The last lesson', history })).json()
+  assert.equal(wrong.verdict, 'not-quite')
+  assert.match(wrong.text, /^The answer is the \*\*first lesson\*\*\./)
+  assert.deepEqual(f.calls.at(-1).args.p_reply, { text: wrong.text, in_notes: true, verdict: 'not-quite',
+    check: wrong.check, memory_trick: '**F**irst lesson, **f**irst idea.' })
+  assert.doesNotMatch(JSON.stringify([right, wrong, f.calls.at(-1).args]), /checkAnswer|build on it/i)
+  // Without a check question waiting, the browser cannot have an answer marked: there is nothing to mark.
+  const unasked = await (await f.post({ ...ASK, message: 'The first lesson', history: [] })).json()
+  assert.equal(unasked.verdict, 'none')
+}))
+
+test('a stored reply in the old shape {text, in_notes} reads on a retry as verdict none with no check or memory trick', async () => fixture(async f => {
+  // Kept before replies were marked (20261117100000), as section D of the task requires.
+  f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: { text: 'Kept before marking.', in_notes: true } } }
+  const retry = await f.post(ASK)
+  assert.equal(retry.status, 200)
+  assert.deepEqual(await retry.json(), { status: 'answered', text: 'Kept before marking.', inNotes: true, verdict: 'none',
+    check: null, memoryTrick: null })
+  assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat'], 'free: no provider call, no settlement')
+}))
+
 test('ask: a kept reply comes back free, limits and bounds are enforced, and an unknown course is not found', async () => fixture(async f => {
   f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: { text: 'Kept.', in_notes: false } } }
-  assert.deepEqual(await (await f.post(ASK)).json(), { status: 'answered', text: 'Kept.', inNotes: false })
-  assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat'])
+  // Kept before replies were marked: unmarked, with no check question or memory trick.
+  assert.deepEqual(await (await f.post(ASK)).json(), { status: 'answered', text: 'Kept.', inNotes: false, verdict: 'none',
+    check: null, memoryTrick: null })
+  const marked = { text: 'The answer is Sample.', in_notes: true, verdict: 'not-quite', check: 'And a parameter?',
+    memory_trick: 'Statistic goes with Sample, Parameter goes with Population.' }
+  f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: marked } }
+  assert.deepEqual(await (await f.post(ASK)).json(), { status: 'answered', text: marked.text, inNotes: true,
+    verdict: 'not-quite', check: marked.check, memoryTrick: marked.memory_trick })
+  for (const kept of [{ ...marked, verdict: 'yes' }, { ...marked, check_answer: 'Population' }, { ...marked, check: '' }]) {
+    f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: kept } }
+    assert.deepEqual(await (await f.post(ASK)).json(), { status: 'unavailable' }, JSON.stringify(kept).slice(-40))
+  }
+  f.calls.length = 0
+  f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: { text: 'Kept.', in_notes: false } } }
+  await f.post(ASK)
+  assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat'], 'a kept reply calls no provider')
   f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: null } }
   assert.deepEqual(await (await f.post(ASK)).json(), { status: 'not-found' })
   f.state.replies = { begin_campus_bot_chat: { state: 'pass-limit' } }
@@ -204,6 +252,13 @@ test('ask: a kept reply comes back free, limits and bounds are enforced, and an 
     { ...ASK, courseSlug: '../admin' }, { ...ASK, courseId: COURSE }]) {
     assert.equal((await f.post(command)).status, 400, JSON.stringify(command).slice(0, 60))
   }
+  // The largest command the page can send (six turns at their limits, each with a check question, three bytes a
+  // character) still fits the route.
+  f.state.replies = { begin_campus_bot_chat: { state: 'pass-limit' } }
+  const largest = await f.post({ ...ASK, message: '€'.repeat(500),
+    history: Array(6).fill({ role: 'bot', text: '€'.repeat(600), check: '€'.repeat(300) }) })
+  assert.equal(largest.status, 429)
+  f.calls.length = 0
   const missing = await f.post({ ...ASK, courseSlug: 'no-such-course' })
   assert.deepEqual([missing.status, await missing.json()], [404, { status: 'not-found' }])
   assert.deepEqual(f.calls, [], 'none of these reached the database')

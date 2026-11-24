@@ -46,7 +46,11 @@ test('the approved lines, word for word', () => {
   assert.equal(copy.answering, 'Campus Bot is answering…')
   assert.equal(copy.you, 'You')
   assert.equal(copy.outsideNotes, 'This isn’t covered in this topic’s notes.')
-  assert.equal(copy.askFailed, 'Campus Bot couldn’t answer that. Try again.')
+  // Marking a check answer: the owner's mock 8 words, and no others.
+  assert.deepEqual([copy.correct, copy.notQuite, copy.quickCheck, copy.tryAnother, copy.memoryTrick, copy.answerPlaceholder],
+    ['Correct', 'Not quite', 'Quick check', 'Try another', 'Memory trick:', 'Type your answer…'])
+  assert.equal(copy.askFailed, 'Campus Bot couldn’t answer that.')
+  assert.equal(copy.askFailedNoRetry, 'Campus Bot couldn’t answer that. Try again.')
   assert.deepEqual([copy.busyTitle, copy.busyLine], ['Campus Bot is busy.', 'Try again in a few minutes.'])
   assert.deepEqual(copy.notice, { subscribe: 'Campus Bot is included when you subscribe.',
     'free-pass': 'Campus Bot opens with a free pass.', plan: 'Campus Bot is included with a plan.' })
@@ -86,7 +90,19 @@ test('limits, a busy moment and problems: each state has its own notice, the sam
   assert.equal(text(show({ status: 'exam-open' }, 'ask')), 'Campus Bot is available when your exam ends.')
   assert.equal(text(show({ status: 'failed' }, 'explain', () => {})), 'Campus Bot couldn’t explain this. Try again. Try again')
   assert.deepEqual(buttons(show({ status: 'failed' }, 'ask', () => {})), ['Try again'])
-  assert.match(text(show({ status: 'unavailable' }, 'ask', () => {})), /^Campus Bot couldn’t answer that\. Try again\./)
+  // Ask: with the Try again button, the line does not repeat it; without the button, the line keeps "Try again." so
+  // the student still has a next step.
+  for (const status of ['failed', 'unavailable']) {
+    const withButton = show({ status }, 'ask', () => {})
+    assert.deepEqual([text(withButton), buttons(withButton)], ['Campus Bot couldn’t answer that. Try again', ['Try again']], status)
+  }
+  for (const status of ['not-found', 'invalid-request']) {
+    const alone = show({ status }, 'ask', () => {})
+    assert.deepEqual([text(alone), buttons(alone)], ['Campus Bot couldn’t answer that. Try again.', []], status)
+  }
+  const nothingToRetry = show({ status: 'failed' }, 'ask')
+  assert.deepEqual([text(nothingToRetry), buttons(nothingToRetry)], ['Campus Bot couldn’t answer that. Try again.', []],
+    'a failure with nothing to retry says it in the line')
   assert.deepEqual(buttons(show({ status: 'not-found' }, 'explain', () => {})), [], 'trying again cannot help a question that is not there')
   assert.deepEqual(links(show({ status: 'signed-out' })), [['/login?next=%2Fback', 'Sign in']])
   assert.match(text(show({ status: 'signed-out' })), /^You’ve been signed out\./)
@@ -188,4 +204,68 @@ test('Ask Campus Bot: the button, then the chat — each turn under its name, an
   assert.match(text(log({ answering: true })), /Campus Bot is answering…$/)
   assert.match(text(log({ problem: { status: 'limit', limit: 'pass', resetsAt: null } })), /You’ve used your free pass messages\. Plan & Access$/)
   assert.deepEqual(buttons(log({ problem: { status: 'failed' }, onRetry() {} })), ['Try again'])
+}))
+
+test('Ask Campus Bot marks an answer (mock 8): the badge, the memory trick, Quick check then Try another, and the field', async () => withTsx(async () => {
+  const { ChatForm, ChatLog } = require('./[slug]/notes/AskCampusBot.tsx')
+  const asked = { id: '2', role: 'bot', text: 'A statistic describes a sample.', inNotes: true, verdict: 'none',
+    check: 'What does a parameter describe?', memoryTrick: null }
+  const turns = [{ id: '1', role: 'student', text: 'Ask me a quick question.' }, asked]
+  const log = list => renderToStaticMarkup(h(ChatLog, { turns: list, answering: false, problem: null, ...HREFS }))
+  // The check question is a bubble of its own under the reply, labelled Quick check, with no badge.
+  assert.equal(text(log(turns)), 'You Ask me a quick question. Campus Bot A statistic describes a sample. '
+    + 'Quick check What does a parameter describe?')
+  // Its label is the practice eyebrow, in the signal blue; the names are for screen readers only.
+  assert.match(log(turns), /<\/p><\/div><div class="student-ask-turn" data-role="bot" data-kind="check"><p class="student-practice-eyebrow student-ask-eyebrow">Quick check<\/p>/)
+  assert.match(log(turns), /<p class="student-ask-who sr-only">You<\/p>.*<p class="student-ask-who sr-only">Campus Bot<\/p>/)
+  assert.doesNotMatch(log(turns), /data-verdict=/)
+
+  // A wrong answer: the Not quite badge (an x icon and the word), "The answer is …", the memory trick, then Try another.
+  const wrong = { id: '4', role: 'bot', text: 'The answer is the **population**. A parameter describes all of it.', inNotes: true,
+    verdict: 'not-quite', check: 'Is 31 a **parameter** or a **statistic**?',
+    memoryTrick: '**S**tatistic goes with **S**ample, **P**arameter goes with **P**opulation.' }
+  const marked = log([...turns, { id: '3', role: 'student', text: 'A sample' }, wrong])
+  assert.match(text(marked.replace(/<\/?strong>/g, '')), /Campus Bot Not quite The answer is the population\. A parameter describes all of it\. Memory trick: Statistic goes with Sample, Parameter goes with Population\. Try another Is 31 a parameter or a statistic\?$/)
+  // The card carries the verdict; the pill holds the icon and the word.
+  assert.match(marked, /<div class="student-ask-turn" data-role="bot" data-verdict="not-quite"><p class="student-ask-who sr-only">Campus Bot<\/p><p class="student-ask-badge" data-verdict="not-quite"><svg[^>]*stroke-width="1.75"[^>]*class="lucide lucide-circle-x" aria-hidden="true">.*?<\/svg>Not quite<\/p>/)
+  // "The answer is …" is a paragraph of its own; key words are <strong> elements; the memory trick's label is plain.
+  assert.match(marked, /<p class="student-ask-text">The answer is the <strong>population<\/strong>\.<\/p><p class="student-ask-text">A parameter describes all of it\.<\/p>/)
+  assert.match(marked, /<p class="student-ask-text">Memory trick: <strong>S<\/strong>tatistic goes with <strong>S<\/strong>ample/)
+  assert.match(marked, /<p class="student-ask-text">Is 31 a <strong>parameter<\/strong> or a <strong>statistic<\/strong>\?<\/p>/)
+  assert.doesNotMatch(marked, /\*\*/, 'no marker is ever shown')
+  // A right answer: the Correct pill with a check icon.
+  const right = log([{ ...wrong, verdict: 'correct', text: 'A parameter describes the whole population.', memoryTrick: null, check: null }])
+  assert.match(right, /data-verdict="correct"><svg[^>]*width="16"[^>]*stroke-width="1.75"[^>]*class="lucide lucide-circle-check" aria-hidden="true">.*?<\/svg>Correct<\/p>/)
+  assert.equal(text(right), 'Campus Bot Correct A parameter describes the whole population.')
+
+  // "Not covered" shows only on an unmarked reply the notes don't cover, never on a reply to the check question.
+  const outside = 'This isn’t covered in this topic’s notes.'
+  assert.match(text(log([{ ...asked, inNotes: false, check: null }])), new RegExp(`^Campus Bot ${outside}`))
+  assert.doesNotMatch(text(log([{ ...wrong, inNotes: false }])), new RegExp(outside))
+  assert.doesNotMatch(text(log([{ ...wrong, verdict: 'correct', inNotes: false }])), new RegExp(outside))
+  // A reply kept from before replies were marked reads as it always did.
+  assert.equal(text(log([{ id: '9', role: 'bot', text: 'Kept.', inNotes: false }])), `Campus Bot ${outside} Kept.`)
+
+  // The field asks for the answer while the latest Campus Bot turn has a check question; its label says the same.
+  const form = list => renderToStaticMarkup(h(ChatForm, { turns: list, topicTitle: 'Sampling', draft: '', closed: false,
+    answering: false, onDraft() {}, onSubmit() {} }))
+  const field = html => [html.match(/<label[^>]*>([^<]*)<\/label>/)[1], html.match(/placeholder="([^"]*)"/)[1]]
+  assert.deepEqual(field(form(turns)), ['Type your answer…', 'Type your answer…'])
+  assert.deepEqual(field(form([...turns, { id: '3', role: 'student', text: 'A sample' }])), ['Type your answer…', 'Type your answer…'])
+  assert.deepEqual(field(form([...turns, { id: '3', role: 'student', text: 'A sample' }, { ...wrong, check: null }])),
+    ['Ask about Sampling', 'Ask about Sampling'])
+  assert.deepEqual(field(form([])), ['Ask about Sampling', 'Ask about Sampling'])
+  // Send is mock 8's shape with the library's send icon, 20px at stroke 1.75, named Send.
+  assert.match(form(turns), /<button type="submit" class="student-ask-send student-focus-dark" aria-label="Send"( disabled="")?><svg[^>]*width="20"[^>]*stroke-width="1.75"[^>]*class="lucide lucide-send" aria-hidden="true">/)
+  // Text from a model never becomes markup: a tag in a reply is shown as its characters.
+  const unsafe = log([{ id: '7', role: 'bot', text: 'A **<img src=x onerror=alert(1)>** tag.', inNotes: true, verdict: 'none' }])
+  assert.match(unsafe, /<strong>&lt;img src=x onerror=alert\(1\)&gt;<\/strong>/)
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '[slug]/notes/AskCampusBot.tsx'), 'utf8'), /dangerouslySetInnerHTML/)
+}))
+
+test('Ask Campus Bot sends each Campus Bot turn with its check question, and shows the marked reply it gets', async () => withTsx(async () => {
+  const source = fs.readFileSync(path.join(__dirname, '[slug]/notes/AskCampusBot.tsx'), 'utf8')
+  assert.match(source, /check: turn\.check\.slice\(0, CHAT_LIMITS\.checkChars\)/)
+  assert.match(source, /verdict: result\.verdict, check: result\.check, memoryTrick: result\.memoryTrick/)
+  assert.doesNotMatch(source, /checkAnswer/, 'the page never has the check question’s answer')
 }))

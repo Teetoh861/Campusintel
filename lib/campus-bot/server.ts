@@ -17,7 +17,7 @@ import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { createClient } from '@/lib/supabase/server'
 import { askCampusBot, CHAT_TIMEOUT_MS } from './ask'
-import { campusBotCommandSchema } from './contract'
+import { campusBotCommandSchema, CHAT_LIMITS, chatVerdict } from './contract'
 import { explainQuestion, EXPLAIN_CHECK_TIMEOUT_MS, EXPLAIN_WRITE_TIMEOUT_MS } from './explain'
 import { notesContextFromSearch, notesContextFromTopic } from './notes-context'
 import { campusBotProvider } from './provider'
@@ -60,7 +60,16 @@ const explainFinish = z.union([
   z.object({ state: z.literal('finished'), outcome: z.literal('failed') }),
   z.object({ state: z.enum(['already-finished', 'not-found']) }),
 ])
-const chatReply = z.object({ text: z.string().min(1).max(4_000), in_notes: z.boolean() }).strict()
+// A kept chat reply: marked ({text, in_notes, verdict, check, memory_trick}, 20261123100000), or one kept before replies
+// were marked ({text, in_notes}), which reads as unmarked with no check question or memory trick.
+const chatReplyText = z.string().min(1).max(4_000)
+const chatReply = z.union([
+  z.object({ text: chatReplyText, in_notes: z.boolean(), verdict: chatVerdict,
+    check: z.string().min(1).max(CHAT_LIMITS.checkChars).nullable(),
+    memory_trick: z.string().min(1).max(CHAT_LIMITS.memoryTrickChars).nullable() }).strict(),
+  z.object({ text: chatReplyText, in_notes: z.boolean() }).strict()
+    .transform(row => ({ ...row, verdict: 'none' as const, check: null, memory_trick: null })),
+])
 const askBegin = z.union([
   limits.extend({ state: z.literal('started'), reply_id: uuid, reservation_seconds: z.number().int().positive(),
     course: courseLabel, topic: z.object({ title: z.string().min(1) }), passages: z.unknown() }),
@@ -170,7 +179,9 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
       if (error || !parsed.success) return null
       const row = parsed.data
       if (row.state === 'answered') {
-        return { state: 'answered', reply: row.reply === null ? null : { text: row.reply.text, inNotes: row.reply.in_notes } }
+        return { state: 'answered', reply: row.reply === null ? null : { text: row.reply.text,
+          inNotes: row.reply.in_notes, verdict: row.reply.verdict, check: row.reply.check,
+          memoryTrick: row.reply.memory_trick } }
       }
       if (row.state === 'session-limit' || row.state === 'week-limit') return { state: row.state, resetsAt: row.resets_at }
       if (row.state !== 'started') return { state: row.state }
@@ -183,8 +194,9 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
     async finish(replyId, settlement: AskSettlement): Promise<boolean> {
       const { data, error } = await withAiDeadline(signal => service().rpc('finish_campus_bot_chat', {
         p_user_id: userId, p_reply_id: replyId, p_outcome: settlement.outcome,
-        p_reply: settlement.outcome === 'answered'
-          ? { text: settlement.reply.text, in_notes: settlement.reply.inNotes } : null,
+        p_reply: settlement.outcome === 'answered' ? { text: settlement.reply.text, in_notes: settlement.reply.inNotes,
+          verdict: settlement.reply.verdict, check: settlement.reply.check,
+          memory_trick: settlement.reply.memoryTrick } : null,
         p_usage: usageJson(settlement.usage) }).abortSignal(signal), AI_SETTLEMENT_TIMEOUT_MS)
         .catch(() => ({ data: null, error: true }))
       const parsed = askFinish.safeParse(data)

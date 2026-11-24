@@ -3,7 +3,7 @@
 -- the attempt check; explanations saved once for everyone and reused free; the calculation check, charged at the
 -- writer's weight; funding, limits and charging only what is delivered; the shared topic rule, the free pass's pinned
 -- topic and kept chat replies; corrections and republished notes; operator functions and privileges; replies on a paid
--- course as plan use for refunds.
+-- course as plan use for refunds; marked chat replies (20261123100000_campus_bot_marked_replies.sql).
 -- The provider is never called: each result is reported to the finish functions as the server reports it. Time is
 -- simulated by moving timestamps (every decision reads clock_timestamp()). Everything rolls back.
 begin;
@@ -104,10 +104,14 @@ create function pg_temp.chat(p_user integer, p_request integer, p_item uuid, p_c
   p_generate boolean default true) returns jsonb language sql as $$
   select public.begin_campus_bot_chat(pg_temp.s(p_user), pg_temp.r(p_request), coalesce(p_course, pg_temp.c('08')),
     p_item, p_generate) $$;
+-- A delivered chat reply as the server reports it (20261123100000): marked, with the next check question and a memory
+-- trick. The check question's answer is never part of it.
+create function pg_temp.marked() returns jsonb language sql immutable as $$
+  select '{"text":"The answer is that a good listener prepares.","in_notes":true,"verdict":"not-quite",
+    "check":"What does a good listener do before a talk?","memory_trick":"Prepare, then listen."}'::jsonb $$;
 create function pg_temp.answer(p_user integer, p_started jsonb, p_outcome text default 'answered') returns jsonb
   language sql as $$ select public.finish_campus_bot_chat(pg_temp.u(p_user), pg_temp.reply(p_started), p_outcome,
-    case when p_outcome = 'answered' then '{"text":"Your notes say a good listener prepares.","in_notes":true}'::jsonb end,
-    pg_temp.usage(6000, 350)) $$;
+    case when p_outcome = 'answered' then pg_temp.marked() end, pg_temp.usage(6000, 350)) $$;
 -- A read through the student's own session.
 create function pg_temp.as_student(n integer, p_call text) returns jsonb language plpgsql as $$
 declare v jsonb;
@@ -646,14 +650,12 @@ select is(pg_temp.o('c2-busy'), '{"state":"busy"}'::jsonb, 'one message at a tim
 select is(pg_temp.o('c1-answered'), '{"state":"finished","outcome":"answered"}'::jsonb, 'a delivered reply is recorded');
 select is(pg_temp.o('c1-again'), '{"state":"already-finished"}'::jsonb, 'once');
 select is((select jsonb_build_array(state, charged_tokens, reply) from private.campus_bot_replies
-    where id = pg_temp.reply(pg_temp.o('c1'))),
-  '["consumed",7750,{"text":"Your notes say a good listener prepares.","in_notes":true}]'::jsonb,
-  'charged (6,000 + 5 x 350) x 1, and the reply kept');
+    where id = pg_temp.reply(pg_temp.o('c1'))), jsonb_build_array('consumed', 7750, pg_temp.marked()),
+  'charged (6,000 + 5 x 350) x 1 as before marking, and the marked reply kept as reported');
 select ok((select reply_expires_at between clock_timestamp() + interval '9 minutes' and clock_timestamp() + interval '10 minutes'
   from private.campus_bot_replies where id = pg_temp.reply(pg_temp.o('c1'))), 'for ten minutes');
-select is(pg_temp.o('c1-retry'),
-  '{"state":"answered","reply":{"text":"Your notes say a good listener prepares.","in_notes":true}}'::jsonb,
-  'a retry of the same message gets the kept reply');
+select is(pg_temp.o('c1-retry'), jsonb_build_object('state', 'answered', 'reply', pg_temp.marked()),
+  'a retry of the same message gets the kept reply, with its verdict, check question and memory trick');
 select is((select count(*)::integer from private.campus_bot_replies where user_id = pg_temp.u(6)
   and request_id = pg_temp.r(1)), 1, 'free: nothing new is reserved');
 select is(pg_temp.o('c3-failed'), '{"state":"finished","outcome":"failed"}'::jsonb, 'a reply not delivered');
@@ -672,6 +674,15 @@ select is(pg_temp.o('pinned') -> 'topic' ->> 'title', (select e.value -> 'note' 
     cross join lateral jsonb_array_elements(p.content) e where p.user_id = pg_temp.u(4) and p.kind = 'study_guide'),
   'about that topic as it was pinned');
 select is(pg_temp.o('pinned-other'), '{"state":"locked"}'::jsonb, 'and no other topic of that course');
+-- A reply kept before replies were marked ({text, in_notes}) still comes back on a retry, as it was kept; the app reads
+-- it as unmarked.
+update private.campus_bot_replies set reply = '{"text":"Kept before marking.","in_notes":false}'::jsonb
+  where id = pg_temp.reply(pg_temp.o('c3-retry'));
+set local role service_role;
+insert into outcome values ('c3-old-shape', pg_temp.chat(6, 3, pg_temp.f('t1')));
+reset role;
+select is(pg_temp.o('c3-old-shape'), '{"state":"answered","reply":{"text":"Kept before marking.","in_notes":false}}'::jsonb,
+  'a reply kept in the old shape is still returned on a retry');
 update private.campus_bot_replies set reply_expires_at = clock_timestamp() - interval '1 second'
   where id = pg_temp.reply(pg_temp.o('c1'));
 set local role service_role;
@@ -857,6 +868,7 @@ reset role;
 delete from public.quiz_attempts where id = pg_temp.a(21);
 set local role service_role;
 insert into outcome values ('paid-chat-2', pg_temp.chat(9, 21, pg_temp.f('bua-1'), pg_temp.f('bua')));
+-- Settled in the old shape, as the code released before 20261123100000 writes it: delivered and charged as ever.
 insert into outcome values ('paid-chat-2-answered', public.finish_campus_bot_chat(pg_temp.u(9),
   pg_temp.reply(pg_temp.o('paid-chat-2')), 'answered', '{"text":"Your notes say so.","in_notes":true}'::jsonb,
   pg_temp.usage(100000, 5000)));
@@ -872,6 +884,59 @@ select is((select count(*)::integer from private.campus_bot_explanations e join 
 select is((select jsonb_build_array(reserved_tokens, charged_tokens, read_tokens) from private.campus_bot_replies
     where id = pg_temp.reply(pg_temp.o('paid-chat-2'))), '[18000,18000,100000]'::jsonb,
   'a provider report past the caps is recorded, but never charged past what was reserved');
+select is(pg_temp.o('paid-chat-2-answered'), '{"state":"finished","outcome":"answered"}'::jsonb,
+  'a reply settled in the old shape is delivered, so the chat works between the migration and the new code');
+
+-- Marked replies (20261123100000): the shape a delivered reply must have. Only that check changed: an unknown reply
+-- with an accepted shape reaches the lookup (and is not found); every other shape is refused before anything is read.
+create function pg_temp.kept_shape(p_reply jsonb) returns jsonb language sql as $$
+  select public.finish_campus_bot_chat(pg_temp.u(6), gen_random_uuid(), 'answered', p_reply, pg_temp.usage(6000, 350)) $$;
+create function pg_temp.with_reply(p_change jsonb) returns jsonb language sql immutable
+  as $$ select pg_temp.marked() || p_change $$;
+set local role service_role;
+select is(pg_temp.kept_shape(pg_temp.marked()), '{"state":"not-found"}'::jsonb, 'a marked reply is accepted');
+-- The old shape stays accepted, so the database can be updated before the code that writes the new one.
+select is(pg_temp.kept_shape('{"text":"Your notes say so.","in_notes":true}'::jsonb), '{"state":"not-found"}'::jsonb,
+  'the old shape ({text, in_notes}) is still accepted');
+select is(pg_temp.kept_shape(pg_temp.with_reply('{"verdict":"correct","check":null,"memory_trick":null}')),
+  '{"state":"not-found"}'::jsonb, 'with no check question or memory trick, each null');
+select is(pg_temp.kept_shape(pg_temp.with_reply(jsonb_build_object('verdict', 'none', 'check', repeat('q', 300),
+    'memory_trick', repeat('m', 200)))), '{"state":"not-found"}'::jsonb,
+  'a check question of 300 characters and a memory trick of 200');
+select throws_ok(format('select pg_temp.kept_shape(%L::jsonb)', r.reply), '22023', 'Invalid chat result', r.why)
+  from (values
+    (pg_temp.with_reply('{"check_answer":"Prepare"}'), 'the check question''s answer is never kept'),
+    (pg_temp.with_reply('{"extra":1}'), 'nor any other unknown key'),
+    (pg_temp.with_reply('{"verdict":"yes"}'), 'a verdict other than correct, not-quite or none is refused'),
+    (pg_temp.with_reply('{"verdict":true}'), 'as is a verdict that is not text'),
+    (pg_temp.marked() - 'verdict', 'a reply without its verdict'),
+    (pg_temp.marked() - 'check', 'or without its check question, even as null'),
+    (pg_temp.marked() - 'memory_trick', 'or without its memory trick, even as null'),
+    ('{"text":"Your notes say so.","in_notes":true,"verdict":"none"}'::jsonb,
+      'a reply part way between the two shapes'),
+    ('{"text":"Your notes say so.","in_notes":true,"memory_trick":null}'::jsonb, 'nor the old shape with a key added'),
+    ('{"text":"Your notes say so.","in_notes":true,"check_answer":"x"}'::jsonb, 'nor the old shape with the answer'),
+    (pg_temp.with_reply(jsonb_build_object('check', repeat('q', 301))), 'a check question over 300 characters'),
+    (pg_temp.with_reply(jsonb_build_object('memory_trick', repeat('m', 201))), 'a memory trick over 200 characters'),
+    (pg_temp.with_reply('{"check":""}'), 'an empty check question (none is null)'),
+    (pg_temp.with_reply('{"memory_trick":"   "}'), 'a blank memory trick'),
+    (pg_temp.with_reply('{"check":42}'), 'a check question that is not text'),
+    (pg_temp.with_reply('{"memory_trick":["x"]}'), 'a memory trick that is not text'),
+    (pg_temp.with_reply('{"text":" "}'), 'and, as before, a blank reply')
+  ) as r(reply, why);
+reset role;
+select is((select jsonb_build_array(state, charged_tokens) from private.campus_bot_replies
+    where id = pg_temp.reply(pg_temp.o('c3-retry'))), '["consumed",7750]'::jsonb,
+  'settlement is unchanged: a delivered marked reply is charged exactly as before');
+select is((select jsonb_build_array(p.proowner = b.proowner, p.prosecdef, p.proconfig, p.provolatile)
+    from pg_proc p, pg_proc b where p.oid = 'public.finish_campus_bot_chat(uuid,uuid,text,jsonb,jsonb)'::regprocedure
+      and b.oid = 'public.begin_campus_bot_chat(uuid,uuid,uuid,uuid,boolean)'::regprocedure),
+  '[true,true,["search_path=\"\""],"v"]'::jsonb,
+  'the redefined function keeps its owner (that of the chat functions beside it) and security settings');
+select ok(has_function_privilege('service_role', 'public.finish_campus_bot_chat(uuid,uuid,text,jsonb,jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'public.finish_campus_bot_chat(uuid,uuid,text,jsonb,jsonb)', 'execute')
+  and not has_function_privilege('anon', 'public.finish_campus_bot_chat(uuid,uuid,text,jsonb,jsonb)', 'execute'),
+  'and its grants: the service role only');
 
 select * from finish();
 rollback;

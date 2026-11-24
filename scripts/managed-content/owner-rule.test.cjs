@@ -7,8 +7,10 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 const { buildManifest } = require('./source-manifest.cjs')
-const { buildImports } = require('./official-banks.cjs')
-const { overviewFunctionsSql, overviewRevisions } = require('./overview-revisions.cjs')
+const { bankOutputs, buildImports } = require('./official-banks.cjs')
+const { CORRECTIONS } = require('./corrections.cjs')
+const { OVERVIEW_MIGRATION, overviewFunctionsSql, overviewRevisions } = require('./overview-revisions.cjs')
+const { NOTE_ORDER_MIGRATION } = require('./seeded-note-order.cjs')
 const { EXAMINABLE_LINES, GUIDE_ACTOR, IMPORTS_MIGRATION, SYSTEM_MIGRATION, guidePlans } = require('./study-guides.cjs')
 const { NOTES_RETIRED, OVERVIEWS, OWNER_RULE_ACTOR, OWNER_RULE_MIGRATION, PRACTICE_RETIRED, documentChunks, guideOverview, jsonbText,
   keySummary, ownerRulePlan, publishedAfter, publishedBefore, publishedStudyModule, ruleDocument, ruleMigrationSql,
@@ -119,6 +121,40 @@ test('a guide course\'s overview needs exactly one examinable line', () => {
   assert.throws(() => guideOverview({ ...base, assessment: [EXAMINABLE_LINES[0]] }, 'X'), /outcomes and how the course is assessed/)
 })
 
+// The content history the owner rule is applied after: the seed and its corrections (each a replay of the seed), the
+// official banks and their rows migration, the overview revisions, the study guides and the seeded note order, as the
+// generator lists them. Exactly HISTORY_BEFORE_RULE of them sort before the rule. That history is applied and never
+// changes; imports the generator lists later (a waiting guide, a new bank) sort after the rule and leave it as it is.
+// Migrations after the rule are covered by the parity and owner_content_rule tests, which check the published state
+// after every migration.
+const HISTORY_BEFORE_RULE = 51
+function contentMigrations() {
+  const replays = fs.readdirSync(MIGRATIONS).filter(name => name.endsWith('.sql') && fs.readFileSync(path.join(MIGRATIONS, name),
+    'utf8').includes('create function private.replay_repository_content_seed()'))
+  assert.ok(CORRECTIONS.every(correction => replays.includes(correction.migration)), `the seed and its corrections: ${replays}`)
+  const bankMigrations = bankOutputs(manifest, banks).map(([file]) => file)
+    .filter(file => path.dirname(file) === MIGRATIONS).map(file => path.basename(file))
+  return [...new Set([...replays, ...bankMigrations, OVERVIEW_MIGRATION, ...guides.map(guide => guide.migration),
+    NOTE_ORDER_MIGRATION])]
+}
+function historyBeforeRule(names) {
+  const before = names.filter(name => name < OWNER_RULE_MIGRATION).length
+  return { ok: before === HISTORY_BEFORE_RULE, before }
+}
+
+test('the owner rule comes after exactly the content history written before it, whatever is imported after it', () => {
+  const content = contentMigrations()
+  assert.equal(historyBeforeRule(content).ok, true)
+  // A content migration written after the rule (the next guide or bank import) leaves the history as it is.
+  assert.equal(historyBeforeRule([...content, '20261201100000_study_guide_bua323.sql']).ok, true)
+  // One added before the rule changes history the rule was applied after.
+  assert.deepEqual(historyBeforeRule([...content, '20261114100000_official_bank_gst112.sql']),
+    { ok: false, before: HISTORY_BEFORE_RULE + 1 })
+  // One of the history moved after the rule: the rule would no longer be applied after it.
+  const moved = content.filter(name => name !== NOTE_ORDER_MIGRATION).concat('20261130100000_seeded_note_order.sql')
+  assert.deepEqual(historyBeforeRule(moved), { ok: false, before: HISTORY_BEFORE_RULE - 1 })
+})
+
 test('the migration: every statement under 8,000 characters and bytes, the document whole, the rule applied last', () => {
   const sql = fs.readFileSync(path.join(MIGRATIONS, OWNER_RULE_MIGRATION), 'utf8')
   const overviews = overviewFunctionsSql(manifest.actor, revisions, [GUIDE_ACTOR, OWNER_RULE_ACTOR])
@@ -132,8 +168,11 @@ test('the migration: every statement under 8,000 characters and bytes, the docum
   assert.match(inserts[0], new RegExp(`values \\('owner_content_rule', ${chunks.length}, '${crypto.createHash('sha256').update(text).digest('hex')}'\\);$`))
   for (const statement of inserts) assert.ok(statement.length <= 8000 && Buffer.byteLength(statement) <= 8000)
   assert.ok(sql.trimEnd().endsWith("select private.owner_content_rule('apply');"))
-  assert.ok(OWNER_RULE_MIGRATION > fs.readdirSync(MIGRATIONS).filter(name => name !== OWNER_RULE_MIGRATION).sort().at(-1),
-    'the newest migration')
+  // Applied after the content history the generator wrote before it; see contentMigrations and historyBeforeRule.
+  const content = contentMigrations()
+  assert.deepEqual(historyBeforeRule(content), { ok: true, before: HISTORY_BEFORE_RULE })
+  const all = fs.readdirSync(MIGRATIONS)
+  for (const name of content.filter(name => name < OWNER_RULE_MIGRATION)) assert.ok(all.includes(name), `${name} is a migration`)
   // Nothing is deleted: the migration has no delete statement at all.
   assert.doesNotMatch(sql, /\bdelete\s+from\b/i)
   // The document records each withdrawn item with the revision and parent revision it had.
