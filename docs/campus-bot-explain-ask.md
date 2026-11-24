@@ -9,8 +9,10 @@ Two Campus Bot features (owner decisions of 16 November 2026), built by
   during a running exam, never on a free pass exam (score only), never for a question the student has not finished.
 - **Ask Campus Bot.** "Ask a question" in the Campus Bot area of a notes topic page (and of the topic a free pass
   pinned): a chat about that topic, answered from its notes in short replies. When the notes do not cover a question,
-  the reply says so first, then answers generally. Blocked in a course while an exam runs there. It never reads a
-  question bank or an answer key.
+  the reply says so first, then answers generally. A reply may ask a check question ("Quick check", or "Try another"
+  after a marked answer); the reply to the student's answer opens with a **Correct** or **Not quite** badge, and after
+  Not quite it starts "The answer is …". A reply may add one memory trick when the notes support it. Blocked in a course
+  while an exam runs there. It never reads a question bank or an answer key.
 
 Both are **off** until the human review below signs off.
 
@@ -74,12 +76,25 @@ problem; `campus-bot-explanations --course <key>` lists them with their question
 
 ## Chats
 
-The chat lives in the page: nothing a student types is stored. Each message is sent with at most the 6 latest turns
-(600 characters each) and is at most 500 characters. Email addresses and Nigerian phone numbers are removed before
-anything is sent. A delivered reply is kept for 10 minutes, so a retry of the same message (after a lost connection)
-gets it free; a job deletes it every minute after that. A retry is answered only for the course and topic it was asked
-about, and only after every check a new message passes (access, an open exam, Campus Bot), so it gets what a new
-message would.
+The chat lives in the page: nothing a student types is stored. Each message is sent with at most the 6 latest turns (600
+characters each, and a Campus Bot turn's check question of up to 300) and is at most 500 characters. Email addresses and
+Nigerian phone numbers are removed before anything is sent. A reply is marked only when the last Campus Bot turn sent
+with it asked a check question; the server removes a verdict word or praise phrase the reply opens with and a label the
+check question opens with. A check question whose answer is missing, or given away by the reply, is dropped; a memory
+trick that alone gives it away is dropped instead (compared by the answer's words the question does not already hold, so
+a question offering the answer as an option keeps both, unless one sentence of the reply pairs the answer with another
+key word of the question: then the check question goes, or the memory trick if only it does). A final instruction in a
+check question ("Answer with a single word.") is removed, and a memory trick whose bold first letters do not match is
+shown without its bold. A reply that is only a lead-in to a question ("Here's one.") with no check question left after
+the guards is a failed reply: released, not charged, and the student can try again. A marked reply is always from the
+notes. Emoji are removed from every field (and from Explain). A reply and a check question may each bold up to 3 key
+words with `**`, a memory trick up to 4; a field whose markers do not pair up, or are too many, is shown without any,
+and the page builds the bold from the parsed text. The check question's answer never leaves the server. A kept reply is
+`{text, in_notes, verdict, check, memory_trick}` (20261123100000); the database still accepts `{text, in_notes}`, so the
+migration is released before the code, and a reply kept that way reads as unmarked. A delivered reply is kept for 10
+minutes, so a retry of the same message (after a lost connection) gets it free; a job deletes it every minute after
+that. A retry is answered only for the course and topic it was asked about, and only after every check a new message
+passes (access, an open exam, Campus Bot), so it gets what a new message would.
 
 ## What is sent to the provider
 

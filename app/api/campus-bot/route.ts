@@ -12,8 +12,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 // An explanation and its check are bounded by their own deadlines (25 s and 35 s) plus the database work around them.
 export const maxDuration = 120
-// A chat message of 500 characters and six earlier turns of 600, at up to three bytes a character, with room to spare.
-const COMMAND_MAX_BYTES = 16 * 1024
+// A chat message of 500 characters and six earlier turns of 600, each with a check question of 300, at up to three
+// bytes a character (17,700 bytes), with room to spare.
+const COMMAND_MAX_BYTES = 24 * 1024
 
 const HTTP_STATUS: Partial<Record<CampusBotResult['status'], number>> = {
   'signed-out': 401,

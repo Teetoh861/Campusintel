@@ -24,7 +24,17 @@ export const CAMPUS_BOT_COPY = {
   answering: 'Campus Bot is answering…',
   you: 'You',
   outsideNotes: 'This isn’t covered in this topic’s notes.',
-  askFailed: 'Campus Bot couldn’t answer that. Try again.',
+  // Marking an answer to Campus Bot's check question (owner's mock 8, 23 November 2026).
+  correct: 'Correct',
+  notQuite: 'Not quite',
+  quickCheck: 'Quick check',
+  tryAnother: 'Try another',
+  memoryTrick: 'Memory trick:',
+  answerPlaceholder: 'Type your answer…',
+  // With the Try again button under it, the line does not repeat it. Without the button (a reply no longer kept, a
+  // message that could not be read), the line keeps "Try again." so the student still has a next step.
+  askFailed: 'Campus Bot couldn’t answer that.',
+  askFailedNoRetry: 'Campus Bot couldn’t answer that. Try again.',
 
   // Quiz me on this topic: its button in a topic's Campus Bot area, the wait, then the set on its own page (owner
   // decisions of 16 November 2026).

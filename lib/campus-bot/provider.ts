@@ -21,7 +21,9 @@ export function fakeCampusBotProviderAllowed(env: Env = process.env): boolean {
 export type FakeScript = {
   explain?: 'ok' | 'not-covered' | 'wrong-option' | 'long' | 'invalid' | 'refused' | 'timeout'
   check?: 'pass' | 'fail' | 'timeout'
-  chat?: 'ok' | 'outside' | 'long' | 'invalid' | 'refused' | 'timeout'
+  /** Ask Campus Bot. 'ok' asks a check question, then marks the answer to it: correct when the student's message names
+   *  the scripted answer, otherwise not quite. 'leak' gives the check's answer away in the reply. */
+  chat?: 'ok' | 'outside' | 'long' | 'leak' | 'invalid' | 'refused' | 'timeout'
   /** Quiz me on this topic: five questions grounded in the notes given, too few of them, or a failure. */
   set?: 'ok' | 'few' | 'invalid' | 'refused' | 'timeout'
   /** The check of a set on a calculation course: every question passes, the first fails, all fail, or no answer. */
@@ -50,7 +52,8 @@ const LONG = Array.from({ length: 60 }, (_, index) => `Sentence ${index + 1} rep
 function kindOf(request: ProviderRequest): FakeKind {
   const required = (request.outputSchema as { required?: unknown }).required
   const keys = Array.isArray(required) ? required : []
-  return keys.includes('verdict') ? 'check' : keys.includes('inNotes') ? 'chat' : keys.includes('questions') ? 'set'
+  // A chat reply also has a verdict (its marking), so it is told apart first.
+  return keys.includes('inNotes') ? 'chat' : keys.includes('verdict') ? 'check' : keys.includes('questions') ? 'set'
     : keys.includes('results') ? 'setCheck' : 'explain'
 }
 
@@ -90,6 +93,39 @@ function fakeSetCheck(user: string, mode: 'pass' | 'drop-one' | 'fail'): Record<
     correct: mode === 'pass' || (mode === 'drop-one' && index > 0) })) }
 }
 
+// The stand-in's check questions and their answers. A marked reply opens with a verdict word, as a model might, so a
+// browser check shows the server removing it; its key words are bold, as mock 8 shows them.
+const FIRST_CHECK = { check: 'Which lesson of this topic states its main idea?', checkAnswer: 'the first lesson' }
+const NEXT_CHECK = { check: 'What do the later lessons do with the main idea?', checkAnswer: 'build on it' }
+const NO_CHECK = { check: '', checkAnswer: '' }
+
+/** A chat reply. A check question is answered when the last Campus Bot turn of the conversation asked one. */
+function fakeChat(user: string, mode: string): Record<string, unknown> {
+  if (mode === 'long') return { verdict: 'none', inNotes: true, reply: LONG, memoryTrick: '', ...NO_CHECK }
+  if (mode === 'outside') {
+    return { verdict: 'none', inNotes: false, memoryTrick: '', ...NO_CHECK,
+      reply: 'Your notes for this topic do not go into that. In general, it is the idea that a firm weighs the cost of a choice against what it gives up.' }
+  }
+  if (mode === 'leak') {
+    return { verdict: 'none', inNotes: true, memoryTrick: '', ...FIRST_CHECK,
+      reply: 'Your notes state the main idea of this topic in the first lesson.' }
+  }
+  const conversation = /<conversation>\n([\s\S]*?)\n<\/conversation>/.exec(user)?.[1] ?? ''
+  const lastBot = conversation.split('\n').reduce<string[]>((turn, line) =>
+    line.startsWith('Campus Bot: ') ? [line] : turn.length > 0 && !line.startsWith('Student: ') ? [...turn, line] : turn, [])
+  if (!lastBot.some(line => line.startsWith('Quick check: '))) {
+    return { verdict: 'none', inNotes: true, memoryTrick: '', ...FIRST_CHECK,
+      reply: 'Your notes put it this way: the main idea of this topic comes at the start, and everything after builds on it.' }
+  }
+  const message = /<student_message>\n([\s\S]*?)\n<\/student_message>/.exec(user)?.[1] ?? ''
+  const memoryTrick = '**F**irst lesson, **f**irst idea.'
+  return /\bfirst\b/i.test(message)
+    ? { verdict: 'correct', inNotes: true, memoryTrick, ...NEXT_CHECK,
+      reply: 'Yes, that’s right! The opening lesson is where the notes state the main idea of this topic.' }
+    : { verdict: 'not-quite', inNotes: true, memoryTrick, ...NEXT_CHECK,
+      reply: 'No. The answer is the **first lesson**. The notes state the main idea there, before the later lessons add detail.' }
+}
+
 /** A scripted provider with the adapter's interface. It never touches the network. */
 export function createFakeCampusBotProvider(script: () => FakeScript = () => ({})): QuestionGenerationProvider {
   return {
@@ -109,12 +145,7 @@ export function createFakeCampusBotProvider(script: () => FakeScript = () => ({}
         const verdicts = mode === 'drop-one' || mode === 'fail' ? mode : 'pass'
         return { kind: 'completed', text: JSON.stringify(fakeSetCheck(request.user, verdicts)), model, usage }
       }
-      if (kind === 'chat') {
-        const reply = mode === 'long' ? LONG : mode === 'outside'
-          ? 'Your notes for this topic do not go into that. In general, it is the idea that a firm weighs the cost of a choice against what it gives up.'
-          : 'Your notes put it this way: the main idea of this topic is stated in its first lesson, and each later lesson builds on it. Would you like a quick question to check it?'
-        return { kind: 'completed', text: JSON.stringify({ inNotes: mode !== 'outside', reply }), model, usage }
-      }
+      if (kind === 'chat') return { kind: 'completed', text: JSON.stringify(fakeChat(request.user, mode)), model, usage }
       const passage = /<passage id="(N\d+)"/.exec(request.user)?.[1] ?? 'N1'
       const official = /Official correct option: ([A-H])/.exec(request.user)?.[1] ?? 'A'
       const other = official === 'A' ? 'B' : 'A'
