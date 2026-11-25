@@ -173,7 +173,8 @@ function CourseStudyHub({ result, pass, passHours, topics, continuityToken, plan
       context={<p>{institutional ? <>{code}{institutional.isFree && ' · Free'}</> : <>{REPOSITORY_COURSE_LABEL} · {code}</>}</p>}
       aside={<div className="student-band-actions">
         {content.state === 'ready' ? <RequestMaterialLink href={materialsHref} /> : <span />}
-        <BookmarkButton slug={route.slug} code={route.course.code} contentKey={repository.contentKey} catalog={BOOKMARK_CATALOG} />
+        <BookmarkButton slug={route.slug} code={route.course.code} name={institutional?.code ?? title}
+          contentKey={repository.contentKey} catalog={BOOKMARK_CATALOG} />
       </div>} />
   </>}>
     {contents && <aside className="student-detail-rail"><StudyNav sections={sections} /></aside>}

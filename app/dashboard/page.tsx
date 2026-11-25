@@ -18,8 +18,9 @@ import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
 import { isStudentAuthEnabled } from '@/lib/auth/config'
 import { AUTH_MESSAGES, STUDENT_HOME_PATH } from '@/lib/auth/constants'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
-import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
-import { homeCoursesFrom } from '@/lib/dashboard/home-courses'
+import { getCurrentStudentCoursesForVerifiedStudent, getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-model'
+import { homeCoursesFrom, offListOpenCourse } from '@/lib/dashboard/home-courses'
+import type { CourseLabels } from '@/lib/dashboard/home-courses'
 import { FREE_MONTH_COPY, accessNotice, formatFreeMonthDay, freeMonthClaim } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
 import { readPracticeProgress } from '@/lib/practice/progress'
@@ -31,6 +32,18 @@ import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Dashboard | CampusIntell', robots: { index: false, follow: false } }
+
+type StudentClient = Awaited<ReturnType<typeof createClient>>
+
+/** The verified catalogue code and title of an open attempt's course that is not on the student's list, read as its
+ *  course page reads it; none when it has no catalogue course or cannot be read now. */
+async function offListLabels(client: StudentClient, course: { courseId: string; slug: string } | null): Promise<CourseLabels> {
+  if (course === null) return new Map()
+  const read = await getStudentCourseBySlugForVerifiedStudent(client, course.slug, { readRepositoryOnly: false })
+    .catch(() => null)
+  return read?.status === 'ok' && read.course.repository.repositoryCourseId === course.courseId
+    ? new Map([[course.courseId, { code: read.course.code, title: read.course.title }]]) : new Map()
+}
 
 /** Validate the live session and complete real profile before rendering private student identity. */
 export default async function DashboardPage(): Promise<ReactElement> {
@@ -72,7 +85,8 @@ export default async function DashboardPage(): Promise<ReactElement> {
     current.selection.academicLevelId === profile.selection.academicLevel.id &&
     current.selection.academicPeriodId === profile.selection.academicPeriod.id
     ? current : null
-  const home = matching === null ? null : homeCoursesFrom(matching.courses, matching.cbtBankSizes, progress)
+  const home = matching === null ? null : homeCoursesFrom(matching.courses, matching.cbtBankSizes, progress,
+    await offListLabels(client, offListOpenCourse(matching.courses, progress)))
   const plan = entitlement.status === 'ok' ? entitlement.entitlement : null
   // The free month card, only when the database says this student can claim it now. Without the revision the month
   // could set courses the student did not see (D7), so nothing is offered.

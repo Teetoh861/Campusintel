@@ -38,6 +38,8 @@ identity is `campusintel`; a similarly named folder is insufficient.
 
 The verifier runs managed-content generation/parity checks for changes under
 `lib/data/`, `scripts/managed-content/`, or the generated seed/parity SQL files.
+BUA203 and LAG-BUA210 are copies of LAG-ACS209 and LAG-ACS213: correct them only
+in the LAG-ACS209 or LAG-ACS213 source files, never in a copy alone.
 It runs local Supabase tests for those changes and for `supabase/`,
 `lib/supabase/`, `lib/auth/`, `lib/managed-content/`, `lib/quiz-attempts/`,
 `lib/operator/`, `lib/bookmarks/`, `lib/profile/`, `app/api/`, or the course

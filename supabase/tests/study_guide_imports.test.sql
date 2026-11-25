@@ -7,6 +7,9 @@ begin;
 select no_plan();
 
 -- What the migrations after the guides changed is rolled back first, so the courses stand as the guides left them.
+select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
+    private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
+  array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');
 select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 
 create function pg_temp.item(p_course uuid, p_key text) returns uuid language sql stable as $$

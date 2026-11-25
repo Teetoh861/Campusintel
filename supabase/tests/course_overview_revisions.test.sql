@@ -8,9 +8,12 @@ select no_plan();
 -- overviews that have a guide), and the owner content rule (20261122120000) publishes the revision after that on twelve
 -- overviews and unpublishes three. The rule, then the guides, are rolled back here, inside this test's transaction, so
 -- the overviews stand as this correction left them.
+select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
+    private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
+  array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');
 select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('%s rolled back for this test', guide))
-  from private.study_guides order by guide;
+  from private.study_guides where guide not in ('study_guide_bua203', 'study_guide_lag_bua210') order by guide;
 
 create function pg_temp.overview(p_slug text) returns uuid language sql as $$
   select i.id from public.managed_content_items i join public.courses c on c.id = i.course_id

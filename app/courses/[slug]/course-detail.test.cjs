@@ -100,8 +100,10 @@ async function fixture(run) {
       if (name === '@/lib/profile/course-selection') return { ...selection, readProfileRevision: async (supplied, owner) => {
         assert.equal(supplied, client); assert.equal(owner, 'verified-student'); return state.revision
       } }
-      if (name === './BookmarkButton') return { BookmarkButton: props =>
-        React.createElement('button', { type: 'button', 'data-bookmark': props.contentKey }, 'Bookmark control') }
+      if (name === './BookmarkButton') return { BookmarkButton: props => {
+        state.bookmark = props
+        return React.createElement('button', { type: 'button', 'data-bookmark': props.contentKey }, 'Bookmark control')
+      } }
       if (name === './CourseViewTracker') return { CourseViewTracker: ({ courseSlug }) =>
         React.createElement('span', { 'data-course-view-slug': courseSlug }) }
       if (args[0]?.filename.endsWith('/app/courses/[slug]/page.tsx') &&
@@ -589,4 +591,14 @@ test('repository-only detail shows not-available without material sections or pl
   assert.match(html, /Study materials are not available./)
   assert.doesNotMatch(html, /Message us|Included with a plan|See how to unlock|Core reading|id="notes"|id="reading"|Request material/)
   assert.deepEqual(f.calls, ['client', 'verify', ['lookup', 'central-route']])
+}))
+
+test('owner decision D5 (25 Nov 2026): the bookmark control is named by the catalogue code; the course list code stays its alias', async () => fixture(async f => {
+  await f.html()
+  // The label names the student's own course; a legacy device bookmark may still be saved under the course list's code.
+  assert.deepEqual([f.state.bookmark.name, f.state.bookmark.code, f.state.bookmark.slug], ['INST101', 'STATIC 999', 'central-route'])
+  // A course no catalogue course owns has no code of its own: the label names it by its title.
+  f.state.result = { status: 'repository-only', course: repositoryOnly({ state: 'not-available' }), learning: null, practice: null }
+  await f.html()
+  assert.deepEqual([f.state.bookmark.name, f.state.bookmark.code], ['Static repository title', 'STATIC 999'])
 }))

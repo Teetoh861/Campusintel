@@ -21,7 +21,8 @@ async function withStore(run) {
   try {
     await fixture(async f => {
       const { BookmarkButton } = require('./BookmarkButton.tsx')
-      const view = f.mount(BookmarkButton, { slug: 'central-route', code: 'BUA204', contentKey: 'central-key', catalog: [] })
+      const view = f.mount(BookmarkButton, { slug: 'central-route', code: 'BUA210', name: 'LAG-BUA210',
+        contentKey: 'central-key', catalog: [] })
       const html = () => f.html(view.render())
       const feedback = () => /class="student-bookmark-feedback" data-state="([^"]+)"/.exec(html())?.[1]
       // The shared toggle is a component element here; its props carry the control's state and action.
@@ -45,7 +46,7 @@ test('a failed mutation followed by a lost recovery state, then a successful ret
   assert.equal(f.store.toggles, 1, 'a retry refreshes; it never re-sends the mutation')
   const restored = f.html()
   assert.equal(f.control().props.pressed, true, 'the refreshed snapshot restores the saved state')
-  assert.equal(f.control().props.label, 'Bookmark BUA204')
+  assert.equal(f.control().props.label, 'Bookmark LAG-BUA210')
   assert.equal(f.feedback(), 'idle', 'stale failure feedback is gone')
   assert.doesNotMatch(restored, /Could not update|Added to bookmarks|Removed from bookmarks/, 'no manufactured success either')
 }))
@@ -56,7 +57,7 @@ test('a retry that fails again shows the current failure, and clears as soon as 
   await f.control().props.onClick()
   assert.equal(f.control().props.label, 'Try again')
   assert.equal(f.feedback(), 'error', 'a failed retry is announced as the current failure')
-  f.store.afterRefresh = { mode: 'local', keys: ['BUA204'] }
+  f.store.afterRefresh = { mode: 'local', keys: ['BUA210'] }
   const pending = f.control().props.onClick()
   assert.equal(f.feedback(), 'idle', 'the obsolete failure is cleared the moment the retry begins')
   await pending
@@ -67,15 +68,17 @@ test('a retry that fails again shows the current failure, and clears as soon as 
 test('the course control keeps a stable name and truthful pressed state across account, legacy device and unavailable snapshots', async () => withStore(async f => {
   f.store.snapshot = { mode: 'account', keys: ['central-key'] }
   let html = f.html()
-  assert.match(html, /aria-label="Bookmark BUA204" aria-pressed="true"/)
+  // The label names the course by its catalogue code, never the course list's.
+  assert.match(html, /aria-label="Bookmark LAG-BUA210" aria-pressed="true"/)
+  assert.doesNotMatch(html, /Bookmark BUA210"/)
   assert.match(html, /fill="currentColor"/)
   assert.doesNotMatch(html, /Remove bookmark|&times;|student-error|text-red|rounded-full|this device/)
   f.store.snapshot = { mode: 'account', keys: [] }
   html = f.html()
   assert.match(html, /aria-pressed="false"/)
   assert.match(html, /fill="none"/)
-  f.store.snapshot = { mode: 'local', keys: ['BUA204'] }
-  assert.match(f.html(), /aria-pressed="true"/, 'a legacy course-code key still reads as saved')
+  f.store.snapshot = { mode: 'local', keys: ['BUA210'] }
+  assert.match(f.html(), /aria-pressed="true"/, 'a legacy key saved under the course list code still reads as saved')
   f.store.snapshot = { mode: 'local', keys: ['central-route'] }
   assert.match(f.html(), /aria-pressed="true"/, 'a legacy slug key still reads as saved')
   f.store.snapshot = { mode: 'unavailable', keys: [] }

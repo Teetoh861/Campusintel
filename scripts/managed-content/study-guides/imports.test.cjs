@@ -12,7 +12,7 @@ const { buildManifest } = require('../source-manifest.cjs')
 const { overviewRevisions } = require('../overview-revisions.cjs')
 const { buildImports } = require('../official-banks.cjs')
 const { GUIDE_ACTOR, IMPORTS_MIGRATION, assessmentLines, coursesModule, guideDocument, guidePlan, guidePlans, migrationSql, readGuide } = require('../study-guides.cjs')
-const { GUIDE_IMPORTS, GUIDES_WAITING } = require('./imports.cjs')
+const { GUIDE_COPIES, GUIDE_IMPORTS, GUIDES_WAITING } = require('./imports.cjs')
 
 const manifest = buildManifest()
 const { plans: banks } = buildImports(manifest)
@@ -271,6 +271,35 @@ test('each import is its own migration, after the newest on origin, in statement
   }
   const names = fs.readdirSync(directory).filter(name => /_study_guide_/.test(name)).sort()
   assert.deepEqual(names, ['20261112110000_study_guide_notes.sql', '20261112120000_study_guide_gst111.sql', IMPORTS_MIGRATION,
-    ...later.map(plan => plan.migration)], 'no other study guide migration exists')
+    ...later.map(plan => plan.migration), ...GUIDE_COPIES.map(entry => entry.migration)], 'no other study guide migration exists')
   assert.deepEqual(GUIDE_IMPORTS.map(entry => entry.migration), guides.map(plan => plan.migration))
+})
+
+test('the copies: BUA203 and LAG-BUA210 publish the LAG-ACS209 and LAG-ACS213 notes exactly, on their own courses', () => {
+  const { uuidV5 } = require('../source-manifest.cjs')
+  const { OWNER_RULE_MIGRATION } = require('../owner-rule.cjs')
+  const { guideCopyPlans } = require('../study-guides.cjs')
+  const { copies } = buildImports(manifest)
+  const plans = guideCopyPlans(guides, copies, manifest)
+  assert.deepEqual(plans.map(plan => [plan.code, plan.copyOf, plan.slug, plan.notes.length]),
+    [['BUA203', 'LAG-ACS209', 'business-statistics', 8], ['LAG-BUA210', 'LAG-ACS213', 'business-mathematics', 10]])
+  for (const plan of plans) {
+    const source = guide(plan.copyOf)
+    // Each note is its source's, in the same place, but for the link to the source's theory question, which the owner
+    // content rule withdrew: a guide imported after the rule has none.
+    const withoutTheory = payload => Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'theory'))
+    assert.deepEqual(plan.notes.map(note => [note.sourceKey, note.position, note.payload]),
+      source.notes.map(note => [note.sourceKey, note.position, withoutTheory(note.payload)]), plan.code)
+    assert.ok(source.notes.every(note => 'theory' in note.payload) && plan.notes.every(note => !('theory' in note.payload)))
+    assert.ok(plan.notes.every(note => note.itemId === uuidV5(`${plan.courseId}|note|${note.sourceKey}`)), 'ids of its own course')
+    assert.ok(plan.notes.every(note => !source.notes.some(row => row.itemId === note.itemId)))
+    // Its practice buttons open its own bank copy's topics, which are the source bank's.
+    const bank = copies.find(copy => copy.code === plan.code)
+    assert.deepEqual(bank.bank.topics, bankTopics(plan.copyOf))
+    assert.ok(plan.notes.every(note => (note.payload.practice ?? []).every(entry => bank.bank.topics.includes(entry.topic))))
+    // No theory, no overview, nothing retired or kept, after the rule; the migration is what the generator writes.
+    assert.deepEqual([plan.theory, plan.overview, plan.retire, plan.keep], [[], null, [], []])
+    assert.ok(!('overview' in guideDocument(plan)) && plan.migration > OWNER_RULE_MIGRATION)
+    assert.equal(fs.readFileSync(path.join(root, 'supabase/migrations', plan.migration), 'utf8'), migrationSql(plan))
+  }
 })

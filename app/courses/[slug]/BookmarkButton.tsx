@@ -9,9 +9,12 @@ import type { BookmarkCourseAlias } from '@/lib/bookmarks/contract'
 import type { ReactElement } from 'react'
 
 /** The one course bookmark control, on the shared owner-bound store with its retry behavior. */
-export function BookmarkButton({ slug, code, contentKey, catalog }: {
+export function BookmarkButton({ slug, code, name, contentKey, catalog }: {
   slug: string
+  /** The course list's code: a legacy device bookmark may be saved under it. Never shown. */
   code: string
+  /** How the label names the course: its verified catalogue code, as the course page shows it. */
+  name: string
   contentKey: string
   catalog: ReadonlyArray<BookmarkCourseAlias>
 }): ReactElement {
@@ -42,7 +45,7 @@ export function BookmarkButton({ slug, code, contentKey, catalog }: {
   return <>
     <BookmarkToggle pressed={isSaved} onClick={() => { void onToggle() }}
       disabled={snapshot.mode === 'loading'}
-      label={unavailable ? 'Try again' : `Bookmark ${code}`}
+      label={unavailable ? 'Try again' : `Bookmark ${name}`}
       text={unavailable ? 'Try again' : 'Bookmark'} />
     <BookmarkFeedback state={feedback} onDismiss={() => showFeedback(null)} />
   </>

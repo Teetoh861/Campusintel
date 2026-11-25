@@ -219,9 +219,41 @@ function publishedAfter(before, plan) {
       })])) })) }
 }
 
+/** What every course publishes after every migration: this rule's state, then the copies published after it on courses
+ *  it emptied (official-banks.cjs planCopy and study-guides.cjs guideCopyPlans): a bank copy's questions and a guide
+ *  copy's notes, nothing else. */
+function publishedWithCopies(after, bankCopies, guideCopies) {
+  const banks = new Map(bankCopies.map(plan => [plan.courseId, plan]))
+  const guides = new Map(guideCopies.map(plan => [plan.courseId, plan]))
+  const courses = after.courses.map(course => {
+    const bank = banks.get(course.courseId), guide = guides.get(course.courseId)
+    if (!bank && !guide) return course
+    assert.ok(course.kinds.cbt_question.length === 0 && course.kinds.note.length === 0, `${course.slug}: a copy on a course the rule emptied`)
+    const note = record => ({ itemId: record.itemId, courseId: course.courseId, kind: 'note', questionId: null,
+      sourceKey: record.sourceKey, parentItemId: null, revision: 1, payload: record.payload })
+    return { ...course, kinds: { ...course.kinds, ...(bank ? { cbt_question: publishedCbt(bank).sort(bySourceKey) } : {}),
+      ...(guide ? { note: guide.notes.map(note).sort(bySourceKey) } : {}) } }
+  })
+  const placed = new Set(courses.map(course => course.courseId))
+  assert.ok([...banks.keys(), ...guides.keys()].every(id => placed.has(id)), 'every copy is on a registered course')
+  return { ...after, courses }
+}
+
 /** For a test of an earlier layer: this rule rolled back first, inside the test's own transaction. */
 const ROLLED_BACK_FOR_TEST = `select is(private.${RULE}('rollback'), 'rolled-back', 'the owner content rule (${
   OWNER_RULE_MIGRATION.slice(0, 14)}) rolled back for this test');`
+
+/** For a test of this rule or a layer before it: the copies published after this rule rolled back first, inside the test's
+ *  own transaction, since the rule refuses to run again or roll back while they are published on courses it audits. */
+function copiesRolledBackForTest(bankCopies, guideCopies) {
+  if (bankCopies.length + guideCopies.length === 0) return null
+  const guides = guideCopies.map(plan => `private.study_guide('${plan.guide}', 'rollback')`)
+  const banks = bankCopies.map(plan => `private.${plan.functionName}('rollback')`)
+  const first = [...bankCopies, ...guideCopies].map(plan => plan.migration).sort()[0].slice(0, 14)
+  const codes = [...new Set(bankCopies.map(plan => plan.code))].join(' and ')
+  return `select is(array[${guides.join(', ')},\n    ${banks.join(', ')}],\n  array_fill('rolled-back'::text, array[${
+    guides.length + banks.length}]), 'the ${codes} copies (${first}) rolled back for this test');`
+}
 
 /** The overview revision a rollback of this rule leaves as the current one, by overview item, as the history keeps it. */
 const pendingAfterRollback = plan => new Map(plan.overviews.filter(row => row.after).map(row => [row.itemId, row.revision]))
@@ -621,8 +653,9 @@ const groupDigest = items => md5([...items].sort((left, right) => left.itemId < 
 /** Generated pgTAP: what the migrations leave; a rerun changes nothing; a retired item published again or an operator's
  *  draft is refused by apply and rollback with nothing changed; rollback publishes exactly what was published before,
  *  deleting nothing; a second rollback changes nothing; the rule applies again reusing what it wrote; and the published
- *  read and the practice pool hold none of what it withdrew. */
-function ruleTestSql(plan, seedActor) {
+ *  read and the practice pool hold none of what it withdrew. `rollbacks` undo what migrations after the rule published on
+ *  the courses it audits (the copies), first, inside the test's own transaction. */
+function ruleTestSql(plan, seedActor, rollbacks = []) {
   const fn = `private.${RULE}`
   const revised = plan.overviews.filter(row => row.after), withdrawn = plan.overviews.filter(row => !row.after)
   const total = plan.groups.reduce((sum, row) => sum + row.items.length, 0)
@@ -657,6 +690,8 @@ function ruleTestSql(plan, seedActor) {
     'begin;',
     'select no_plan();',
     '',
+    ...(rollbacks.length ? ['-- What migrations after the rule published on the courses it audits is rolled back first: the rule refuses to',
+      '-- run again or roll back while it is published.', ...rollbacks, ''] : []),
     "-- A course and kind's published items, each with its revision and parent revision, as one MD5.",
     'create function pg_temp.published(p_course uuid, p_kind text) returns text language sql stable as $$',
     "  select md5(coalesce(string_agg(format('%s:%s:%s', id, published_revision, coalesce(published_parent_revision::text, '-')),",
@@ -892,12 +927,14 @@ const ROOT = path.join(__dirname, '../..')
 const PUBLISHED_STUDY = path.join(ROOT, 'lib/data/published-study.ts')
 const RULE_TEST = path.join(ROOT, 'supabase/tests/owner_content_rule.test.sql')
 
-/** The rule's generated outputs: its migration, its pgTAP test and the build-time study module. */
-function ownerRuleOutputs(plan, after, overviewFunctions, seedActor) {
+/** The rule's generated outputs: its migration, its pgTAP test (which first runs `rollbacks`, ruleTestSql) and the
+ *  build-time study module of what every course publishes after every migration (`after`). */
+function ownerRuleOutputs(plan, after, overviewFunctions, seedActor, rollbacks = []) {
   return [[path.join(MIGRATIONS, OWNER_RULE_MIGRATION), ruleMigrationSql(plan, overviewFunctions)],
-    [RULE_TEST, ruleTestSql(plan, seedActor)], [PUBLISHED_STUDY, publishedStudyModule(after)]]
+    [RULE_TEST, ruleTestSql(plan, seedActor, rollbacks)], [PUBLISHED_STUDY, publishedStudyModule(after)]]
 }
 
 module.exports = { NOTES_RETIRED, OVERVIEWS, OWNER_RULE_ACTOR, OWNER_RULE_MIGRATION, PRACTICE_RETIRED, RETIRED, ROLLED_BACK_FOR_TEST, RULE,
-  documentChunks, groupDigest, guideOverview, jsonbMd5, jsonbText, keySummary, ownerRuleOutputs, ownerRulePlan, pendingAfterRollback,
-  publishedAfter, publishedBefore, publishedStudyModule, ruleDocument, ruleMigrationSql, ruleTestSql, studyGuideStateSql }
+  copiesRolledBackForTest, documentChunks, groupDigest, guideOverview, jsonbMd5, jsonbText, keySummary, ownerRuleOutputs, ownerRulePlan,
+  pendingAfterRollback, publishedAfter, publishedBefore, publishedStudyModule, publishedWithCopies, ruleDocument, ruleMigrationSql,
+  ruleTestSql, studyGuideStateSql }

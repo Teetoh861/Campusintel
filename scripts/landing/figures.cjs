@@ -85,8 +85,11 @@ function readyCourses() {
   const seeded = registry()
   const seededKeys = new Set(seeded.values())
   const linked = linkedRegistryIds()
-  const imported = new Map(IMPORTS.map(entry => [entry.contentKey, entry]))
-  assert.equal(imported.size, IMPORTS.length, 'one import per course')
+  // A copy (BUA203, LAG-BUA210) publishes a bank already counted under its source course: the same course and the same
+  // questions, so it adds neither (owner, 25 Nov 2026).
+  const counted = IMPORTS.filter(entry => !entry.copyOf)
+  const imported = new Map(counted.map(entry => [entry.contentKey, entry]))
+  assert.equal(imported.size, counted.length, 'one import per course')
   for (const id of linked) assert.ok(seeded.has(id), `catalogue link to an unknown course ${id}`)
   const ready = []
   for (const [id, key] of seeded) {
@@ -96,7 +99,7 @@ function readyCourses() {
     const questions = imported.get(key)?.expected.bank ?? (PRACTICE_RETIRED.includes(key) ? 0 : banks.get(key))
     if (linked.has(id) && questions > 0) ready.push({ key, questions })
   }
-  for (const entry of IMPORTS) {
+  for (const entry of counted) {
     if (seededKeys.has(entry.contentKey)) {
       assert.ok(!entry.newCourse, `${entry.contentKey} is seeded, not new`)
       continue

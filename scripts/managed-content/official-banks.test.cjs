@@ -94,3 +94,26 @@ test('the ordering rule: only writes of CBT questions must precede the banks, no
     assert.equal(writesCbtQuestions(require('node:fs').readFileSync(require('node:path').join(directory, name), 'utf8')), false, name)
   }
 })
+
+test('the copies: BUA203 and LAG-BUA210 publish the LAG-ACS209 and LAG-ACS213 banks exactly, with ids of their own', () => {
+  const { buildImports, publishedCbt } = require('./official-banks.cjs')
+  const { IMPORTS } = require('./official-banks/imports.cjs')
+  const manifest = buildManifest()
+  const { plans, copies } = buildImports(manifest)
+  assert.equal(plans.length, 27, 'the copies are not among the 27 imports the owner content rule was written against')
+  assert.deepEqual(copies.map(copy => [copy.code, copy.copyOf, copy.slug, copy.counts.bank, copy.withdrawn]),
+    [['BUA203', 'LAG-ACS209', 'business-statistics', 864, 239], ['LAG-BUA210', 'LAG-ACS213', 'business-mathematics', 1262, 100]])
+  for (const copy of copies) {
+    const source = publishedCbt(plans.find(plan => plan.code === copy.copyOf))
+    // Every question's prompt, options, answer, explanation and topic, under its source key, in the bank's order.
+    assert.deepEqual(copy.add.map(row => [row.sourceKey, row.payload]), source.map(row => [row.sourceKey, row.payload]), copy.code)
+    const ids = new Set(source.flatMap(row => [row.itemId, row.questionId]))
+    assert.ok(copy.add.every(row => !ids.has(row.itemId) && !ids.has(row.questionId)), `${copy.code}: ids of its own`)
+    // Nothing is published on its course before it, so nothing is audited, kept or retired, and no title changes.
+    assert.deepEqual([copy.audited, copy.keep, copy.retire, copy.title, copy.shell], [[], [], [], null, null])
+  }
+  const entry = IMPORTS.find(row => row.code === 'BUA203')
+  assert.throws(() => planImport({ ...entry, expected: { ...entry.expected, bank: 863 } }, manifest, banks, loadIdentityMap()),
+    /BUA203: counts differ from LAG-ACS209's bank/)
+  assert.throws(() => planImport({ ...entry, copyOf: 'LAG-ACS999' }, manifest, banks, loadIdentityMap()), /no committed bank/)
+})

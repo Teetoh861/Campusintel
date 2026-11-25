@@ -8,6 +8,9 @@ select no_plan();
 -- The owner content rule (20261122120000) withdraws the guide's theory questions and publishes the overview's revision
 -- four. It is rolled back here, inside this test's transaction, so the course stands as the guide left it. Its revision
 -- four stays the overview's current revision, as the history keeps it.
+select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
+    private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
+  array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');
 select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 
 create function pg_temp.course() returns uuid language sql stable as $$ select id from public.courses where content_key = 'use-of-english' $$;
@@ -158,7 +161,7 @@ select is((select count(*)::integer from public.managed_content_revisions r join
 -- ---------------------------------------------------------------------------------------------------------------
 select is(private.study_guide('study_guide_gst111', 'rollback'), 'rolled-back', 'the guide rolls back first');
 select is(private.study_guide(guide, 'rollback'), 'rolled-back', format('and so does %s', guide))
-  from private.study_guides where guide <> 'study_guide_gst111' order by guide;
+  from private.study_guides where guide <> 'study_guide_gst111' and guide not in ('study_guide_bua203', 'study_guide_lag_bua210') order by guide;
 select is(private.course_overview_revisions('rollback'), 'rolled-back', 'then the overview correction');
 select is((select jsonb_build_array(i.published_revision, r.authored_by) from public.managed_content_items i
     join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision

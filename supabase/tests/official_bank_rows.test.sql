@@ -35,7 +35,7 @@ select set_config('request.jwt.claims', null, true);
 -- ---------------------------------------------------------------------------
 -- Every imported bank's rows match its summary.
 -- ---------------------------------------------------------------------------
-select is((select count(*)::int from private.official_bank_rows where part = 'bank'), 27, 'the 27 banks have a summary row');
+select is((select count(*)::int from private.official_bank_rows where part = 'bank'), 29, 'the 29 banks have a summary row');
 select is((select array_agg(r.bank order by r.bank) from private.official_bank_rows r where r.part = 'bank'
     and private.official_bank_source(r.bank, r.value->>'code') is null), null, 'every bank rebuilds from its rows');
 

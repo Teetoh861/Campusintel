@@ -150,8 +150,35 @@ function newCourseShell(entry, manifest) {
       examQuestions: EXAM_QUESTIONS, examMinutes: EXAM_MINUTES[entry.code] } }
 }
 
+/** A copy (imports.cjs): another course's whole bank, published on the copy's own course after the owner content rule
+ *  withdrew that course's own questions, so nothing is published there before it and nothing is kept or retired. Each
+ *  question keeps its source key, the bank question it is, and gets item and question ids of the course it is on. */
+function planCopy(entry, manifest, banks) {
+  const { OWNER_RULE_MIGRATION, PRACTICE_RETIRED } = require('./owner-rule.cjs')
+  const bank = banks.get(entry.copyOf)
+  assert.ok(bank, `${entry.code}: no committed bank for ${entry.copyOf}`)
+  assert.ok(!banks.has(entry.code) && !entry.newCourse, `${entry.code}: a copy has no bank or new course of its own`)
+  const course = manifest.courses.find(row => row.contentKey === entry.contentKey)
+  assert.ok(course, `${entry.code}: unknown repository course ${entry.contentKey}`)
+  assert.ok(entry.migration > OWNER_RULE_MIGRATION && PRACTICE_RETIRED.includes(entry.contentKey),
+    `${entry.code}: a copy follows the owner content rule, which withdrew the course's own questions`)
+  const add = bank.questions.map(question => {
+    const name = `${course.courseId}|cbt_question|${question.sourceKey}`
+    return { itemId: uuidV5(name), questionId: uuidV5(`question:${name}`), sourceKey: question.sourceKey,
+      payload: question.payload }
+  })
+  const counts = { published: 0, kept: 0, retired: 0, added: add.length, bank: bank.questions.length }
+  assert.deepEqual(counts, entry.expected, `${entry.code}: counts differ from ${entry.copyOf}'s bank`)
+  return { ...entry, courseId: course.courseId, slug: course.slug,
+    functionName: `official_bank_${entry.code.toLowerCase().replaceAll('-', '_')}`, bank, audited: [], keep: [], retire: [],
+    add, counts, title: null, changed: 0, shell: null, course: null,
+    // The course's own questions, withdrawn by the owner content rule and kept: the copy leaves them as they are.
+    withdrawn: manifest.items.filter(item => item.courseId === course.courseId && item.kind === 'cbt_question').length }
+}
+
 /** One course's import: the audited published set, what is kept (and revised), retired and added. */
 function planImport(entry, manifest, banks, identity) {
+  if (entry.copyOf) return planCopy(entry, manifest, banks)
   const bank = banks.get(entry.code)
   assert.ok(bank, `${entry.code}: no committed bank`)
   const created = entry.newCourse ? newCourseShell(entry, manifest) : null
@@ -206,20 +233,22 @@ function writesCbtQuestions(sql) {
     && /\b(insert\s+into|update|delete\s+from)\s+public\.managed_content_(items|revisions|reviews|publications)\b/i.test(statement))
 }
 
-/** Every configured import, checked for identity collisions with the seed and with each other. */
+/** Every configured import, checked for identity collisions with the seed and with each other. `plans` are the imports
+ *  the owner content rule was written against; `copies` publish a bank of `plans` again on another course after it. */
 function buildImports(manifest) {
   const banks = loadBanks()
   const identity = loadIdentityMap()
-  const plans = IMPORTS.map(entry => planImport(entry, manifest, banks, identity))
-  const migrations = new Set(plans.map(plan => plan.migration))
-  assert.equal(migrations.size, plans.length, 'one migration per course')
+  const all = IMPORTS.map(entry => planImport(entry, manifest, banks, identity))
+  const migrations = new Set(all.map(plan => plan.migration))
+  assert.equal(migrations.size, all.length, 'one migration per course')
+  assert.equal(new Set(all.map(plan => plan.courseId)).size, all.length, 'one import per course')
   // The banks reconcile each course's CBT questions against everything before them: the seed, its corrections and any
   // other migration that writes CBT questions must sort before every bank, and no migration after the first bank may
   // write a CBT question. Migrations that write other content (overviews, notes, theory) may follow the banks.
   const directory = path.join(ROOT, 'supabase/migrations')
   const others = fs.readdirSync(directory).filter(name => name.endsWith('.sql') && !migrations.has(name))
   const firstBank = [...migrations].sort()[0]
-  for (const plan of plans) assert.match(plan.migration, /^\d{14}_official_bank_[a-z0-9_]+\.sql$/)
+  for (const plan of all) assert.match(plan.migration, /^\d{14}_official_bank_[a-z0-9_]+\.sql$/)
   for (const name of others) {
     const writes = writesCbtQuestions(fs.readFileSync(path.join(directory, name), 'utf8'))
     if (firstBank !== undefined && (writes || MUST_PRECEDE_BANKS.includes(name))) {
@@ -231,14 +260,23 @@ function buildImports(manifest) {
   }
   const itemIds = new Set(manifest.items.map(item => item.itemId))
   const questionIds = new Set(manifest.items.map(item => item.questionId).filter(Boolean))
-  for (const plan of plans) {
+  for (const plan of all) {
     for (const row of plan.add) {
       assert.ok(!itemIds.has(row.itemId) && !questionIds.has(row.questionId), `${row.sourceKey}: identity collision`)
       itemIds.add(row.itemId)
       questionIds.add(row.questionId)
     }
   }
-  return { banks, plans }
+  const plans = all.filter(plan => !plan.copyOf)
+  const copies = all.filter(plan => plan.copyOf)
+  for (const copy of copies) {
+    // A copy is its source's published bank exactly: every question, in the same order, under the same source key.
+    const source = plans.find(plan => plan.code === copy.copyOf)
+    assert.ok(source && source.courseId !== copy.courseId, `${copy.code}: ${copy.copyOf} is an import on another course`)
+    assert.deepEqual(copy.add.map(row => [row.sourceKey, row.payload]),
+      publishedCbt(source).map(record => [record.sourceKey, record.payload]), `${copy.code}: not ${copy.copyOf}'s bank`)
+  }
+  return { banks, plans, copies }
 }
 
 function jsonLiteral(value, tag) {
@@ -292,9 +330,11 @@ function migrationSql(plan, seedActor) {
     ...BANK_PARTS.flatMap(part => data[part].map((value, index) => [part, index + 1, value]))]
   const fn = `private.${plan.functionName}`
   return `-- supabase/migrations/${plan.migration}
--- GENERATED by scripts/managed-content/generate.cjs from the official ${plan.code} bank
+-- GENERATED by scripts/managed-content/generate.cjs from the official ${plan.copyOf ?? plan.code} bank${
+  plan.copyOf ? `, as ${plan.code}'s copy` : ''}
 -- (scripts/managed-content/official-banks/${path.posix.join('source', plan.bank.file)}). Do not edit by hand.
--- ${plan.counts.published} published before: ${plan.counts.kept} kept (${plan.changed} with a new revision), ${plan.counts.retired} retired
+${plan.copyOf ? `-- ${plan.code} is ${plan.copyOf} under another code: correct that source file, never this copy alone.
+` : ''}-- ${plan.counts.published} published before: ${plan.counts.kept} kept (${plan.changed} with a new revision), ${plan.counts.retired} retired
 -- (unpublished, never deleted); ${plan.counts.added} added; ${plan.counts.bank} published after.
 -- ${fn}('apply') runs in one statement, so it applies everything or nothing. It refuses unless the course's published
 -- questions are exactly the audited set, does nothing when they are already the bank set, and checks the final count.
@@ -571,15 +611,18 @@ function behaviourTestSql(plans) {
         `  where (institutional_course_id, department_id, academic_level_id, academic_period_id) not in`,
         `    (select institutional_course_id, department_id, academic_level_id, academic_period_id from public.course_applicability);`)
     }
-    lines.push(`-- ${plan.code} (${plan.contentKey})`,
+    // A copy's course also keeps its own questions, which the owner content rule withdrew before the copy.
+    const total = plan.counts.published + plan.counts.added + (plan.withdrawn ?? 0)
+    lines.push(`-- ${plan.code} (${plan.contentKey})${plan.copyOf ? `, a copy of ${plan.copyOf}` : ''}`,
       `select is((select count(*)::int from public.managed_content_items where course_id = '${plan.courseId}'`,
       `  and kind = 'cbt_question' and published_revision is not null), ${plan.counts.bank},`,
       `  ${label('the final published count equals the bank count')});`,
       `select ok(${live(plan.courseId)} = ${jsonLiteral(final, 'final_set')},`,
       `  ${label('the published questions are exactly the bank set')});`,
       `select is((select count(*)::int from public.managed_content_items where course_id = '${plan.courseId}'`,
-      `  and kind = 'cbt_question'), ${plan.counts.published + plan.counts.added},`,
-      `  ${label('retired questions are kept, unpublished')});`,
+      `  and kind = 'cbt_question'), ${total},`,
+      `  ${label(plan.copyOf ? 'the questions the owner content rule withdrew are kept, unpublished'
+        : 'retired questions are kept, unpublished')});`,
       '',
       `create temporary table bank_before_${plan.functionName} on commit drop as select ${rows} counts;`,
       `select is(${fn}('apply'), 'unchanged', ${label('a rerun reports nothing to do')});`,
@@ -592,7 +635,7 @@ function behaviourTestSql(plans) {
         `select is((select display_title from public.institutional_courses where repository_course_id = '${plan.courseId}'),`,
         `  ${sqlText(plan.title.catalogue)}, ${label('rollback restores the catalogue title')});`] : []),
       `select is((select count(*)::int from public.managed_content_items where course_id = '${plan.courseId}'`,
-      `  and kind = 'cbt_question'), ${plan.counts.published + plan.counts.added}, ${label('rollback deletes nothing')});`,
+      `  and kind = 'cbt_question'), ${total}, ${label('rollback deletes nothing')});`,
       `select is((select count(*)::int from public.managed_content_publications p join public.managed_content_items i`,
       `  on i.id = p.item_id where i.course_id = '${plan.courseId}' and p.acted_by = '${BANK_ACTOR}'`,
       `  and p.action = 'unpublish'), ${plan.counts.retired + plan.counts.added},`,
