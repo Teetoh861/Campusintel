@@ -2,7 +2,7 @@
 // generated migration. Each entry also states the audited counts (REPORT.md table), which the generator must reproduce.
 // Migrations sort after every other migration; regenerate with later timestamps if one is added before them.
 
-/** @type {{code: string, contentKey: string, migration: string, newCourse?: boolean,
+/** @type {{code: string, contentKey: string, migration: string, newCourse?: boolean, copyOf?: string, catalogueTitle?: string,
  *   expected: {published: number, kept: number, retired: number, added: number, bank: number}}[]} */
 const IMPORTS = [
   // Batch 1: Business Administration 200 Level, First Semester.
@@ -62,6 +62,13 @@ const IMPORTS = [
     expected: { published: 0, kept: 0, retired: 0, added: 820, bank: 820 } },
   { code: 'TAX-CM223', contentKey: 'business-taxation-2', migration: '20261106121800_official_bank_tax_cm223.sql', newCourse: true,
     expected: { published: 0, kept: 0, retired: 0, added: 396, bank: 396 } },
+  // Copies (owner, 25 Nov 2026): BUA203 and LAG-BUA210 are LAG-ACS209 and LAG-ACS213 under other codes. Each publishes its
+  // source's bank on its own course, whose earlier questions the owner content rule withdrew; the landing figures skip it.
+  // Correct BUA203 or LAG-BUA210 only through the LAG-ACS209 or LAG-ACS213 source file, never in a copy alone.
+  { code: 'BUA203', catalogueTitle: 'Business Statistics', copyOf: 'LAG-ACS209', contentKey: 'business-statistics',
+    migration: '20261125100000_official_bank_bua203.sql', expected: { published: 0, kept: 0, retired: 0, added: 864, bank: 864 } },
+  { code: 'LAG-BUA210', catalogueTitle: 'Business Mathematics', copyOf: 'LAG-ACS213', contentKey: 'business-mathematics',
+    migration: '20261125100100_official_bank_lag_bua210.sql', expected: { published: 0, kept: 0, retired: 0, added: 1262, bank: 1262 } },
 ]
 
 module.exports = { IMPORTS }

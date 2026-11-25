@@ -11,6 +11,9 @@ select no_plan();
 
 -- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
 -- this test's transaction, so the content stands as the earlier migrations left it.
+select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
+    private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
+  array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');
 select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 
 -- Helpers ------------------------------------------------------------------------------------------------------------
@@ -154,12 +157,12 @@ select is((select jsonb_agg(jsonb_build_array(step, read_tokens_max, written_tok
   '[["chat",14000,800],["explain",8000,800],["explain-check",4000,2000]]'::jsonb, 'each new step has its per-request caps');
 select is((select array_agg(k.content_key order by k.content_key collate "C") from private.campus_bot_courses b
     join public.courses k on k.id = b.course_id where b.calculation),
-  array['business-statistics', 'business-statistics-1', 'business-taxation-2', 'elements-banking',
+  array['business-mathematics', 'business-statistics', 'business-statistics-1', 'business-taxation-2', 'elements-banking',
     'fundamentals-deposit-insurance', 'introduction-actuarial-science', 'introduction-computer', 'introduction-finance',
     'introduction-financial-accounting-1', 'introduction-insurance', 'introduction-microeconomics',
     'leadership-governance', 'managerial-economics', 'mathematics-business', 'principles-economics-1',
     'principles-marketing'],
-  'the calculation courses are the 16 whose exam runs 40 minutes');
+  'the calculation courses are the 17 whose exam runs 40 minutes');
 select is((select count(*)::integer from unnest(array['private.campus_bot_courses', 'private.note_passages',
     'private.campus_bot_replies', 'private.campus_bot_reply_days', 'private.campus_bot_explanations',
     'private.campus_bot_pass_explanations']) t,

@@ -34,7 +34,9 @@ async function fixture(run) {
       courses: [], cbtBankSizes: new Map() },
     progressReads: [], progress: { status: 'ok', now: NOW, open: null, latest: null, courses: new Map() },
     // What the plan read and the profile revision read answer, and what the page asked the plan read for.
-    plan: { status: 'unavailable' }, revision: 4, planReads: [] }
+    plan: { status: 'unavailable' }, revision: 4, planReads: [],
+    // The one-course read of an open attempt's course off the student's list, and what the page asked it for.
+    bySlug: () => ({ status: 'not-found' }), slugReads: [] }
   try {
     Module._extensions['.tsx'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
@@ -77,6 +79,9 @@ async function fixture(run) {
         getCurrentStudentCoursesForVerifiedStudent: async (client, user) => {
           assert.equal(client, state.client); assert.equal(user, state.context.user)
           state.courseReads++; return state.current
+        },
+        getStudentCourseBySlugForVerifiedStudent: async (client, slug, options) => {
+          assert.equal(client, state.client); state.slugReads.push([slug, options]); return state.bySlug(slug)
         },
       }
       return load.call(this, name, ...args)
@@ -457,6 +462,34 @@ test('sprint plan 23 Oct item 2: an attempt in a course off the shelf offers no 
   f.state.progress = { ...f.state.progress, open: { courseId: 'repository-x', contentKey: 'not-on-the-shelf',
     deadlineAt: minutesFromNow(20) }, latest: { courseId: 'repository-y', contentKey: 'also-not-on-the-shelf' } }
   assert.equal(continueCard(await f.html()), undefined)
+  assert.deepEqual(f.state.slugReads, [], 'nothing is read for a course with no course page')
+}))
+
+test('owner decision D5 (25 Nov 2026): an open attempt off the student\'s list is named by its catalogue code, never the course list\'s', async () => fixture(async f => {
+  f.state.current.courses = [mappedCourse(0, 'ready')]
+  f.state.current.cbtBankSizes = new Map([['course-0', 40]])
+  // An exam left open in LAG-BUA210, which the course list calls BUA210.
+  f.state.progress = { ...f.state.progress, open: { courseId: 'repository-lag-bua210', contentKey: 'business-mathematics',
+    deadlineAt: minutesFromNow(20) } }
+  f.state.bySlug = () => ({ status: 'ok', learning: null, practice: null, course: { ...mappedCourse(9, 'ready'),
+    code: 'LAG-BUA210', title: 'Business Mathematics', repository: { ...shelved(9), repositoryCourseId: 'repository-lag-bua210' } } })
+  const resume = continueCard(await f.html())
+  assert.match(resume, />Resume exam: LAG-BUA210, 20 min left</)
+  assert.match(resume, />Business Mathematics</)
+  assert.match(resume, /href="\/courses\/business-mathematics\/quiz"/)
+  assert.deepEqual(f.state.slugReads, [['business-mathematics', { readRepositoryOnly: false }]])
+  // Without its catalogue course the card names no course at all.
+  for (const read of [{ status: 'unavailable' }, { status: 'repository-only', course: {}, learning: null, practice: null }]) {
+    f.state.bySlug = () => read
+    const html = await f.html()
+    assert.equal(continueCard(html), undefined, read.status)
+    assert.doesNotMatch(html, /BUA210/)
+  }
+  // A course on the student's list is named by its own row, with no further read.
+  f.state.slugReads = []
+  f.state.progress = { ...f.state.progress, open: { courseId: 'repository-0', contentKey: 'course-0', deadlineAt: minutesFromNow(20) } }
+  assert.match(continueCard(await f.html()), />Resume exam: COURSE0, 20 min left</)
+  assert.deepEqual(f.state.slugReads, [])
 }))
 
 test('sprint plan 23 Oct item 2: empty, unavailable and changed selections list no courses and no figures', async () => fixture(async f => {

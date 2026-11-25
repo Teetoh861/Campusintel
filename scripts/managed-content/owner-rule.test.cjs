@@ -11,9 +11,9 @@ const { bankOutputs, buildImports } = require('./official-banks.cjs')
 const { CORRECTIONS } = require('./corrections.cjs')
 const { OVERVIEW_MIGRATION, overviewFunctionsSql, overviewRevisions } = require('./overview-revisions.cjs')
 const { NOTE_ORDER_MIGRATION } = require('./seeded-note-order.cjs')
-const { EXAMINABLE_LINES, GUIDE_ACTOR, IMPORTS_MIGRATION, SYSTEM_MIGRATION, guidePlans } = require('./study-guides.cjs')
+const { EXAMINABLE_LINES, GUIDE_ACTOR, IMPORTS_MIGRATION, SYSTEM_MIGRATION, guideCopyPlans, guidePlans } = require('./study-guides.cjs')
 const { NOTES_RETIRED, OVERVIEWS, OWNER_RULE_ACTOR, OWNER_RULE_MIGRATION, PRACTICE_RETIRED, documentChunks, guideOverview, jsonbText,
-  keySummary, ownerRulePlan, publishedAfter, publishedBefore, publishedStudyModule, ruleDocument, ruleMigrationSql,
+  keySummary, ownerRulePlan, publishedAfter, publishedBefore, publishedStudyModule, publishedWithCopies, ruleDocument, ruleMigrationSql,
   studyGuideStateSql } = require('./owner-rule.cjs')
 
 const ROOT = path.join(__dirname, '../..')
@@ -217,8 +217,10 @@ test('jsonb text is what PostgreSQL prints, so its MD5 matches md5(payload::text
 
 test('the build-time study module lists what every course publishes after every migration', () => {
   const module = fs.readFileSync(path.join(ROOT, 'lib/data/published-study.ts'), 'utf8')
-  assert.equal(module, publishedStudyModule(after))
-  assert.match(module, /"business-statistics": \{ notes: 0, cbt: 0, theory: 0 \},/)
+  // After the rule, the copies (BUA203, LAG-BUA210) publish on two of the courses it emptied.
+  const { copies } = buildImports(manifest)
+  assert.equal(module, publishedStudyModule(publishedWithCopies(after, copies, guideCopyPlans(guides, copies, manifest))))
+  assert.match(module, /"business-statistics": \{ notes: 8, cbt: 864, theory: 0 \},/)
   assert.match(module, /"use-of-english": \{ notes: 15, cbt: 650, theory: 0 \},/)
   assert.equal((module.match(/^ {2}"/gm) ?? []).length, after.registry.length)
 })

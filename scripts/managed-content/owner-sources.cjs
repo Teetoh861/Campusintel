@@ -62,7 +62,8 @@ function ownerSourceFailures(state, bankPlans, guides, courses) {
     for (const record of course.kinds.course_overview) {
       const keys = Object.keys(record.payload).filter(key => key !== 'title')
       const guide = guideByCourse.get(course.courseId)
-      if (guide) {
+      // A guide copy has no overview, so an overview on its course has no source here.
+      if (guide?.overview) {
         // The guide's own lines: its examinable line (or the line used in its place) and the rest of how it is assessed.
         const after = guide.overview.after
         const lines = guide.overview.create ? [after.body, ...after.assessment] : after.assessment

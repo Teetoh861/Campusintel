@@ -9,6 +9,9 @@ select no_plan();
 
 -- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
 -- this test's transaction, so the content stands as the earlier migrations left it.
+select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
+    private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
+  array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');
 select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner content rule (20261122120000) rolled back for this test');
 
 -- These cases were written for the repository seed: course 01 (ENT211) with 50 questions, course 07 (ACC-CM201)
@@ -227,7 +230,7 @@ reset role;
 -- One pool, whatever the start skips: withdrawn and malformed rows are counted by neither.
 update public.managed_content_items set published_revision = null
   where id in (select id from public.managed_content_items where course_id = pg_temp.c('05') and kind = 'cbt_question'
-    order by id limit 10);
+    and published_revision is not null order by id limit 10);
 update public.managed_content_revisions r set payload = r.payload || '{"options":["Only one"],"correctOption":0}'
   from (select id, published_revision from public.managed_content_items where course_id = pg_temp.c('05')
     and kind = 'cbt_question' and published_revision is not null order by id desc limit 3) i

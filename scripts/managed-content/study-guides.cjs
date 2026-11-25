@@ -9,7 +9,7 @@ const path = require('node:path')
 const { uuidV5 } = require('./source-manifest.cjs')
 const { slugFor } = require('./official-banks.cjs')
 const { blocksToPlain, parseCover, parseTopic, plainInline } = require('./study-guides/parse.cjs')
-const { GUIDE_IMPORTS, GUIDES_WAITING } = require('./study-guides/imports.cjs')
+const { GUIDE_COPIES, GUIDE_IMPORTS, GUIDES_WAITING } = require('./study-guides/imports.cjs')
 
 const GUIDE_DIR = path.join(__dirname, 'study-guides')
 const SOURCE_DIR = path.join(GUIDE_DIR, 'source')
@@ -248,13 +248,45 @@ function guidePlans(manifest, bankPlans, overviewRevisions) {
   return plans
 }
 
+/** The copies (imports.cjs GUIDE_COPIES): each publishes its source guide's topics as notes on its own course, after the
+ *  owner content rule withdrew that course's own notes. A note is its source's note exactly, but for the source's link
+ *  to its theory question, which the rule withdrew and a guide imported after the rule never has; its practice buttons
+ *  name the source bank's topics, which the course's bank copy publishes. No theory, no overview, nothing retired. */
+function guideCopyPlans(guides, bankCopies, manifest) {
+  const { NOTES_RETIRED, OWNER_RULE_MIGRATION } = require('./owner-rule.cjs')
+  const none = Object.fromEntries(STUDY_KINDS.map(kind => [kind, []]))
+  const plans = GUIDE_COPIES.map(entry => {
+    const source = guides.find(plan => plan.code === entry.copyOf)
+    const course = manifest.courses.find(row => row.contentKey === entry.contentKey)
+    const bank = bankCopies.find(plan => plan.code === entry.code)
+    assert.ok(source && course, `${entry.code}: a copy of an imported guide, on a repository course`)
+    assert.ok(bank?.copyOf === entry.copyOf && bank.courseId === course.courseId, `${entry.code}: its bank copies ${entry.copyOf} too`)
+    assert.ok(entry.migration > OWNER_RULE_MIGRATION && entry.migration > bank.migration, `${entry.code}: after the rule and its bank`)
+    assert.ok(NOTES_RETIRED.includes(entry.contentKey) && !manifest.items.some(item => item.courseId === course.courseId
+      && STUDY_KINDS.slice(1).includes(item.kind)), `${entry.code}: its own notes withdrawn by the rule, and no theory`)
+    assert.match(entry.migration, /^\d{14}_study_guide_[a-z0-9_]+\.sql$/)
+    assert.equal(entry.guide, `study_guide_${entry.code.toLowerCase().replaceAll('-', '_')}`, `${entry.code}: guide name`)
+    assert.equal(entry.migration.slice(15, -4), entry.guide, `${entry.code}: migration name`)
+    const notes = source.notes.map(note => ({ kind: 'note', itemId: uuidV5(`${course.courseId}|note|${note.sourceKey}`),
+      sourceKey: note.sourceKey, position: note.position,
+      payload: Object.fromEntries(Object.entries(note.payload).filter(([key]) => key !== 'theory')) }))
+    return { ...entry, courseId: course.courseId, slug: course.slug, created: null, notes, theory: [], overview: null,
+      retire: [], retired: none, keep: [], before: none }
+  })
+  const all = [...guides, ...plans]
+  assert.ok(new Set(all.map(plan => plan.guide)).size === all.length && new Set(all.map(plan => plan.courseId)).size === all.length,
+    'one name and one course per guide')
+  return plans
+}
+
 /** The import document the migration stores and private.study_guide reads. */
 function guideDocument(plan) {
-  const overview = plan.overview.create ? { itemId: plan.overview.itemId, create: true, after: plan.overview.after }
-    : { itemId: plan.overview.itemId, before: plan.overview.before, after: plan.overview.after }
-  // A key the import does not use is left out, so the pilot's document is what it has always been.
+  const overview = plan.overview === null ? null
+    : plan.overview.create ? { itemId: plan.overview.itemId, create: true, after: plan.overview.after }
+      : { itemId: plan.overview.itemId, before: plan.overview.before, after: plan.overview.after }
+  // A key the import does not use is left out, so the pilot's document is what it has always been. A copy has no overview.
   return { guide: plan.guide, code: plan.code, courseId: plan.courseId, actor: GUIDE_ACTOR,
-    ...(plan.created ? { course: plan.created } : {}), overview, retire: plan.retire,
+    ...(plan.created ? { course: plan.created } : {}), ...(overview ? { overview } : {}), retire: plan.retire,
     ...(plan.keep.length ? { keep: plan.keep } : {}), notes: plan.notes, theory: plan.theory }
 }
 
@@ -270,6 +302,16 @@ function migrationSql(plan) {
     ...chunks.map((chunk, index) =>
       `insert into private.study_guide_chunks (guide, ordinal, chunk) values (${quote(plan.guide)}, ${index + 1}, ${DELIMITER}${chunk}${DELIMITER});`),
     `select private.study_guide(${quote(plan.guide)}, 'apply');`,
+    // Campus Bot reads a note through its passages, which a trigger writes when a note's row is inserted: before its
+    // text is, for an imported note, so it finds none. A copy writes its notes' passages from their published text, as
+    // 20261117100000_campus_bot_explain_ask.sql wrote them for every note before it.
+    ...(plan.copyOf ? [`insert into private.note_passages (item_id, ordinal, revision, course_id, heading, body)
+  select i.id, p.ordinal, i.published_revision, i.course_id, left(coalesce(nullif(btrim(p.heading), ''), 'Notes'), 300), p.body
+  from public.managed_content_items i
+  join public.managed_content_revisions r on r.item_id = i.id and r.revision = i.published_revision
+  cross join lateral private.note_passages_of(r.payload) p
+  where i.course_id = '${plan.courseId}' and i.kind = 'note' and i.published_revision is not null
+    and not exists (select 1 from private.note_passages n where n.item_id = i.id);`] : []),
   ]
   // The Supabase CLI is slow on long statements, so every statement stays under 8,000 characters, as the banks' do.
   assert.ok(statements.every(statement => statement.length <= STATEMENT_CHARS), `${plan.code}: a statement over ${STATEMENT_CHARS} characters`)
@@ -278,6 +320,12 @@ function migrationSql(plan) {
     `-- outcomes and assessment, published through private.study_guide (${SYSTEM_MIGRATION}), which`,
     "-- refuses unless the course publishes what this import was written against. private.study_guide(guide, 'rollback')",
     '-- unpublishes them again and restores the overview; nothing is deleted.',
+  ] : plan.copyOf ? [
+    `-- ${plan.code} is ${plan.copyOf} under another code: its ${plan.notes.length} guide topics as notes, each as ${plan.copyOf} publishes it`,
+    `-- but for its link to a withdrawn theory question, published through private.study_guide (${IMPORTS_MIGRATION}),`,
+    '-- which refuses unless the course publishes exactly what this import was written against. No theory question and no',
+    '-- overview. Correct the source guide, never this copy alone. Its notes\' Campus Bot passages are written after it.',
+    "-- private.study_guide(guide, 'rollback') unpublishes the notes again; nothing is deleted.",
   ] : [
     `-- ${plan.notes.length} guide topics as notes and ${plan.theory.length} theory questions with their answers, published through`,
     `-- private.study_guide (${IMPORTS_MIGRATION}), which refuses unless the course publishes`,
@@ -294,8 +342,9 @@ function migrationSql(plan) {
   ]
   return [
     `-- supabase/migrations/${plan.migration}`,
-    `-- GENERATED by scripts/managed-content/generate.cjs from the ${plan.code} study guide`,
-    `-- (scripts/managed-content/study-guides/source/${plan.code}, pinned by its manifest). Do not edit by hand.`,
+    `-- GENERATED by scripts/managed-content/generate.cjs from the ${plan.copyOf ?? plan.code} study guide${
+      plan.copyOf ? `, as ${plan.code}'s copy` : ''}`,
+    `-- (scripts/managed-content/study-guides/source/${plan.copyOf ?? plan.code}, pinned by its manifest). Do not edit by hand.`,
     ...header,
     '',
     ...statements,
@@ -641,9 +690,9 @@ function guidePublished(plans) {
       sourceKey: entry.sourceKey, parentItemId, revision: 1, payload: entry.payload })
     items.push(...plan.notes.map(note => row(note, null)))
     for (const question of plan.theory) items.push(row(question, null), row(question.answer, question.itemId))
-    if (plan.overview.create) {
+    if (plan.overview?.create) {
       items.push(row({ itemId: plan.overview.itemId, kind: 'course_overview', sourceKey: 'course-overview', payload: plan.overview.after }, null))
-    } else {
+    } else if (plan.overview) {
       overviews.set(plan.overview.itemId, { revision: plan.overview.beforeRevision + 1, payload: plan.overview.after })
     }
     for (const entry of plan.retire) retired.add(entry.itemId)
@@ -653,5 +702,5 @@ function guidePublished(plans) {
 }
 
 module.exports = { EXAMINABLE_LINES, GUIDE_ACTOR, IMPORTS_MIGRATION, OVERVIEW_TEXT, capitalised, systemMigrationOutput, guideTopicPayload, MANIFEST_PATH, SOURCE_DIR,
-  SYSTEM_MIGRATION, assessmentLines, checkManifest, coursesModule, guideDocument, guideOutputs, guidePlan, guidePlans, guidePublished,
-  importsTestSql, jsonbBytes, migrationSql, readGuide, sourceDigests }
+  SYSTEM_MIGRATION, assessmentLines, checkManifest, coursesModule, guideCopyPlans, guideDocument, guideOutputs, guidePlan, guidePlans,
+  guidePublished, importsTestSql, jsonbBytes, migrationSql, readGuide, sourceDigests }

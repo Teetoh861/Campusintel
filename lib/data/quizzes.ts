@@ -8928,7 +8928,8 @@ export const quizzes: Record<string, CourseQuiz> = {
     title: 'Business Mathematics - CBT Assessment',
     totalQuestions: 100,
     maxQuizQuestions: 50,
-    quizDurationMinutes: 30,
+    // It publishes the LAG-ACS213 bank, whose exam runs 40 minutes for its calculations (owner, 25 Nov 2026).
+    quizDurationMinutes: 40,
     sections: [
       'Set Theory & Logic',
       'Sequences & Series',

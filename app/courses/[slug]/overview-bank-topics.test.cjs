@@ -64,7 +64,9 @@ test('every imported course has its bank topics, which its practice draws from',
   const { OFFICIAL_BANK_COURSES } = require('../../../lib/data/official-bank-courses.ts')
   const existing = ['entrepreneurship-innovation', 'financial-accounting-1', 'introduction-financial-management',
     'leadership-governance', 'principles-business-administration', 'principles-business-administration-2',
-    'quantitative-analysis-management', 'use-of-english']
+    'quantitative-analysis-management', 'use-of-english',
+    // The copies (BUA203, LAG-BUA210), which practise their source banks' topics.
+    'business-statistics', 'business-mathematics']
   assert.deepEqual(Object.keys(OFFICIAL_BANK_SECTIONS).sort(),
     [...existing, ...OFFICIAL_BANK_COURSES.map(course => course.slug)].sort())
   assert.equal(OFFICIAL_BANK_COURSES.length, 19)

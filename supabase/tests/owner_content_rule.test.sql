@@ -7,6 +7,12 @@
 begin;
 select no_plan();
 
+-- What migrations after the rule published on the courses it audits is rolled back first: the rule refuses to
+-- run again or roll back while it is published.
+select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
+    private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
+  array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');
+
 -- A course and kind's published items, each with its revision and parent revision, as one MD5.
 create function pg_temp.published(p_course uuid, p_kind text) returns text language sql stable as $$
   select md5(coalesce(string_agg(format('%s:%s:%s', id, published_revision, coalesce(published_parent_revision::text, '-')),

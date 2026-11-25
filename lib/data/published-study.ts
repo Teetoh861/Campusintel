@@ -2,8 +2,8 @@
 // What every course publishes after every migration, by course slug: its notes, practice questions and theory questions.
 export const PUBLISHED_STUDY: Readonly<Record<string, { readonly notes: number; readonly cbt: number; readonly theory: number }>> = {
   "bua218": { notes: 0, cbt: 0, theory: 0 },
-  "business-mathematics": { notes: 0, cbt: 0, theory: 0 },
-  "business-statistics": { notes: 0, cbt: 0, theory: 0 },
+  "business-mathematics": { notes: 10, cbt: 1262, theory: 0 },
+  "business-statistics": { notes: 8, cbt: 864, theory: 0 },
   "business-statistics-1": { notes: 8, cbt: 864, theory: 0 },
   "business-taxation-2": { notes: 0, cbt: 396, theory: 0 },
   "consumer-behaviour": { notes: 0, cbt: 0, theory: 0 },

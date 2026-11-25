@@ -28,6 +28,11 @@ export type ContinuePractice =
 
 export type HomeCourses = { courses: HomeCourse[]; continuePractice: ContinuePractice | null }
 
+/** A course's verified catalogue code and title, by repository course id: read through the read model for an attempt's
+ *  course that is not on the student's list (offListOpenCourse), so the Continue card never names a course by the course
+ *  list's code. */
+export type CourseLabels = ReadonlyMap<string, { code: string; title: string }>
+
 const MS_PER_MINUTE = 60_000
 
 function statusOf(course: StudentCourse): HomeCourseStatus {
@@ -39,13 +44,28 @@ function repositoryIdOf(course: StudentCourse): string | null {
   return course.repository.state === 'unlinked' ? null : course.repository.repositoryCourseId
 }
 
-/** The practice page of an attempt's course: through the student's own row, else the static shelf; null if neither. */
-function practiceTarget(ref: PracticeCourseRef, courses: ReadonlyArray<StudentCourse>):
+/** The open attempt's course when it is not on the student's list but has a course page: the one course the Continue
+ *  card can name from outside the list (a graded attempt is continued only from the list). The page reads its catalogue
+ *  code and title (CourseLabels). */
+export function offListOpenCourse(courses: ReadonlyArray<StudentCourse>, progress: PracticeProgress):
+  { courseId: string; slug: string } | null {
+  if (progress.status !== 'ok' || progress.open === null) return null
+  const { courseId, contentKey } = progress.open
+  if (courses.some(course => repositoryIdOf(course) === courseId)) return null
+  const shelf = getCourseByContentKey(contentKey)
+  return shelf === undefined || shelf.contentKey !== contentKey ? null : { courseId, slug: shelf.slug }
+}
+
+/** The practice page of an attempt's course, named by the student's own row, or off the list by its verified catalogue
+ *  course, never by the course list's code; null without a course page or a name. */
+function practiceTarget(ref: PracticeCourseRef, courses: ReadonlyArray<StudentCourse>, labels: CourseLabels):
   { code: string; title: string; href: string; locked: boolean } | null {
   const listed = courses.find(course => repositoryIdOf(course) === ref.courseId)
   const shelf = listed?.repository.state === 'shelved' ? listed.repository.route.course : getCourseByContentKey(ref.contentKey)
   if (shelf === undefined || shelf.contentKey !== ref.contentKey) return null
-  return { code: listed?.code ?? shelf.code, title: listed?.title ?? shelf.title,
+  const named = listed ?? labels.get(ref.courseId)
+  if (named === undefined) return null
+  return { code: named.code, title: named.title,
     href: `/courses/${encodeURIComponent(shelf.slug)}/quiz`, locked: listed !== undefined && statusOf(listed) === 'locked' }
 }
 
@@ -53,9 +73,9 @@ function practiceTarget(ref: PracticeCourseRef, courses: ReadonlyArray<StudentCo
  * bank size, which a course the student's plan locks never has). An open attempt is resumed whatever the course offers
  * now: the practice page finishes it without a brief. */
 function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok' }>,
-  courses: ReadonlyArray<StudentCourse>, cbtBankSizes: ReadonlyMap<string, number>): ContinuePractice | null {
+  courses: ReadonlyArray<StudentCourse>, cbtBankSizes: ReadonlyMap<string, number>, labels: CourseLabels): ContinuePractice | null {
   if (progress.open !== null) {
-    const target = practiceTarget(progress.open, courses)
+    const target = practiceTarget(progress.open, courses, labels)
     const left = Date.parse(progress.open.deadlineAt) - Date.parse(progress.now)
     if (target !== null && Number.isFinite(left) && left > 0) {
       return { kind: 'resume', code: target.code, title: target.title, href: target.href,
@@ -63,7 +83,7 @@ function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok'
     }
   }
   if (progress.latest !== null) {
-    const target = practiceTarget(progress.latest, courses)
+    const target = practiceTarget(progress.latest, courses, labels)
     const listed = courses.find(course => repositoryIdOf(course) === progress.latest?.courseId)
     const practisable = listed !== undefined && (cbtBankSizes.get(listed.institutionalCourseId) ?? 0) > 0
     // Practice continues from the course's topic list, not the practice page.
@@ -73,9 +93,10 @@ function continuePracticeFrom(progress: Extract<PracticeProgress, { status: 'ok'
   return null
 }
 
-/** Combine the course read and the practice read. An unavailable practice read shows the day-one list. */
+/** Combine the course read and the practice read. An unavailable practice read shows the day-one list. `labels` names
+ *  the off-list open attempt's course (offListOpenCourse); without its label the Continue card names no course. */
 export function homeCoursesFrom(courses: ReadonlyArray<StudentCourse>, cbtBankSizes: ReadonlyMap<string, number>,
-  progress: PracticeProgress): HomeCourses {
+  progress: PracticeProgress, labels: CourseLabels = new Map()): HomeCourses {
   const practised = progress.status === 'ok' ? progress.courses : new Map()
   return {
     courses: courses.map(course => {
@@ -88,7 +109,8 @@ export function homeCoursesFrom(courses: ReadonlyArray<StudentCourse>, cbtBankSi
             lastScore: own.lastScore } }
     }),
     // An empty list shows only its sentence: nothing to continue, whatever was practised before.
-    continuePractice: progress.status === 'ok' && courses.length > 0 ? continuePracticeFrom(progress, courses, cbtBankSizes) : null,
+    continuePractice: progress.status === 'ok' && courses.length > 0 ? continuePracticeFrom(progress, courses, cbtBankSizes, labels)
+      : null,
   }
 }
 

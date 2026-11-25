@@ -101,4 +101,14 @@ const GUIDE_IMPORTS = [
 // BUA 323 waits: its guide covers weeks 1 to 4 only, so its source is committed and parsed but not imported.
 const GUIDES_WAITING = ['BUA323']
 
-module.exports = { GUIDE_IMPORTS, GUIDES_WAITING }
+// Copies (owner, 25 Nov 2026): BUA203 and LAG-BUA210 are LAG-ACS209 and LAG-ACS213 under other codes. Each publishes its
+// source guide's topics as notes on its own course (no theory, no overview), with the practice buttons of the source.
+// Correct BUA203 or LAG-BUA210 only through the LAG-ACS209 or LAG-ACS213 source files, never in a copy alone.
+const GUIDE_COPIES = [
+  { code: 'BUA203', copyOf: 'LAG-ACS209', contentKey: 'business-statistics', guide: 'study_guide_bua203',
+    migration: '20261125100200_study_guide_bua203.sql' },
+  { code: 'LAG-BUA210', copyOf: 'LAG-ACS213', contentKey: 'business-mathematics', guide: 'study_guide_lag_bua210',
+    migration: '20261125100300_study_guide_lag_bua210.sql' },
+]
+
+module.exports = { GUIDE_COPIES, GUIDE_IMPORTS, GUIDES_WAITING }
