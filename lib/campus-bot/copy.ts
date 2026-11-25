@@ -35,6 +35,23 @@ export const CAMPUS_BOT_COPY = {
   // message that could not be read), the line keeps "Try again." so the student still has a next step.
   askFailed: 'Campus Bot couldn’t answer that.',
   askFailedNoRetry: 'Campus Bot couldn’t answer that. Try again.',
+  // The buttons under Campus Bot's newest reply and its flashcards (owner decisions B5 and B6, mock 8; approved
+  // 23 November 2026). "Quiz me on this topic" is quiz.start.
+  explainAgain: 'Explain again',
+  makeFlashcards: 'Make flashcards',
+  flashcards: {
+    heading: 'Flashcards',
+    hint: 'Tap a card to flip it.',
+    term: 'Term',
+    meaning: 'Meaning',
+    previous: 'Previous',
+    next: 'Next',
+    position: (n: number, total: number) => `${n} of ${total}`,
+    making: 'Campus Bot is making your flashcards…',
+    // With Try again under it, and without, as askFailed and askFailedNoRetry.
+    failed: 'Campus Bot couldn’t make your flashcards.',
+    failedNoRetry: 'Campus Bot couldn’t make your flashcards. Try again.',
+  },
 
   // Quiz me on this topic: its button in a topic's Campus Bot area, the wait, then the set on its own page (owner
   // decisions of 16 November 2026).

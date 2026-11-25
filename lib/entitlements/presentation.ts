@@ -120,7 +120,7 @@ export const PLAN_COPY = {
   plusBenefit: '2× Campus Bot use',
   choose: (tier: PlanTier) => `Choose ${PLAN_TIER_NAME[tier]}`,
   payment: 'Pay by card or bank transfer.',
-  refund: 'Full refund within 48 hours of paying, as long as you haven’t made a Campus Bot question set or used a large part of your plan.',
+  refund: 'Full refund within 48 hours of paying, as long as you haven’t made a Campus Bot question set or flashcards, or used a large part of your plan.',
   termsLink: 'Payment terms',
   switchToSession: 'Switch to Session',
 } as const
@@ -361,7 +361,8 @@ export const CAMPUS_BOT_LIMIT_COPY = {
     line: () => 'Campus Bot couldn’t finish your last few sets. Try again tomorrow.' },
 } as const
 
-/** The Payment terms page, word for word as the owner approved it (2026-11-05). Prices are the launch catalogue
+/** The Payment terms page, word for word as the owner approved it (2026-11-05; the Refunds line's flashcards,
+ *  2026-11-23). Prices are the launch catalogue
  *  (20261102190000_payments.sql); a price change needs this table and the catalogue changed together.
  *  Each "message us" in a body line becomes the app's message-us link. */
 export const TERMS_COPY = {
@@ -386,7 +387,8 @@ export const TERMS_COPY = {
       'when it resets.' },
     { heading: 'Your account', body: 'Your plan is just for you, and you can be signed in on one device at a time.' },
     { heading: 'Refunds', body: 'Changed your mind? You can get a full refund within 48 hours of paying, as long as you ' +
-      'haven’t started an exam, made a Campus Bot question set, answered more than 10 practice questions, opened more ' +
+      'haven’t started an exam, made a Campus Bot question set or flashcards, answered more than 10 practice ' +
+      'questions, opened more ' +
       'than 3 notes topics or had more than 10 Campus Bot replies. GST courses don’t count, and you can get one refund ' +
       'this way. Just message us, and please don’t use your plan while we process it. Refunds go back to the card or ' +
       'account you paid with, and your plan ends once the refund is made. If a problem on our side stops you from ' +

@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { createConfiguredProvider, readAiPracticeConfig } from '@/lib/ai-practice/config'
 import { isVerifiedLocalEnvironment } from '@/lib/ai-practice/entitlement'
 import { ProviderError } from '@/lib/ai-practice/provider'
+import { EXPLAIN_AGAIN_MESSAGE } from './prompts'
 import type { ProviderRequest, ProviderResponse, QuestionGenerationProvider, TokenUsage } from '@/lib/ai-practice/provider'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -24,6 +25,9 @@ export type FakeScript = {
   /** Ask Campus Bot. 'ok' asks a check question, then marks the answer to it: correct when the student's message names
    *  the scripted answer, otherwise not quite. 'leak' gives the check's answer away in the reply. */
   chat?: 'ok' | 'outside' | 'long' | 'leak' | 'invalid' | 'refused' | 'timeout'
+  /** Make flashcards in the chat: 8 cards whose terms are words of the passages given, 3 (too few: a failure), or a
+   *  failure. */
+  flashcards?: 'ok' | 'few' | 'invalid' | 'refused' | 'timeout'
   /** Quiz me on this topic: five questions grounded in the notes given, too few of them, or a failure. */
   set?: 'ok' | 'few' | 'invalid' | 'refused' | 'timeout'
   /** The check of a set on a calculation course: every question passes, the first fails, all fail, or no answer. */
@@ -44,6 +48,7 @@ const USAGE: Record<FakeKind, TokenUsage> = {
   explain: { inputTokens: 3_300, outputTokens: 400, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
   check: { inputTokens: 1_700, outputTokens: 700, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
   chat: { inputTokens: 6_000, outputTokens: 350, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+  flashcards: { inputTokens: 6_000, outputTokens: 600, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
   set: { inputTokens: 6_150, outputTokens: 3_000, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
   setCheck: { inputTokens: 4_200, outputTokens: 1_800, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
 }
@@ -53,7 +58,7 @@ function kindOf(request: ProviderRequest): FakeKind {
   const required = (request.outputSchema as { required?: unknown }).required
   const keys = Array.isArray(required) ? required : []
   // A chat reply also has a verdict (its marking), so it is told apart first.
-  return keys.includes('inNotes') ? 'chat' : keys.includes('verdict') ? 'check' : keys.includes('questions') ? 'set'
+  return keys.includes('cards') ? 'flashcards' : keys.includes('inNotes') ? 'chat' : keys.includes('verdict') ? 'check' : keys.includes('questions') ? 'set'
     : keys.includes('results') ? 'setCheck' : 'explain'
 }
 
@@ -93,6 +98,33 @@ function fakeSetCheck(user: string, mode: 'pass' | 'drop-one' | 'fail'): Record<
     correct: mode === 'pass' || (mode === 'drop-one' && index > 0) })) }
 }
 
+const FLASHCARD_TERM_WORDS = 3
+const FLASHCARD_MEANING_WORDS = 12
+
+/** Flashcards whose terms are words of the passages given, so they pass the grounding guard (flashcards.ts): 8 cards,
+ *  or 3 for 'few'. Each passage is walked a few words at a time, the passages in turn, skipping a term already used. */
+function fakeFlashcards(user: string, few: boolean): Record<string, unknown> {
+  const passages = [...user.matchAll(/<passage id="N\d+" topic="[^"]*" heading="([^"]*)">\n([\s\S]*?)\n<\/passage>/g)]
+    // Whole words only: punctuation around a word goes, and a token with a symbol inside (d/dx) is skipped, never merged.
+    .map(match => ({ heading: match[1]!, words: match[2]!.split(/\s+/)
+      .map(word => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+      .filter(word => /^[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*$/u.test(word)) }))
+  const want = few ? 3 : 8
+  const cards: Array<{ term: string; meaning: string }> = []
+  const terms = new Set<string>()
+  const longest = Math.max(0, ...passages.map(passage => passage.words.length))
+  for (let start = 0; start + FLASHCARD_TERM_WORDS < longest && cards.length < want; start += FLASHCARD_TERM_WORDS) {
+    for (const passage of passages) {
+      const rest = passage.words.slice(start + FLASHCARD_TERM_WORDS, start + FLASHCARD_TERM_WORDS + FLASHCARD_MEANING_WORDS)
+      const term = passage.words.slice(start, start + FLASHCARD_TERM_WORDS).join(' ')
+      if (cards.length >= want || rest.length === 0 || terms.has(term.toLowerCase())) continue
+      terms.add(term.toLowerCase())
+      cards.push({ term, meaning: `In ${passage.heading.slice(0, 60)}, the notes go on: ${rest.join(' ')}.`.slice(0, 200) })
+    }
+  }
+  return { cards }
+}
+
 // The stand-in's check questions and their answers. A marked reply opens with a verdict word, as a model might, so a
 // browser check shows the server removing it; its key words are bold, as mock 8 shows them.
 const FIRST_CHECK = { check: 'Which lesson of this topic states its main idea?', checkAnswer: 'the first lesson' }
@@ -106,18 +138,29 @@ function fakeChat(user: string, mode: string): Record<string, unknown> {
     return { verdict: 'none', inNotes: false, memoryTrick: '', ...NO_CHECK,
       reply: 'Your notes for this topic do not go into that. In general, it is the idea that a firm weighs the cost of a choice against what it gives up.' }
   }
+  const conversation = /<conversation>\n([\s\S]*?)\n<\/conversation>/.exec(user)?.[1] ?? ''
+  const lastBot = conversation.split('\n').reduce<string[]>((turn, line) =>
+    line.startsWith('Campus Bot: ') ? [line] : turn.length > 0 && !line.startsWith('Student: ') ? [...turn, line] : turn, [])
+  const message = /<student_message>\n([\s\S]*?)\n<\/student_message>/.exec(user)?.[1] ?? ''
+  // Explain again, as the prompt asks: no check question and no answer. Marked not quite, as a model might, so a browser
+  // check shows the server never marking it.
+  if (message === EXPLAIN_AGAIN_MESSAGE) {
+    return { verdict: 'not-quite', inNotes: true, memoryTrick: '', ...NO_CHECK,
+      reply: 'Put simply: the notes give the main idea at the start, and each later lesson adds a little more to it.' }
+  }
   if (mode === 'leak') {
     return { verdict: 'none', inNotes: true, memoryTrick: '', ...FIRST_CHECK,
       reply: 'Your notes state the main idea of this topic in the first lesson.' }
   }
-  const conversation = /<conversation>\n([\s\S]*?)\n<\/conversation>/.exec(user)?.[1] ?? ''
-  const lastBot = conversation.split('\n').reduce<string[]>((turn, line) =>
-    line.startsWith('Campus Bot: ') ? [line] : turn.length > 0 && !line.startsWith('Student: ') ? [...turn, line] : turn, [])
+  // Flashcards asked for in words: the button that makes them, and no check question.
+  if (/\bflashcards?\b/i.test(message)) {
+    return { verdict: 'none', inNotes: true, memoryTrick: '', ...NO_CHECK,
+      reply: 'Tap Make flashcards and Campus Bot will make a set from this topic’s notes.' }
+  }
   if (!lastBot.some(line => line.startsWith('Quick check: '))) {
     return { verdict: 'none', inNotes: true, memoryTrick: '', ...FIRST_CHECK,
       reply: 'Your notes put it this way: the main idea of this topic comes at the start, and everything after builds on it.' }
   }
-  const message = /<student_message>\n([\s\S]*?)\n<\/student_message>/.exec(user)?.[1] ?? ''
   const memoryTrick = '**F**irst lesson, **f**irst idea.'
   return /\bfirst\b/i.test(message)
     ? { verdict: 'correct', inNotes: true, memoryTrick, ...NEXT_CHECK,
@@ -144,6 +187,9 @@ export function createFakeCampusBotProvider(script: () => FakeScript = () => ({}
       if (kind === 'setCheck') {
         const verdicts = mode === 'drop-one' || mode === 'fail' ? mode : 'pass'
         return { kind: 'completed', text: JSON.stringify(fakeSetCheck(request.user, verdicts)), model, usage }
+      }
+      if (kind === 'flashcards') {
+        return { kind: 'completed', text: JSON.stringify(fakeFlashcards(request.user, mode === 'few')), model, usage }
       }
       if (kind === 'chat') return { kind: 'completed', text: JSON.stringify(fakeChat(request.user, mode)), model, usage }
       const passage = /<passage id="(N\d+)"/.exec(request.user)?.[1] ?? 'N1'

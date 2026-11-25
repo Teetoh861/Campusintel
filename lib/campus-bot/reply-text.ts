@@ -118,13 +118,27 @@ export function boldTerms(text: string, max: number = BOLD_MAX): { plain: string
   return { plain, terms: usable ? terms : null }
 }
 
-/** Mark the terms again in text the guards have finished with: each at its next occurrence, in order. A term the
- *  guards removed is left unmarked. */
+const WORD_CHAR = /[\p{L}\p{N}]/u
+
+/** Where `term` next stands as whole words in `text` from `from`: never inside a longer word ("range" in "arranged").
+ *  A single letter may start a word: a memory trick's first letter ("**S**tatistic"). */
+function wholeWordAt(text: string, term: string, from: number): number {
+  const firstLetter = /^\p{L}$/u.test(term)
+  for (let at = text.indexOf(term, from); at >= 0; at = text.indexOf(term, at + 1)) {
+    const before = text.slice(0, at).slice(-1), after = text.charAt(at + term.length)
+    const startsWord = WORD_CHAR.test(term.charAt(0)), endsWord = WORD_CHAR.test(term.slice(-1))
+    if ((!startsWord || !WORD_CHAR.test(before)) && (firstLetter || !endsWord || !WORD_CHAR.test(after))) return at
+  }
+  return -1
+}
+
+/** Mark the terms again in text the guards have finished with: each at its next whole-word occurrence, in order. A
+ *  term the guards removed, or one that now only appears inside a longer word, is left unmarked. */
 export function markTerms(text: string, terms: ReadonlyArray<string>): string {
   let out = ''
   let from = 0
   for (const term of terms) {
-    const at = text.indexOf(term, from)
+    const at = wholeWordAt(text, term, from)
     if (at < 0) continue
     out += `${text.slice(from, at)}**${term}**`
     from = at + term.length
@@ -139,22 +153,57 @@ export function boldSpans(text: string): Array<{ text: string; bold: boolean }> 
   return parts.map((part, index) => ({ text: part, bold: index % 2 === 1 })).filter(span => span.text !== '')
 }
 
+/** A word and the forms a simple ending makes of it (s, es, ies/y, ing, ed, al), each at least 3 letters: two words are
+ *  the same word when their forms meet ("strategy" and "strategies", "emotions" and "emotional"). Notation and
+ *  numbers are left as they are. */
+export function wordForms(word: string): string[] {
+  const w = word.toLowerCase().replace(/['’]s$/u, '')
+  if (!/^\p{L}+$/u.test(w)) return [w]
+  const forms = new Set([w])
+  const cut = (ending: string, add = '') => { if (w.endsWith(ending) && w.length - ending.length >= 3) forms.add(w.slice(0, -ending.length) + add) }
+  cut('ies', 'y'); cut('es'); if (!w.endsWith('ss')) cut('s'); cut('ing'); cut('ed'); cut('al')
+  return [...forms]
+}
+
+/** Whether a text holds a word, by its simple forms (wordForms). */
+export function wordFinder(text: string): (word: string) => boolean {
+  const have = new Set(wordsOf(text).flatMap(wordForms))
+  return word => wordForms(word).some(form => have.has(form))
+}
+
+/** How many times `answer` stands in `text` as whole words, any case, bold markers ignored. A hyphenated compound is one
+ *  word: "falling" never counts inside "falling-rising", nor "labour" inside "labour-intensive". */
+export function wholeWordCount(text: string, answer: string): number {
+  const phrase = answer.replace(/\*\*/g, '').trim().replace(/\s+/g, ' ')
+  if (phrase === '') return 0
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')
+  return (text.replace(/\*\*/g, '').match(new RegExp(
+    `(?<![\\p{L}\\p{N}]|[\\p{L}\\p{N}]-)${escaped}(?![\\p{L}\\p{N}]|-[\\p{L}\\p{N}])`, 'giu')) ?? []).length
+}
+
+/** Whether a memory trick is one plain sentence: no ellipsis, no second sentence (a model thinking aloud). */
+export function oneSentence(text: string): boolean {
+  return !/\.\.\.|…/.test(text) && sentences(text.replace(/\*\*/g, '').trim()).length <= 1
+}
+
 // Words a check question's answer can share with anything; they say nothing about the answer itself.
 const STOP_WORDS = new Set(['the', 'a', 'an', 'of', 'and', 'or'])
 
-/** The words of a text, lower case, for whole-word comparison. Phonetic notation such as /h/ or [h] is one word. */
-export function wordsOf(text: string): string[] {
+/** The words of a text, lower case, for whole-word comparison. Phonetic notation such as /h/ or [h] is one word; with
+ *  `compounds`, so is a hyphenated compound ("falling-rising", "labour-intensive"). */
+export function wordsOf(text: string, { compounds = false }: { compounds?: boolean } = {}): string[] {
   return text.toLowerCase().split(/\s+/).flatMap(chunk => {
     const notation = /^[^\p{L}\p{N}/[\]]*([/[][\p{L}\p{N}ː:.]+[/\]])[^\p{L}\p{N}]*$/u.exec(chunk)
-    return notation ? [notation[1]!] : chunk.match(/[\p{L}\p{N}]+/gu) ?? []
+    return notation ? [notation[1]!]
+      : chunk.match(compounds ? /[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*/gu : /[\p{L}\p{N}]+/gu) ?? []
   })
 }
 
 /** The words of a check question's answer worth comparing: not in the question already, not a stop word, and at least
  *  3 characters unless they hold a digit (phonetic notation always counts). */
 export function answerWords(answer: string, question: string): string[] {
-  const asked = new Set(wordsOf(question))
-  return [...new Set(wordsOf(answer))].filter(word => !asked.has(word) && !STOP_WORDS.has(word)
+  const asked = wordFinder(question)
+  return [...new Set(wordsOf(answer))].filter(word => !asked(word) && !STOP_WORDS.has(word)
     && (word.length >= 3 || /\d/.test(word) || /^[/[]/.test(word)))
 }
 
@@ -163,7 +212,7 @@ export function answerWords(answer: string, question: string): string[] {
 export function answerLeak(answer: string, question: string, reply: string, memoryTrick: string): 'none' | 'reply' | 'memory-trick' {
   const words = answerWords(answer, question)
   if (words.length === 0) return 'none'
-  const all = (text: string) => { const have = new Set(wordsOf(text)); return words.every(word => have.has(word)) }
+  const all = (text: string) => { const has = wordFinder(text); return words.every(word => has(word)) }
   return all(reply) ? 'reply' : all(memoryTrick) ? 'memory-trick' : 'none'
 }
 
@@ -239,17 +288,107 @@ function sentences(text: string): string[] {
  */
 export function echoLeak(answer: string, question: string, reply: string, memoryTrick: string): 'none' | 'reply' | 'memory-trick' {
   const answerSet = new Set(wordsOf(answer).filter(word => !ENGLISH_STOPWORDS.has(word)))
-  const asked = new Set(wordsOf(question))
-  if (answerSet.size === 0 || ![...answerSet].every(word => asked.has(word))) return 'none'
-  const options = new Set(questionOptions(question).flat().flatMap(option => wordsOf(option)))
-  const keys = [...asked].filter(word => !answerSet.has(word) && !options.has(word) && !ENGLISH_STOPWORDS.has(word)
+  const inQuestion = wordFinder(question)
+  if (answerSet.size === 0 || ![...answerSet].every(word => inQuestion(word))) return 'none'
+  const inAnswer = wordFinder([...answerSet].join(' '))
+  const inOptions = wordFinder(questionOptions(question).flat().join(' '))
+  const keys = [...new Set(wordsOf(question))].filter(word => !inAnswer(word) && !inOptions(word) && !ENGLISH_STOPWORDS.has(word)
     && (word.length >= 4 || /\d/.test(word) || /^[/[]/.test(word)))
   if (keys.length === 0) return 'none'
+  // Words compared by their simple forms: "emotions" in the reply echoes "emotional" in the question.
   const echoes = (text: string) => sentences(text).some(sentence => {
-    const have = new Set(wordsOf(sentence))
-    return [...answerSet].every(word => have.has(word)) && keys.some(word => have.has(word))
+    const has = wordFinder(sentence)
+    return [...answerSet].every(word => has(word)) && keys.some(word => has(word))
   })
   return echoes(reply) ? 'reply' : echoes(memoryTrick) ? 'memory-trick' : 'none'
+}
+
+/**
+ * Whether an open question holds its own answer: it offers no options (questionOptions finds none) and every word of
+ * the answer, counted as echoLeak counts them, is in it ("A statistic describes a sample, while a parameter describes
+ * what population?"). A question that offers its answer as an option asks for a choice, so it is never caught here; an
+ * option set off with a comma ("Is it a want, or is it a need?") is read as one. A hyphenated compound is one word, so
+ * "falling-rising" never holds the answer "falling".
+ */
+export function containsAnswer(answer: string, question: string): boolean {
+  const words = [...new Set(wordsOf(answer, { compounds: true }).filter(word => !ENGLISH_STOPWORDS.has(word)))]
+  if (words.length === 0 || questionOptions(question.replace(/,\s*or\s+/giu, ' or ')).length > 0) return false
+  const have = new Set(wordsOf(question, { compounds: true }).flatMap(wordForms))
+  return words.every(word => wordForms(word).some(form => have.has(form)))
+}
+
+// A word that marks stress with capitals: 2 or more capitals then 2 or more small letters (PREsent, REason), or a small
+// letter then 2 or more capitals (preSENT, exPORT). All-capital words and plural acronyms (NAFDAC, GDPs, CBTs) do not.
+const stressCapitals = (word: string): boolean => /^\p{Lu}{2,}\p{Ll}{2,}$/u.test(word) || /\p{Ll}\p{Lu}{2,}/u.test(word)
+
+/** Whether text marks word stress with capitals (PREsent, preSENT); all-capital words and plural acronyms (NAFDAC,
+ *  GDPs, CBTs) do not. */
+export function hasStressCapitals(text: string): boolean {
+  return (text.match(/\p{L}+/gu) ?? []).some(stressCapitals)
+}
+
+/** Text with each word that marks stress with capitals written in lower case ("REcord" becomes "record"); every other
+ *  word, all-capital words and plural acronyms included, stays as it was. */
+export function lowerStressCapitals(text: string): string {
+  return text.replace(/\p{L}+/gu, word => stressCapitals(word) ? word.toLowerCase() : word)
+}
+
+/** Whether a question offers the same option twice ("record or record", as "REcord or reCORD" reads in lower case):
+ *  two options of a group (questionOptions) that compare the same, or one word on both sides of "or". */
+export function offersSameOptionTwice(question: string): boolean {
+  const plain = question.replace(/\*\*/g, '')
+  return questionOptions(plain).some(group => new Set(group.map(option => comparable(option))).size < group.length)
+    || /(?<![\p{L}\p{N}])(\p{L}+)["'”’]?\s+or\s+["'“‘]?\1(?![\p{L}\p{N}])/iu.test(plain)
+}
+
+/** Whether a check question asks two things: more than one question mark, or "and" then which, what, how, why, when,
+ *  where or who ("…, and how many are in each?"). "or" offers options, so it never counts. */
+export function asksTwoQuestions(text: string): boolean {
+  return (text.match(/\?/g) ?? []).length > 1 || /\band\s+(?:which|what|how|why|when|where|who)\b/i.test(text)
+}
+
+// An Explain again reply that talks about the chat instead of the topic ("Your last reply said…", "a non-answer about
+// France"): whole words, any case.
+const MENTIONS_CHAT = new RegExp(['\\b(?:last|previous|earlier)\\s+(?:reply|message|answer|response|explanation)\\b',
+  '\\b(?:you said|you wrote|i said|i explained)\\b', '\\bnon-answer\\b'].join('|'), 'i')
+
+/** Whether a reply mentions the conversation itself: "last", "previous" or "earlier" then reply, message, answer,
+ *  response or explanation; "you said", "you wrote", "I said", "I explained"; or "non-answer". Bold markers are ignored. */
+export function mentionsChat(text: string): boolean {
+  return MENTIONS_CHAT.test(text.replace(/\*\*/g, ''))
+}
+
+// A sentence about the check question itself ("…, the check question is about the same branch."), and one that
+// announces a question ("Next, let's check how voicing works."): let's, let us, let me, I'll, I will, now or next, then
+// later check, test, quiz or try. Whole words, any case.
+const MENTIONS_CHECK = /\b(?:check question|quick check)\b/i
+const ANNOUNCES_QUESTION = /\b(?:let['’]s|let us|let me|i['’]ll|i will|now|next)\b.*\b(?:check|test|quiz|try)\b/i
+
+/** Whether a sentence talks about the check question: "check question" or "quick check". Bold markers are ignored. */
+export function mentionsCheck(sentence: string): boolean {
+  return MENTIONS_CHECK.test(sentence.replace(/\*\*/g, ''))
+}
+
+/** Whether a sentence announces a question ("Next, let's check how voicing works."). Bold markers are ignored. */
+export function announcesQuestion(sentence: string): boolean {
+  return ANNOUNCES_QUESTION.test(sentence.replace(/\*\*/g, ''))
+}
+
+/** Text without the sentences `drop` picks (with `lastOnly`, only its last sentence is looked at), keeping the spacing
+ *  between the sentences left; `removed` is how many went. */
+export function removeSentences(text: string, drop: (sentence: string) => boolean, { lastOnly = false } = {}):
+  { text: string; removed: number } {
+  // Sentences and the spacing after each, alternately, as capWords reads them.
+  const parts = text.split(/(?<=[.!?]["’”)]*)(\s+)/)
+  const last = parts.reduce((at, part, index) => index % 2 === 0 && part.trim() !== '' ? index : at, -1)
+  let out = ''
+  let removed = 0
+  for (let index = 0; index < parts.length; index += 2) {
+    const sentence = parts[index] ?? ''
+    if (sentence.trim() !== '' && (!lastOnly || index === last) && drop(sentence)) { removed += 1; continue }
+    out += sentence + (parts[index + 1] ?? '')
+  }
+  return { text: removed === 0 ? text : out.trim(), removed }
 }
 
 // A reply that only introduces a question ("Here's one.", "Sure, here's a quick question:"). Matched as a whole, so a

@@ -29,6 +29,12 @@ async function withTsx(run) {
 }
 const h = React.createElement
 const HREFS = { signInHref: '/login?next=%2Fback', reloadHref: '/back' }
+// The chat opens a quiz's set with the app router, as the area's Quiz me does; a page always has one.
+const withRouter = element => {
+  const { AppRouterContext } = require('next/dist/shared/lib/app-router-context.shared-runtime')
+  const router = { push() {}, replace() {}, refresh() {}, prefetch() {}, back() {}, forward() {} }
+  return h(AppRouterContext.Provider, { value: router }, element)
+}
 
 test('the approved lines, word for word', () => {
   const { CAMPUS_BOT_COPY: copy } = require(path.join(root, 'lib/campus-bot/copy.ts'))
@@ -184,7 +190,8 @@ test('topic practice: Explain appears only once a question is answered, and only
 
 test('Ask Campus Bot: the button, then the chat — each turn under its name, an answer from outside the notes says so first', async () => withTsx(async () => {
   const { AskCampusBot, ChatLog } = require('./[slug]/notes/AskCampusBot.tsx')
-  const closed = renderToStaticMarkup(h(AskCampusBot, { courseSlug: 'x', itemId: 'i', topicTitle: 'Demand', continuityToken: 't', ...HREFS }))
+  const closed = renderToStaticMarkup(withRouter(h(AskCampusBot, { courseSlug: 'x', itemId: 'i', topicTitle: 'Demand',
+    continuityToken: 't', offers: { flashcards: true, quiz: true }, ...HREFS })))
   assert.deepEqual(buttons(closed), ['Ask a question'], 'closed, the page shows the one button and nothing of the chat')
   // Its place on a topic page: one area labelled Campus Bot, each feature a child, a wide child on a row of its own.
   const { CampusBotArea } = require(path.join(root, 'components/student/CampusBotArea.tsx'))
@@ -268,4 +275,245 @@ test('Ask Campus Bot sends each Campus Bot turn with its check question, and sho
   assert.match(source, /check: turn\.check\.slice\(0, CHAT_LIMITS\.checkChars\)/)
   assert.match(source, /verdict: result\.verdict, check: result\.check, memoryTrick: result\.memoryTrick/)
   assert.doesNotMatch(source, /checkAnswer/, 'the page never has the check question’s answer')
+}))
+
+// The buttons under Campus Bot's newest turn and its flashcards (owner decisions B5 and B6, mock 8).
+const CARDS = [{ term: 'Statistic', meaning: 'A number that describes a sample.' },
+  { term: 'Parameter', meaning: 'A number that describes a whole population.' },
+  { term: 'Sample', meaning: 'The part of a population that is studied.' },
+  { term: 'Population', meaning: 'Every member of the group being studied.' }]
+const OFFERS = { flashcards: true, quiz: true }
+
+test('the new chat lines, word for word, and no others', () => {
+  const { CAMPUS_BOT_COPY: copy } = require(path.join(root, 'lib/campus-bot/copy.ts'))
+  assert.equal(copy.explainAgain, 'Explain again')
+  assert.equal(copy.makeFlashcards, 'Make flashcards')
+  const { position, ...lines } = copy.flashcards
+  assert.deepEqual(lines, { heading: 'Flashcards', hint: 'Tap a card to flip it.', term: 'Term', meaning: 'Meaning',
+    previous: 'Previous', next: 'Next', making: 'Campus Bot is making your flashcards…',
+    failed: 'Campus Bot couldn’t make your flashcards.', failedNoRetry: 'Campus Bot couldn’t make your flashcards. Try again.' })
+  assert.equal(position(3, 10), '3 of 10')
+  // "Quiz me on this topic" in the chat is the area's own button's words.
+  assert.equal(copy.quiz.start, 'Quiz me on this topic')
+})
+
+test('the buttons under the newest turn: when each shows, in mock 8’s order, and when none does', async () => withTsx(async () => {
+  const { chatOffers } = require('./[slug]/notes/ChatOffers.tsx')
+  const reply = { id: '2', role: 'bot', text: 'A statistic describes a sample.', inNotes: true, verdict: 'none', check: null }
+  const asked = [{ id: '1', role: 'student', text: 'What is a statistic?' }]
+  assert.deepEqual(chatOffers([], OFFERS), ['flashcards', 'quiz'], 'an empty chat: Make flashcards, then Quiz me')
+  assert.deepEqual(chatOffers([...asked, reply], OFFERS), ['explain-again', 'flashcards', 'quiz'],
+    'after a Campus Bot reply: Explain again, Make flashcards, then Quiz me')
+  assert.deepEqual(chatOffers([...asked, { ...reply, check: 'What does a parameter describe?' }], OFFERS),
+    ['explain-again', 'flashcards', 'quiz'], 'a reply with its Quick check is still a reply to explain again')
+  assert.deepEqual(chatOffers([...asked, { ...reply, text: 'Here’s one.', check: 'What does a parameter describe?' }], OFFERS),
+    ['flashcards', 'quiz'], 'but not one that only introduces its Quick check')
+  const flashcards = [...asked, reply, { id: '3', role: 'student', text: 'Make flashcards', action: 'flashcards' },
+    { id: '4', role: 'bot', text: '', cards: CARDS }]
+  assert.deepEqual(chatOffers(flashcards, OFFERS), ['quiz'], 'after flashcards: Quiz me only')
+  assert.deepEqual(chatOffers(asked, OFFERS), [], 'never under the student’s own turn')
+  // A button whose offer is off is not shown.
+  assert.deepEqual(chatOffers([], { flashcards: false, quiz: true }), ['quiz'])
+  assert.deepEqual(chatOffers([...asked, reply], { flashcards: false, quiz: false }), ['explain-again'])
+  assert.deepEqual(chatOffers(flashcards, { flashcards: true, quiz: false }), [])
+  // Nothing while something is being written or a notice is showing.
+  assert.deepEqual(chatOffers([...asked, reply], OFFERS, true), [])
+  assert.deepEqual(chatOffers([], OFFERS, true), [])
+}))
+
+test('the buttons look like mock 8’s pills: the area’s ghost button, in a row that wraps, each its action’s words', async () => withTsx(async () => {
+  const { ChatOffers } = require('./[slug]/notes/ChatOffers.tsx')
+  const html = renderToStaticMarkup(h(ChatOffers, { offers: ['explain-again', 'flashcards', 'quiz'], onPick() {} }))
+  assert.deepEqual(buttons(html), ['Explain again', 'Make flashcards', 'Quiz me on this topic'])
+  assert.match(html, /^<div class="student-ask-offers"><button type="button" class="[^"]*student-ask-pill[^"]*">/)
+  // The area's ghost button: at least 44px high (min-h-11), its focus ring, never filled navy or orange.
+  for (const [, classes] of html.matchAll(/<button type="button" class="([^"]*)"/g)) {
+    assert.match(classes, /min-h-11/)
+    assert.match(classes, /student-focus-control/)
+    assert.match(classes, /bg-student-surface/)
+    assert.doesNotMatch(classes, /bg-student-primary|accent|orange/)
+  }
+  assert.equal(renderToStaticMarkup(h(ChatOffers, { offers: [], onPick() {} })), '', 'no buttons, no row')
+  // Fix round D9: the buttons live in a file of their own, and the chat stays within AGENTS.md's 300 lines.
+  assert.ok(fs.readFileSync(path.join(__dirname, '[slug]/notes/AskCampusBot.tsx'), 'utf8').split('\n').length <= 300)
+  const css = fs.readFileSync(path.join(root, 'styles/campus-bot.css'), 'utf8')
+  assert.match(css, /\.student-ask-offers \{ display: flex; flex-wrap: wrap; gap: 8px;/)
+  assert.match(css, /\.student-ask-sheet \.student-ask-pill \{ border-radius: var\(--ci-radius-pill\); \}/)
+}))
+
+test('the history sent with a message leaves out flashcards and the turn that asked for them', async () => withTsx(async () => {
+  const { chatHistory } = require('./[slug]/notes/AskCampusBot.tsx')
+  const turns = [{ id: '1', role: 'student', text: 'What is a statistic?' },
+    { id: '2', role: 'bot', text: 'It describes a sample.', check: 'What does a parameter describe?' },
+    { id: '3', role: 'student', text: 'Make flashcards', action: 'flashcards' },
+    { id: '4', role: 'bot', text: '', cards: CARDS },
+    { id: '5', role: 'student', text: 'Explain again', action: 'explain-again' },
+    { id: '6', role: 'bot', text: 'Put simply, a sample is part of the group.', check: null }]
+  assert.deepEqual(chatHistory(turns), [{ role: 'student', text: 'What is a statistic?' },
+    { role: 'bot', text: 'It describes a sample.', check: 'What does a parameter describe?' },
+    { role: 'student', text: 'Explain again' }, { role: 'bot', text: 'Put simply, a sample is part of the group.' }])
+  // A Quick check asked before the flashcards still waits for its answer, as the server reads it.
+  const { awaitingAnswer } = require('./[slug]/notes/AskCampusBot.tsx')
+  assert.equal(awaitingAnswer(turns.slice(0, 4)), true)
+  assert.equal(awaitingAnswer(turns), false)
+  const source = fs.readFileSync(path.join(__dirname, '[slug]/notes/AskCampusBot.tsx'), 'utf8')
+  assert.match(source, /const history = message\.action === 'flashcards' \? \[\] : chatHistory\(earlier\)/,
+    'Make flashcards sends no turns at all: the cards are written from the notes alone')
+}))
+
+test('a flashcards turn (mock 8): the eyebrow and hint, one card as a single button, then Previous, its place and Next', async () => withTsx(async () => {
+  const { FlashcardsView } = require('./[slug]/notes/ChatFlashcards.tsx')
+  const view = state => renderToStaticMarkup(h(FlashcardsView, { cards: CARDS, state, announcement: '', onFlip() {}, onMove() {} }))
+  const first = view({ index: 0, side: 'term' })
+  assert.match(first, /^<p class="student-practice-eyebrow student-ask-eyebrow">Flashcards<\/p><p class="student-ask-text">Tap a card to flip it\.<\/p>/)
+  // One button holds both sides; only the side showing is read out.
+  assert.match(first, /<button type="button" class="student-flashcard" data-side="term"><span class="student-flashcard-inner"><span class="student-flashcard-face" data-face="term" aria-hidden="false"><span class="student-flashcard-eyebrow">Term<\/span><span class="student-flashcard-term">Statistic<\/span><\/span><span class="student-flashcard-face" data-face="meaning" aria-hidden="true"><span class="student-flashcard-eyebrow">Meaning<\/span><span class="student-flashcard-meaning">A number that describes a sample\.<\/span><\/span><\/span><\/button>/)
+  assert.match(first, /<p class="sr-only" aria-live="polite"><\/p>/, 'the new side is announced politely, and nothing before a move')
+  assert.equal(text(first.slice(first.indexOf('student-flashcards-nav'))).replace(/^[^>]*> /, ''), 'Previous 1 of 4 Next')
+  assert.match(first, /<button type="button" class="[^"]*" disabled="">Previous<\/button>/, 'Previous is disabled on the first card')
+  assert.doesNotMatch(first, /disabled="">Next/)
+  const flipped = view({ index: 3, side: 'meaning' })
+  assert.match(flipped, /data-side="meaning"/)
+  assert.match(flipped, /data-face="term" aria-hidden="true"><span class="student-flashcard-eyebrow">Term<\/span><span class="student-flashcard-term">Population/)
+  assert.match(flipped, /data-face="meaning" aria-hidden="false">/)
+  assert.match(text(flipped), /Previous 4 of 4 Next$/)
+  assert.match(flipped, /<button type="button" class="[^"]*" disabled="">Next<\/button>/, 'Next is disabled on the last card')
+  assert.doesNotMatch(flipped, /disabled="">Previous/)
+  // Text only: a card's words are never markup, and never bold.
+  const unsafe = renderToStaticMarkup(h(FlashcardsView, { cards: [{ term: '<b>x</b>', meaning: '**y**' }, ...CARDS],
+    state: { index: 0, side: 'term' }, announcement: '', onFlip() {}, onMove() {} }))
+  assert.match(unsafe, /&lt;b&gt;x&lt;\/b&gt;/)
+  assert.doesNotMatch(unsafe, /<strong>|<b>/)
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '[slug]/notes/ChatFlashcards.tsx'), 'utf8'), /dangerouslySetInnerHTML/)
+}))
+
+test('flip, Previous and Next: a tap turns the card, a move shows the next card’s term, and the ends stay put', async () => withTsx(async () => {
+  const { flashcardsAnnouncement, flashcardsStep } = require('./[slug]/notes/ChatFlashcards.tsx')
+  const start = { index: 0, side: 'term' }
+  assert.deepEqual(flashcardsStep(start, 'flip', 4), { index: 0, side: 'meaning' })
+  assert.deepEqual(flashcardsStep({ index: 0, side: 'meaning' }, 'flip', 4), start)
+  assert.deepEqual(flashcardsStep({ index: 0, side: 'meaning' }, 'next', 4), { index: 1, side: 'term' },
+    'moving to a card shows its term side')
+  assert.deepEqual(flashcardsStep({ index: 2, side: 'meaning' }, 'previous', 4), { index: 1, side: 'term' })
+  assert.equal(flashcardsStep(start, 'previous', 4), start, 'nothing before the first card')
+  const last = { index: 3, side: 'meaning' }
+  assert.equal(flashcardsStep(last, 'next', 4), last, 'nor after the last')
+  assert.equal(flashcardsAnnouncement(CARDS, { index: 0, side: 'meaning' }, 'flip'), 'Meaning: A number that describes a sample.')
+  assert.equal(flashcardsAnnouncement(CARDS, { index: 1, side: 'term' }, 'next'), '2 of 4. Term: Parameter')
+  // The card keeps focus when it flips (the button is never replaced), and takes it when Previous or Next is disabled.
+  const source = fs.readFileSync(path.join(__dirname, '[slug]/notes/ChatFlashcards.tsx'), 'utf8')
+  assert.match(source, /<span key=\{state\.index\} className="student-flashcard-inner">/)
+  assert.match(source, /if \(step !== 'flip' && \(next\.index === 0 \|\| next\.index === cards\.length - 1\)\) card\.current\?\.focus\(\)/)
+}))
+
+test('the flip is at most 250ms, none with reduced motion, never moves what is below, and keeps both borders in forced colours', () => {
+  const css = fs.readFileSync(path.join(root, 'styles/campus-bot.css'), 'utf8')
+  assert.match(css, /\.student-flashcard-inner \{[^}]*transition: transform 250ms ease;/)
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\n  \.student-flashcard-inner \{ transition: none; \}\n\}/)
+  // Both sides share one grid cell, so the card is as tall as its taller side whichever is showing.
+  assert.match(css, /\.student-flashcard-face \{ grid-area: 1 \/ 1;/)
+  // Mock 8's sides in our tokens: signal blue with white text, then white with a 2px signal-blue border. Never orange.
+  assert.match(css, /\.student-flashcard-face\[data-face='term'\] \{ color: var\(--student-primary-text\); background: var\(--student-signal\); \}/)
+  assert.match(css, /\.student-flashcard-face\[data-face='meaning'\] \{ color: var\(--student-text-primary\); background: var\(--student-elevated-surface\);/)
+  assert.match(css, /\.student-flashcard-face \{[^}]*border: 2px solid var\(--student-signal\);/)
+  assert.match(css, /\.student-flashcard-term \{ font-size: 20px; font-weight: 700;/)
+  assert.match(css, /@media \(forced-colors: active\) \{[^@]*\.student-flashcard-face \{ border: 2px solid CanvasText; \}/)
+  assert.match(css, /\.student-flashcard:focus-visible \{ outline: 3px solid var\(--student-focus\); outline-offset: 3px; \}/)
+  const flashcardRules = css.split('\n').filter(line => line.includes('flashcard')).join('\n')
+  assert.doesNotMatch(flashcardRules, /orange|accent/)
+})
+
+test('the chat log: the flashcards turn, the flashcards wait and failure lines, and the quiz’s wait and notice', async () => withTsx(async () => {
+  const { ChatLog } = require('./[slug]/notes/AskCampusBot.tsx')
+  const log = props => renderToStaticMarkup(h(ChatLog, { turns: [], answering: false, problem: null, ...HREFS, ...props }))
+  const turns = [{ id: '1', role: 'student', text: 'Make flashcards', action: 'flashcards' },
+    { id: '2', role: 'bot', text: '', cards: CARDS }]
+  const shown = log({ turns })
+  assert.match(shown, /<div class="student-ask-turn" data-role="bot" data-kind="flashcards"><p class="student-ask-who sr-only">Campus Bot<\/p><p class="student-practice-eyebrow student-ask-eyebrow">Flashcards<\/p>/)
+  assert.match(text(shown), /^You Make flashcards Campus Bot Flashcards Tap a card to flip it\. Term Statistic Meaning A number that describes a sample\. Previous 1 of 4 Next$/)
+  assert.equal(text(log({ answering: true, action: 'flashcards' })), 'Campus Bot is making your flashcards…')
+  assert.equal(text(log({ answering: true, action: 'explain-again' })), 'Campus Bot is answering…')
+  assert.equal(text(log({ answering: true })), 'Campus Bot is answering…')
+  const failed = log({ problem: { status: 'failed' }, action: 'flashcards', onRetry() {} })
+  assert.deepEqual([text(failed), buttons(failed)], ['Campus Bot couldn’t make your flashcards. Try again', ['Try again']])
+  assert.equal(text(log({ problem: { status: 'not-found' }, action: 'flashcards', onRetry() {} })),
+    'Campus Bot couldn’t make your flashcards. Try again.', 'with nothing to retry, the line says it')
+  assert.equal(text(log({ problem: { status: 'failed' }, action: 'explain-again', onRetry() {} })),
+    'Campus Bot couldn’t answer that. Try again', 'Explain again fails as any message does')
+  assert.equal(text(log({ quiz: { writing: true, problem: null } })), 'Campus Bot is writing your questions…')
+  const quizFailed = log({ quiz: { writing: false, problem: { status: 'failed' } }, onQuizRetry() {} })
+  assert.deepEqual([text(quizFailed), buttons(quizFailed)], ['We couldn’t create your questions. Try again', ['Try again']])
+}))
+
+test('flashcards’ states: their own failure line, the free pass’s messages line, and everything else as Ask', async () => withTsx(async () => {
+  const { CampusBotStatus } = require(path.join(root, 'components/student/CampusBotStatus.tsx'))
+  const show = (problem, onRetry) => renderToStaticMarkup(h(CampusBotStatus, { problem, feature: 'flashcards', onRetry, ...HREFS }))
+  const ask = (problem, onRetry) => renderToStaticMarkup(h(CampusBotStatus, { problem, feature: 'ask', onRetry, ...HREFS }))
+  for (const status of ['failed', 'unavailable']) {
+    assert.deepEqual([text(show({ status }, () => {})), buttons(show({ status }, () => {}))],
+      ['Campus Bot couldn’t make your flashcards. Try again', ['Try again']], status)
+  }
+  for (const status of ['not-found', 'invalid-request']) {
+    assert.equal(text(show({ status }, () => {})), 'Campus Bot couldn’t make your flashcards. Try again.', status)
+  }
+  assert.equal(text(show({ status: 'limit', limit: 'pass', resetsAt: null })), 'You’ve used your free pass messages. Plan & Access')
+  const at = '2026-11-16T09:05:00Z'
+  for (const problem of [{ status: 'limit', limit: 'session', resetsAt: at }, { status: 'limit', limit: 'week', resetsAt: at },
+    { status: 'limit', limit: 'undelivered', resetsAt: null }, { status: 'busy' }, { status: 'in-progress' },
+    { status: 'exam-open' }, { status: 'signed-out' }, { status: 'session-changed' }, { status: 'not-entitled', notice: 'plan' },
+    { status: 'locked', plansOnSale: true }, { status: 'disabled' }]) {
+    assert.equal(show(problem, () => {}), ask(problem, () => {}), JSON.stringify(problem))
+  }
+}))
+
+test('Quiz me in the chat is the area’s Quiz me: the same request ids for the topic, then the set’s page', async () => withTsx(async () => {
+  const source = fs.readFileSync(path.join(__dirname, '[slug]/notes/AskCampusBot.tsx'), 'utf8')
+  assert.match(source, /import \{ DEFAULT_DEPS as DEFAULT_QUIZ_DEPS, runQuiz \} from '\.\/QuizMe'/)
+  assert.match(source, /quizDeps = DEFAULT_QUIZ_DEPS/)
+  assert.match(source, /router\.push\(topicSetPath\(courseSlug, result\.setId\)\)/)
+  // Switched off since the page loaded: the chat stops offering Quiz me, as the area hides its button.
+  assert.match(source, /if \(result\.status === 'disabled'\) setQuizOff\(true\)/)
+  assert.match(source, /quiz: offers\.quiz && !quizOff/)
+  const { DEFAULT_DEPS, runQuiz } = require('./[slug]/notes/QuizMe.tsx')
+  assert.equal(DEFAULT_DEPS.store, undefined, 'the tab’s session storage, which the area’s button keeps its ids in too')
+  // A tap in the area and one in the chat, sharing the tab's store, repeat one request: never two sets.
+  const store = new Map()
+  const tab = { getItem: key => store.get(key) ?? null, setItem: (key, value) => { store.set(key, value) },
+    removeItem: key => { store.delete(key) } }
+  const sent = []
+  let next = 0
+  const deps = { send: async command => { sent.push(command.requestId); return { status: 'in-progress' } },
+    newId: () => `85000000-0000-4000-8000-00000000000${++next}`, store: tab, wait: async () => {} }
+  const topic = { courseSlug: 'x', itemId: '83000000-0000-4000-8000-000000000001' }
+  let calls = 0
+  const once = () => ++calls <= 1
+  await runQuiz(topic, 't', deps, once, new Map())
+  calls = 0
+  await runQuiz(topic, 't', deps, once, new Map())
+  assert.deepEqual(sent, ['85000000-0000-4000-8000-000000000001', '85000000-0000-4000-8000-000000000001'])
+}))
+
+test('fix round 4 (3A): Explain again with a question waiting ends it: no Quick check under the explanation, the normal field', async () => withTsx(async () => {
+  const { awaitingAnswer, chatHistory, ChatLog, ChatForm } = require('./[slug]/notes/AskCampusBot.tsx')
+  // Run 4, Listening Skills (rows 55 and 56): a question waits, then Explain again; the server returns no check question.
+  const psychological = 'Which person does the psychological condition concern: the lecturer or the listener?'
+  const explanation = 'Listening can be hurt by three things. The **physical** problem is the room, like noise or bad air.'
+  const trick = '**P**hysical is the room, **P**hysiological is the lecturer, **P**sychological is the listener.'
+  const waiting = [{ id: '1', role: 'student', text: 'physiological' },
+    { id: '2', role: 'bot', text: 'The answer is **physical**.', verdict: 'not-quite', check: psychological }]
+  const turns = [...waiting, { id: '3', role: 'student', text: 'Explain again', action: 'explain-again' },
+    { id: '4', role: 'bot', text: explanation, inNotes: true, verdict: 'none', check: null, memoryTrick: trick }]
+  assert.deepEqual([awaitingAnswer(waiting), awaitingAnswer(turns)], [true, false], 'the question no longer waits')
+  const form = turnsNow => renderToStaticMarkup(h(ChatForm, { turns: turnsNow, topicTitle: 'Listening Skills', draft: '',
+    closed: false, answering: false, onDraft() {}, onSubmit() {} }))
+  assert.match(form(waiting), /placeholder="Type your answer…"/)
+  assert.match(form(turns), /placeholder="Ask about Listening Skills"/)
+  const last = renderToStaticMarkup(withRouter(h(ChatLog, { turns: turns.slice(3), answering: false, problem: null, ...HREFS })))
+  assert.doesNotMatch(last, /Quick check|Try another|data-kind="check"/)
+  assert.match(last, /The <strong>physical<\/strong> problem is the room/)
+  // The next message goes as an ordinary one: the explanation travels with no check question.
+  assert.deepEqual(chatHistory(turns).at(-1), { role: 'bot', text: explanation })
+  // No hidden carry: a turn has no waiting question of its own.
+  const source = fs.readFileSync(path.join(__dirname, '[slug]/notes/AskCampusBot.tsx'), 'utf8')
+  assert.doesNotMatch(source, /waitingQuestion|turn\.waiting|waiting\?:/)
 }))

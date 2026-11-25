@@ -208,7 +208,8 @@ come from the attempt tables. The rest is recorded as it happens, once per order
 student opens, a theory answer revealed (recorded before
 the answer is shown; if it cannot be recorded, the answer is not shown), a Campus Bot set delivered (kind
 `campus-bot-reply`) and a Campus Bot reply delivered: an Explain explanation or a notes-chat reply (kind
-`campus-bot-message`). Sets and replies are counted apart. Sets are `campus_bot_sets` against
+`campus-bot-message`). Sets and replies are counted apart. A set is a delivered question set (from an upload or Quiz me
+on this topic) or a delivered set of flashcards from the notes chat (once per request). Sets are `campus_bot_sets` against
 `refund_campus_bot_replies_allowed` (0: one set ends the standard refund; reason `campus-bot`). Replies are
 `campus_bot_messages` against `refund_campus_bot_messages_allowed` (10: the 11th ends it; reason
 `campus-bot-messages`). A chat reply is recorded once per request and an explanation once per explanation shown, so a

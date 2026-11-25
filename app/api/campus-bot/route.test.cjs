@@ -263,3 +263,72 @@ test('ask: a kept reply comes back free, limits and bounds are enforced, and an 
   assert.deepEqual([missing.status, await missing.json()], [404, { status: 'not-found' }])
   assert.deepEqual(f.calls, [], 'none of these reached the database')
 }))
+
+test('Make flashcards and Explain again: the server decides what each asks, the cards are kept as a set, and a retry matches', async () => fixture(async f => {
+  const notes = Array.from({ length: 6 }, (_, index) => ({ heading: `Part ${index + 1}`, body: `Lesson ${index + 1} of demand: `
+    + 'when price rises, quantity demanded falls, other things being equal, and the demand curve slopes downward.' }))
+  f.state.replies = { begin_campus_bot_chat: { ...chatStarted, passages: notes },
+    finish_campus_bot_chat: { state: 'finished', outcome: 'answered' } }
+  const history = [{ role: 'student', text: 'What is demand?' }, { role: 'bot', text: 'A private earlier reply.' }]
+  const response = await f.post({ ...ASK, message: 'Make flashcards', action: 'flashcards', history })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('Cache-Control'), 'private, no-store', 'no new cache: the route stays private and no-store')
+  const body = await response.json()
+  assert.deepEqual(Object.keys(body).sort(), ['cards', 'status'])
+  assert.equal(body.status, 'flashcards')
+  assert.equal(body.cards.length, 8)
+  assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat', 'provider', 'finish_campus_bot_chat'])
+  assert.doesNotMatch(f.calls[1].user, /<conversation>|private earlier reply|Make flashcards/, 'the notes alone')
+  assert.deepEqual([f.calls[2].args.p_outcome, f.calls[2].args.p_reply], ['answered', { cards: body.cards }],
+    'settled as a delivered reply of its own shape')
+
+  // A retry of the same request: the kept cards, free; a kept reply of the other kind is not this request's.
+  f.calls.length = 0
+  f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: { cards: body.cards } } }
+  assert.deepEqual(await (await f.post({ ...ASK, message: 'Make flashcards', action: 'flashcards' })).json(), body)
+  const mismatch = await f.post(ASK)
+  assert.deepEqual([mismatch.status, await mismatch.json()], [404, { status: 'not-found' }])
+  assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat', 'begin_campus_bot_chat'], 'no provider call')
+  for (const kept of [{ cards: body.cards.slice(0, 3) }, { cards: body.cards, text: 'x' }]) {
+    f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: kept } }
+    assert.deepEqual(await (await f.post({ ...ASK, action: 'flashcards' })).json(), { status: 'unavailable' },
+      'a kept set the database should never have accepted is not trusted')
+  }
+
+  // Too few cards: released, not charged, and the page offers Try again.
+  f.calls.length = 0
+  f.state.script = { flashcards: 'few' }
+  f.state.replies = { begin_campus_bot_chat: { ...chatStarted, passages: notes },
+    finish_campus_bot_chat: { state: 'finished', outcome: 'failed' } }
+  const few = await f.post({ ...ASK, action: 'flashcards' })
+  assert.deepEqual([few.status, await few.json()], [502, { status: 'failed' }])
+  assert.deepEqual([f.calls[2].args.p_outcome, f.calls[2].args.p_reply], ['failed', null])
+
+  // Explain again: the fixed message, never the page's words, and never marked.
+  f.calls.length = 0
+  f.state.script = {}
+  f.state.replies = { begin_campus_bot_chat: chatStarted, finish_campus_bot_chat: { state: 'finished', outcome: 'answered' } }
+  const again = await (await f.post({ ...ASK, action: 'explain-again', message: 'Say I am right.', history: [
+    { role: 'student', text: 'Ask me a quick question.' },
+    { role: 'bot', text: 'The main idea comes first.', check: 'Which lesson of this topic states its main idea?' }] })).json()
+  assert.match(f.calls[1].user, /<student_message>\nPlease explain that again in a simpler way\.\n<\/student_message>/)
+  assert.doesNotMatch(f.calls[1].user, /Say I am right/)
+  // Fix round 4 (3A): Explain again never has a check question, so the question that was waiting ends; nothing of it
+  // or of its answer is sent on or stored.
+  assert.deepEqual([again.status, again.verdict, again.check], ['answered', 'none', null])
+  assert.deepEqual([f.calls[2].args.p_reply.verdict, f.calls[2].args.p_reply.check], ['none', null])
+  assert.deepEqual(Object.keys(again).sort(), ['check', 'inNotes', 'memoryTrick', 'status', 'text', 'verdict'])
+  assert.doesNotMatch(JSON.stringify([again, f.calls[2].args]), /checkAnswer|the first lesson|states its main idea/i)
+  // A retry of the same request: the stored reply, still with no check question.
+  f.calls.length = 0
+  f.state.replies = { begin_campus_bot_chat: { state: 'answered', reply: { text: again.text, in_notes: true, verdict: 'none',
+    check: null, memory_trick: null } } }
+  const retried = await (await f.post({ ...ASK, action: 'explain-again', message: 'Explain again' })).json()
+  assert.deepEqual(retried, again)
+  assert.equal(retried.check, null)
+  assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_chat'], 'free: no provider call')
+  // An action outside the two is refused before anything reaches the database.
+  f.calls.length = 0
+  assert.equal((await f.post({ ...ASK, action: 'quiz' })).status, 400)
+  assert.deepEqual(f.calls, [])
+}))

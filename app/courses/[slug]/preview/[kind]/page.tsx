@@ -110,7 +110,8 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
       {/* The topic this pass pinned: the same Campus Bot area as a notes topic. */}
       {(ask || quiz) && pinned !== null ? <CampusBotArea>
         {ask ? <AskCampusBot courseSlug={course.slug} itemId={pinned.item_id} topicTitle={pinned.note.title}
-          continuityToken={continuityToken} signInHref={signInHref} reloadHref={returnPath} /> : null}
+          continuityToken={continuityToken} signInHref={signInHref} reloadHref={returnPath}
+          offers={{ flashcards: noteWords(pinned.note) >= AI_PRACTICE_LIMITS.minSourceWords, quiz }} /> : null}
         {quiz ? <QuizMe courseSlug={course.slug} itemId={pinned.item_id} passLine={passLine}
           continuityToken={continuityToken} signInHref={signInHref} reloadHref={returnPath} /> : null}
       </CampusBotArea> : null}
