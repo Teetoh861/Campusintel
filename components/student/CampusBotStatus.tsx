@@ -1,6 +1,6 @@
 // components/student/CampusBotStatus.tsx — What a student reads when Campus Bot has no explanation or reply to show:
 // the notice for a student without Campus Bot, a limit, a busy moment or a problem, each with its one way on.
-// Shared by Explain and Ask Campus Bot, so the two never word the same state differently.
+// Shared by Explain, Ask Campus Bot (with its flashcards) and Quiz me, so they never word the same state differently.
 import Link from 'next/link'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
@@ -23,7 +23,8 @@ export function CampusBotNotice({ kind }: { kind: CampusBotNoticeKind }): ReactE
 
 type Props = {
   problem: CampusBotProblem
-  feature: 'explain' | 'ask' | 'quiz'
+  /** Flashcards are a chat request: as Ask, except for their own failure line. */
+  feature: 'explain' | 'ask' | 'flashcards' | 'quiz'
   /** Try again, offered only where trying again can help. */
   onRetry?: () => void
   /** Sign in and come back to this page, and this page again for the current sign-in. */
@@ -43,8 +44,8 @@ export function CampusBotStatus({ problem, feature, onRetry, signInHref, reloadH
     case 'limit': {
       const { limits } = CAMPUS_BOT_COPY
       if (problem.limit === 'pass') {
-        return <Notice tone="info" title={feature === 'explain' ? limits.passExplain : feature === 'ask'
-          ? limits.passChat : limits.passQuiz} action={plan} />
+        return <Notice tone="info" title={feature === 'explain' ? limits.passExplain
+          : feature === 'ask' || feature === 'flashcards' ? limits.passChat : limits.passQuiz} action={plan} />
       }
       if (problem.limit === 'undelivered') {
         return <Notice tone="info" title={limits.undelivered.title}>{limits.undelivered.line}</Notice>
@@ -71,11 +72,15 @@ export function CampusBotStatus({ problem, feature, onRetry, signInHref, reloadH
     case 'disabled':
       return null
     default: {
-      // Try again only where trying again can help. For Ask, the line says "Try again." only when the button is not there.
+      // Try again only where trying again can help. For Ask and flashcards, the line says "Try again." only when the
+      // button is not there.
       const action = problem.status === 'failed' || problem.status === 'unavailable' ? retry : undefined
-      const askLine = action === undefined ? CAMPUS_BOT_COPY.askFailedNoRetry : CAMPUS_BOT_COPY.askFailed
-      return <Notice title={feature === 'explain' ? CAMPUS_BOT_COPY.explainFailed : feature === 'ask'
-        ? askLine : CAMPUS_BOT_COPY.quiz.failed} action={action} />
+      const { flashcards } = CAMPUS_BOT_COPY
+      const title = feature === 'explain' ? CAMPUS_BOT_COPY.explainFailed
+        : feature === 'ask' ? action === undefined ? CAMPUS_BOT_COPY.askFailedNoRetry : CAMPUS_BOT_COPY.askFailed
+          : feature === 'flashcards' ? action === undefined ? flashcards.failedNoRetry : flashcards.failed
+            : CAMPUS_BOT_COPY.quiz.failed
+      return <Notice title={title} action={action} />
     }
   }
 }

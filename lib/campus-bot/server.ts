@@ -17,7 +17,7 @@ import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { createClient } from '@/lib/supabase/server'
 import { askCampusBot, CHAT_TIMEOUT_MS } from './ask'
-import { campusBotCommandSchema, CHAT_LIMITS, chatVerdict } from './contract'
+import { campusBotCommandSchema, CHAT_LIMITS, chatVerdict, flashcardsSchema } from './contract'
 import { explainQuestion, EXPLAIN_CHECK_TIMEOUT_MS, EXPLAIN_WRITE_TIMEOUT_MS } from './explain'
 import { notesContextFromSearch, notesContextFromTopic } from './notes-context'
 import { campusBotProvider } from './provider'
@@ -61,7 +61,8 @@ const explainFinish = z.union([
   z.object({ state: z.enum(['already-finished', 'not-found']) }),
 ])
 // A kept chat reply: marked ({text, in_notes, verdict, check, memory_trick}, 20261123100000), or one kept before replies
-// were marked ({text, in_notes}), which reads as unmarked with no check question or memory trick.
+// were marked ({text, in_notes}), which reads as unmarked with no check question or memory trick; or flashcards
+// ({cards}, 20261124100000).
 const chatReplyText = z.string().min(1).max(4_000)
 const chatReply = z.union([
   z.object({ text: chatReplyText, in_notes: z.boolean(), verdict: chatVerdict,
@@ -70,10 +71,11 @@ const chatReply = z.union([
   z.object({ text: chatReplyText, in_notes: z.boolean() }).strict()
     .transform(row => ({ ...row, verdict: 'none' as const, check: null, memory_trick: null })),
 ])
+const keptFlashcards = z.object({ cards: flashcardsSchema }).strict()
 const askBegin = z.union([
   limits.extend({ state: z.literal('started'), reply_id: uuid, reservation_seconds: z.number().int().positive(),
     course: courseLabel, topic: z.object({ title: z.string().min(1) }), passages: z.unknown() }),
-  z.object({ state: z.literal('answered'), reply: chatReply.nullable() }),
+  z.object({ state: z.literal('answered'), reply: z.union([chatReply, keptFlashcards]).nullable() }),
   limitRow,
   z.object({ state: z.enum(PLAIN_ASK) }),
 ])
@@ -179,9 +181,10 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
       if (error || !parsed.success) return null
       const row = parsed.data
       if (row.state === 'answered') {
-        return { state: 'answered', reply: row.reply === null ? null : { text: row.reply.text,
-          inNotes: row.reply.in_notes, verdict: row.reply.verdict, check: row.reply.check,
-          memoryTrick: row.reply.memory_trick } }
+        const kept = row.reply
+        return { state: 'answered', reply: kept === null ? null : 'cards' in kept ? { cards: kept.cards }
+          : { text: kept.text, inNotes: kept.in_notes, verdict: kept.verdict, check: kept.check,
+            memoryTrick: kept.memory_trick } }
       }
       if (row.state === 'session-limit' || row.state === 'week-limit') return { state: row.state, resetsAt: row.resets_at }
       if (row.state !== 'started') return { state: row.state }
@@ -192,11 +195,13 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
         course: row.course, topicTitle: row.topic.title, notes }
     },
     async finish(replyId, settlement: AskSettlement): Promise<boolean> {
+      // Flashcards are a delivered reply of their own shape ({cards}); the database records them as a set.
       const { data, error } = await withAiDeadline(signal => service().rpc('finish_campus_bot_chat', {
-        p_user_id: userId, p_reply_id: replyId, p_outcome: settlement.outcome,
+        p_user_id: userId, p_reply_id: replyId, p_outcome: settlement.outcome === 'failed' ? 'failed' : 'answered',
         p_reply: settlement.outcome === 'answered' ? { text: settlement.reply.text, in_notes: settlement.reply.inNotes,
           verdict: settlement.reply.verdict, check: settlement.reply.check,
-          memory_trick: settlement.reply.memoryTrick } : null,
+          memory_trick: settlement.reply.memoryTrick }
+          : settlement.outcome === 'flashcards' ? { cards: settlement.cards } : null,
         p_usage: usageJson(settlement.usage) }).abortSignal(signal), AI_SETTLEMENT_TIMEOUT_MS)
         .catch(() => ({ data: null, error: true }))
       const parsed = askFinish.safeParse(data)
@@ -230,7 +235,7 @@ export async function runCampusBotRequest(input: unknown, response: NextResponse
     if (course.status !== 'ok' && course.status !== 'repository-only') return { status: 'unavailable' }
     return await askCampusBot(createSupabaseAskEnv(client, context.user.id, context.sessionId, provider), {
       courseId: course.course.repository.repositoryCourseId, itemId: command.itemId, requestId: command.requestId,
-      message: command.message, history: command.history })
+      message: command.message, history: command.history, ...(command.action ? { action: command.action } : {}) })
   } catch (error) {
     console.error('campus-bot: request failed', error instanceof Error ? error.name : 'unknown')
     return { status: 'unavailable' }

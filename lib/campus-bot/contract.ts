@@ -8,6 +8,22 @@ import { z } from 'zod'
  *  turn carries the check question it asked, if any; a reply's memory trick has its own, shorter limit. */
 export const CHAT_LIMITS = { messageChars: 500, turnChars: 600, turns: 6, checkChars: 300, memoryTrickChars: 200 } as const
 
+/** The buttons under Campus Bot's newest reply that are chat requests (owner decisions B5 and B6, mock 8): explain the
+ *  last reply again, more simply, or make flashcards from this topic's notes. The server decides what each one asks. */
+export const CHAT_ACTIONS = ['explain-again', 'flashcards'] as const
+export const chatAction = z.enum(CHAT_ACTIONS)
+export type ChatAction = z.infer<typeof chatAction>
+
+/** A set of flashcards as the student sees it and the database keeps it (20261124100000): 4 to 10 cards, each a term
+ *  and its meaning in plain text. */
+export const FLASHCARD_LIMITS = { minCards: 4, maxCards: 10, termChars: 80, meaningChars: 200 } as const
+const flashcard = z.object({
+  term: z.string().min(1).max(FLASHCARD_LIMITS.termChars).refine(value => value.trim() !== ''),
+  meaning: z.string().min(1).max(FLASHCARD_LIMITS.meaningChars).refine(value => value.trim() !== ''),
+}).strict()
+export const flashcardsSchema = z.array(flashcard).min(FLASHCARD_LIMITS.minCards).max(FLASHCARD_LIMITS.maxCards)
+export type Flashcard = z.infer<typeof flashcard>
+
 const uuid = z.string().uuid().transform(value => value.toLowerCase())
 const courseSlug = z.string().min(1).max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
 const turnText = z.string().min(1).max(CHAT_LIMITS.turnChars)
@@ -21,10 +37,12 @@ const chatTurn = z.discriminatedUnion('role', [
 export const campusBotCommandSchema = z.discriminatedUnion('operation', [
   // Explain: only the attempt and the question. The choice, the key and the notes are read on the server.
   z.object({ operation: z.literal('explain'), attemptId: uuid, questionId: uuid }).strict(),
-  // Ask: the topic being read, a fresh id for this message (a retry repeats it), the message and the recent turns.
+  // Ask: the topic being read, a fresh id for this message (a retry repeats it), the message and the recent turns. A
+  // button's action is named, never worded: the page sends the button's words as the message, so the student's turn
+  // shows them, and the server ignores them.
   z.object({ operation: z.literal('ask'), courseSlug, itemId: uuid, requestId: uuid,
     message: z.string().max(CHAT_LIMITS.messageChars).refine(value => value.trim().length > 0),
-    history: z.array(chatTurn).max(CHAT_LIMITS.turns) }).strict(),
+    history: z.array(chatTurn).max(CHAT_LIMITS.turns), action: chatAction.optional() }).strict(),
 ])
 export type CampusBotCommand = z.input<typeof campusBotCommandSchema>
 export type ParsedCampusBotCommand = z.output<typeof campusBotCommandSchema>
@@ -69,9 +87,12 @@ export const askResultSchema = z.discriminatedUnion('status', [
   // The reply, how it marked an answer, the check question it asks next and a memory trick. Never the check's answer.
   z.object({ status: z.literal('answered'), text: replyText, inNotes: z.boolean(), verdict: chatVerdict,
     check: checkText.nullable(), memoryTrick: z.string().min(1).max(CHAT_LIMITS.memoryTrickChars).nullable() }).strict(),
+  // Make flashcards: the cards, in order.
+  z.object({ status: z.literal('flashcards'), cards: flashcardsSchema }).strict(),
   ...shared,
 ])
 export type AskResult = z.infer<typeof askResultSchema>
 
 export type CampusBotResult = ExplainResult | AskResult
-export type CampusBotProblem = Exclude<CampusBotResult, { status: 'explained' | 'not-covered' | 'check-failed' | 'answered' }>
+export type CampusBotProblem = Exclude<CampusBotResult,
+  { status: 'explained' | 'not-covered' | 'check-failed' | 'answered' | 'flashcards' }>

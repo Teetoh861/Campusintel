@@ -1,8 +1,9 @@
 // scripts/campus-bot/review-samples.cjs — The human review of Campus Bot before launch. For each named course it runs
 // the real Explain prompt (and, on a calculation course, the check) over a fixed sample of practice questions, and the
-// real Ask Campus Bot prompt over scripted messages on the first notes topics, then a check-question flow on each of
-// those topics (Campus Bot asks a quick check; it is answered rightly, then wrongly), then writes one sheet (CSV) for a
-// reviewer to mark and ends with a count of each kind of violation. The sample comes through the service role (admin_campus_bot_review_sample); nothing is written to
+// real Ask Campus Bot prompt over scripted messages on the first notes topics, then the chat's flashcards (asked for in
+// words, then Make flashcards), then a check-question flow on each of those topics (Campus Bot asks a quick check; it is
+// answered rightly, then wrongly, then the student taps Explain again), then writes one sheet (CSV) for a reviewer to
+// mark and ends with a count of each kind of violation. The sample comes through the service role (admin_campus_bot_review_sample); nothing is written to
 // the database, and no student is involved.
 //
 // Mock (the default) answers with the local stand-in: no provider is called and nothing is spent. --live calls Claude
@@ -10,6 +11,7 @@
 // pass it. Run it live only with the owner's go-ahead.
 //   node -r ./lib/auth/test-loader.cjs scripts/campus-bot/review-samples.cjs --courses use-of-english,principles-economics-1 \
 //     [--questions 6] [--topics 2] [--out <folder>] [--live --max-usd 1]
+// Include a calculation course (such as business-statistics-1) so flashcards are reviewed where formulas matter.
 // It reads NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY (as scripts/entitlements/ops.cjs does) and never prints them.
 const fs = require('node:fs')
 const path = require('node:path')
@@ -32,9 +34,13 @@ const MESSAGES = [
 // this clearly wrong answer (expect "not-quite").
 const CHECK_REQUEST = MESSAGES[2]
 const WRONG_ANSWER = 'The capital of France.'
+// Flashcards asked for in words: Campus Bot should point to the Make flashcards button and ask no check question.
+const FLASHCARDS_REQUEST = 'Can you make flashcards for this topic?'
+// A set of flashcards under this many cards is a warning: the prompt asks for 8 to 10.
+const FLASHCARDS_WANTED = 8
 const COLUMNS = ['kind', 'course', 'item', 'question or message', 'official answer', 'student choice',
   'official explanation', 'notes used', 'outcome', 'Campus Bot', 'verdict', 'expected verdict', 'check question',
-  'memory trick', 'bold terms', 'guards', 'removed by a guard (reviewer only)', 'words', 'tokens in', 'tokens out', 'check tokens', 'cost usd', 'reviewer: pass or fail',
+  'memory trick', 'bold terms', 'guards', 'removed by a guard (reviewer only)', 'words', 'cards', 'tokens in', 'tokens out', 'check tokens', 'cost usd', 'reviewer: pass or fail',
   'reviewer notes']
 
 function options(args) {
@@ -184,25 +190,63 @@ async function run(args, env = process.env, transport = fetch, write = line => p
       const item = `topic ${topic.number}: ${topic.title}`
       // One chat message: its row, what the student would see, and the check question's answer (this script runs on
       // the server, so it may read it; the sheet never shows it).
-      const ask = async (kind, message, history, expected) => {
-        const sent = deps.studentText(message, 500)
+      // Explain again sends the server's fixed message, never the button's words, and its reply is never marked. As on the
+      // server, the prompt carries as much of the topic's notes as fits the chat step's input cap.
+      const ask = async (kind, message, history, expected, explainAgain = false) => {
+        const sent = explainAgain ? deps.explainAgainMessage : deps.studentText(message, 500)
         const row = { kind, course: key, item, asked: sent === message ? message : `${message} (sent as: ${sent})`,
           notes: `${notes.passages.length} passages`, expected }
-        const reply = await call('chat', deps.askPrompt(course, topic.title, notes, history, sent), 'low')
+        const fitted = deps.fitNotesPrompt(notes, given => deps.askPrompt(course, topic.title, given, history, sent, explainAgain),
+          limits('chat'))
+        if (fitted === null) { rows.push({ ...row, outcome: 'failed: the notes do not fit the prompt' }); return null }
+        row.notes = `${fitted.notes.passages.length} of ${notes.passages.length} passages`
+        const reply = await call('chat', fitted.prompt, 'low')
         if (reply.kind === 'failed') { rows.push({ ...row, outcome: `failed: ${reply.code}` }); return null }
-        const read = reply.kind === 'completed' ? deps.readChatReply(reply.json, deps.checkPending(history)) : null
+        const read = reply.kind === 'completed'
+          ? deps.readChatReply(reply.json, deps.checkPending(history), explainAgain) : null
         const answer = read?.reply ?? null
         const rawInNotes = reply.kind === 'completed' && typeof reply.json?.inNotes === 'boolean' ? reply.json.inNotes : null
         // Kept on the row for the leak count only; no column of the sheet shows it.
         const checkAnswer = reply.kind === 'completed' && typeof reply.json?.checkAnswer === 'string' ? reply.json.checkAnswer : ''
         rows.push({ ...row, tokensIn: reply.usage.inputTokens, tokensOut: reply.usage.outputTokens, cost: reply.usage.estimatedCostUsd,
           outcome: answer === null ? (read?.guards.includes('lead-in-without-check')
-            ? 'failed: a lead-in with no check question (released, not charged)' : `not usable (${reply.kind})`)
+            ? 'failed: a lead-in with no check question (released, not charged)'
+            : read?.guards.includes('explain-again-mentions-chat') ? 'failed: Explain again mentioning the chat (released, not charged)'
+              : read?.guards.includes('reply-ellipsis') ? 'failed: an ellipsis in the reply (released, not charged)'
+                : read?.guards.includes('reply-check-mention-removed')
+                  ? 'failed: nothing left after removing talk about the check (released, not charged)'
+                  : `not usable (${reply.kind})`)
             : answer.inNotes ? 'from the notes' : 'outside the notes',
           text: answer?.text ?? '', words: answer ? deps.wordCount(answer.text) : '', verdict: answer?.verdict ?? '',
           check: answer?.check ?? '', memoryTrick: answer?.memoryTrick ?? '', guards: read?.guards ?? [], answer,
-          rawInNotes, checkAnswer, removed: removedCell(read?.removed, checkAnswer), bold: boldCell(answer, deps) })
+          rawInNotes, checkAnswer, removed: removedCell(read?.removed, checkAnswer), bold: boldCell(answer, deps),
+          rawVerdict: reply.kind === 'completed' && typeof reply.json?.verdict === 'string' ? reply.json.verdict : null })
         return answer === null ? null : { answer, checkAnswer }
+      }
+      // Make flashcards, as the server makes them: the topic's notes alone, as much as fits the chat step's input cap,
+      // and the cards through the same guards. Each card is "term | meaning"; what a guard dropped is listed with why.
+      const flashcards = async () => {
+        const row = { kind: 'flashcards', course: key, item, asked: 'Make flashcards', notes: `${notes.passages.length} passages` }
+        const fitted = deps.fitNotesPrompt(notes, sent => deps.flashcardsPrompt(course, topic.title, sent), limits('chat'))
+        if (fitted === null) {
+          rows.push({ ...row, outcome: 'failed: the notes do not fit the prompt', flashcards: { failed: true, ungrounded: 0 } })
+          return
+        }
+        row.notes = `${fitted.notes.passages.length} of ${notes.passages.length} passages`
+        const reply = await call('chat', fitted.prompt, 'low')
+        if (reply.kind === 'failed') {
+          rows.push({ ...row, outcome: `failed: ${reply.code}`, flashcards: { failed: true, ungrounded: 0 } })
+          return
+        }
+        const read = reply.kind === 'completed' ? deps.readFlashcards(reply.json, fitted.notes) : null
+        const cards = read?.cards ?? []
+        rows.push({ ...row, tokensIn: reply.usage.inputTokens, tokensOut: reply.usage.outputTokens, cost: reply.usage.estimatedCostUsd,
+          outcome: cards.length > 0 ? `${cards.length} cards` : read === null ? `failed: not usable (${reply.kind})`
+            : 'failed: fewer than 4 cards left (released, not charged)',
+          text: cards.map(card => `${card.term} | ${card.meaning}`).join('\n'), cards: cards.length, guards: read?.guards ?? [],
+          removed: (read?.dropped ?? []).map(drop => `${drop.term} | ${drop.meaning} (${drop.guard})`).join('\n'),
+          flashcards: { failed: cards.length === 0, count: cards.length,
+            ungrounded: (read?.dropped ?? []).filter(drop => drop.guard === 'term-not-in-notes').length } })
       }
       for (const message of MESSAGES) {
         if (!affordable('chat')) { stopped = true; break }
@@ -210,20 +254,34 @@ async function run(args, env = process.env, transport = fetch, write = line => p
       }
       if (stopped) break
       if (!affordable('chat')) { stopped = true; break }
+      await ask('flashcards: asked in words', FLASHCARDS_REQUEST, [], '')
+      if (!affordable('chat')) { stopped = true; break }
+      await flashcards()
+      if (!affordable('chat')) { stopped = true; break }
       const asked = await ask('check: ask', CHECK_REQUEST, [], '')
       if (asked === null || asked.answer.check === null) continue
       const history = [{ role: 'student', text: deps.studentText(CHECK_REQUEST, 500) },
         { role: 'bot', text: asked.answer.text, check: asked.answer.check }]
+      let notQuite = null
       for (const [kind, message, expected] of [['check: right answer', asked.checkAnswer, 'correct'],
         ['check: wrong answer', wrongAnswer(asked.answer.check, asked.checkAnswer, deps), 'not-quite']]) {
         if (!affordable('chat')) { stopped = true; break }
-        await ask(kind, message, history, expected)
+        const answered = await ask(kind, message, history, expected)
+        if (kind === 'check: wrong answer' && answered !== null) notQuite = { message, answer: answered.answer }
       }
+      if (stopped || notQuite === null) continue
+      // Explain again after Not quite: the reply explained more simply, never marked, never the same words again.
+      if (!affordable('chat')) { stopped = true; break }
+      const again = [...history, { role: 'student', text: deps.studentText(notQuite.message, 500) },
+        { role: 'bot', text: notQuite.answer.text, ...(notQuite.answer.check ? { check: notQuite.answer.check } : {}) }]
+      await ask('check: explain again', 'Explain again', again, '', true)
+      const explained = rows.at(-1)
+      if (explained.kind === 'check: explain again') explained.previous = notQuite.answer.text
     }
   }
   const sheet = [COLUMNS.map(cell).join(','), ...rows.map(row => [row.kind, row.course, row.item, row.asked, row.official,
     row.chosen, row.officialExplanation, row.notes, row.outcome, row.text, row.verdict, row.expected, row.check,
-    row.memoryTrick, row.bold, (row.guards ?? []).join(' '), row.removed, row.words, row.tokensIn, row.tokensOut, row.checkTokens,
+    row.memoryTrick, row.bold, (row.guards ?? []).join(' '), row.removed, row.words, row.cards, row.tokensIn, row.tokensOut, row.checkTokens,
     row.cost === undefined ? '' : Number(row.cost).toFixed(6), '', ''].map(cell).join(','))].join('\n')
   const summary = violations(rows, deps)
   const folder = path.resolve(opts.out ?? '.')
@@ -231,14 +289,21 @@ async function run(args, env = process.env, transport = fetch, write = line => p
   fs.mkdirSync(folder, { recursive: true })
   fs.writeFileSync(file, `${sheet}\n`)
   write(JSON.stringify({ mode: live ? 'live' : 'mock', rows: rows.length, explanations: rows.filter(row => row.kind === 'explain').length,
-    messages: rows.filter(row => row.kind !== 'explain').length, estimated_usd: Number(spent.toFixed(6)),
+    messages: rows.filter(row => row.kind !== 'explain' && row.kind !== 'flashcards').length,
+    flashcards: rows.filter(row => row.kind === 'flashcards').length, estimated_usd: Number(spent.toFixed(6)),
     stopped_at_cap: stopped, sheet: file }))
   write(`violations: wrong verdict ${summary.wrongVerdict}, verdict word kept at the start ${summary.verdictWordKept}, `
     + `answer leaked ${summary.answerLeaked}, "not covered" label on a verdict reply ${summary.notCoveredOnVerdict}, `
     + `reply refers to a check that isn't shown ${summary.refersToMissingCheck}, check with two questions `
     + `${summary.twoQuestions}, request to be tested with no check ${summary.testedWithoutCheck}, Not quite reply not `
     + `starting "The answer is" ${summary.notQuiteWithoutAnswer}, emoji written ${summary.emoji}, field with its bold `
-    + `markers removed ${summary.boldRemoved}; `
+    + `markers removed ${summary.boldRemoved}, Explain again marked by the model ${summary.explainAgainMarked}, `
+    + `Explain again repeating the last reply ${summary.explainAgainRepeated}, flashcards asked for in words with a check `
+    + `question ${summary.flashcardsRequestCheck}, flashcards asked for in words not naming Make flashcards `
+    + `${summary.flashcardsRequestUnnamed}, flashcards failed ${summary.flashcardsFailed}, flashcards dropped for `
+    + `grounding ${summary.flashcardsUngrounded}, warning: sets under ${FLASHCARDS_WANTED} cards ${summary.flashcardsFew}, `
+    + `Explain again with a check ${summary.explainAgainWithCheck}, Explain again mentioning the chat `
+    + `${summary.explainAgainMentionsChat}, reply mentioning the check ${summary.replyMentionsCheck}; `
     + `guards fired: ${Object.entries(summary.guards).map(([name, n]) => `${name} ${n}`).join(', ') || 'none'}`)
   return { rows, file, spent, stopped, summary }
 }
@@ -293,7 +358,16 @@ const twoQuestions = check => (check.match(/\?/g) ?? []).length > 1 || SECOND_QU
  * - a request to be tested that gets no check question;
  * - a Not quite reply that does not start "The answer is";
  * - an emoji in any field the model wrote (removed before it is shown);
- * - a field whose bold markers were removed (unpaired, more than three, or no longer fitting).
+ * - a reply or memory trick whose bold markers were removed (unpaired, over its limit, or no longer fitting); a check
+ *   question is plain text on purpose, so its removed bold is not counted here;
+ * - Explain again that the model marked (the server shows it unmarked: this counts the model, not the student's screen);
+ * - Explain again that repeats the reply it was asked to explain again, word for word;
+ * - flashcards asked for in words that get a check question, or a reply that does not name Make flashcards;
+ * - flashcards that failed (no usable answer, or fewer than 4 cards left), and each card dropped because its term names
+ *   something the notes sent do not contain; a set under 8 cards is a warning;
+ * - Explain again shown with a check question (it never has one), and Explain again that failed for mentioning the chat;
+ * - a reply shown that still talks about the check question (a lead-in to the check question it shows is fine), or,
+ *   with no check question, ends by announcing one.
  * The guards column says what the model wrote before the server corrected it.
  */
 function violations(rows, deps) {
@@ -316,7 +390,28 @@ function violations(rows, deps) {
       && !/^the answer is\b/i.test(unbold(row.answer.text))).length,
     // What the model wrote: the server removes every emoji before anything is shown or stored.
     emoji: rows.filter(row => row.emoji || (row.guards ?? []).includes('emoji-removed')).length,
-    boldRemoved: rows.flatMap(row => row.guards ?? []).filter(name => name.endsWith('-bold-removed')).length,
+    // A check question is plain text on purpose (check-bold-removed): only the reply and the memory trick count here.
+    boldRemoved: rows.flatMap(row => row.guards ?? []).filter(name => name.endsWith('-bold-removed')
+      && name !== 'check-bold-removed').length,
+    explainAgainMarked: rows.filter(row => row.kind === 'check: explain again' && ((row.rawVerdict !== null
+      && row.rawVerdict !== 'none') || (row.answer && row.answer.verdict !== 'none'))).length,
+    explainAgainRepeated: shown.filter(row => row.kind === 'check: explain again' && typeof row.previous === 'string'
+      && deps.comparable(unbold(row.answer.text)) === deps.comparable(unbold(row.previous))).length,
+    flashcardsRequestCheck: shown.filter(row => row.asked === FLASHCARDS_REQUEST && row.answer.check !== null).length,
+    flashcardsRequestUnnamed: rows.filter(row => row.asked === FLASHCARDS_REQUEST
+      && !(row.answer && /\bmake flashcards\b/i.test(unbold(row.answer.text)))).length,
+    flashcardsFailed: rows.filter(row => row.flashcards?.failed).length,
+    flashcardsUngrounded: rows.reduce((sum, row) => sum + (row.flashcards?.ungrounded ?? 0), 0),
+    flashcardsFew: rows.filter(row => row.flashcards && !row.flashcards.failed && row.flashcards.count < FLASHCARDS_WANTED).length,
+    // After the guards: Explain again never has a check question, and no reply talks about the check question or, with
+    // none shown, ends by announcing one. A lead-in the server keeps because a check is shown ("Here's a quick check.")
+    // is not talk about it.
+    explainAgainWithCheck: shown.filter(row => row.kind === 'check: explain again' && row.answer.check !== null).length,
+    replyMentionsCheck: shown.filter(row => deps.removeSentences(row.answer.text, sentence => deps.mentionsCheck(sentence)
+      && !(row.answer.check !== null && deps.isLeadIn(sentence))).removed > 0 || (row.answer.check === null
+      && deps.removeSentences(row.answer.text, deps.announcesQuestion, { lastOnly: true }).removed > 0)).length,
+    explainAgainMentionsChat: rows.filter(row => row.kind === 'check: explain again'
+      && (row.guards ?? []).includes('explain-again-mentions-chat')).length,
     guards,
   }
 }
@@ -329,12 +424,15 @@ function loadDeps() {
   const { estimateCostUsd } = require('../../lib/ai-practice/pricing.ts')
   const { checkPending, readChatReply } = require('../../lib/campus-bot/ask.ts')
   const { readExplanation, readVerdict } = require('../../lib/campus-bot/explain.ts')
-  const { callCampusBotModel } = require('../../lib/campus-bot/model-call.ts')
+  const { readFlashcards } = require('../../lib/campus-bot/flashcards.ts')
+  const { callCampusBotModel, fitNotesPrompt } = require('../../lib/campus-bot/model-call.ts')
   const { notesContextFromSearch, notesContextFromTopic } = require('../../lib/campus-bot/notes-context.ts')
-  const { buildAskPrompt, buildExplainCheckPrompt, buildExplainPrompt } = require('../../lib/campus-bot/prompts.ts')
+  const { buildAskPrompt, buildExplainCheckPrompt, buildExplainPrompt, buildFlashcardsPrompt, EXPLAIN_AGAIN_MESSAGE } =
+    require('../../lib/campus-bot/prompts.ts')
   const { createFakeCampusBotProvider } = require('../../lib/campus-bot/provider.ts')
-  const { answerLeak, answerWords, boldTerms, echoLeak, hasEmoji, questionOptions, stripLeadingVerdict, studentText,
-    wordCount, wordsOf } = require('../../lib/campus-bot/reply-text.ts')
+  const { announcesQuestion, answerLeak, answerWords, boldTerms, comparable, echoLeak, hasEmoji, isLeadIn, mentionsCheck,
+    questionOptions, removeSentences, stripLeadingVerdict, studentText, wordCount, wordsOf } =
+    require('../../lib/campus-bot/reply-text.ts')
   return {
     fakeProvider: () => createFakeCampusBotProvider(),
     liveProvider: (model, apiKey) => createAnthropicProvider({ model, apiKey, timeoutMs: CALL_TIMEOUT_MS }),
@@ -342,11 +440,12 @@ function loadDeps() {
     notesFromTopic: notesContextFromTopic, explainPrompt: buildExplainPrompt, checkPrompt: buildExplainCheckPrompt,
     askPrompt: buildAskPrompt, readExplanation, readVerdict, readChatReply, checkPending, studentText, wordCount,
     stripLeadingVerdict, answerLeak, answerWords, boldTerms, echoLeak, hasEmoji, questionOptions, wordsOf,
-    now: () => new Date(),
+    flashcardsPrompt: buildFlashcardsPrompt, readFlashcards, fitNotesPrompt, explainAgainMessage: EXPLAIN_AGAIN_MESSAGE,
+    comparable, mentionsCheck, announcesQuestion, removeSentences, isLeadIn, now: () => new Date(),
   }
 }
 
-module.exports = { run, cell, twoQuestions, wrongAnswer, MESSAGES, WRONG_ANSWER }
+module.exports = { run, cell, twoQuestions, wrongAnswer, MESSAGES, WRONG_ANSWER, FLASHCARDS_REQUEST }
 
 if (require.main === module) {
   run(process.argv.slice(2)).catch(error => {

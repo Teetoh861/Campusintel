@@ -27,7 +27,7 @@ export type QuizDeps = {
   wait: (ms: number) => Promise<void>
 }
 
-const DEFAULT_DEPS: QuizDeps = {
+export const DEFAULT_DEPS: QuizDeps = {
   send: requestTopicSet,
   newId: () => crypto.randomUUID(),
   wait: ms => new Promise(resolve => setTimeout(resolve, ms)),

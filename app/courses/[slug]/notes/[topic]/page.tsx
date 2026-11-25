@@ -68,7 +68,8 @@ async function Topic({ slug, topic, continuityToken }: { slug: string; topic: st
       {/* Under the topic's own practice buttons: what Campus Bot does with this topic. */}
       {ask || quiz ? <CampusBotArea>
         {ask ? <AskCampusBot courseSlug={course.slug} itemId={note.itemId} topicTitle={note.title}
-          continuityToken={continuityToken} signInHref={signInHref} reloadHref={path} /> : null}
+          continuityToken={continuityToken} signInHref={signInHref} reloadHref={path}
+          offers={{ flashcards: noteWords(note) >= AI_PRACTICE_LIMITS.minSourceWords, quiz }} /> : null}
         {quiz ? <QuizMe courseSlug={course.slug} itemId={note.itemId} passLine={passLine}
           continuityToken={continuityToken} signInHref={signInHref} reloadHref={path} /> : null}
       </CampusBotArea> : null}
