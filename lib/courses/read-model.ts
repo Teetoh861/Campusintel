@@ -261,23 +261,28 @@ type ResolvedPublication = { content: LinkedContent } & StudentCourseDetail
 
 /** Per-course decisions, shared within this request only. Free courses need no grant/projection read. */
 type AccessDecision = CourseDecision & { selectionLocked?: boolean }
-type AccessReader = (institutionalCourseId: string) => Promise<AccessDecision | 'signed-out' | 'unavailable'>
+type AccessReader = ((institutionalCourseId: string) => Promise<AccessDecision | 'signed-out' | 'unavailable'>)
+  & { testerOffSite: () => boolean }
 const ACCESS_BATCH_SIZE = 200
 
 function accessReader(client: StudentClient, courseIds: readonly string[]): AccessReader {
   let selection: ReturnType<typeof readCourseSelection> | null = null
   let pending: Promise<Map<string, CourseDecision> | 'signed-out' | 'unavailable'> | null = null
+  let offSite = false
   const load = async (): Promise<Map<string, CourseDecision> | 'signed-out' | 'unavailable'> => {
     const ids = [...new Set(courseIds)]
     const decisions = new Map<string, CourseDecision>()
     for (let offset = 0; offset < ids.length; offset += ACCESS_BATCH_SIZE) {
       const read = await getCourseAccessForVerifiedStudent(client, ids.slice(offset, offset + ACCESS_BATCH_SIZE))
-      if (read.status !== 'ok') return read.status
+      if (read.status !== 'ok') {
+        if (read.status === 'unavailable' && read.testerOffSite) offSite = true
+        return read.status
+      }
       for (const [id, decision] of read.decisions) decisions.set(id, decision)
     }
     return decisions
   }
-  return async id => {
+  const reader = async (id: string): Promise<AccessDecision | 'signed-out' | 'unavailable'> => {
     pending ??= load()
     const read = await pending
     if (typeof read === 'string') return read
@@ -288,6 +293,7 @@ function accessReader(client: StudentClient, courseIds: readonly string[]): Acce
     const lock = await selection
     return lock === null ? 'unavailable' : { ...decision, selectionLocked: lock.locked }
   }
+  return Object.assign(reader, { testerOffSite: () => offSite })
 }
 
 /** A course's practice bank size, from one count-only read shared by every course of a reader call. */
@@ -394,7 +400,7 @@ function resolveContent(
   return resolvePublishedContent(client, repository, structure.institutionalCourseId, structure.isFree, access, bankSizes)
 }
 
-type ResolvedCourses = { courses: StudentCourse[]; cbtBankSizes: Map<string, number> }
+type ResolvedCourses = { courses: StudentCourse[]; cbtBankSizes: Map<string, number>; testerOffSite: boolean }
 
 /** Bounded fan-out across linked identities only; one lost session fails the whole read. */
 async function resolveCourses(
@@ -413,7 +419,7 @@ async function resolveCourses(
     courses.push({ ...structure, content: resolved.content })
     if (resolved.practiceBankSize !== null) cbtBankSizes.set(structure.institutionalCourseId, resolved.practiceBankSize)
   }
-  return { courses: courses.sort(compareCodeThenId), cbtBankSizes }
+  return { courses: courses.sort(compareCodeThenId), cbtBankSizes, testerOffSite: access.testerOffSite() }
 }
 
 /** Every identity the Student App presents as a course row: institutional, or repository-only. */
@@ -509,6 +515,8 @@ export async function getStudentCourseByIdForVerifiedStudent(
     if (structure === null) return { status: 'invariant-failure' }
     const resolved = await resolveCourses(client, [structure])
     if (resolved === 'signed-out') return { status: 'signed-out' }
+    // Tester access read by a server not on the test site: no content state at all, so no action can follow.
+    if (resolved.testerOffSite) return { status: 'unavailable' }
     const [course] = resolved.courses
     return course ? { status: 'ok', course } : { status: 'invariant-failure' }
   } catch {
@@ -556,7 +564,8 @@ export async function getCurrentStudentCoursesForVerifiedStudent(
       structures.push(structure)
     }
     const resolved = await resolveCourses(client, structures)
-    return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', selection, ...resolved }
+    if (resolved === 'signed-out') return { status: 'signed-out' }
+    return { status: 'ok', selection, courses: resolved.courses, cbtBankSizes: resolved.cbtBankSizes }
   } catch {
     return { status: 'unavailable' }
   }
@@ -616,7 +625,10 @@ export async function getStudentCourseBySlugForVerifiedStudent(
     const resolved = await resolvePublication(client, repository, structure.institutionalCourseId, structure.isFree, access,
       bankSizeReader(client, [{ repositoryCourseId, institutionalCourseId: structure.institutionalCourseId,
         isFree: structure.isFree }], access))
-    return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok',
+    if (resolved === 'signed-out') return { status: 'signed-out' }
+    // Tester access read by a server not on the test site: no content state at all, so no action can follow.
+    if (access.testerOffSite()) return { status: 'unavailable' }
+    return { status: 'ok',
       course: { ...structure, repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
   } catch {
     return { status: 'unavailable' }

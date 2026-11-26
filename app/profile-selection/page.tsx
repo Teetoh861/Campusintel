@@ -37,7 +37,8 @@ async function courseSelectionMode(): Promise<CourseSelectionMode | null> {
     if (lock.state !== 'incomplete') return 'open'
     const read = await readEntitlementForVerifiedStudent(client, { discoveryEligibility: false })
     if (read.status !== 'ok') return null
-    const running = read.entitlement.tier === 'full' || read.entitlement.trial.status === 'active'
+    const running = (read.entitlement.tier === 'full' && read.entitlement.access?.source !== 'tester')
+      || read.entitlement.trial.status === 'active'
     return running ? 'first-pick' : 'open'
   } catch {
     return null

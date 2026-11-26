@@ -1,0 +1,42 @@
+{
+  "about": "md5(pg_get_functiondef(f)) recorded from a local database holding every migration up to 20261124100000_campus_bot_flashcards.sql, before 20261125200000_owner_tester_access.sql was applied (2026-11-25, develop c3f71c8, Supabase CLI 2.109.1). 'redefined': the 15 functions that migration replaces; its removal migration must restore each to these fingerprints. 'unchanged': payment, refund, plan-use, course-scope and lock functions it must not touch; supabase/tests/owner_tester_access.test.sql checks them.",
+  "produced_by": "owner-tester-access-evidence/record-functiondefs.sh supabase_db_Campusintel, with the migration moved out of supabase/migrations during a fresh supabase start",
+  "redefined": {
+    "private.ai_allowance_admission(uuid,text[])": "3b7d6e900ac904f4be9479fc6251c983",
+    "private.ai_funding_current(uuid,timestamptz)": "e0f69f5a70fd91fa7ed33399a56e10b8",
+    "private.attempt_review_unavailable_reason(public.quiz_attempts)": "141139a5e23ca79367f39272cdf39bae",
+    "private.campus_bot_reply_funding(uuid,timestamptz)": "716d31683f27f967ac86a8aecff2d1b2",
+    "private.course_access_decision(uuid,uuid,timestamptz)": "4a9649169e0167a231782fedbfaf1cf0",
+    "private.course_on_current_list(uuid,uuid,timestamptz)": "6cc511835acbdcb6b3552ac4ba16b6b1",
+    "private.discovery_email_allowed(uuid)": "8661ea4973e2696be89229744bc6e42b",
+    "private.guard_course_selection()": "1a13d60686da38ed884d94849d9b00de",
+    "public.begin_ai_practice_generation(uuid,uuid,uuid,text[])": "aca74180510f26acdc99ebd6b53567d8",
+    "public.begin_campus_bot_chat(uuid,uuid,uuid,uuid,boolean)": "68617b34bfe02bea4f34eb53c2b5d3df",
+    "public.begin_campus_bot_explanation(uuid,uuid,uuid,boolean)": "e6e98ff93bc40505b32bf300d901e921",
+    "public.begin_campus_bot_topic_set(uuid,uuid,uuid,uuid,text[])": "6aaa70187a9a0f085fa1fc7bd5ab40d5",
+    "public.finish_campus_bot_topic_set(uuid,uuid,text,text,jsonb,jsonb,jsonb)": "51e7e4be8a64d9b3ecfb3aeb17369bfe",
+    "public.get_my_ai_allowance()": "27d6d319373e3a28c185cb8e66693ec0",
+    "public.get_my_entitlement()": "ae909d6bf36e2ac8f95142884b343eb7"
+  },
+  "unchanged": {
+    "public.attach_payment_checkout(uuid,text,text,text,timestamp with time zone)": "44c7b7c3838cdf311073d0546ae22ec0",
+    "public.claim_payment_checks(integer,boolean,uuid)": "a8c71a05c3ce0d551f3753fa9a7fbbc4",
+    "public.create_payment_order(uuid,text,bigint,uuid,text,text)": "c732344dee71e1eb66081153378ba39b",
+    "public.fulfil_payment(uuid,text,text,text,bigint,text,text,timestamp with time zone,text,text)": "192355fbaad804000e1a67b582b95808",
+    "public.get_my_payment_order(uuid)": "43e297e6f22f1e96e48c805140dda649",
+    "public.plans_on_sale()": "a92ab56296d74f046ab2d42ae74b8df0",
+    "private.course_selection_state_for(uuid,uuid,timestamp with time zone,timestamp with time zone)": "4671132487086bb7dc04fc1d06773b88",
+    "private.current_course_scope(uuid,timestamp with time zone)": "ffe8bf8d221ab341c6a245b1eb90644b",
+    "private.has_current_paid_plan(uuid,timestamp with time zone)": "c3ed6b857fd1211daffa45dfa1fbda86",
+    "private.mark_plan_use(uuid,text,uuid,text,timestamp with time zone)": "4440c34cace05978a9be32673a424587",
+    "private.plan_use_events_guard()": "9a54cbe23a0368025ed93e6329aae665",
+    "private.refund_assessment(private.payment_orders,private.payment_fulfilments,text[],timestamp with time zone)": "09373aceace63856d30391dc4b8e07df",
+    "public.record_payment_check(uuid,text,uuid)": "289cb631c35da3b3070f8d8c94b7a3c3",
+    "public.record_payment_event(text,text,text,uuid,text)": "54cee0fbe9d81711d7e8824c5a17c5ef",
+    "public.record_payment_outcome(uuid,text,text,text)": "b17d154f162a1bc00d2a41983c16b901",
+    "public.record_plan_use(uuid,text,uuid,text)": "a18ddb169965f44908a681e4a95231f2",
+    "public.record_refund_result(uuid,text,text,text,text,text)": "a635517167f25ebbf120f176be599e6b",
+    "public.refund_eligibility(uuid,text[],timestamp with time zone,uuid)": "b0cd7713c12f9e2f20e358380d220259",
+    "public.refund_order(uuid,text,uuid,text[],text,text,timestamp with time zone,uuid)": "3f1d8364717659b2e5466ff4fd233722"
+  }
+}

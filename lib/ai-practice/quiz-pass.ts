@@ -11,7 +11,7 @@ import type { createClient } from '@/lib/supabase/server'
 type StudentClient = Awaited<ReturnType<typeof createClient>>
 
 const allowanceRow = z.object({ state: z.enum(['not-entitled', 'active', 'expired']),
-  source: z.enum(['trial', 'early_access', 'paid', 'test']).optional(), total: z.number().int().nullable(),
+  source: z.enum(['trial', 'early_access', 'paid', 'test', 'tester']).optional(), total: z.number().int().nullable(),
   used: z.number().int(), ends_at: z.string().optional(), source_char_limit: z.number().int().positive().nullish() })
 
 export async function readQuizPassLine(client: StudentClient): Promise<string | null> {

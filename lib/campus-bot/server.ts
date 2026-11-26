@@ -16,6 +16,7 @@ import { getStudentCourseBySlugForVerifiedStudent } from '@/lib/courses/read-mod
 import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { createClient } from '@/lib/supabase/server'
+import { fundedByTesterOffSite } from '@/lib/tester/site.cjs'
 import { askCampusBot, CHAT_TIMEOUT_MS } from './ask'
 import { campusBotCommandSchema, CHAT_LIMITS, chatVerdict, flashcardsSchema } from './contract'
 import { explainQuestion, EXPLAIN_CHECK_TIMEOUT_MS, EXPLAIN_WRITE_TIMEOUT_MS } from './explain'
@@ -142,6 +143,7 @@ export function createSupabaseExplainEnv(client: StudentClient, userId: string, 
       }
       if (row.state === 'session-limit' || row.state === 'week-limit') return { state: row.state, resetsAt: row.resets_at }
       if (row.state !== 'started') return { state: row.state }
+      if (fundedByTesterOffSite(data)) return null
       const notes = notesContextFromSearch(row.passages)
       if (notes === null || row.question.correct_option >= row.question.options.length
           || !outlasts(row.reservation_seconds, EXPLAIN_WRITE_TIMEOUT_MS + EXPLAIN_CHECK_TIMEOUT_MS)) return null
@@ -188,6 +190,7 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
       }
       if (row.state === 'session-limit' || row.state === 'week-limit') return { state: row.state, resetsAt: row.resets_at }
       if (row.state !== 'started') return { state: row.state }
+      if (fundedByTesterOffSite(data)) return null
       const notes = notesContextFromTopic(row.topic.title, row.passages)
       if (notes === null || !outlasts(row.reservation_seconds, CHAT_TIMEOUT_MS)) return null
       return { state: 'started', replyId: row.reply_id,

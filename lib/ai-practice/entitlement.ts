@@ -2,6 +2,7 @@
 // AI generation consumes a grant; it never creates one. Grants are issued only by trusted server code
 // through public.issue_ai_allowance_grant (supabase/migrations/20261016140000_ai_practice_uploads.sql).
 import 'server-only'
+import { isTesterSite } from '@/lib/tester/site.cjs'
 import type { AiGrantSource, AllowanceSummary } from './upload-contract'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -50,8 +51,11 @@ export function acceptedGrantSources(env: Env = process.env): AiGrantSource[] {
 export const NOT_ENTITLED: AllowanceSummary = Object.freeze({ state: 'not-entitled', source: null, total: 0, used: 0,
   endsAt: null })
 
-/** A grant from a source this deployment does not accept is shown exactly like no grant. */
-export function effectiveAllowance(summary: AllowanceSummary, accepted: readonly AiGrantSource[]): AllowanceSummary {
+/** A grant from a source this deployment does not accept is shown exactly like no grant. Tester access (decided by the
+ *  database, never sent to it) is shown only on the test site. */
+export function effectiveAllowance(summary: AllowanceSummary, accepted: readonly AiGrantSource[],
+  env: Env = process.env): AllowanceSummary {
+  if (summary.source === 'tester') return summary.state !== 'not-entitled' && isTesterSite(env) ? summary : NOT_ENTITLED
   if (summary.state === 'not-entitled' || summary.source === null || !accepted.includes(summary.source)) return NOT_ENTITLED
   return summary
 }

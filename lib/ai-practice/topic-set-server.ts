@@ -16,6 +16,7 @@ import { trialWording } from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent, readPlansOnSale } from '@/lib/entitlements/server'
 import { createClient } from '@/lib/supabase/server'
 import { acceptedGrantSources } from './entitlement'
+import { fundedByTesterOffSite } from '@/lib/tester/site.cjs'
 import { AI_ADMISSION_TIMEOUT_MS, AI_SETTLEMENT_TIMEOUT_MS, withAiDeadline } from './lifetime'
 import { formatProviderDiagnostic } from './provider'
 import { createAiPracticeServiceClient } from './supabase-env'
@@ -89,6 +90,7 @@ export function createSupabaseTopicSetEnv(client: StudentClient, userId: string,
       if (row.state === 'existing') return { state: 'existing', generationId: row.generation_id, status: row.status }
       if (row.state === 'session-limit' || row.state === 'week-limit') return { state: row.state, resetsAt: row.resets_at }
       if (row.state !== 'started') return { state: row.state }
+      if (fundedByTesterOffSite(data)) return null
       const topic = { itemId, title: row.topic.title, number: row.topic.number, revision: row.topic.revision,
         pinned: row.topic.pinned }
       const notes = notesContextFromTopic(topic.title, row.passages,

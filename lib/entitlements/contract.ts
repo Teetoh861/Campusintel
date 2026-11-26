@@ -56,7 +56,8 @@ const summaryWire = z.object({
   expiry_notice_hours: z.number().int().positive(),
   tier: z.enum(['full', 'free']),
   // Full access only: 'trial' here is a seven-day trial issued before the Discovery Pass, never a pass.
-  access: z.object({ source: z.enum(['trial', 'early_access', 'manual', 'paid']), ends_at: timestamp }).nullable(),
+  // 'tester': owner tester access (20261125200000), honoured only on the test site (lib/entitlements/server.ts).
+  access: z.object({ source: z.enum(['trial', 'early_access', 'manual', 'paid', 'tester']), ends_at: timestamp }).nullable(),
   // not-offered: this account has had Early Access. after-early-access is answered only by databases from before
   // 20261023120000; neither is ever shown as a reason.
   trial: z.object({ status: z.enum(['available', 'active', 'ended', 'after-early-access', 'not-offered']),
