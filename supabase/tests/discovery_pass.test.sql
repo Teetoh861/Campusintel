@@ -21,6 +21,9 @@ select is(private.owner_content_rule('rollback'), 'rolled-back', 'the owner cont
 delete from private.discovery_pass_claims;
 delete from private.early_access_claims;
 delete from private.discovery_claim_keys;
+-- The pass is hidden while free access can be claimed, and since 20261126100000 a recorded launch keeps the claim open
+-- until the end of 30 December 2026 (Lagos). This file expects no launch, so it clears one the stack may hold.
+update private.entitlement_policy set actual_launch_at = null;
 
 -- Structure, privileges and policy ----------------------------------------------------------------------------------
 select has_table('private', 'discovery_previews', 'previews table exists');

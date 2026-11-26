@@ -19,7 +19,7 @@ import type { ReactElement, ReactNode } from 'react'
  * No content of the course is rendered beside this notice; the server never read it. `passHours` is set only when
  * this student is eligible for a Discovery Pass (trialWording().passAvailable, which requires the server's eligibility
  * read); otherwise the pass is not mentioned at all, and no reason is given. `freeMonth` is set only when the database
- * says this student can claim their free month now; the button then opens its confirmation here.
+ * says this student can claim free access now; the button then opens its confirmation here.
  */
 export function LockedCourseNotice({ backHref, backLabel, passHours = null, outsideList = false, reason,
   plansOnSale = false, confirmReturnPath, has, freeMonth = null }: {
@@ -32,7 +32,7 @@ export function LockedCourseNotice({ backHref, backLabel, passHours = null, outs
   plansOnSale?: boolean
   /** Where Confirm your courses returns to after a save (an allow-listed path), if not the home page. */
   confirmReturnPath?: string
-  /** What the free month claim needs, when this student can claim it now; null offers none. */
+  /** What the free access claim needs, when this student can claim it now; null offers none. */
   freeMonth?: FreeMonthClaim | null
 }): ReactElement {
   const copy = accessCopy(plansOnSale)
@@ -66,8 +66,8 @@ export function LockedCourseNotice({ backHref, backLabel, passHours = null, outs
   const families = getStudyFamilyLabels(has)
   // Nothing published: there is nothing to subscribe to, so the page says so and offers only the way back.
   if (families.length === 0) return <Notice tone="info" title={STUDY_COPY.notYetAvailable} action={back}>{null}</Notice>
-  // The free month, when this student can claim it now: its confirmation opens here, and the course opens with it.
-  if (freeMonth !== null) return <Notice tone="info" title={FREE_MONTH_COPY.lockedTitle} action={<>
+  // Free access, when this student can claim it now: its confirmation opens here, and the course opens with it.
+  if (freeMonth !== null) return <Notice tone="info" title={FREE_MONTH_COPY.lockedTitle(freeMonth.endsOn)} action={<>
     <FreeMonthStart {...freeMonth} />
     {back}
   </>}>{families.join(' · ')}</Notice>

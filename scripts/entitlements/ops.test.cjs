@@ -1,10 +1,15 @@
 // scripts/entitlements/ops.test.cjs — The operator tool: mandatory actor/reason, narrow service RPCs only, the public
-// launch with its claim window, and the retired Early Access list commands.
+// launch, which opens free access until the end of 30 December (Lagos), and the retired Early Access commands and flags.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 const { run } = require('./ops.cjs')
 
 const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret' }
+const LAUNCH = ['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch']
+// The migration that ends free access, and closes the claim, at the end of 30 December (Lagos).
+const MIGRATION = 'supabase/migrations/20261126100000_free_until_30_december.sql'
 
 function harness(reply = () => ({ state: 'added' })) {
   const requests = []
@@ -24,7 +29,7 @@ test('the retired list commands are refused by name and nothing is sent', async 
     ['member', '--email', 'ada@example.test', '--action', 'include', '--actor', 'ops', '--reason', 'list fixed'],
     ['reconcile-early-access', '--actor', 'ops', '--reason', 'recovery sweep']]) {
     await assert.rejects(h.run(command), new RegExp(`^Error: ${command[0]} is retired: there is no Early Access list\\. ` +
-      'Students claim their free month on the site'))
+      'Students claim free access on the site; see docs/entitlements-operations\\.md$'))
     // Not even a configuration error: the command is refused before the connection is read.
     await assert.rejects(h.run(command, {}), /is retired/)
   }
@@ -67,72 +72,93 @@ test('hosted configuration requires HTTPS and an sb_secret_ key; nothing is sent
 })
 
 test('the actual public launch needs an explicit confirmation flag, an actor and a reason', async () => {
-  const h = harness(() => ({ state: 'launched', actual_launch_at: '2026-11-20T08:00:00+00:00',
-    claim_closes_at: '2026-11-30T08:00:00+00:00', claim_days: 10, short_window: false }))
+  const h = harness(() => ({ state: 'launched', actual_launch_at: '2026-12-01T08:00:00+00:00',
+    claim_closes_at: '2026-12-30T23:00:00+00:00', short_window: false }))
   await assert.rejects(h.run(['activate-launch', '--actor', 'founder', '--reason', 'go live']), /--confirm-public-launch/)
   await assert.rejects(h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder']), /--reason/)
   assert.equal(h.requests.length, 0)
-  await h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
-  // One call, no sweep: the launch enrols nobody. The short window is refused unless the flag is given.
+  await h.run(LAUNCH)
+  // One call, no sweep: the launch enrols nobody. It never asks the database to open a claim that has already closed.
   assert.deepEqual(h.requests.map(r => [r.fn, r.body]), [['admin_activate_public_launch',
     { p_actor: 'founder', p_reason: 'public launch', p_allow_short_window: false }]])
 })
 
 test('the launch prints when it was recorded and when the claim closes, in Lagos time', async () => {
-  const reply = { state: 'launched', actual_launch_at: '2026-11-20T08:00:00+00:00',
-    claim_closes_at: '2026-11-30T08:00:00+00:00', claim_days: 10, short_window: false }
+  // Free access is claimed from the launch until the end of 30 December, Lagos: the close is that exclusive midnight.
+  const reply = { state: 'launched', actual_launch_at: '2026-12-01T08:00:00+00:00',
+    claim_closes_at: '2026-12-30T23:00:00+00:00', short_window: false }
   const h = harness(() => reply)
-  await h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
-  assert.deepEqual(JSON.parse(h.output.at(-1)), { state: 'launched', launch_recorded: 'Fri, 20 Nov 2026, 09:00 (Lagos)',
-    claim_closes: 'Mon, 30 Nov 2026, 09:00 (Lagos)', ...reply })
+  await h.run(LAUNCH)
+  assert.deepEqual(JSON.parse(h.output.at(-1)), { state: 'launched', launch_recorded: 'Tue, 1 Dec 2026, 09:00 (Lagos)',
+    claim_closes: 'Thu, 31 Dec 2026, 00:00 (Lagos)', ...reply })
   // Run again by mistake: the database changes nothing and the tool still says when the claim closes.
   const again = harness(() => ({ state: 'already-launched', actual_launch_at: reply.actual_launch_at,
     claim_closes_at: reply.claim_closes_at }))
-  await again.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch'])
-  assert.equal(JSON.parse(again.output.at(-1)).claim_closes, 'Mon, 30 Nov 2026, 09:00 (Lagos)')
+  await again.run(LAUNCH)
+  assert.equal(JSON.parse(again.output.at(-1)).claim_closes, 'Thu, 31 Dec 2026, 00:00 (Lagos)')
   assert.equal(JSON.parse(again.output.at(-1)).state, 'already-launched')
 })
 
-test('a launch that would leave fewer than the full claim days is refused, with the dates, unless the flag is given', async () => {
-  const short = { state: 'short-claim-window', claim_would_close_at: '2026-11-30T23:00:00+00:00', claim_days: 10,
-    full_window_needs_launch_by: '2026-11-20T23:00:00+00:00' }
-  const h = harness(() => short)
-  await assert.rejects(h.run(['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch']),
-    /launch NOT recorded: the free month claim would close on Tue, 1 Dec 2026, 00:00 \(Lagos\), less than 10 days after launch \(a full window needs launch by Sat, 21 Nov 2026, 00:00 \(Lagos\)\)\. To launch anyway, add --allow-short-claim-window/)
-  assert.equal(h.output.length, 0, 'nothing is printed as if the launch happened')
-  assert.equal(h.requests[0].body.p_allow_short_window, false)
-  const allowed = harness(() => ({ state: 'launched', actual_launch_at: '2026-11-25T08:00:00+00:00',
-    claim_closes_at: '2026-11-30T23:00:00+00:00', claim_days: 10, short_window: true }))
-  await allowed.run(['activate-launch', '--confirm-public-launch', '--allow-short-claim-window', '--actor', 'founder',
-    '--reason', 'public launch'])
-  assert.equal(allowed.requests[0].body.p_allow_short_window, true)
-  const printed = JSON.parse(allowed.output.at(-1))
-  assert.deepEqual([printed.claim_closes, printed.short_window], ['Tue, 1 Dec 2026, 00:00 (Lagos)', true])
+test('the retired flags are refused by name and nothing is sent: --allow-short-claim-window and --enrollment-days', async () => {
+  const h = harness(() => ({ state: 'launched', actual_launch_at: '2026-12-01T08:00:00+00:00',
+    claim_closes_at: '2026-12-30T23:00:00+00:00', short_window: false }))
+  const shortWindow = '--allow-short-claim-window is retired: free access is claimed from the launch until the end of ' +
+    '30 December (Lagos), and a launch after that is refused'
+  // Refused before the confirmation, the actor and the reason are read.
+  for (const command of [[...LAUNCH, '--allow-short-claim-window'], ['activate-launch', '--allow-short-claim-window']]) {
+    await assert.rejects(h.run(command), { name: 'Error', message: shortWindow })
+  }
+  const days = '--enrollment-days is retired: free access can be claimed from the launch until the end of 30 December (Lagos)'
+  for (const command of [['configure-early-access', '--enrollment-days', '12', '--actor', 'owner', '--reason', 'longer claim'],
+    ['configure-early-access', '--planned-launch', '2026-12-01T08:00:00Z', '--enrollment-days', '10']]) {
+    await assert.rejects(h.run(command), { name: 'Error', message: days })
+  }
+  assert.equal(h.requests.length, 0, 'a retired flag never reaches the database')
+  assert.equal(h.output.length, 0)
 })
 
-test('policy changes set the claim days before launch; the post-Early-Access trial is retired', async () => {
+test('the launch is refused, with nothing recorded, on an unmigrated database and once the claim has closed', async () => {
+  // A database without the migration still answers with its claim days: the operator is told to apply it first.
+  const old = harness(() => ({ state: 'short-claim-window', claim_would_close_at: '2026-11-30T23:00:00+00:00', claim_days: 10,
+    full_window_needs_launch_by: '2026-11-20T23:00:00+00:00' }))
+  await assert.rejects(old.run(LAUNCH), { name: 'Error', message: 'launch NOT recorded: this database still closes the claim ' +
+    `10 days after launch or at the end of 30 November. Apply ${MIGRATION} first` })
+  assert.ok(fs.existsSync(path.join(__dirname, '../..', MIGRATION)), 'the migration named is in the repository')
+  // With it, a launch is refused only once the end of 30 December (Lagos) has passed, and the message says when that was.
+  const late = harness(() => ({ state: 'short-claim-window', claim_would_close_at: '2026-12-30T23:00:00+00:00' }))
+  await assert.rejects(late.run(LAUNCH), { name: 'Error',
+    message: 'launch NOT recorded: free access could be claimed only until Thu, 31 Dec 2026, 00:00 (Lagos), which has passed' })
+  for (const h of [old, late]) {
+    assert.equal(h.output.length, 0, 'nothing is printed as if the launch happened')
+    assert.deepEqual(h.requests.map(r => [r.fn, r.body.p_allow_short_window]), [['admin_activate_public_launch', false]])
+  }
+})
+
+test('configure sends the planned launch only: no claim days, and the post-Early-Access trial is retired', async () => {
   const h = harness(() => ({ state: 'changed' }))
   for (const value of ['true', 'false', 'maybe']) {
     await assert.rejects(h.run(['configure-early-access', '--trial-after-early-access', value, '--actor', 'o', '--reason', 'r']),
       /retired/)
   }
   assert.equal(h.requests.length, 0, 'a retired flag never reaches the database')
-  await h.run(['configure-early-access', '--enrollment-days', '12', '--actor', 'owner', '--reason', 'longer claim'])
-  assert.deepEqual(h.requests.at(-1).body, { p_planned_launch_at: null, p_enrollment_days: 12,
-    p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'longer claim' })
-})
-
-test('after launch a change to the claim days is refused, and the operator is told when the claim closes', async () => {
-  const h = harness(() => ({ state: 'claim-window-fixed', actual_launch_at: '2026-11-20T08:00:00+00:00',
-    claim_closes_at: '2026-11-30T08:00:00+00:00' }))
-  await assert.rejects(h.run(['configure-early-access', '--enrollment-days', '30', '--actor', 'owner', '--reason', 'longer']),
-    /NOT changed: the claim days are fixed once the launch is recorded; the free month claim closes on Mon, 30 Nov 2026, 09:00 \(Lagos\)/)
-  assert.equal(h.requests.length, 1)
+  await h.run(['configure-early-access', '--planned-launch', '2026-12-01T08:00:00Z', '--actor', 'owner',
+    '--reason', 'launch date'])
+  await h.run(['configure-early-access', '--actor', 'owner', '--reason', 'no change'])
+  // Null leaves the retired days as the migrations pinned them, so the database has no claim days to refuse after launch.
+  assert.deepEqual(h.requests.map(r => [r.fn, r.body]), [
+    ['admin_configure_early_access', { p_planned_launch_at: '2026-12-01T08:00:00.000Z', p_enrollment_days: null,
+      p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'launch date' }],
+    ['admin_configure_early_access', { p_planned_launch_at: null, p_enrollment_days: null,
+      p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'no change' }]])
+  assert.deepEqual(h.output.map(text => JSON.parse(text)), [{ state: 'changed' }, { state: 'changed' }])
 })
 
 test('the report is one read and prints what the database answered', async () => {
-  const report = { actual_launch_at: null, claim_days: 10, claim_open: false,
-    if_launched_now: { claim_would_close_at: '2026-11-26T08:00:00+00:00', full_window: true }, months: { claimed: 0 } }
+  // The report since the migration: no claim days; if_launched_now says when the claim would close and whether it would open.
+  const report = { now: '2026-11-26T08:00:00+00:00', planned_launch_at: '2026-12-01T08:00:00+00:00', actual_launch_at: null,
+    claim_cutoff: '2026-12-30T23:00:00+00:00', claim_closes_at: null, claim_open: false,
+    if_launched_now: { claim_would_close_at: '2026-12-30T23:00:00+00:00', claim_would_open: true },
+    months: { claimed: 0, running: 0, ended: 0, revoked: 0 }, address_records: 0, retired_list_rows: 0 }
   const h = harness(() => report)
   await h.run(['early-access-report'])
   assert.deepEqual(h.requests.map(r => [r.fn, r.body]), [['admin_early_access_report', {}]])

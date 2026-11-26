@@ -1,7 +1,7 @@
 // app/access/page.test.cjs — Plan & Access rendered against real entitlement summaries: the free pass is offered only to
-// an eligible student on a database that offers it (heading, one line and Start; its terms live in the modal); the free
-// month is the first plan card whenever the database says this student can claim it, and never beside the pass; each
-// plan card (free, free pass, free month, paid, refunded); the paid plans only while sales are open; Campus Bot usage
+// an eligible student on a database that offers it (heading, one line and Start; its terms live in the modal); free
+// access is the first plan card whenever the database says this student can claim it, and never beside the pass; each
+// plan card (free, free pass, free access, paid, refunded); the paid plans only while sales are open; Campus Bot usage
 // in token mode; and today's wording whenever plans are not on sale.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -23,11 +23,14 @@ const preDiscoveryDatabase = { now: NOW, planned_launch_at: '2026-10-24T23:00:00
   trial_days: 7, expiry_notice_hours: 48, tier: 'free', access: null, trial, early_access: early, otp: null }
 
 // `eligible` is what the server's pass eligibility read (lib/entitlements/server.ts) decided before render, and
-// `freeMonth` its free month read: null, or the day the month would end as the database answered it. `revision` is the
+// `freeMonth` its free access read: null, or the end a claim would get as the database answered it. `revision` is the
 // profile revision; `current` the student's course list; `usage` get_my_campus_bot_usage() as read by
 // lib/ai-practice/campus-bot-usage.ts; `reads` collects what the page asked the entitlement read for.
 const myCourses = { status: 'ok', courses: [{ isFree: true }, { isFree: false }, { isFree: false }, { isFree: false }] }
 const MONTH = { endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-08T12:00:00+00:00' }
+// The end every claim gets, and the instant the claim closes: the end of 30 December in Lagos, which is the instant
+// 31 December begins there (an exclusive end).
+const DECEMBER_END = '2026-12-30T23:00:00+00:00'
 async function render(wire, eligible = true, { revision = 4, current = myCourses, usage = { state: 'units' },
   freeMonth = null, reads = [] } = {}) {
   return withTsx(async () => {
@@ -99,7 +102,8 @@ test('an eligible student is offered the free pass: a heading, one line and Get 
   // The terms (3 days, one per student, courses set) appear only in the modal.
   assert.doesNotMatch(strip(html), /days from now|one free pass|sets your courses|per course|50-question|72 hours/i)
   assert.doesNotMatch(html, /Discovery Pass|phone|SMS|per person/i)
-  assert.doesNotMatch(html, /data-plan="free-month"|free month/i, 'no free month unless the database offers one')
+  assert.doesNotMatch(html, /data-plan="free-month"|Free until|free access|data-free-month/i,
+    'no free access unless the database offers it')
 })
 
 test('an ineligible student sees free GST access: no offer, no button and no reason', async () => {
@@ -178,70 +182,95 @@ const monthRunning = { ...discoveryDatabase, tier: 'full', access: { source: 'ea
   trial: { ...trial, status: 'not-offered', policy: null },
   early_access: { status: 'active', starts_at: '2026-10-25T00:00:00+00:00', ends_at: LATER, enrollment_closes_at: null } }
 
-test('a running free month is the plan card: "Free month · Ends {day}", the database\'s day, and nothing more', async () => {
+test('running free access is the plan card: "Free until {day}", the last day the database\'s end covers, and nothing more', async () => {
+  const card = page => strip(page.match(/<div class="student-surface" data-access="free-month">[\s\S]*?<\/h3><\/div><\/div>/)[0]).trim()
   const html = await render(monthRunning, false)
-  const card = html.match(/<div class="student-surface" data-access="free-month">[\s\S]*?<\/h3><\/div><\/div>/)[0]
-  assert.equal(strip(card).trim(), 'Free month · Ends 20 November')
+  assert.equal(card(html), 'Free until 20 November')
   assert.doesNotMatch(html, /Early Access|data-plan="free-month"|data-activation/, 'never the internal name, or a second offer')
-  // The month ends late on its last day in Lagos: the day shown is the Lagos day, not the UTC one.
+  // An end that is not a Lagos midnight keeps its own day, and that day is the Lagos one, not the UTC one.
   const lateNight = { ...monthRunning, access: { source: 'early_access', ends_at: '2026-11-20T23:30:00+00:00' } }
-  assert.match(strip(await render(lateNight, false)), /Free month · Ends 21 November/)
+  assert.match(strip(await render(lateNight, false)), /Free until 21 November/)
+  // An end at a Lagos midnight names the day before it: claimed from the launch and read by the database at 11:00 Lagos
+  // on 30 December, free access to the end of that day reads 30 December, never 31.
+  const december = { ...monthRunning, now: '2026-12-30T10:00:00+00:00', actual_launch_at: '2026-12-01T08:00:00+00:00',
+    access: { source: 'early_access', ends_at: DECEMBER_END },
+    early_access: { status: 'active', starts_at: '2026-12-01T08:00:00+00:00', ends_at: DECEMBER_END,
+      enrollment_closes_at: DECEMBER_END } }
+  const last = await render(december, false)
+  assert.equal(card(last), 'Free until 30 December')
+  assert.doesNotMatch(strip(last), /\b31\b|month/i)
 })
 
-test('an ended free month says so once, above the free card; the paid plans show again and no pass is offered', async () => {
+test('ended free access says so once, above the free card; the paid plans show again and no pass is offered', async () => {
   const ended = { ...onSale, trial: { ...trial, status: 'not-offered', policy: null },
     early_access: { status: 'ended', starts_at: '2026-09-25T00:00:00+00:00', ends_at: '2026-10-25T00:00:00+00:00',
       enrollment_closes_at: null } }
-  const html = await render(ended, false)
-  const text = strip(html)
-  assert.match(text, /Your plan Your free month has ended\. Free GST courses/)
-  assert.equal(text.match(/free month/gi).length, 1)
-  assert.match(html, /<plan-chooser data-plans="plus_session:1100000,plus_semester:600000,standard_session:700000,standard_semester:400000"><\/plan-chooser>/)
-  assert.doesNotMatch(html, /data-activation|Free pass|data-plan="free-month"|Early Access/)
+  // At the end of 30 December by the database's clock: every claim has ended and the claim has closed, so the server's
+  // read offers nothing.
+  const december = { ...ended, now: DECEMBER_END, actual_launch_at: '2026-12-01T08:00:00+00:00',
+    early_access: { status: 'ended', starts_at: '2026-12-01T08:00:00+00:00', ends_at: DECEMBER_END,
+      enrollment_closes_at: DECEMBER_END } }
+  for (const wire of [ended, december]) {
+    const html = await render(wire, false)
+    const text = strip(html)
+    assert.match(text, /Your plan Your free access has ended\. Free GST courses/, wire.now)
+    assert.equal(text.match(/free access/gi).length, 1, `${wire.now}: the ended line, once`)
+    assert.equal(html.match(/data-free-month="ended"/g).length, 1, wire.now)
+    assert.doesNotMatch(text, /Free until/i, `${wire.now}: no offer and no running card`)
+    assert.match(html, /<plan-chooser data-plans="plus_session:1100000,plus_semester:600000,standard_session:700000,standard_semester:400000"><\/plan-chooser>/)
+    assert.doesNotMatch(html, /data-activation|Free pass|data-plan="free-month"|Early Access/)
+  }
 })
 
 test('a database from before this change that still reports a list place promises nothing', async () => {
   for (const status of ['awaiting-launch', 'pending', 'enrollment-closed', 'unavailable']) {
-    const text = strip(await render({ ...discoveryDatabase, early_access: { ...early, status } }, false))
+    const html = await render({ ...discoveryDatabase, early_access: { ...early, status } }, false)
+    const text = strip(html)
     assert.match(text, /Your plan Free GST courses/, status)
-    assert.doesNotMatch(text, /free month|Early Access|launch|list\b|enrol/i, status)
+    assert.doesNotMatch(text, /Early Access|launch|list\b|enrol/i, status)
+    assert.doesNotMatch(html, /Free until|free access|data-free-month|data-plan="free-month"/i, status)
   }
 })
 
-test('a student who can claim the free month sees it as the first plan card, beside the paid plans', async () => {
+test('a student who can claim free access sees it as the first plan card, beside the paid plans', async () => {
   const reads = []
   const html = await render(onSale, false, { freeMonth: MONTH, revision: 7, reads })
   assert.deepEqual(reads, [{ freeMonth: true }], 'the page asks the server whether this student can claim now')
   assert.match(html, /<h2[^>]*>Choose a plan<\/h2>/)
   assert.match(html, new RegExp('<plan-chooser data-plans="plus_session:1100000,plus_semester:600000,standard_session:700000,' +
     'standard_semester:400000"><li data-plan="free-month" data-token="page-token" data-revision="7" ' +
-    'data-ends-on="16 December"></li></plan-chooser>'), 'the card is the chooser\'s first, with the end day the database gave')
+    'data-ends-on="16 December"></li></plan-chooser>'), 'the card is the chooser\'s first, with the last day the database\'s end covers')
   assert.match(html, /<p>Pay by card or bank transfer\.<\/p>/, 'the paid plans keep their payment and refund lines')
   assert.equal(html.match(/data-plan="free-month"/g).length, 1, 'offered once on this page')
-  assert.doesNotMatch(strip(html), /Early Access|free month/i, 'the page itself adds no second description of the offer')
+  assert.doesNotMatch(html, /Early Access|Free until|free access|data-free-month/i,
+    'the page itself adds no second description of the offer')
+  // Offered from the launch (09:00 Lagos on 1 December): a claim's end, the end of 30 December, is given as 30 December.
+  const december = await render({ ...onSale, now: '2026-12-01T08:00:00+00:00' }, false,
+    { freeMonth: { endsAt: DECEMBER_END, closesAt: DECEMBER_END }, revision: 7 })
+  assert.match(december, /<li data-plan="free-month" data-token="page-token" data-revision="7" data-ends-on="30 December"><\/li>/)
 })
 
-test('with the paid plans not on sale, the free month is the only plan card and no payment line shows', async () => {
+test('with the paid plans not on sale, free access is the only plan card and no payment line shows', async () => {
   const html = await render(discoveryDatabase, false, { freeMonth: MONTH })
   assert.match(html, /<h2[^>]*>Choose a plan<\/h2>/)
   assert.match(html, /<plan-chooser data-plans=""><li data-plan="free-month" data-token="page-token" data-revision="4" data-ends-on="16 December"><\/li><\/plan-chooser>/)
   assert.doesNotMatch(html, /Pay by card|Payment terms|Full refund/)
 })
 
-test('the free pass is never shown beside the free month', async () => {
+test('the free pass is never shown beside free access', async () => {
   const html = await render(discoveryDatabase, true, { freeMonth: MONTH })
   assert.match(html, /data-plan="free-month"/)
   assert.doesNotMatch(html, /data-activation|Free pass|Try your department/)
 })
 
-test('no free month card when the database offers none, or when the revision cannot be read', async () => {
+test('no free access card when the database offers none, or when the revision cannot be read', async () => {
   const none = await render(onSale, false)
   assert.match(none, /<plan-chooser data-plans="[^"]+"><\/plan-chooser>/)
   assert.doesNotMatch(none, /data-plan="free-month"/)
-  // Without the revision the month could set courses the student did not see (D7): nothing is offered, pass included.
+  // Without the revision free access could set courses the student did not see (D7): nothing is offered, pass included.
   const unbound = await render(discoveryDatabase, true, { freeMonth: MONTH, revision: null })
   assert.doesNotMatch(unbound, /data-plan="free-month"|plan-chooser|Choose a plan|data-activation|Free pass/)
-  // A paid student has no plans section at all (the server never asks the database about a month for them).
+  // A paid student has no plans section at all (the server never asks the database about free access for them).
   assert.doesNotMatch(await render(subscribed, false), /data-plan="free-month"|plan-chooser/)
 })
 
@@ -271,7 +300,8 @@ test('a paid plan is the access card: plan name, dates, refund line; no plans of
   assert.match(text, /Second Semester Opens when it resumes/)
   assert.match(text, /View your courses Need to change your courses\? Message us \./)
   assert.match(text, /Full refund within 48 hours of paying, as long as you haven’t made a Campus Bot question set or flashcards, or used a large part of your plan\. Payment terms/)
-  assert.doesNotMatch(text, /when you subscribe|Early Access|free month/i, 'a subscribed student is not told how to subscribe')
+  assert.doesNotMatch(text, /when you subscribe|Early Access/i, 'a subscribed student is not told how to subscribe')
+  assert.doesNotMatch(html, /Free until|free access|data-free-month/i, 'nor offered free access')
   assert.doesNotMatch(text, /are set until|Department, Level and Semester/, 'the rule is not repeated after paying')
   assert.doesNotMatch(html, /plan-chooser|data-activation|Free pass/)
   assert.match(html, new RegExp(`href="/access/receipts/${ORDER}"`))

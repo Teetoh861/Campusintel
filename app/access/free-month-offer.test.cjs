@@ -1,6 +1,6 @@
-// app/access/free-month-offer.test.cjs — The free month offer driven through its own handlers: the button, the
+// app/access/free-month-offer.test.cjs — The free access offer driven through its own handlers: the button, the
 // confirmation and its exact words, one request however often Start is tapped, what each answer does to the offer
-// (the month starts, the offer has ended, an error the student can retry), and the three places built around the
+// (free access starts, the offer has ended, an error the student can retry), and the three places built around the
 // button (the Dashboard card, the plan card, the line above Pay), each of which goes when the offer is over.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -10,10 +10,18 @@ const { renderToStaticMarkup } = require('react-dom/server')
 const { withTsx } = require('../../lib/test/tsx-loader.cjs')
 // The one sentence every screen shows when the page belongs to an earlier sign-in.
 const { SIGNED_IN_ON_ANOTHER_TAB } = require('../../lib/auth/constants.ts')
+// How the server writes the day a database end covers, for the offer's `endsOn`.
+const { formatFreeMonthDay } = require('../../lib/entitlements/presentation.ts')
 
 const text = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 const CLAIM = { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December', closesInMs: 3_600_000 }
 const ENDS = '2026-12-16T13:30:00+00:00'
+// The offer as the database makes it from the launch: every claim ends at the end of 30 December in Lagos (the instant
+// 31 December begins there, an exclusive end), and the claim closes at that same instant. Read at 09:00 Lagos on
+// 1 December, with the day written out by the server's own formatter.
+const DECEMBER_END = '2026-12-30T23:00:00.000Z'
+const DECEMBER = { ...CLAIM, endsOn: formatFreeMonthDay(DECEMBER_END),
+  closesInMs: Date.parse(DECEMBER_END) - Date.parse('2026-12-01T08:00:00.000Z') }
 
 /**
  * Drives one client component with its own hook state: render() calls it, and components nested inside it render with
@@ -114,31 +122,52 @@ const shown = tree => { const offer = confirmation(tree); return offer.type(offe
 const dialog = html => text(html.match(/<dialog-open>[\s\S]*<\/dialog-open>/)?.[0] ?? '')
 /** Everything the last tap started has run as far as it can. */
 const settled = () => new Promise(resolve => setImmediate(resolve))
-const tapStart = async render => { button(shown(render()), 'Start your free month').props.onClick(); await settled() }
+const tapStart = async render => { button(shown(render()), 'Start free access').props.onClick(); await settled() }
 
 test('the button opens the confirmation with the approved words, and nothing is sent until Start', async () => {
   await drive('FreeMonthStart', CLAIM, async ({ render, html, posts }) => {
-    assert.equal(text(html()), 'Claim your free month', 'only the button until it is tapped')
-    button(render(), 'Claim your free month').props.onClick()
-    assert.equal(dialog(html()), 'Your free month What your free month gives, and when it ends. ' +
+    assert.equal(text(html()), 'Get free access', 'only the button until it is tapped')
+    button(render(), 'Get free access').props.onClick()
+    // The title carries the day the page was given, so the terms only say when it starts.
+    assert.equal(dialog(html()), 'Free until 16 December What free access gives, and its terms. ' +
       'Full access to your courses, notes and practice Campus Bot included ' +
-      'Starts now and ends on 16 December You can’t change your department, level or semester until the semester ends. ' +
-      'Not now Start your free month')
+      'Starts now You can’t change your department, level or semester until the semester ends. ' +
+      'Not now Start free access')
     assert.deepEqual(posts, [], 'opening the confirmation claims nothing')
     // Not now closes it, and still nothing was sent.
     button(shown(render()), 'Not now').props.onClick()
-    assert.equal(text(html()), 'Claim your free month')
+    assert.equal(text(html()), 'Get free access')
     assert.deepEqual(posts, [])
   })
+})
+
+test('free access to the end of 30 December reads "30 December" wherever it is offered: never 31, never a month', async () => {
+  assert.equal(DECEMBER.endsOn, '30 December', 'the last day the end covers, not the day the end instant falls on')
+  const seen = []
+  await drive('FreeMonthStart', DECEMBER, async ({ render, html }) => {
+    button(render(), 'Get free access').props.onClick()
+    seen.push(dialog(html()))
+    assert.match(seen[0], /^Free until 30 December What free access gives, and its terms\. .* Starts now You can’t change /)
+  })
+  for (const [name, words] of [
+    ['FreeMonthCard', 'Free until 30 December Full access to your courses and Campus Bot. Get free access'],
+    ['FreeMonthPlanCard', 'Free until 30 December ₦0 Full access to your courses and Campus Bot. Get free access'],
+    ['FreeMonthInstead', 'You can get free access until 30 December instead. Get free access']]) {
+    await drive(name, DECEMBER, async ({ html }) => {
+      seen.push(text(html()))
+      assert.equal(seen.at(-1), words, name)
+    })
+  }
+  for (const words of seen) assert.doesNotMatch(words, /\b31\b|month/i, words)
 })
 
 test('Start sends the action and the profile revision on the page, once, however often it is tapped', async () => {
   let release
   const held = new Promise(resolve => { release = resolve })
   await drive('FreeMonthStart', CLAIM, async ({ render, html, posts, refreshes }) => {
-    button(render(), 'Claim your free month').props.onClick()
+    button(render(), 'Get free access').props.onClick()
     // Three taps on the button as first drawn: the second and third land before it could be drawn disabled.
-    const tap = button(shown(render()), 'Start your free month').props.onClick
+    const tap = button(shown(render()), 'Start free access').props.onClick
     tap(); tap(); tap()
     assert.deepEqual(posts, [{ command: { action: 'claim-free-month', profileRevision: 7 }, token: 'page-token' }],
       'one request: the action and the revision, with the page token, and no date or time')
@@ -150,8 +179,8 @@ test('Start sends the action and the profile revision on the page, once, however
     assert.match(html(), /<dialog-open>/, 'the confirmation cannot be dismissed while the request is in flight')
     release({ status: 'month-started', endsAt: ENDS })
     await settled()
-    assert.equal(html(), '', 'the month has started: the offer is gone')
-    assert.deepEqual(refreshes, ['refresh'], 'and the page is read again, to show the month and its end date')
+    assert.equal(html(), '', 'free access has started: the offer is gone')
+    assert.deepEqual(refreshes, ['refresh'], 'and the page is read again, to show free access and its last day')
     assert.equal(posts.length, 1)
   }, { answers: [() => held] })
 })
@@ -159,11 +188,11 @@ test('Start sends the action and the profile revision on the page, once, however
 test('an error keeps the confirmation open with the approved line, and the student can try again', async () => {
   for (const failure of [{ status: 'unavailable' }, { status: 'invalid-request' }, { status: 'capacity' }]) {
     await drive('FreeMonthStart', CLAIM, async ({ render, html, posts, refreshes }) => {
-      button(render(), 'Claim your free month').props.onClick()
+      button(render(), 'Get free access').props.onClick()
       await tapStart(render)
       assert.match(dialog(html()), failure.status === 'invalid-request'
-        ? /That didn’t go through\. Refresh the page and try again\. Not now Start your free month$/
-        : /Couldn’t start your free month\. Try again\. Not now Start your free month$/, failure.status)
+        ? /That didn’t go through\. Refresh the page and try again\. Not now Start free access$/
+        : /Couldn’t start your free access\. Try again\. Not now Start free access$/, failure.status)
       assert.match(html(), /role="alert"/)
       assert.deepEqual(refreshes, [])
       // The second try succeeds.
@@ -177,7 +206,7 @@ test('an error keeps the confirmation open with the approved line, and the stude
 
 test('too many attempts says to wait; a changed sign-in or changed courses reload the page', async () => {
   await drive('FreeMonthStart', CLAIM, async ({ render, html, refreshes }) => {
-    button(render(), 'Claim your free month').props.onClick()
+    button(render(), 'Get free access').props.onClick()
     await tapStart(render)
     assert.match(dialog(html()), /Too many attempts\. Please wait a few minutes and try again\./)
     assert.deepEqual(refreshes, [])
@@ -185,7 +214,7 @@ test('too many attempts says to wait; a changed sign-in or changed courses reloa
   for (const [answer, line] of [[{ status: 'selection-changed' }, 'Your courses were just updated.'],
     [{ status: 'signed-out' }, 'You’ve been signed out.'], [{ status: 'session-changed' }, SIGNED_IN_ON_ANOTHER_TAB]]) {
     await drive('FreeMonthStart', CLAIM, async ({ render, html, refreshes }) => {
-      button(render(), 'Claim your free month').props.onClick()
+      button(render(), 'Get free access').props.onClick()
       await tapStart(render)
       assert.ok(dialog(html()).includes(line), `${answer.status}: ${dialog(html())}`)
       assert.deepEqual(refreshes, ['refresh'], `${answer.status}: the page loads again`)
@@ -195,41 +224,41 @@ test('too many attempts says to wait; a changed sign-in or changed courses reloa
 
 test('the claim closed meanwhile: the button gives way to "This offer has ended." and nothing can be sent again', async () => {
   await drive('FreeMonthStart', CLAIM, async ({ render, html, posts, refreshes }) => {
-    button(render(), 'Claim your free month').props.onClick()
+    button(render(), 'Get free access').props.onClick()
     await tapStart(render)
     assert.equal(text(html()), 'This offer has ended.')
-    assert.equal(button(render(), 'Claim your free month'), null)
+    assert.equal(button(render(), 'Get free access'), null)
     assert.equal(posts.length, 1)
     assert.deepEqual(refreshes, [], 'the message stays where the offer was')
   }, { answers: [{ status: 'offer-ended' }] })
   await drive('FreeMonthStart', CLAIM, async ({ render, html }) => {
-    button(render(), 'Claim your free month').props.onClick()
+    button(render(), 'Get free access').props.onClick()
     await tapStart(render)
-    assert.equal(text(html()), 'A free month isn’t available on this account.', 'never a reason')
+    assert.equal(text(html()), 'Free access isn’t available on this account.', 'never a reason')
   }, { answers: [{ status: 'offer-unavailable' }] })
 })
 
 const start = tree => find(tree, node => typeof node.type === 'function' && node.type.name === 'FreeMonthStart')
 
-test('the Dashboard card: title, one line and the button; it goes when the month starts and leaves the message when the offer ends', async () => {
+test('the Dashboard card: title, one line and the button; it goes when free access starts and leaves the message when the offer ends', async () => {
   await drive('FreeMonthCard', CLAIM, async ({ render, html }) => {
-    assert.equal(text(html()), 'Your free month Full access to your courses and Campus Bot for one month. Claim your free month')
+    assert.equal(text(html()), 'Free until 16 December Full access to your courses and Campus Bot. Get free access')
     assert.match(html(), /<section aria-labelledby="free-month-title" class="dashboard-offer[^"]*" data-free-month="offer">/)
     assert.deepEqual({ token: start(render()).props.continuityToken, revision: start(render()).props.profileRevision,
       endsOn: start(render()).props.endsOn }, { token: 'page-token', revision: 7, endsOn: '16 December' })
     start(render()).props.onOver(null)
-    assert.equal(html(), '', 'the month started: the card disappears')
+    assert.equal(html(), '', 'free access started: the card disappears')
   })
   await drive('FreeMonthCard', CLAIM, async ({ render, html }) => {
     start(render()).props.onOver({ tone: 'info', text: 'This offer has ended.' })
     assert.equal(text(html()), 'This offer has ended.', 'the card disappears and the message is left in its place')
-    assert.doesNotMatch(html(), /Your free month|Claim your free month/)
+    assert.doesNotMatch(html(), /Free until|free access|data-free-month/i)
   })
 })
 
 test('the plan card: the name, ₦0, the line and the button, as a list item beside the paid plans', async () => {
   await drive('FreeMonthPlanCard', CLAIM, async ({ render, html }) => {
-    assert.equal(text(html()), 'Free month ₦0 Full access to your courses and Campus Bot for one month. Claim your free month')
+    assert.equal(text(html()), 'Free until 16 December ₦0 Full access to your courses and Campus Bot. Get free access')
     assert.match(html(), /^<li class="student-surface flex h-full flex-col" data-plan="free-month">/)
     assert.equal(start(render()).props.wide, true, 'its button fills the card, as the paid cards’ buttons do')
     start(render()).props.onOver({ tone: 'info', text: 'This offer has ended.' })
@@ -244,7 +273,7 @@ test('the plan card: the name, ₦0, the line and the button, as a list item bes
 
 test('the line above Pay: one sentence and a quiet button, gone once the offer is over', async () => {
   await drive('FreeMonthInstead', CLAIM, async ({ render, html }) => {
-    assert.equal(text(html()), 'You can get a free month instead. Claim your free month')
+    assert.equal(text(html()), 'You can get free access until 16 December instead. Get free access')
     assert.equal(start(render()).props.quiet, true, 'Pay stays the main action')
     start(render()).props.onOver(null)
     assert.equal(html(), '')
@@ -268,6 +297,20 @@ test('an open offer is read again when the claim closes, using the delay the ser
     render()
     assert.equal(timers.length, 0)
   })
+  // Read at 09:00 Lagos on 1 December, the claim stays open to the end of 30 December: further off than a timer can
+  // wait, so none is set.
+  assert.equal(DECEMBER.closesInMs, 2_559_600_000)
+  await drive('FreeMonthStart', DECEMBER, async ({ render, timers }) => {
+    render()
+    assert.equal(timers.length, 0, 'no timer')
+  })
+  // Read once less is left than that, one timer at exactly the delay the server gave.
+  await drive('FreeMonthStart', { ...DECEMBER, closesInMs: 2_000_000_000 }, async ({ render, refreshes, timers }) => {
+    render()
+    assert.deepEqual(timers.map(timer => timer.ms), [2_000_000_000], 'one timer, at the closing instant')
+    timers[0].fn()
+    assert.deepEqual(refreshes, ['refresh'])
+  })
 })
 
 test('coming back to the page reads it again: switching back to the tab, or returning with Back', async () => {
@@ -287,7 +330,7 @@ test('coming back to the page reads it again: switching back to the tab, or retu
 
 test('after "This offer has ended." the page is read again once the line has been read', async () => {
   await drive('FreeMonthStart', CLAIM, async ({ render, html, refreshes, timers }) => {
-    button(render(), 'Claim your free month').props.onClick()
+    button(render(), 'Get free access').props.onClick()
     await tapStart(render)
     assert.equal(text(html()), 'This offer has ended.')
     assert.deepEqual(refreshes, [], 'the line shows first')
@@ -298,7 +341,7 @@ test('after "This offer has ended." the page is read again once the line has bee
   }, { answers: [{ status: 'offer-ended' }] })
   // Other refusals stay as they are: nothing about the claim changed.
   await drive('FreeMonthStart', CLAIM, async ({ render, timers }) => {
-    button(render(), 'Claim your free month').props.onClick()
+    button(render(), 'Get free access').props.onClick()
     await tapStart(render)
     assert.equal(timers.filter(timer => timer.ms === 5_000).length, 0)
   }, { answers: [{ status: 'offer-unavailable' }] })

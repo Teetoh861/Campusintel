@@ -1,5 +1,5 @@
-// app/dashboard/dashboard.test.cjs — Personalized course-file navigation, unchanged private Continue behavior, and the
-// free month: one card at the top while this student can claim it, then one line with the day it ends.
+// app/dashboard/dashboard.test.cjs — Personalized course-file navigation, unchanged private Continue behavior, and free
+// access: one card at the top while this student can claim it, then one line with its last day ("Free until {day}").
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -9,16 +9,18 @@ const ts = require('typescript')
 const { renderToStaticMarkup } = require('react-dom/server')
 
 const NOW = '2026-10-27T09:00:00.000Z'
+// The instant the claim closes and free access ends (20261126100000): the end of 30 December in Lagos, 23:00 UTC.
+const END = '2026-12-30T23:00:00+00:00'
 const root = path.join(__dirname, '../..')
 const { entitlementSummarySchema } = require(path.join(root, 'lib/entitlements/contract.ts'))
-// The plan as the server read it, at the database's clock NOW, a day after launch, for a student with no plan.
-// `free_month` is the database's answer to "can this student claim now", with the instant the month would end.
+// The plan as the server read it, at the database's clock NOW (or `now`), a day after launch, for a student with no plan.
+// `free_month` is the database's answer to "can this student claim now", with the instant free access would end.
 const planRead = ({ free_month = null, ...overrides } = {}) => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
   now: NOW, planned_launch_at: '2026-10-25T23:00:00+00:00', actual_launch_at: '2026-10-26T08:00:00+00:00',
   trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
   trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
   discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
-  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-05T08:00:00+00:00' },
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: END },
   ...overrides }), free_month } })
 const hoursFromNow = hours => new Date(Date.parse(NOW) + hours * 3_600_000).toISOString()
 
@@ -157,64 +159,109 @@ test('academic identity owns a full-width band outside the bounded course/action
   assert.match(html, /class="student-workspace student-page-workspace dashboard-workspace"/)
 }))
 
-const MONTH = { endsAt: '2026-11-26T08:30:00+00:00', closesAt: '2026-11-05T08:00:00+00:00' }
+// What the database offers: a claim now ends when the claim closes, at the end of 30 December (Lagos).
+const MONTH = { endsAt: END, closesAt: END }
 const words = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+const offerCard = html => html.match(/<section aria-labelledby="free-month-title" class="dashboard-offer student-enter" data-free-month="offer">[\s\S]*?<\/section>/)[0]
 
-test('a student who can claim the free month sees one card at the top of the Dashboard: title, one line and the button', async () => fixture(async f => {
+test('a student who can claim free access sees one card at the top of the Dashboard: "Free until {day}", one line and the button', async () => fixture(async f => {
   f.state.plan = planRead({ free_month: MONTH })
   f.state.revision = 7
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const tree = await f.page(), shell = tree.props.children[1]
   const [offer, month] = shell.props.children
   assert.equal(offer.type.name, 'FreeMonthCard')
-  // closesInMs: 5 Nov 08:00 less the database's now, 27 Oct 09:00.
-  assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '26 November',
-    closesInMs: (8 * 24 + 23) * 3_600_000 },
-    'bound to the page token, the profile revision the page read and the end day the database gave')
+  // endsOn: the last Lagos day the end covers, not the 31st its midnight falls on. closesInMs: 30 Dec 23:00 UTC less the
+  // database's now, 27 Oct 09:00.
+  assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '30 December',
+    closesInMs: (64 * 24 + 14) * 3_600_000 },
+    'bound to the page token, the profile revision the page read and the last day the database gave')
   assert.equal(month, false)
   assert.deepEqual(f.state.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')
   const html = await f.html()
-  const card = html.match(/<section aria-labelledby="free-month-title" class="dashboard-offer student-enter" data-free-month="offer">[\s\S]*?<\/section>/)[0]
-  assert.equal(words(card), 'Your free month Full access to your courses and Campus Bot for one month. Claim your free month')
+  const card = offerCard(html)
+  assert.equal(words(card), 'Free until 30 December Full access to your courses and Campus Bot. Get free access')
+  assert.match(card, /<h2 id="free-month-title" class="dashboard-offer-title">Free until 30 December<\/h2>/, 'the title carries the day')
   assert.equal((card.match(/<button\b/g) || []).length, 1)
   assert.ok(html.indexOf('data-free-month="offer"') < html.indexOf('my-courses-title'), 'above every other card')
   assert.equal((html.match(/data-free-month=/g) || []).length, 1, 'offered once: no banner, line or second card')
-  assert.doesNotMatch(html, /Early Access|Free pass|Get your free pass|26 November|data-access-notice/,
-    'no pass beside it, and the end date is in the confirmation')
+  assert.equal((html.match(/30 December/g) || []).length, 1, 'the day is said once, in the title')
+  assert.doesNotMatch(html, /Early Access|Free pass|Get your free pass|31 Dec|data-access-notice/,
+    'no pass beside it, and never the 31st')
 }))
 
-test('no free month card when the database offers none, the revision cannot be read, or the plan cannot be read', async () => fixture(async f => {
+test('free access is offered by the database clock: on 1 December and on its last morning the card reads the same day', async () => fixture(async f => {
+  f.state.revision = 7
+  // 1 Dec, 09:00 Lagos: the claim closes in 29 days and 15 hours, longer than a page timer waits. 30 Dec, 11:00 Lagos:
+  // in 13 hours.
+  for (const [now, closesInMs] of [['2026-12-01T08:00:00.000Z', 2_559_600_000], ['2026-12-30T10:00:00.000Z', 13 * 3_600_000]]) {
+    f.state.plan = planRead({ now, free_month: MONTH })
+    const [offer] = (await f.page()).props.children[1].props.children
+    assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '30 December', closesInMs }, now)
+    assert.equal(words(offerCard(await f.html())), 'Free until 30 December Full access to your courses and Campus Bot. Get free access', now)
+  }
+}))
+
+test('no free access card when the database offers none, the revision cannot be read, or the plan cannot be read', async () => fixture(async f => {
   const offered = async () => (await f.page()).props.children[1].props.children[0]
   f.state.plan = planRead()
   assert.equal(await offered(), false)
   f.state.plan = planRead({ free_month: MONTH })
   f.state.revision = null
-  assert.equal(await offered(), false, 'a month must be bound to the courses the student saw (D7)')
+  assert.equal(await offered(), false, 'free access must be bound to the courses the student saw (D7)')
   f.state.revision = 7
   f.state.plan = { status: 'unavailable' }
   assert.equal(await offered(), false)
-  assert.doesNotMatch(await f.html(), /free month|data-free-month/i)
+  assert.doesNotMatch(await f.html(), /Free until|free access|data-free-month/i)
 }))
 
-test('a running free month is one line, "Free month · Ends {day}"; in its last hours the notice gives the time instead', async () => fixture(async f => {
-  const running = endsAt => planRead({ tier: 'full', access: { source: 'early_access', ends_at: endsAt },
-    trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
-    early_access: { status: 'active', starts_at: hoursFromNow(-24), ends_at: endsAt, enrollment_closes_at: null } })
+// Free access as the database reports it once claimed: running until `endsAt`, read at the database's clock `now`.
+const running = (endsAt, now = NOW) => planRead({ now, tier: 'full', access: { source: 'early_access', ends_at: endsAt },
+  trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
+  early_access: { status: 'active', starts_at: hoursFromNow(-24), ends_at: endsAt, enrollment_closes_at: null } })
+
+test('running free access is one line, "Free until {day}"; in its last hours the notice gives the time instead', async () => fixture(async f => {
+  // A claim made under the old rule keeps its own end, which is not at a Lagos midnight (D2).
   f.state.plan = running(hoursFromNow(24 * 20))
   const html = await f.html()
-  assert.match(html, /<p class="dashboard-free-month student-enter" data-free-month="active">Free month · Ends 16 November<\/p>/)
-  assert.equal((html.match(/free month/gi) || []).length, 1, 'said once')
-  assert.doesNotMatch(html, /data-free-month="offer"|data-access-notice|Early Access|Claim your free month/)
+  assert.match(html, /<p class="dashboard-free-month student-enter" data-free-month="active">Free until 16 November<\/p>/)
+  assert.equal((html.match(/Free until|free access/gi) || []).length, 1, 'said once')
+  assert.doesNotMatch(html, /data-free-month="offer"|data-access-notice|Early Access|Get free access|free month/i)
   // Inside the notice window (12 hours, by the database's clock) the notice says when, to the minute, and the line goes.
   f.state.plan = running(hoursFromNow(11))
   const ending = await f.html()
   assert.doesNotMatch(ending, /data-free-month="active"/)
   assert.match(ending, /data-access-notice="access-ending"/)
-  assert.match(words(ending), /Your free month ends Tue, 27 Oct 2026, 21:00\. After that, only GST courses stay free\. View your plan/)
+  assert.match(words(ending), /Your free access ends Tue, 27 Oct 2026, 21:00\. After that, only GST courses stay free\. View your plan/)
   // Once it has ended, the Dashboard says nothing about it (Plan & Access does, once).
   f.state.plan = planRead({ trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
     early_access: { status: 'ended', starts_at: hoursFromNow(-24 * 31), ends_at: hoursFromNow(-1), enrollment_closes_at: null } })
-  assert.doesNotMatch(await f.html(), /free month|data-free-month|data-access-notice/i)
+  assert.doesNotMatch(await f.html(), /Free until|free access|data-free-month|data-access-notice/i)
+}))
+
+test('free access to the end of 30 December reads "Free until 30 December", never the 31st; from 12:00 that day it ends "at midnight tonight"', async () => fixture(async f => {
+  // 1 Dec, then 30 Dec at 11:00 Lagos and a moment before 12:00: more than 12 hours are left, so the line and no notice.
+  for (const now of ['2026-12-01T08:00:00.000Z', '2026-12-30T10:00:00.000Z', '2026-12-30T10:59:59.999Z']) {
+    f.state.plan = running(END, now)
+    const html = await f.html()
+    assert.match(html, /<p class="dashboard-free-month student-enter" data-free-month="active">Free until 30 December<\/p>/, now)
+    assert.doesNotMatch(html, /data-access-notice|31 Dec/, now)
+  }
+  // From 12:00 Lagos on its last day to its end, by the database's clock: the notice names no date or time that would
+  // read as the 31st, and the line goes.
+  for (const now of ['2026-12-30T11:00:00.000Z', '2026-12-30T22:59:59.999Z']) {
+    f.state.plan = running(END, now)
+    const html = await f.html()
+    assert.doesNotMatch(html, /data-free-month/, now)
+    assert.match(html, /data-access-notice="access-ending"/, now)
+    assert.match(words(html), /Your free access ends at midnight tonight\. After that, only GST courses stay free\. View your plan/, now)
+    assert.doesNotMatch(html, /Free until|31 Dec|00:00/, now)
+  }
+  // At its end the database reports it ended and offers nothing: the Dashboard says nothing about it.
+  f.state.plan = planRead({ now: '2026-12-30T23:00:00.000Z',
+    trial: { status: 'not-offered', policy: null, starts_at: null, ends_at: null, available_from: null },
+    early_access: { status: 'ended', starts_at: hoursFromNow(-24), ends_at: END, enrollment_closes_at: null } })
+  assert.doesNotMatch(await f.html(), /Free until|free access|data-free-month|data-access-notice/i)
 }))
 
 test('Courses and material retains personal Bookmarks first and quiet icon-led help/account destinations', async () => fixture(async f => {

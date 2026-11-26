@@ -40,10 +40,11 @@ select is((select result->>'state' from outcome where step = 'launch'), 'launche
   'launch works with safeupdate loaded');
 select is((select jsonb_build_object('actual_launch_at', actual_launch_at, 'claim_closes_at', early_access_claim_closes_at)
     from private.entitlement_policy where singleton = true),
-  (select result - 'state' - 'claim_days' - 'short_window' from outcome where step = 'launch'),
-  'the launch and its closing instant were stored together');
-select is((select early_access_claim_closes_at - actual_launch_at from private.entitlement_policy where singleton = true),
-  interval '10 days', 'the window is still ten days');
+  (select result - 'state' - 'short_window' from outcome where step = 'launch'),
+  'the launch and its closing instant were stored together, and the answer names no claim days');
+select is((select early_access_claim_closes_at from private.entitlement_policy where singleton = true),
+  (select early_access_claim_cutoff from private.entitlement_policy where singleton = true),
+  'the claim closes at the cutoff, not ten days after the launch');
 
 set local role service_role;
 insert into outcome values ('refused', public.admin_configure_early_access(null, 30, null, 'safeupdate-test',
@@ -70,6 +71,14 @@ select is((select count(*)::integer from private.entitlement_events
   'only the successful configuration was audited');
 select is((select coalesce(jsonb_agg(to_jsonb(g) order by g.id), '[]'::jsonb) from public.entitlement_grants g),
   (select rows from before_grants), 'existing grants were left untouched and none was issued');
+
+-- After the launch the stored close follows the cutoff (20261126100000). Only direct SQL or a migration moves the
+-- cutoff; under safeupdate that UPDATE must name the row, and the close moves with it.
+update private.entitlement_policy set early_access_claim_cutoff = now() + interval '30 days' where singleton = true;
+select is((select jsonb_build_object('cutoff', early_access_claim_cutoff, 'claim_closes_at', early_access_claim_closes_at)
+    from private.entitlement_policy where singleton = true),
+  jsonb_build_object('cutoff', now() + interval '30 days', 'claim_closes_at', now() + interval '30 days'),
+  'a WHERE-guarded cutoff UPDATE after launch moves the stored close with it under safeupdate');
 
 select is((select count(*)::integer from unnest(array[
     'public.admin_configure_early_access(timestamptz,integer,boolean,text,text)',

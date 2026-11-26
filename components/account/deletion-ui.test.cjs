@@ -104,7 +104,7 @@ test('deletion disclosure keeps a stable ARIA target, exposes expansion and retu
   }
 }))
 
-test('the delete form says what happens in three short lines and keeps one note: the free pass or free month this email used', async () => controls(async f => {
+test('the delete form says what happens in three short lines and keeps one note: the free pass or free access this email used', async () => controls(async f => {
   const { DeleteAccountForm } = require('./DeleteAccountForm.tsx')
   const view = f.mount(DeleteAccountForm, { continuityToken: 'rendered-A' })
   const words = node => [].concat(node.props.children).map(part => typeof part === 'object' && part !== null ? words(part) : String(part)).join('')
@@ -119,11 +119,11 @@ test('the delete form says what happens in three short lines and keeps one note:
   assert.deepEqual(f.nodes(details).filter(node => node.type === 'p').map(words), [
     'You’ll be signed out. To cancel, sign in within 30 days and choose “Keep your account”.',
     'After 30 days, your account, bookmarks and results are deleted for good.',
-    'We keep a note that this email has used its free pass or free month.'])
+    'We keep a note that this email has used its free pass or free access.'])
   assert.equal(words(nodes.find(node => node.type === 'span')), 'I understand my account will be deleted for good after 30 days.')
   assert.deepEqual(nodes.filter(node => node.type === 'button').slice(1).map(words), ['Delete account', 'Cancel'])
   f.state.pending = true
   assert.deepEqual(f.nodes(view.render()).filter(node => node.type === 'button').slice(1).map(words), ['Deleting…', 'Cancel'])
   assert.doesNotMatch(JSON.stringify(f.nodes(view.render()).filter(node => node.type === 'p' || node.type === 'span').map(words)),
-    /Early Access|free trial|protected record|service providers|backups|Schedule|every device/)
+    /Early Access|free month|free trial|protected record|service providers|backups|Schedule|every device/)
 }))

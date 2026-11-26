@@ -1,9 +1,10 @@
 // lib/entitlements/contract.ts — The student entitlement summary and the commands that may cross the client boundary.
 // Free courses never need an entitlement; full access is a server-issued grant (PRD v1.4 §4.5). Early Access, which
-// students know as their free month, is claimed by the student while the claim is open
-// (20261116120000_early_access_claim.sql); nothing grants it automatically. A new 'trial' grant is the Discovery
-// Pass (20261021100000_discovery_pass.sql): previews and a small AI allowance, never full access. A seven-day trial
-// issued before that migration keeps its full access and is reported under `access` until it ends.
+// students know as free access ("Free until 30 December"), is claimed by the student while the claim is open
+// (20261116120000_early_access_claim.sql, 20261126100000_free_until_30_december.sql); nothing grants it automatically.
+// A new 'trial' grant is the Discovery Pass (20261021100000_discovery_pass.sql): previews and a small AI allowance, never
+// full access. A seven-day trial issued before that migration keeps its full access and is reported under `access`
+// until it ends.
 // No command carries a time, a date or a duration: every window and every end date is decided on the database clock.
 import { z } from 'zod'
 import { discoveryKind } from './discovery-contract'
@@ -65,9 +66,10 @@ const summaryWire = z.object({
     starts_at: timestamp.nullable(), ends_at: timestamp.nullable(), available_from: timestamp.nullable() }),
   // What a pass includes, and which previews it has used and on which course. No content is ever carried here.
   discovery: discoverySummary.optional(),
-  // The account's own free month: not-listed (none), active or ended. The other statuses are answered only by
+  // The account's own free access: not-listed (none), active or ended. The other statuses are answered only by
   // databases from before 20261116120000, which enrolled a pre-launch list; this build shows nothing for them.
-  // enrollment_closes_at is the launch plus the claim days (the database may close the claim earlier).
+  // enrollment_closes_at is the instant the claim closes, stored with the launch (20261126100000); a database from
+  // before that migration sends the launch plus the claim days.
   early_access: z.object({
     status: z.enum(['not-listed', 'awaiting-launch', 'pending', 'active', 'ended', 'enrollment-closed', 'unavailable',
       'account-restricted']),
@@ -83,9 +85,9 @@ const summaryWire = z.object({
   receipts: z.array(receipt).optional().default([]),
 })
 
-/** The free month this student can claim now. `endsAt` is the end the database would give a month started at its
- *  read, on its own clock; the claim fixes the real end the same way when the student confirms. `closesAt` is the
- *  instant the claim closes, stored with the launch. */
+/** The free access this student can claim now. `endsAt` is the end the database would give a claim made at its read
+ *  (since 20261126100000 the same instant for every claim: the end of 30 December, Lagos); the claim fixes the real end
+ *  the same way when the student confirms. `closesAt` is the instant the claim closes, stored with the launch. */
 export type FreeMonthOffer = { endsAt: string; closesAt: string }
 
 /**

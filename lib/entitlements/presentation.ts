@@ -56,27 +56,28 @@ export function formatAccessWeekday(iso: string): string {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? '' : WEEKDAY_FORMAT.format(date)
 }
-/** The Lagos day a free month ends, as students read it ("16 December"). Every free month ends within the year it
- *  starts, so the year is not shown. The instant is always the database's; pages format it on the server. */
+/** The last Lagos day free access covers, as students read it ("30 December"). Ends are exclusive instants, so an
+ *  end at Lagos midnight names the day before it, as formatAccessLastDay does. The year is not shown. The instant is
+ *  always the database's; pages format it on the server. */
 export function formatFreeMonthDay(iso: string): string {
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? '' : MONTH_DAY_FORMAT.format(date)
+  const end = Date.parse(iso)
+  return Number.isNaN(end) ? '' : MONTH_DAY_FORMAT.format(new Date(end - 1))
 }
 
-/** What every place that offers the free month needs from its page. */
+/** What every place that offers free access needs from its page. */
 export type FreeMonthClaim = {
   continuityToken: string
-  /** The profile revision the page showed, so the month sets exactly those courses (D7). */
+  /** The profile revision the page showed, so free access sets exactly those courses (D7). */
   profileRevision: number
-  /** The day the month would end, as the server wrote it from the database's answer ("16 December"). */
+  /** The last day free access would cover, as the server wrote it from the database's answer ("30 December"). */
   endsOn: string
   /** How long the claim stays open after this page was read, from the database's own clock (its `now` and the stored
    *  closing instant): the open page lets the offer go then, without reading the device's clock. */
   closesInMs: number
 }
 
-/** The free month offer for this page, or null: only when the database says this student can claim it now, and never
- *  without the profile revision the month would be bound to (D7). */
+/** The free access offer for this page, or null: only when the database says this student can claim it now, and never
+ *  without the profile revision it would be bound to (D7). */
 export function freeMonthClaim(summary: EntitlementSummary, continuityToken: string, profileRevision: number | null):
   FreeMonthClaim | null {
   const offer = summary.free_month
@@ -296,39 +297,43 @@ export const FREE_PASS_COPY = {
   endsAt: (iso: string) => `Ends ${formatAccessDate(iso)}`,
 } as const
 
-// Early Access, as students see it: their free month. "Early Access" itself is never shown to a student.
-export const FREE_MONTH_LABEL = 'Free month'
+// Early Access, as students see it: free access until a day ("Free until 30 December"). "Early Access" is never shown.
+/** The name of free access, with the last day it covers. */
+export function freeUntil(day: string): string {
+  return `Free until ${day}`
+}
 /**
- * Every free month string. Each date a string carries is the database's (the eligibility read's end date before the
- * claim, the grant's own end after it), formatted on the server with formatFreeMonthDay(); `endsOn` is that text.
+ * Every free access string. Each day a string carries is the database's (the eligibility read's end before the claim,
+ * the grant's own end after it), formatted on the server as the last day covered; `endsOn` / `day` is that text.
  */
 export const FREE_MONTH_COPY = {
   // The offer: the Dashboard card, the plan card on Plan & Access and the confirmation's title.
-  title: 'Your free month',
-  line: 'Full access to your courses and Campus Bot for one month.',
-  start: 'Claim your free month',
+  title: (day: string) => freeUntil(day),
+  line: 'Full access to your courses and Campus Bot.',
+  start: 'Get free access',
   // As a plan card beside the paid plans.
-  planName: FREE_MONTH_LABEL,
+  planName: (day: string) => freeUntil(day),
   price: '₦0',
   // On checkout, above Pay.
-  instead: 'You can get a free month instead.',
-  // The confirmation.
+  instead: (day: string) => `You can get free access until ${day} instead.`,
+  // The confirmation. Its title carries the day, so the terms only say when it starts.
+  description: 'What free access gives, and its terms.',
   gives: ['Full access to your courses, notes and practice', 'Campus Bot included'],
-  terms: (endsOn: string) => [`Starts now and ends on ${endsOn}`, COURSES_FIXED_LINE],
-  confirm: 'Start your free month',
+  terms: (_day: string) => ['Starts now', COURSES_FIXED_LINE],
+  confirm: 'Start free access',
   cancel: 'Not now',
   starting: 'Starting…',
   // Once claimed, and once over.
-  active: (endsOn: string) => `${FREE_MONTH_LABEL} · Ends ${endsOn}`,
-  ended: 'Your free month has ended.',
-  continues: (day: string) => `Your free month continues until ${day}.`,
+  active: (day: string) => freeUntil(day),
+  ended: 'Your free access has ended.',
+  continues: (day: string) => `Your free access continues until ${day}.`,
   // Where a locked course or Campus Bot offers it.
-  lockedTitle: 'Included in your free month.',
-  campusBot: 'Campus Bot is included in your free month.',
-  // What a student is told when the claim does not start a month.
-  error: 'Couldn’t start your free month. Try again.',
+  lockedTitle: (day: string) => `Included free until ${day}.`,
+  campusBot: (day: string) => `Campus Bot is included free until ${day}.`,
+  // What a student is told when the claim does not start free access.
+  error: 'Couldn’t start your free access. Try again.',
   offerEnded: 'This offer has ended.',
-  unavailable: 'A free month isn’t available on this account.',
+  unavailable: 'Free access isn’t available on this account.',
 } as const
 
 export const USAGE_COPY = {
@@ -427,7 +432,7 @@ export function accessCopy(onSale: boolean) {
 export const ACCESS_SOURCE_LABEL: Record<AccessSource, string> = {
   // A seven-day trial issued before the Discovery Pass replaced it.
   trial: 'Free trial',
-  early_access: FREE_MONTH_LABEL,
+  early_access: 'Free access',
   manual: 'Full access',
   tester: 'Full access',
   // Named by the plan itself where the summary carries it (paidPlanName).
@@ -478,6 +483,19 @@ function msUntil(summary: EntitlementSummary, iso: string | null): number {
   return iso === null ? Number.NaN : Date.parse(iso) - Date.parse(summary.now)
 }
 
+/**
+ * When free access ends, as its ending notice says it. Free access ends at a Lagos midnight (the end of its last day),
+ * which a date and time would print as the next day at 00:00, so a midnight end names the last day instead: "at midnight
+ * tonight" when the database's now is on that day, otherwise "at the end of" that day. Any other end (a grant claimed
+ * before free access had a fixed end) keeps its date and time. Every day here is a Lagos day of the database's clock.
+ */
+function freeAccessEndingTitle(now: string, endsAt: string): string {
+  const lastDay = formatAccessLastDay(endsAt)
+  if (formatAccessDay(endsAt) === lastDay) return `Your free access ends ${formatAccessDate(endsAt)}.`
+  return formatAccessDay(now) === lastDay ? 'Your free access ends at midnight tonight.'
+    : `Your free access ends at the end of ${lastDay}.`
+}
+
 /** The previews this pass has not used yet, by their student-facing names. */
 export function unusedPreviews(summary: EntitlementSummary): DiscoveryKind[] {
   if (!discoveryOffered(summary)) return []
@@ -494,10 +512,11 @@ export function accessNotice(summary: EntitlementSummary): AccessNotice | null {
     // A Session plan whose Second Semester is already set does not end with its first half (design §2.3 F).
     const continues = access.source === 'paid' && summary.paid !== null && summary.paid.second_ends_at !== null
     if (left > 0 && left <= noticeWindow && !continues) {
-      // The free month by its name; every other full access is the student's plan.
-      const what = access.source === 'early_access' ? 'free month' : 'plan'
-      return { id: 'access-ending', tone: 'info', title: `Your ${what} ends ${formatAccessDate(access.ends_at)}.`,
-        body: 'After that, only GST courses stay free.', action: 'View your plan' }
+      // Free access by its name; every other full access is the student's plan.
+      const title = access.source === 'early_access' ? freeAccessEndingTitle(summary.now, access.ends_at)
+        : `Your plan ends ${formatAccessDate(access.ends_at)}.`
+      return { id: 'access-ending', tone: 'info', title, body: 'After that, only GST courses stay free.',
+        action: 'View your plan' }
     }
     return null
   }

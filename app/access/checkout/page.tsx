@@ -14,7 +14,7 @@ import { redirectForStudentState } from '@/components/student/result-state'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { getCurrentStudentCoursesForVerifiedStudent } from '@/lib/courses/read-model'
-import { CHECKOUT_PROBLEM, CONFIRM_COPY, FREE_MONTH_COPY, RETURN_COPY, formatAccessDay, formatAccessLastDay, freeMonthClaim,
+import { CHECKOUT_PROBLEM, CONFIRM_COPY, FREE_MONTH_COPY, RETURN_COPY, formatAccessLastDay, freeMonthClaim,
   naira, paidPlanName, planName, planOf, sessionUpgradeLine, tierPrices, PLAN_COPY }
   from '@/lib/entitlements/presentation'
 import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
@@ -97,9 +97,10 @@ async function ConfirmCourses({ plan, continuityToken, here }: { plan: PlanKey; 
       Your plan covers the courses for your department, level and semester.
     </Notice>
   </StudentPage>
-  // A free month already running, by the day the database says it ends.
+  // Free access already running, by the last day the database's end covers (an end at Lagos midnight names the day
+  // before it).
   const early = entitlement.access?.source === 'early_access' ? entitlement.access.ends_at : null
-  // A free month this student could claim instead of paying, only when the database says so now.
+  // Free access this student could claim instead of paying, only when the database says so now.
   const freeMonth = freeMonthClaim(entitlement, continuityToken, revision)
   const prices = tierPrices(entitlement.plans, tier)
   const sessionOffer = period === 'semester' && entitlement.plans_on_sale ? prices.session : null
@@ -126,7 +127,7 @@ async function ConfirmCourses({ plan, continuityToken, here }: { plan: PlanKey; 
           </ul>
         </section>
         <Notice tone="info" title={CONFIRM_COPY.setAfterPaying}>
-          {early !== null ? `${FREE_MONTH_COPY.continues(formatAccessDay(early))} Your plan then keeps your ` +
+          {early !== null ? `${FREE_MONTH_COPY.continues(formatAccessLastDay(early))} Your plan then keeps your ` +
             `courses open${term === null ? '' : ` until ${formatAccessLastDay(term.ends_at)}`}.` : null}
         </Notice>
         {sessionOffer !== null && <p className="text-sm text-student-text-secondary">

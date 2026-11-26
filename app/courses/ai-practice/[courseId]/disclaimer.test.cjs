@@ -1,5 +1,5 @@
 // app/courses/ai-practice/[courseId]/disclaimer.test.cjs — The one Campus Bot label on every personal set (and only on
-// a set), and the one line that says where Campus Bot opens: the free month when this student can claim it.
+// a set), and the one line that says where Campus Bot opens: free access when this student can claim it.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -75,23 +75,24 @@ test('Campus Bot closed: the notice offers the free pass with its button only to
   }
 })
 
-test('Campus Bot closed, and this student can claim the free month: one line and "Claim your free month", in place of the pass', () => {
+test('Campus Bot closed, and this student can claim free access: one line with its last day and "Get free access", in place of the pass', () => {
   const closed = { state: 'not-entitled', source: null, total: 0, used: 0, endsAt: null }
-  const freeMonth = { continuityToken: 't', profileRevision: 7, endsOn: '16 December' }
-  // Whatever else the page could say (a pass, plans on sale), the month is the one thing offered.
+  const freeMonth = { continuityToken: 't', profileRevision: 7, endsOn: '30 December' }
+  // Whatever else the page could say (a pass, plans on sale), free access is the one thing offered.
   for (const props of [{}, { trial: { policy: null, passAvailable: true } }, { plansOnSale: true }]) {
     const markup = html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance: closed,
       recentSets: [], freeMonth, ...props }))
-    assert.match(markup, /<h2 class="student-notice-title">Campus Bot is included in your free month\.<\/h2><div class="student-notice-action"><button type="button" data-free-month-start=""[^>]*>Claim your free month<\/button>/)
+    assert.match(markup, /<h2 class="student-notice-title">Campus Bot is included free until 30 December\.<\/h2><div class="student-notice-action"><button type="button" data-free-month-start=""[^>]*>Get free access<\/button>/)
     assert.equal((markup.match(/<button\b/g) || []).length, 1, 'one button')
-    assert.doesNotMatch(markup, /free pass|when you subscribe|with a plan|full access|Early Access|<a\b|type="file"|16 December/,
-      'the end date is in the confirmation, not on the page')
+    assert.equal((markup.match(/30 December/g) || []).length, 1, 'the line carries the last day, once')
+    assert.doesNotMatch(markup, /free pass|when you subscribe|with a plan|full access|Early Access|<a\b|type="file"|31 Dec|free month/,
+      'nothing else is offered, and never the 31st')
   }
   // A student who already has Campus Bot is not offered anything.
   const active = { state: 'active', source: 'paid', total: null, used: 0, endsAt: '2027-03-08T22:59:59.000Z' }
   const entitled = html(React.createElement(AiPracticeClient, { courseId: 'c', continuityToken: 't', initialAllowance: active,
     recentSets: [], freeMonth }))
-  assert.doesNotMatch(entitled, /free month|data-free-month-start/)
+  assert.doesNotMatch(entitled, /Free until|free access|data-free-month/i)
   assert.match(entitled, /type="file"/)
 })
 

@@ -1,5 +1,8 @@
 // lib/landing/content.ts — Every word on the public landing page, typed so sections stay copy-free.
 import { LANDING_FIGURES } from './figures'
+import type { FaqItem } from './faq'
+
+export type { FaqItem } from './faq'
 
 export type LandingAnchor = 'try' | 'features' | 'faq'
 export type TextLink = { label: string; href: string }
@@ -27,7 +30,12 @@ export type SampleQuestion = {
   answer: number
   explanation: string
 }
-export type FaqItem = { question: string; answer: string }
+/** Free access ends, and the free pass returns, at the end of 30 December 2026, Lagos (2026-12-31 00:00:00+01). It is
+ *  the database's early_access_claim_cutoff (supabase/migrations/20261126100000_free_until_30_december.sql): this page
+ *  is built once and reads no database, so it carries the same instant. Change both together. */
+export const FREE_ACCESS_ENDS_AT = '2026-12-30T23:00:00.000Z'
+/** The last day free access covers, as the student screens name it. */
+export const FREE_ACCESS_LAST_DAY = '30 December'
 
 const REGISTER = '/register'
 const LOGIN = '/login'
@@ -165,8 +173,14 @@ export const landingContent = {
         answer: `Courses for the ${LANDING_FIGURES.departments} departments of the Faculty of Management Sciences at UNILAG.` },
       { question: 'Where do the questions come from?',
         answer: 'From past papers, class tests, course outlines and class notes, and our team vets every question.' },
+      // Never an offer that is not available that day (owner decision, 25 November 2026): free access until the end of
+      // 30 December, the free pass after that. This page cannot see the launch: a build of it that is public before the
+      // live launch (activate-launch) would promise free access a little early, so production gets the release that
+      // carries it on launch day, just before the launch (docs/entitlements-operations.md).
       { question: 'Can I try it before paying?',
-        answer: 'Yes. GST courses are free, and a free pass lets you try your department courses.' },
+        answer: `Yes. GST courses are always free, and until ${FREE_ACCESS_LAST_DAY} you can get free access to all your courses.`,
+        later: { from: FREE_ACCESS_ENDS_AT,
+          answer: 'Yes. GST courses are free, and a free pass lets you try your department courses.' } },
     ] satisfies FaqItem[],
   },
   finalCta: {

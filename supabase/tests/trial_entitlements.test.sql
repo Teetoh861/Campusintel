@@ -40,8 +40,8 @@ select has_table('private', 'early_access_members', 'the retired Early Access li
 select has_table('private', 'entitlement_events', 'audit trail exists');
 select has_function('public', 'claim_early_access', array['uuid', 'jsonb', 'bigint'],
   'Early Access is claimed by the student: nothing enrols anyone automatically');
-select is((select early_access_enrollment_days from private.entitlement_policy), 10,
-  'Early Access can be claimed for 10 days after the actual launch');
+select is((select early_access_claim_cutoff from private.entitlement_policy), timestamptz '2026-12-31 00:00:00+01',
+  'free access can be claimed from the actual launch until the end of 30 December 2026 (Lagos), when every claim ends');
 select is((select actual_launch_at from private.entitlement_policy), null,
   'the actual public launch starts unset; the planned date is never used in its place');
 select ok((select bool_and(relrowsecurity) from pg_class where oid in ('public.entitlement_grants'::regclass,
@@ -416,9 +416,11 @@ create function pg_temp.rev(p_user uuid) returns bigint language sql stable secu
 -- must, so it is sent as 0 and the database answers for the session.
 create function pg_temp.month(p_user uuid, p_session uuid, p_email text) returns jsonb language sql as
   $$ select public.claim_early_access(p_session, pg_temp.claim(p_email), coalesce(pg_temp.rev(p_user), 0)) $$;
-create function pg_temp.month_end(p_start timestamptz) returns timestamptz language sql immutable as
-  $$ select ((p_start at time zone 'Africa/Lagos') + interval '1 month') at time zone 'Africa/Lagos' $$;
-grant execute on function pg_temp.rev(uuid), pg_temp.month(uuid, uuid, text), pg_temp.month_end(timestamptz)
+-- When every claim ends (20261126100000): the close stored with the launch, whenever the claim was made. Read as the
+-- definer, because API roles cannot read private.
+create function pg_temp.end_at() returns timestamptz language sql stable security definer as
+  $$ select early_access_claim_closes_at from private.entitlement_policy $$;
+grant execute on function pg_temp.rev(uuid), pg_temp.month(uuid, uuid, text), pg_temp.end_at()
   to authenticated, service_role;
 select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access'),
   'the planned launch passing three days ago starts nothing');
@@ -451,10 +453,10 @@ insert into outcome values ('d-claim', pg_temp.month('61000000-0000-4000-8000-00
   '62000000-0000-4000-8000-000000000004', 'early-d@example.test'));
 reset role;
 select is((select result->>'state' from outcome where step = 'd-claim'), 'claimed', 'D claims the month with one tap');
-select is((select jsonb_build_object('starts', starts_at between now() and clock_timestamp(), 'ends', ends_at = pg_temp.month_end(starts_at),
+select is((select jsonb_build_object('starts', starts_at between now() and clock_timestamp(), 'ends', ends_at = pg_temp.end_at(),
   'ai', ai_terms, 'by', created_by) from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access'),
   '{"starts":true,"ends":true,"ai":"uncapped","by":"student"}'::jsonb,
-  'the calendar month starts at the claim, not at the planned date or the launch: a delayed launch costs no days');
+  'free access starts at the claim, not at the planned date or the launch, and ends at the close stored with the launch');
 select ok(not exists (select 1 from public.entitlement_grants where source = 'early_access' and user_id <> '61000000-0000-4000-8000-000000000004'),
   'students who have not claimed get nothing');
 select ok(exists (select 1 from private.entitlement_events where user_id = '61000000-0000-4000-8000-000000000004' and event = 'early-access.claimed'
@@ -499,7 +501,7 @@ select is(public.begin_ai_practice_generation('62000000-0000-4000-8000-000000000
   'capacity', 'the platform-wide daily AI guard still applies to Early Access');
 reset role;
 update private.ai_practice_policy set global_daily_generations = 500;
--- An account confirmed after launch claims its own full month, from its claim.
+-- An account confirmed after launch claims too: its free access starts at its own claim and ends when everyone's does.
 update private.entitlement_policy set actual_launch_at = now() - interval '5 days';
 set local role service_role;
 select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4000-8000-000000000009', 'unconfirmed-u@example.test')->>'state',
@@ -522,35 +524,39 @@ select is(pg_temp.month('61000000-0000-4000-8000-000000000009', '62000000-0000-4
 select is(pg_temp.month('61000000-0000-4000-8000-000000000011', '62000000-0000-4000-8000-000000000011', 'ent-h@example.test')->>'state',
   'claimed', 'and so does H');
 reset role;
-select ok((select starts_at between now() and clock_timestamp() and ends_at = pg_temp.month_end(starts_at)
-  from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000009' and source = 'early_access'),
-  'five days after launch U still gets a full month, from the claim');
--- The claim closes after the configured days, at the instant stored with the launch; after launch the days are fixed.
-update private.entitlement_policy set actual_launch_at = now() - interval '11 days';
+select ok((select u.starts_at between now() and clock_timestamp() and u.starts_at > d.starts_at
+    and u.ends_at = d.ends_at and u.ends_at = pg_temp.end_at()
+  from public.entitlement_grants u, public.entitlement_grants d
+  where u.user_id = '61000000-0000-4000-8000-000000000009' and u.source = 'early_access'
+    and d.user_id = '61000000-0000-4000-8000-000000000004' and d.source = 'early_access'),
+  'five days after launch U''s free access starts at U''s claim, later than D''s, and ends at the same stored close');
+-- The claim closes at the cutoff, the instant stored with the launch: moving the cutoff moves the close with it
+-- (20261126100000). After launch the retired claim days still cannot be changed.
+update private.entitlement_policy set early_access_claim_cutoff = now() - interval '1 second';
 set local role service_role;
 select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
-  '{"state":"closed"}'::jsonb, 'after the claim window nobody new can claim');
+  '{"state":"closed"}'::jsonb, 'once the cutoff has passed nobody new can claim');
 select throws_ok($$ select public.admin_configure_early_access(null, 30, null, 'ops', '') $$, '22023', null,
   'a policy change needs a reason');
 select is(public.admin_configure_early_access(null, 30, null, 'ops', 'owner extended the claim')->>'state', 'claim-window-fixed',
-  'after launch the claim days cannot be changed');
+  'after launch the retired claim days still cannot be changed');
 select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test'),
-  '{"state":"closed"}'::jsonb, 'so the claim does not reopen');
+  '{"state":"closed"}'::jsonb, 'and the refused change reopens nothing: only the cutoff moves the close');
 reset role;
-select is((select early_access_enrollment_days from private.entitlement_policy), 10, 'and the days are unchanged');
--- Inside the window, A, whose free pass ended, can still claim.
-update private.entitlement_policy set actual_launch_at = now() - interval '1 day';
+select is((select early_access_enrollment_days from private.entitlement_policy), 10, 'and the retired days are unchanged');
+-- Reopened the same way (the cutoff two months away again), A, whose free pass ended, can still claim.
+update private.entitlement_policy set early_access_claim_cutoff = now() + interval '60 days';
 set local role service_role;
 select is(pg_temp.month('61000000-0000-4000-8000-000000000001', '62000000-0000-4000-8000-000000000001', 'ent-a@example.test')->>'state',
   'claimed', 'A, whose free pass ended, claims while the claim is open: a used pass does not cost a student their month');
 reset role;
--- Expiry: the month ends on its own date and is never renewed.
+-- Expiry: free access ends at its own end and is never renewed.
 update public.entitlement_grants set starts_at = now() - interval '1 month' - interval '1 day', ends_at = now() - interval '1 day'
   where user_id = '61000000-0000-4000-8000-000000000004' and source = 'early_access';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"61000000-0000-4000-8000-000000000004","role":"authenticated","session_id":"62000000-0000-4000-8000-000000000004"}';
 select throws_ok($$ select * from public.read_published_managed_content('40000000-0000-4000-8000-000000000002') $$,
-  'CI403', null, 'the month ends after one calendar month');
+  'CI403', null, 'once free access has ended the department course is locked again');
 select is((select e->'early_access'->>'status' from public.get_my_entitlement() e), 'ended',
   'and a later plan read does not renew it');
 reset role;
@@ -747,8 +753,9 @@ select is(pg_temp.month('61000000-0000-4000-8000-000000000015', '62000000-0000-4
 reset role;
 select ok(not exists (select 1 from public.entitlement_grants where user_id = '61000000-0000-4000-8000-000000000015'),
   'nothing is granted');
--- Once the claim has closed, neither does it buy a second pass: A's address used both its pass and its month.
-update private.entitlement_policy set actual_launch_at = now() - interval '40 days';
+-- Once the claim has closed (the cutoff moved into the past), neither does it buy a second pass: A's address used both
+-- its pass and its month.
+update private.entitlement_policy set early_access_claim_cutoff = now() - interval '1 second';
 set local role service_role;
 select is(public.activate_discovery_pass('62000000-0000-4000-8000-000000000010', pg_temp.claim('ent-a@example.test'))->>'state',
   'already-claimed', 'deleting and re-registering the same address does not buy a second pass');

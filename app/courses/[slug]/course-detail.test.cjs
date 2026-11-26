@@ -339,62 +339,68 @@ test('a locked course keeps its identity, renders no study content or reading li
 
 const { entitlementSummarySchema } = require(path.join(root, 'lib/entitlements/contract.ts'))
 // The plan as the server read it a day after launch for a student with no plan; `free_month` is the database's answer
-// to "can this student claim now", with the instant the month would end.
+// to "can this student claim now", with the instant free access would end.
 const planRead = freeMonth => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
   now: '2026-11-16T12:00:00+00:00', planned_launch_at: '2026-11-14T23:00:00+00:00', actual_launch_at: '2026-11-15T08:00:00+00:00',
   trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
   trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
   discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
-  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-25T08:00:00+00:00' },
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-12-30T23:00:00+00:00' },
 }), free_month: freeMonth } })
+// What the database offers: a claim now ends when the claim closes, at the end of 30 December (Lagos), 23:00 UTC.
+const FREE_ACCESS = { endsAt: '2026-12-30T23:00:00+00:00', closesAt: '2026-12-30T23:00:00+00:00' }
 
-test('a locked course on the student\'s list offers the free month when the database says they can claim it now', async () => fixture(async f => {
+test('a locked course on the student\'s list offers free access when the database says they can claim it now', async () => fixture(async f => {
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
-  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  f.state.plan = planRead(FREE_ACCESS)
   f.state.revision = 7
   const hub = await f.granted()
-  assert.deepEqual(hub.props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December',
-    closesInMs: (8 * 24 + 20) * 3_600_000 },
-    'bound to the page token, the profile revision the page read and the end day the database gave')
+  // endsOn: the last Lagos day the end covers, not the 31st its midnight falls on. closesInMs: 30 Dec 23:00 UTC less the
+  // database's now, 16 Nov 12:00.
+  assert.deepEqual(hub.props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '30 December',
+    closesInMs: (44 * 24 + 11) * 3_600_000 },
+    'bound to the page token, the profile revision the page read and the last day the database gave')
   assert.deepEqual(f.planReads, [{ freeMonth: true }], 'the page asks whether this student can claim now')
   const html = renderToStaticMarkup(hub)
   // What the course has is listed in the study families' own labels.
   const has = require(path.join(root, 'components/student/study-families.ts')).getStudyFamilyLabels(f.state.buildTime).join(' · ')
-  assert.ok(text(html).includes(`Included in your free month. ${has} Claim your free month `), text(html))
+  assert.ok(text(html).includes(`Included free until 30 December. ${has} Get free access `), text(html))
   assert.match(html, /<button type="button" data-free-month-start=""/)
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
-  assert.doesNotMatch(html, /href="\/access"|See how to unlock|Get your free pass|Subscribe|Early Access|16 December/,
-    'no trip to Plan & Access, and the end date is in the confirmation')
-  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|\/quiz[?"]/, 'the course stays locked until the month starts')
+  assert.equal((html.match(/30 December/g) || []).length, 1, 'the title carries the last day, once')
+  assert.doesNotMatch(html, /href="\/access"|See how to unlock|Get your free pass|Subscribe|Early Access|31 Dec/,
+    'no trip to Plan & Access, and never the 31st')
+  assert.doesNotMatch(text(html), /month/i, 'what a student reads never says month')
+  assert.doesNotMatch(html, /id="notes"|id="cbtPractice"|\/quiz[?"]/, 'the course stays locked until free access starts')
 }))
 
-test('no free month on a locked course when the database offers none, or the revision or the plan cannot be read', async () => fixture(async f => {
+test('no free access on a locked course when the database offers none, or the revision or the plan cannot be read', async () => fixture(async f => {
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
   f.state.plan = planRead(null)
   assert.equal((await f.granted()).props.freeMonth, null)
   assert.match(text(await f.html()), /Included with a plan\. Notes · Practice See how to unlock /)
-  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  f.state.plan = planRead(FREE_ACCESS)
   f.state.revision = null
-  assert.equal((await f.granted()).props.freeMonth, null, 'a month must be bound to the courses the student saw (D7)')
-  assert.doesNotMatch(await f.html(), /free month|data-free-month-start/i)
+  assert.equal((await f.granted()).props.freeMonth, null, 'free access must be bound to the courses the student saw (D7)')
+  assert.doesNotMatch(await f.html(), /Free until|free access|data-free-month/i)
   f.state.revision = 7
   f.state.plan = { status: 'unavailable' }
   assert.equal((await f.granted()).props.freeMonth, null)
 }))
 
-test('the free month is never read or offered for a course off the list, with courses unconfirmed, or with nothing published', async () => fixture(async f => {
-  f.state.plan = planRead({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+test('free access is never read or offered for a course off the list, with courses unconfirmed, or with nothing published', async () => fixture(async f => {
+  f.state.plan = planRead(FREE_ACCESS)
   for (const reason of ['outside-list', 'needs-selection', 'selection-locked']) {
     f.state.result = { status: 'ok', course: institutional({ state: 'locked', reason }), learning: null, practice: null }
     const html = await f.html()
-    assert.doesNotMatch(html, /free month|data-free-month-start/i, reason)
+    assert.doesNotMatch(html, /Free until|free access|data-free-month/i, reason)
   }
   assert.deepEqual(f.planReads, [], 'no plan is read where a plan would not open the course')
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
   f.state.buildTime = { notes: false, cbtPractice: false, theory: false }
   const empty = await f.html()
   assert.match(text(empty), /Study materials are not available\./)
-  assert.doesNotMatch(empty, /free month|data-free-month-start/i, 'nothing published: nothing a month would open')
+  assert.doesNotMatch(empty, /Free until|free access|data-free-month/i, 'nothing published: nothing free access would open')
 }))
 
 // An active free pass, as the database reports it, with the previews it has used.

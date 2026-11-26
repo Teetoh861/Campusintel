@@ -58,7 +58,7 @@ type Props = {
   trial?: TrialWording
   /** The copy switch (plans_on_sale). */
   plansOnSale?: boolean
-  /** The free month, when this student can claim it now: Campus Bot then offers it in place of everything else. */
+  /** Free access, when this student can claim it now: Campus Bot then offers it in place of everything else. */
   freeMonth?: FreeMonthClaim | null
   /** The course's own page, for the message that sends the student to its study materials. */
   courseHref?: string
@@ -117,9 +117,9 @@ export function AiPracticeClient({ courseId, continuityToken, initialAllowance, 
         ? 'You can’t upload notes for this course.'
         : 'Uploads are paused for now. Your saved sets are still here.'}
     </p> : null}
-    {/* One line and one button: the free month when this student can claim it, else where Campus Bot opens. */}
+    {/* One line and one button: free access when this student can claim it, else where Campus Bot opens. */}
     {canGenerate && !entitled && (freeMonth !== null
-      ? <Notice title={FREE_MONTH_COPY.campusBot} tone="info" action={<FreeMonthStart {...freeMonth} />} />
+      ? <Notice title={FREE_MONTH_COPY.campusBot(freeMonth.endsOn)} tone="info" action={<FreeMonthStart {...freeMonth} />} />
       : <Notice title={notEntitledMessage(trial, plansOnSale)} tone="info" action={freePass === null ? undefined
         : <Link href={freePass.href} prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>{freePass.label}</Link>} />)}
     {entitled && <section className="ai-practice-upload" aria-labelledby="ai-practice-upload-title" aria-busy={busy}>
