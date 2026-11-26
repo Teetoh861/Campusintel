@@ -39,7 +39,7 @@ pages offer neither feature; explanations already saved are still served.
 
 ## Funding, limits and charges
 
-- **Paid plan or free month:** the student's existing Campus Bot windows (5 hours and a week, the tier's tokens),
+- **Paid plan or free access:** the student's existing Campus Bot windows (5 hours and a week, the tier's tokens),
   shared with practice sets. Charged from the provider's own report: (read + 5 x written) x the writer's weight
   (Haiku = 1). On a calculation course the check is charged at the **writer's** weight too; the platform absorbs the
   difference (owner decision).
@@ -48,8 +48,9 @@ pages offer neither feature; explanations already saved are still served.
   for them or saved earlier for someone else (`private.campus_bot_pass_explanations`, per pass and per question
   revision and option); reading it again is free.
 - **No Campus Bot:** the student sees the Campus Bot notice: subscribe when plans are on sale, the free pass when they
-  can still start one, otherwise "Campus Bot is included with a plan." (The free month button joins once Early Access
-  is in develop.)
+  can still start one, otherwise "Campus Bot is included with a plan." The notice keeps its Plan & Access button, where
+  free access is the first plan card while the student can claim it; the notice itself does not offer free access
+  (owner decision, 25 November 2026).
 - **Reserve, then settle.** A request reserves its worst case at its caps before the provider is called; only a
   delivered explanation or reply is charged, and never more than was reserved. The server bounds the whole prompt
   (instructions, notes, question or chat, and the reply's schema) by the input cap it was admitted with, leaving off

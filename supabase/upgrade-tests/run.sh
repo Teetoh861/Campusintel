@@ -10,6 +10,8 @@ cd -- "$script_dir/../.."
 phase_a_version=20260915100000
 phase_b_version=20260918190000
 phase_c_slice_one_version=20260923100000
+# The last migration before 20261126100000_free_until_30_december.sql.
+before_free_access_version=20261125200000
 
 restore_current_local_database() {
   local prior_status=$?
@@ -95,4 +97,11 @@ fi
 DO_NOT_TRACK=1 supabase test db --local \
   supabase/upgrade-tests/institutional_catalogue_abort.test.sql
 
-printf 'All seven local upgrade scenarios passed.\n'
+printf 'Testing free access until 30 December on a database launched under the old rule...\n'
+DO_NOT_TRACK=1 supabase db reset --local --version "$before_free_access_version" \
+  --sql-paths ./upgrade-tests/free_access_launched.sql
+DO_NOT_TRACK=1 supabase migration up --local
+DO_NOT_TRACK=1 supabase test db --local \
+  supabase/upgrade-tests/free_access_upgrade.test.sql
+
+printf 'All eight local upgrade scenarios passed.\n'

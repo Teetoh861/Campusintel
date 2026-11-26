@@ -1,5 +1,5 @@
 // app/courses/ai-practice/[courseId]/page.test.cjs — Where the Campus Bot link on a course row lands, and what the page
-// hands Campus Bot: the free month only when the database says this student can claim it now.
+// hands Campus Bot: free access only when the database says this student can claim it now.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const Module = require('node:module')
@@ -27,14 +27,16 @@ const decision = (reason, extra = {}) => ({ institutional_course_id: COURSE, rea
 const savedSet = { generationId: '71111111-1111-4111-8111-111111111111', createdAt: '2026-11-10T09:00:00.000Z',
   fileName: 'logic-notes.pdf', questions: [] }
 // The plan as the server read it for a student with no plan, a day after launch; `free_month` is the database's answer
-// to "can this student claim now", with the day the month would end.
+// to "can this student claim now", with the instant free access would end.
 const plan = (freeMonth, overrides = {}) => ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({
   now: '2026-11-16T12:00:00+00:00', planned_launch_at: '2026-11-14T23:00:00+00:00', actual_launch_at: '2026-11-15T08:00:00+00:00',
   trial_hours: 72, trial_days: 3, expiry_notice_hours: 12, tier: 'free', access: null,
   trial: { status: 'available', policy: null, starts_at: null, ends_at: null, available_from: null },
   discovery: { cbt_questions: 50, ai_sets: 1, previews: [] }, otp: null,
-  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-11-25T08:00:00+00:00' },
+  early_access: { status: 'not-listed', starts_at: null, ends_at: null, enrollment_closes_at: '2026-12-30T23:00:00+00:00' },
   ...overrides }), free_month: freeMonth } })
+// What the database offers: a claim now ends when the claim closes, at the end of 30 December (Lagos), 23:00 UTC.
+const FREE_ACCESS = { endsAt: '2026-12-30T23:00:00+00:00', closesAt: '2026-12-30T23:00:00+00:00' }
 
 async function fixture(run) {
   return withTsx(async () => {
@@ -122,23 +124,30 @@ test('the Campus Bot link on a free course without materials opens Campus Bot, n
   assert.equal(props.freeMonth, null, 'no plan read, no offer')
 }))
 
-test('a student who can claim the free month is offered it here, bound to the revision and end day the server read', async () => fixture(async f => {
-  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' }, { plans_on_sale: true, plans: [] })
+test('a student who can claim free access is offered it here, bound to the revision and last day the server read', async () => fixture(async f => {
+  f.state.plan = plan(FREE_ACCESS, { plans_on_sale: true, plans: [] })
   f.state.revision = 7
   const props = await f.workspace()
-  // closesInMs: 25 Nov 08:00 less the database's now, 16 Nov 12:00.
-  assert.deepEqual(props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December',
-    closesInMs: (8 * 24 + 20) * 3_600_000 })
+  // endsOn: the last Lagos day the end covers, not the 31st its midnight falls on. closesInMs: 30 Dec 23:00 UTC less the
+  // database's now, 16 Nov 12:00.
+  assert.deepEqual(props.freeMonth, { continuityToken: 'page-token', profileRevision: 7, endsOn: '30 December',
+    closesInMs: (44 * 24 + 11) * 3_600_000 })
   assert.deepEqual(f.planReads.at(-1), { freeMonth: true }, 'the page asks whether this student can claim now')
-  assert.equal(props.plansOnSale, true, 'what else the page could say is still handed over; the month comes first')
+  assert.equal(props.plansOnSale, true, 'what else the page could say is still handed over; free access comes first')
+  // By the database's clock: 1 Dec, 09:00 Lagos, and 30 Dec, 11:00 Lagos, its last morning. The day stays 30 December.
+  for (const [now, closesInMs] of [['2026-12-01T08:00:00+00:00', 2_559_600_000], ['2026-12-30T10:00:00+00:00', 13 * 3_600_000]]) {
+    f.state.plan = plan(FREE_ACCESS, { now })
+    assert.deepEqual((await f.workspace()).freeMonth, { continuityToken: 'page-token', profileRevision: 7,
+      endsOn: '30 December', closesInMs }, now)
+  }
 }))
 
-test('no free month here when the database offers none, or the plan or the revision cannot be read', async () => fixture(async f => {
+test('no free access here when the database offers none, or the plan or the revision cannot be read', async () => fixture(async f => {
   f.state.plan = plan(null)
   assert.equal((await f.workspace()).freeMonth, null, 'the database offers none')
-  f.state.plan = plan({ endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-25T08:00:00+00:00' })
+  f.state.plan = plan(FREE_ACCESS)
   f.state.revision = null
-  assert.equal((await f.workspace()).freeMonth, null, 'a month must be bound to the courses the student saw (D7)')
+  assert.equal((await f.workspace()).freeMonth, null, 'free access must be bound to the courses the student saw (D7)')
   f.state.revision = 7
   for (const failed of [{ status: 'unavailable' }, { status: 'signed-out' }, 'fails']) {
     f.state.plan = failed

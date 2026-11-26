@@ -2,6 +2,7 @@
 import Image from 'next/image'
 import { CONTACT_EMAIL, INSTAGRAM_URL } from '@/lib/contact'
 import { landingContent } from '@/lib/landing/content'
+import { faqAnswer } from '@/lib/landing/faq'
 import { FaqList } from './FaqList'
 import styles from './landing.module.css'
 import type { ReactElement } from 'react'
@@ -10,6 +11,9 @@ const { faq, images } = landingContent
 const INLINE_LINK = 'student-link font-bold'
 
 export function Faq(): ReactElement {
+  // Answers as they stand when the page is built; the list picks again on the visitor's device (FaqList.tsx).
+  const builtAt = Date.now()
+  const items = faq.items.map(item => ({ ...item, answer: faqAnswer(item, builtAt) }))
   return (
     <section id={faq.id} className={`${styles.sec} ${styles.anchor}`} aria-labelledby="faq-title">
       <div className={`app-container ${styles.faqGrid}`}>
@@ -30,7 +34,7 @@ export function Faq(): ReactElement {
             </p>
           </div>
         </div>
-        <FaqList items={faq.items} />
+        <FaqList items={items} />
       </div>
     </section>
   )

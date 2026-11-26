@@ -1,6 +1,6 @@
 // components/student/locked-course-notice.test.cjs — The one notice on a course the student's plan does not include:
 // a course off their list (message us), courses not confirmed yet, and a course a plan would open, where the one
-// button is the free month when this student can claim it, else the free pass, else the way to a plan.
+// button is free access when this student can claim it, else the free pass, else the way to a plan.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs'), Module = require('node:module'), ts = require('typescript')
@@ -94,28 +94,30 @@ test('a locked course is one notice: what it has and one button to Plan & Access
     [['/access', 'Get your free pass'], ['/courses/x', 'Back to course']])
 })
 
-const FREE_MONTH = { continuityToken: 'page-token', profileRevision: 7, endsOn: '16 December' }
+// What the page hands the notice: the last day free access covers, as the server wrote it from the database's end.
+const FREE_MONTH = { continuityToken: 'page-token', profileRevision: 7, endsOn: '30 December' }
 
-test('a student who can claim the free month sees it on a locked course: one line, what the course has and the button, in place of the pass and the plans', () => {
+test('a student who can claim free access sees it on a locked course: one line with its last day, what the course has and the button, in place of the pass and the plans', () => {
   for (const props of [{ passHours: 72 }, { passHours: null, plansOnSale: true }, { passHours: 72, plansOnSale: true }, {}]) {
     const html = render('2349012345678', { has: SOME, freeMonth: FREE_MONTH, ...props })
     assert.equal((html.match(/class="student-notice"/g) || []).length, 1)
-    assert.ok(html.includes(`<h2 class="student-notice-title">Included in your free month.</h2><p class="student-notice-text">${HAS}</p>`), html)
-    assert.match(html, /<div class="student-notice-action"><button type="button" data-free-month-start=""[^>]*>Claim your free month<\/button><\/div>/)
+    assert.ok(html.includes(`<h2 class="student-notice-title">Included free until 30 December.</h2><p class="student-notice-text">${HAS}</p>`), html)
+    assert.match(html, /<div class="student-notice-action"><button type="button" data-free-month-start=""[^>]*>Get free access<\/button><\/div>/)
     assert.deepEqual(links(html), [], 'no trip to Plan & Access: the confirmation opens here')
-    assert.doesNotMatch(html, /free pass|Subscribe|See how to unlock|with a plan|full access|Early Access|16 December/,
-      'nothing else is offered, and the end date is in the confirmation')
+    assert.equal((html.match(/30 December/g) || []).length, 1, 'the title carries the last day, once')
+    assert.doesNotMatch(html, /free pass|Subscribe|See how to unlock|with a plan|full access|Early Access|31 Dec|free month/,
+      'nothing else is offered, and never the 31st')
   }
   // The way back stays beside it.
   assert.deepEqual(links(render('2349012345678', { has: SOME, freeMonth: FREE_MONTH, backHref: '/courses/x', backLabel: 'Back to course' })),
     [['/courses/x', 'Back to course']])
 })
 
-test('the free month is not offered where it would not open the course: off the list, courses not confirmed, nothing published', () => {
+test('free access is not offered where it would not open the course: off the list, courses not confirmed, nothing published', () => {
   for (const props of [{ outsideList: true }, { reason: 'outside-list' }, { reason: 'needs-selection' },
     { reason: 'selection-locked' }, { has: NONE }]) {
     const html = render('2349012345678', { has: SOME, freeMonth: FREE_MONTH, ...props })
-    assert.doesNotMatch(html, /free month|data-free-month-start/i, JSON.stringify(props))
+    assert.doesNotMatch(html, /Free until|free access|data-free-month/i, JSON.stringify(props))
   }
 })
 

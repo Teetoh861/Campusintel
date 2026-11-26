@@ -1,5 +1,5 @@
 // app/dashboard/page.tsx — Request-scoped Student App home with course-file navigation and personal Continue practice.
-// At the top, only for a student the database says can claim it now: the free month card; once claimed, the day it ends.
+// At the top, only for a student the database says can claim it now: the free access card; once claimed, its last day.
 import Link from 'next/link'
 import { FreeMonthCard } from '@/app/access/FreeMonthOffer'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
@@ -91,8 +91,8 @@ export default async function DashboardPage(): Promise<ReactElement> {
   // The free month card, only when the database says this student can claim it now. Without the revision the month
   // could set courses the student did not see (D7), so nothing is offered.
   const freeMonth = plan === null ? null : freeMonthClaim(plan, continuityToken, profileRevision)
-  // A free month that is running, by the day the database says it ends. In its last hours the notice below says when it
-  // ends, to the minute, so the line is not said twice.
+  // Free access that is running, by the last day the database's end covers. In its last hours the notice below says
+  // when it ends, so the line is not said twice.
   const running = plan !== null && plan.paid === null && plan.access?.source === 'early_access'
     && accessNotice(plan)?.id !== 'access-ending' ? plan.access.ends_at : null
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">

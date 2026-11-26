@@ -176,10 +176,12 @@ create function pg_temp.offers(n integer) returns jsonb language sql as $$
     'claim', pg_temp.dry(format('public.claim_early_access(%L, %L, %s)', pg_temp.s(n), pg_temp.hashes(n),
       pg_temp.rev(n))) -> 'state',
     'ai_course', pg_temp.ai_course(n, 'BUA201')) $$;
--- The free month claim open (launched yesterday) or closed (no launch).
+-- The free access claim open (launched yesterday, ending in five days) or closed (no launch). The stored close follows
+-- the cutoff while a launch is recorded (20261126100000), so the end is set relative to now and the file passes on any day.
 create function pg_temp.claim_open(p_open boolean) returns void language sql as $$
   update private.entitlement_policy set actual_launch_at = case when p_open then clock_timestamp() - interval '1 day' end,
-    early_access_claim_closes_at = case when p_open then clock_timestamp() + interval '5 days' end where singleton $$;
+    early_access_claim_cutoff = case when p_open then clock_timestamp() + interval '5 days' else early_access_claim_cutoff end
+    where singleton $$;
 create function pg_temp.offer_states(n integer) returns jsonb language plpgsql as $$
 declare closed jsonb; opened jsonb;
 begin

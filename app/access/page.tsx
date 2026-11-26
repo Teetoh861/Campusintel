@@ -115,7 +115,7 @@ async function Access({ continuityToken }: { continuityToken: string }): Promise
 function yourPlanCard(entitlement: EntitlementSummary, lockedCount: number | null, onSale: boolean): ReactElement {
   const { access, trial, paid, early_access: early } = entitlement
   if (paid !== null) return <Subscribed paid={paid} now={entitlement.now} />
-  // The free month and the day it ends, as the database holds it.
+  // Free access and the last day it covers, from the end the database holds.
   if (access !== null && access.source === 'early_access') return <div className="student-surface" data-access="free-month">
     <div className="flex items-start gap-3">
       <CalendarCheck aria-hidden="true" size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 text-student-primary" />

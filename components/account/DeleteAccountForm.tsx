@@ -40,7 +40,7 @@ export function DeleteAccountForm({ continuityToken }: { continuityToken: string
         <div id="deletion-details" className="space-y-2 text-sm text-student-text-secondary">
           <p>You’ll be signed out. To cancel, sign in within {ACCOUNT_DELETION_GRACE_DAYS} days and choose “Keep your account”.</p>
           <p>After {ACCOUNT_DELETION_GRACE_DAYS} days, your account, bookmarks and results are deleted for good.</p>
-          <p>We keep a note that this email has used its free pass or free month.</p>
+          <p>We keep a note that this email has used its free pass or free access.</p>
         </div>
         <FormField id="delete-current-password" name="password" label="Current password" type="password"
           autoComplete="current-password" required maxLength={PASSWORD_MAX_LENGTH} disabled={pending} aria-describedby="deletion-details" autoFocus />

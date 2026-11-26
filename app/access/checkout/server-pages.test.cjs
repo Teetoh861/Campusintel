@@ -8,6 +8,9 @@ const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const { withTsx } = require('../../../lib/test/tsx-loader.cjs')
 const { entitlementSummarySchema } = require('../../../lib/entitlements/contract.ts')
+// The sentence the line above Pay shows for the day the page gives it (the line itself is driven in
+// app/access/free-month-offer.test.cjs).
+const { FREE_MONTH_COPY } = require('../../../lib/entitlements/presentation.ts')
 
 const ORDER = '3f2c9a1b-7d4e-4c2a-9b1f-0123456789ab'
 const NOW = '2026-11-03T12:00:00.000+00:00'
@@ -58,14 +61,15 @@ async function page(file, args, state = {}) {
         if (name === '@/lib/supabase/server') return { createClient: async () => client }
         if (name === '@/lib/auth/student-state') return { getStudentSessionContext: async () =>
           state.signedOut ? null : ({ user: { id: 'student' }, sessionId: 's' }) }
-        // `freeMonth` is what the server's free month read decided before render: the offer, or null.
+        // `freeMonth` is what the server's free access read decided before render: the offer, or null.
         if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async (_client, options) => {
           readOptions.push(options)
           return state.entitlement === null ? { status: 'unavailable' }
             : ({ status: 'ok', entitlement: { ...entitlementSummarySchema.parse({ ...wire, ...state.entitlement }),
               discovery_eligible: false, free_month: state.freeMonth ?? null } }) } }
         if (name === '../FreeMonthOffer') return { FreeMonthInstead: props => React.createElement('free-month-instead',
-          { 'data-token': props.continuityToken, 'data-revision': String(props.profileRevision), 'data-ends-on': props.endsOn }) }
+          { 'data-token': props.continuityToken, 'data-revision': String(props.profileRevision), 'data-ends-on': props.endsOn },
+          FREE_MONTH_COPY.instead(props.endsOn)) }
         if (name === '@/lib/courses/read-model') return { getCurrentStudentCoursesForVerifiedStudent: async () =>
           state.courses === undefined ? courses : state.courses }
         if (name === '@/lib/profile/student-profile') return { getCurrentStudentProfileForVerifiedStudent: async () =>
@@ -132,24 +136,36 @@ test('a Session plan says it also covers the Second Semester; a locked selection
   assert.doesNotMatch(words, /Change/)
 })
 
-test('a free month already running continues first: the plan keeps courses open after it', async () => {
+test('free access already running continues first: the plan keeps courses open after it', async () => {
   const { html } = await confirm('standard_semester', { entitlement: { tier: 'full',
     access: { source: 'early_access', ends_at: '2026-11-25T12:00:00+00:00' } } })
   const words = text(html)
-  assert.match(words, /Your free month continues until Wed, 25 Nov 2026\. Your plan then keeps your courses open until Mon, 8 Mar 2027\./)
+  assert.match(words, /Your free access continues until Wed, 25 Nov 2026\. Your plan then keeps your courses open until Mon, 8 Mar 2027\./)
   assert.doesNotMatch(words, /Early Access/)
-  assert.doesNotMatch(html, /<free-month-instead/, 'a student who has their month is not offered it again')
+  assert.doesNotMatch(html, /<free-month-instead/, 'a student who has free access is not offered it again')
+  // Free access to the end of 30 December in Lagos ends at the instant 31 December begins there: the note names the
+  // last day it covers.
+  const december = text((await confirm('standard_semester', { entitlement: { tier: 'full', now: '2026-12-01T08:00:00+00:00',
+    access: { source: 'early_access', ends_at: '2026-12-30T23:00:00+00:00' } } })).html)
+  assert.match(december, /Your free access continues until Wed, 30 Dec 2026\. Your plan then keeps your courses open until Mon, 8 Mar 2027\./)
+  assert.doesNotMatch(december, /\b31\b/, 'never Thu, 31 Dec')
 })
 
-test('a student who can claim a free month is offered it in one line above Pay; paying stays possible', async () => {
+test('a student who can claim free access is offered it in one line above Pay; paying stays possible', async () => {
   const { html, readOptions } = await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-12T12:00:00+00:00' } })
   assert.deepEqual(readOptions, [{ discoveryEligibility: false, freeMonth: true }], 'the page asks the database whether it can be claimed')
   const offer = html.match(/<free-month-instead[^>]*>/)[0]
   assert.match(offer, /data-token="page-token" data-revision="7" data-ends-on="16 December"/,
-    'the claim is bound to the courses on this page, and the end date is the database answer written out')
+    'the claim is bound to the courses on this page, and the last day is the database answer written out')
+  assert.ok(text(html).includes('You can get free access until 16 December instead.'), 'one sentence, with that day')
   assert.ok(html.indexOf('<free-month-instead') < html.indexOf('<checkout-form'), 'above Pay')
   assert.ok(html.indexOf('<free-month-instead') > html.indexOf('You can’t change your department'), 'the last thing above it')
   assert.match(html, /<checkout-form/, 'paying stays possible')
+  // Offered from the launch (09:00 Lagos on 1 December): a claim's end, the end of 30 December, reads 30 December.
+  const december = await confirm('standard_semester', { entitlement: { now: '2026-12-01T08:00:00+00:00' },
+    freeMonth: { endsAt: '2026-12-30T23:00:00+00:00', closesAt: '2026-12-30T23:00:00+00:00' } })
+  assert.match(december.html, /<free-month-instead data-token="page-token" data-revision="7" data-ends-on="30 December">You can get free access until 30 December instead\.<\/free-month-instead>/)
+  assert.doesNotMatch(text(december.html), /\b31\b/, 'never 31 December')
   // Nobody else sees it: not while the read says no, and not without the revision the claim would be bound to.
   assert.doesNotMatch((await confirm('standard_semester', {})).html, /free-month-instead/)
   assert.doesNotMatch((await confirm('standard_semester', { freeMonth: { endsAt: '2026-12-16T13:30:00+00:00', closesAt: '2026-11-12T12:00:00+00:00' }, revision: null })).html,

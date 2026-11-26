@@ -29,7 +29,7 @@ export const eligibilityRow = z.object({ eligible: z.boolean() })
 /** claim_early_access(): the month started, a replay of one already started, or a refusal. Never a reason. */
 export const claimRow = z.discriminatedUnion('state', [
   z.object({ state: z.literal('claimed'), starts_at: timestamp, ends_at: timestamp }),
-  // The account already has its one month. `active` says whether it is still running, on the database clock.
+  // The account already has its one claim. `active` says whether it is still running, on the database clock.
   z.object({ state: z.literal('already-claimed'), ends_at: timestamp, active: z.boolean() }),
   z.object({ state: z.enum(['signed-out', 'closed', 'not-available', 'needs-selection', 'selection-changed']) }),
   // The claim-key configuration cannot verify every unexpired claim: nothing was decided (fail closed).

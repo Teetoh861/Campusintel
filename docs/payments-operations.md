@@ -138,7 +138,7 @@ There is no manual-evidence fulfilment, by decision: a plan is granted only on a
 
 Paid plans and Early Access fund Campus Bot sets by tokens, not by a number of sets. A paid plan funds only during the
 semester it is bound to (never in the slack after it, and a Session plan's second half only in the Second Semester).
-A student in their free month (Early Access, claimed on the site) gets Standard limits. With a paid plan, the higher limits apply and are
+A student with free access (Early Access, claimed on the site) gets Standard limits. With a paid plan, the higher limits apply and are
 never added together: paid Plus wins over Early Access Standard; equal Standard tiers keep Early Access funding.
 An account with an active paid grant can use the paid platform reserve even when Early Access funds the request.
 Early Access alone is unpaid for that reserve. A Discovery Pass keeps its one set, and an older seven-day trial its sets.
@@ -180,7 +180,7 @@ A quiz is a Campus Bot set in every other way: the same limits, settlement and r
 
 - **Switch**: off until the human review signs off: `campus-bot-feature --feature topic-sets --state on|off`. While it
   is off, no new quiz is admitted; a quiz already written still opens on its own page.
-- **Who**: a student who can read the topic now (their own courses on a plan or the free month, GST courses for
+- **Who**: a student who can read the topic now (their own courses on a plan or free access, GST courses for
   anyone), or the topic a current free pass pinned. Funding is the plan's session and week windows, or the free pass's
   one set (uploads and quizzes together; its 20,000-character upload limit does not apply). Notes under 150 words
   offer no quiz.

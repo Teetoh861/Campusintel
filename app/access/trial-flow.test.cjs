@@ -1,4 +1,4 @@
-// app/access/trial-flow.test.cjs — Every result of starting a free pass or claiming a free month has specific, safe copy
+// app/access/trial-flow.test.cjs — Every result of starting a free pass or claiming free access has specific, safe copy
 // and a next step.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
@@ -52,28 +52,28 @@ test('a started pass says so in the approved words', () => {
   assert.equal(describeResult({ status: 'already-activated', endsAt: 'x' }).message.text, 'You’ve already used your free pass.')
 })
 
-test('the free month: started needs no words; the claim closing or the account not qualifying ends the offer with one line and no reason', () => {
+test('free access: started needs no words; the claim closing or the account not qualifying ends the offer with one line and no reason', () => {
   assert.deepEqual(describeFreeMonthResult({ status: 'month-started', endsAt: '2026-12-16T13:30:00+00:00' }),
     { next: 'started', message: null })
   assert.deepEqual(describeFreeMonthResult({ status: 'offer-ended' }),
     { next: 'close', message: { tone: 'info', text: 'This offer has ended.' } })
   assert.deepEqual(describeFreeMonthResult({ status: 'offer-unavailable' }),
-    { next: 'close', message: { tone: 'info', text: 'A free month isn’t available on this account.' } })
+    { next: 'close', message: { tone: 'info', text: 'Free access isn’t available on this account.' } })
 })
 
-test('the free month: anything that started nothing says "Couldn’t start your free month. Try again." and stays open', () => {
+test('free access: anything that started nothing says "Couldn’t start your free access. Try again." and stays open', () => {
   // Faults, and any free pass answer (which this command never produces): nothing is assumed to have started.
   for (const result of [{ status: 'unavailable' }, { status: 'capacity' },
     { status: 'pass-activated', endsAt: 'x' }, { status: 'already-activated', endsAt: 'x' }, { status: 'already-claimed' },
     { status: 'trial-not-offered' }, { status: 'early-access-active', availableFrom: 'x' }]) {
     assert.deepEqual(describeFreeMonthResult(result),
-      { next: 'stay', message: { tone: 'error', text: 'Couldn’t start your free month. Try again.' } }, result.status)
+      { next: 'stay', message: { tone: 'error', text: 'Couldn’t start your free access. Try again.' } }, result.status)
   }
   assert.deepEqual(describeFreeMonthResult({ status: 'rate-limited' }),
     { next: 'stay', message: { tone: 'error', text: 'Too many attempts. Please wait a few minutes and try again.' } })
 })
 
-test('the free month: a changed sign-in or changed courses reload the page, and no message names an address or a reason', () => {
+test('free access: a changed sign-in or changed courses reload the page, and no message names an address or a reason', () => {
   assert.deepEqual(describeFreeMonthResult({ status: 'selection-changed' }),
     { next: 'refresh', message: { tone: 'error', text: 'Your courses were just updated.' } })
   assert.deepEqual(describeFreeMonthResult({ status: 'signed-out' }),
@@ -84,10 +84,11 @@ test('the free month: a changed sign-in or changed courses reload the page, and 
     assert.ok(['stay', 'refresh', 'started', 'close'].includes(next), status)
     if (message === null) { assert.equal(status, 'month-started'); continue }
     assert.doesNotMatch(message.text, /@|email|address|already|used|paid|domain|Early Access|window|\d{4}/i, `${status}: no reason`)
+    assert.doesNotMatch(message.text, /month/i, `${status}: free access is never called a month`)
   }
 })
 
- test('a free month invalid request asks for a refresh without claiming it started', () => {
+test('a free access invalid request asks for a refresh without claiming it started', () => {
   assert.deepEqual(describeFreeMonthResult({ status: 'invalid-request' }), { next: 'stay', message: { tone: 'error',
     text: "That didn’t go through. Refresh the page and try again." } })
 })

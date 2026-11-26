@@ -20,6 +20,13 @@ const CONFIGURED = { NEXT_PUBLIC_WHATSAPP_NUMBER: '2348000000000',
 const FORBIDDEN_COPY = ['→', 'photos', '2 practice quizzes', '3.5']
 const CLIENT_FILES = ['FaqList.tsx', 'SignedInHome.tsx', 'TryQuestionQuiz.tsx']
 const REMOVED_FILES = ['CourseStrip.tsx', 'HowItWorks.tsx', 'MobileMenu.tsx', 'OtherFaculties.tsx', 'WhyCampusIntell.tsx']
+// Free access ends, and the free pass returns, at the end of 30 December 2026 in Lagos (2026-12-31 00:00:00+01). The page is
+// built once, so its answer on trying it is the one for the build's date: the checks that depend on it build at set times.
+const FREE_ACCESS_END = Date.parse('2026-12-30T23:00:00Z')
+const TRY_ANSWER = {
+  freeAccess: 'Yes. GST courses are always free, and until 30 December you can get free access to all your courses.',
+  freePass: 'Yes. GST courses are free, and a free pass lets you try your department courses.',
+}
 
 /** assert.match and assert.doesNotMatch print their whole input when they fail, and here that is a rendered page.
  *  These name the pattern, and what it found, instead. */
@@ -75,6 +82,14 @@ async function renderHome({ env = {} } = {}) {
     () => renderToStaticMarkup(require(path.join(root, 'app/page.tsx')).default()))
 }
 
+/** Run `work` with the clock at `instant` (milliseconds), as a build or a device on that date would: Date.now() and
+ *  new Date() read it, and timers stay real. */
+async function atTime(t, instant, work) {
+  t.mock.timers.enable({ apis: ['Date'], now: instant })
+  try { return await work() } finally { t.mock.timers.reset() }
+}
+const faqSection = html => /<section id="faq"[\s\S]*?<\/section>/.exec(html)[0]
+
 const anchors = html => [...html.matchAll(/<a ([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attributes, inner]) => ({
   href: /href="([^"]*)"/.exec(attributes)?.[1], text: inner.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(), attributes, inner }))
 const hrefsFor = (html, text) => anchors(html).filter(link => link.text === text).map(link => link.href)
@@ -85,9 +100,11 @@ const visibleText = html => html.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[
   .replace(/\s+/g, ' ')
 const count = (text, pattern) => (text.match(pattern) || []).length
 
-/** Drive a client component with a minimal hook harness: click handlers update state, then re-render. */
+/** Drive a client component with a minimal hook harness: click handlers update state, then re-render. Effects are
+ *  collected, not run: `loaded()` runs the latest render's, as a browser does once the page has loaded. */
 function interactive(file, props) {
   const slots = []
+  const effects = []
   let index = 0
   const hooks = { ...React,
     useState(initial) {
@@ -97,17 +114,18 @@ function interactive(file, props) {
     },
     useRef(initial) { const slot = index++; if (!(slot in slots)) slots[slot] = { current: initial }; return slots[slot] },
     useId: () => 'fixture-id',
-    useEffect: () => { index++ },
+    useEffect: (effect, dependencies) => { index++; effects.push({ effect, dependencies }) },
   }
   return withModules({}, { react: hooks }, () => {
     const exported = require(path.join(__dirname, file))
     const Component = Object.values(exported)[0]
-    const tree = () => { index = 0; return elementNodes(Component(props)) }
+    const tree = () => { index = 0; effects.length = 0; return elementNodes(Component(props)) }
     const text = node => typeof node === 'string' || typeof node === 'number' ? String(node)
       : Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : ''
     const buttons = () => tree().filter(node => node.type === 'button')
     const button = label => buttons().find(node => text(node).includes(label))
-    return { tree, text, buttons, button }
+    const loaded = () => { for (const { effect } of effects.splice(0)) effect() }
+    return { tree, text, buttons, button, effects, loaded }
   })
 }
 
@@ -154,9 +172,11 @@ test('the page runs in the agreed order and the retired sections are gone', asyn
   assert.equal(faq.items.length, 3)
 })
 
-test('landing copy claims only what the product does', async () => {
+test('landing copy claims only what the product does', async t => {
   const copy = strings(await content())
-  const html = await renderHome({ env: CONFIGURED })
+  // Built while free access can still be claimed; what changes on the date is also checked on a page built when it ends.
+  const html = await atTime(t, FREE_ACCESS_END - 1, () => renderHome({ env: CONFIGURED }))
+  const ended = visibleText(await atTime(t, FREE_ACCESS_END, () => renderHome({ env: CONFIGURED })))
   const page = html.replace(/<svg[\s\S]*?<\/svg>/g, '')
   for (const phrase of FORBIDDEN_COPY) {
     assert.equal(copy.filter(text => text.includes(phrase)).length, 0, `content: ${phrase}`)
@@ -169,12 +189,20 @@ test('landing copy claims only what the product does', async () => {
   noMatch(text, /answers? (?:is|are) checked|checked before/i)
   // No promise of every course or level.
   noMatch(text, /every course|every level|both semesters|100L|300L|100 to 300|exact courses/i)
-  // The free pass is named once, in general terms; GST free is said once.
-  assert.equal(count(text, /free pass/gi), 1)
-  match(text, /a free pass lets you try your department courses/)
-  noMatch(text, /3 days|three days|\b\d+ days\b|72 hours/i)
-  assert.equal(count(text, /GST courses are free/g), 1)
-  assert.equal(count(text, /\bfree for\b/gi), 0, 'GST free is not repeated in other words')
+  // Until free access ends (the end of 30 December, Lagos) the page names it once, in the FAQ, and names no free pass;
+  // from that instant the free pass is named once, in general terms, and free access not at all. GST free is said once.
+  assert.equal(count(text, /free pass/gi), 0)
+  assert.equal(count(text, /free access/gi), 1)
+  assert.equal(count(ended, /free pass/gi), 1)
+  match(ended, /a free pass lets you try your department courses/)
+  assert.equal(count(ended, /free access/gi), 0)
+  for (const built of [text, ended]) {
+    noMatch(built, /3 days|three days|\b\d+ days\b|72 hours/i)
+    assert.equal(count(built, /GST courses are (?:always )?free/g), 1)
+    assert.equal(count(built, /\bfree for\b/gi), 0, 'GST free is not repeated in other words')
+    // Free access is never called a month, and its last day is 30 December, never the 31st it ends at.
+    noMatch(built, /free month|31 December|31 Dec\b/i)
+  }
   // Theory: the owner content rule (22 Nov) withdrew every theory question, so the page offers none. Nothing says the
   // product marks, scores or compares an answer either.
   noMatch(text, /Theory questions|suggested answer|theory practice/i)
@@ -192,7 +220,8 @@ test('landing copy claims only what the product does', async () => {
   assert.equal(count(text, /Campus Bot builds/g), 1)
   assert.equal(count(text, /no study materials yet|no material yet/g), 1)
   const { faq, footer } = await content()
-  assert.deepEqual(faq.items.filter(item => /Campus Bot|your notes|upload/.test(item.question + item.answer)), [])
+  const said = item => [item.question, item.answer, item.later?.answer ?? ''].join(' ')
+  assert.deepEqual(faq.items.filter(item => /Campus Bot|your notes|upload/.test(said(item))), [])
   // The hero says what the product is; the footer does not say it again.
   assert.equal('text' in footer, false)
   assert.equal(count(text, /for UNILAG Management Sciences students\./g), 1)
@@ -209,10 +238,14 @@ test('the landing reads as decided on 16 November: one name for each thing, and 
   // The showcase row is labelled by what it is; the theory row has gone with the theory questions (22 Nov).
   assert.deepEqual(showcase.map(row => row.eyebrow), ['Campus Bot'])
   assert.equal(showcase[0].shots[0].alt, 'Uploading notes to Practise from your notes')
-  // The FAQ answers, as decided.
-  assert.deepEqual(faq.items.map(item => item.answer).filter(answer => /UNILAG\.$|free pass/.test(answer)), [
+  // The FAQ answers, as decided. The answer on trying it changes when free access ends (owner decision, 25 November):
+  // the item carries both, and the page shows the one for its date.
+  assert.deepEqual(faq.items.map(item => item.answer).filter(answer => /UNILAG\.$|free access|free pass/.test(answer)), [
     `Courses for the ${landingFigures().departments} departments of the Faculty of Management Sciences at UNILAG.`,
-    'Yes. GST courses are free, and a free pass lets you try your department courses.'])
+    TRY_ANSWER.freeAccess])
+  const dated = faq.items.filter(item => item.later !== undefined)
+  assert.deepEqual(dated.map(item => [item.question, Date.parse(item.later.from), item.later.answer]),
+    [['Can I try it before paying?', FREE_ACCESS_END, TRY_ANSWER.freePass]])
   // Exam mode in the sample says once that results come at the end; a saved answer says only that it was saved.
   assert.deepEqual([tryQuestion.modeExam, tryQuestion.savedExam, tryQuestion.bubble.saved],
     ['Your results come at the end.', 'Answer saved.', 'Saved.'])
@@ -351,14 +384,15 @@ test('the courses line shows the figures counted from the repository', async () 
   }
 })
 
-test('setting-controlled links render only when their setting is a valid https link', async () => {
+test('setting-controlled links render only when their setting is a valid https link', async t => {
   const unset = await renderHome()
   for (const label of ['Join the WhatsApp community', 'Not in Management Sciences?', 'Join the waitlist', 'WhatsApp us', 'Community']) {
     assert.equal(unset.includes(label), false, label)
   }
   noMatch(unset, /wa\.me|chat\.whatsapp|tel:/)
 
-  const set = await renderHome({ env: CONFIGURED })
+  // Built while free access can be claimed, when the page names it.
+  const set = await atTime(t, FREE_ACCESS_END - 1, () => renderHome({ env: CONFIGURED }))
   // The closing section and the footer's Community column both link to the community.
   assert.deepEqual(hrefsFor(set, 'Join the WhatsApp community (opens in a new tab)'),
     [CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL, CONFIGURED.NEXT_PUBLIC_WHATSAPP_COMMUNITY_URL])
@@ -367,9 +401,12 @@ test('setting-controlled links render only when their setting is a valid https l
   assert.deepEqual(hrefsFor(set, 'WhatsApp us (opens in a new tab)'), ['https://wa.me/2348000000000'])
   noMatch(set, /\+234 707|tel:/)
 
-  // The pre-launch Early Access form is retired: students claim their free month on the site after launch. A deployment
-  // that still sets the form's old variable shows nothing for it, and nothing reads the variable.
-  noMatch(set, /Early Access|free month|forms\.example\.com/i)
+  // The pre-launch Early Access form is retired: students claim free access on the site after launch. A deployment that
+  // still sets the form's old variable shows nothing for it, and nothing reads the variable: the page has no offer of its
+  // own, and names free access only in the FAQ answer.
+  noMatch(set, /Early Access|free month|Free until|data-free-month|forms\.example\.com/i)
+  assert.equal(count(visibleText(set), /free access/gi), 1)
+  assert.equal(count(visibleText(faqSection(set)), /free access/gi), 1, 'in the FAQ')
   match(set, /Not in Management Sciences\?/)
   noMatch(fs.readFileSync(path.join(root, 'lib/landing/settings.ts'), 'utf8'), /EARLY_ACCESS/)
 
@@ -588,6 +625,49 @@ test('FAQ questions are buttons with aria-expanded that open and close their ans
   assert.equal(toggles()[1].props['aria-expanded'], false)
 })
 
+test('the built page answers for its date: free access until the end of 30 December, then the free pass', async t => {
+  const { faq } = await content()
+  // Never an offer that is not available that day (owner decision, 25 November).
+  for (const [built, answer] of [['2026-12-01T08:00:00Z', TRY_ANSWER.freeAccess],
+    ['2026-12-30T22:59:59.999Z', TRY_ANSWER.freeAccess], ['2026-12-30T23:00:00Z', TRY_ANSWER.freePass],
+    ['2027-03-01T08:00:00Z', TRY_ANSWER.freePass]]) {
+    const html = await atTime(t, Date.parse(built), () => renderHome())
+    const answers = [...faqSection(html).matchAll(/<div id="[^"]*-answer-\d+"[^>]*>([^<]*)<\/div>/g)]
+      .map(found => visibleText(found[1]).trim())
+    assert.deepEqual(answers, faq.items.map(item => item.later === undefined ? item.answer : answer), built)
+    noMatch(visibleText(html), /free month|31 December|31 Dec\b/i, built)
+  }
+})
+
+test('the FAQ list shows the answer the page was built with, then picks again from the visitor\'s clock', async t => {
+  // The items exactly as Faq.tsx hands them to the list on a page built at `instant`.
+  const builtAt = instant => atTime(t, instant, () => withModules({}, {}, () => {
+    const { Faq } = require(path.join(__dirname, 'Faq.tsx'))
+    return elementNodes(Faq()).find(node => node.type?.name === 'FaqList').props.items
+  }))
+  // What the list shows before the page has loaded, and after its effect has run on a device whose clock reads `now`.
+  const visit = async (items, now) => {
+    const list = await interactive('FaqList.tsx', { items })
+    const shown = () => list.tree().filter(node => /-answer-\d+$/.test(node.props?.id ?? '')).map(node => list.text(node))
+    const first = shown()
+    assert.deepEqual(list.effects.map(effect => effect.dependencies), [[]], 'one effect, run once the page has loaded')
+    await atTime(t, now, () => list.loaded())
+    return [first, shown()]
+  }
+  const { faq } = await content()
+  const answers = answer => faq.items.map(item => item.later === undefined ? item.answer : answer)
+  const before = await builtAt(FREE_ACCESS_END - 1)
+  // Until it has loaded the list shows what the server built, so the page hydrates as it was rendered.
+  assert.deepEqual(await visit(before, FREE_ACCESS_END - 1), [answers(TRY_ANSWER.freeAccess), answers(TRY_ANSWER.freeAccess)])
+  // A page built before free access ended and opened at or after the end offers the free pass once it has loaded.
+  for (const now of [FREE_ACCESS_END, Date.parse('2027-03-01T08:00:00Z')]) {
+    assert.deepEqual(await visit(before, now), [answers(TRY_ANSWER.freeAccess), answers(TRY_ANSWER.freePass)])
+  }
+  // A page built after the end never offers free access again, even on a device whose clock is a day behind.
+  const after = await builtAt(FREE_ACCESS_END)
+  assert.deepEqual(await visit(after, FREE_ACCESS_END - 86_400_000), [answers(TRY_ANSWER.freePass), answers(TRY_ANSWER.freePass)])
+})
+
 test('the FAQ email address stays whole: the help card gives it a line of its own on a narrow phone', async () => {
   const html = await renderHome()
   const help = /<div class="help">([\s\S]*?)<\/div>/.exec(html)[1]
@@ -677,6 +757,12 @@ test('landing source keeps client code small, scripts out and colours on tokens'
     assert.equal(/^'use client'/m.test(source), CLIENT_FILES.includes(file), `${file} client boundary`)
     noMatch(source, /dangerouslySetInnerHTML|<script|#[0-9a-fA-F]{3,8}\b|base64|fonts\.googleapis/, file)
   }
+  // The browser gets the FAQ's answer rule, which imports nothing, and never the page's words: those are types only there.
+  for (const file of CLIENT_FILES) {
+    noMatch(fs.readFileSync(path.join(dir, file), 'utf8'), /^import (?!type )[^\n]*'@\/lib\/landing\/content'/m, file)
+  }
+  match(fs.readFileSync(path.join(dir, 'FaqList.tsx'), 'utf8'), /^import \{ faqAnswer \} from '@\/lib\/landing\/faq'$/m)
+  noMatch(fs.readFileSync(path.join(root, 'lib/landing/faq.ts'), 'utf8'), /^import /m, 'lib/landing/faq.ts')
 })
 
 test('nothing moves by itself: no looping animation, no entrance and no lift on hover', async () => {
