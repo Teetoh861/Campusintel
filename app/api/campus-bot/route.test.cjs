@@ -60,8 +60,8 @@ async function fixture(run) {
       if (name === '@/lib/auth/account-continuity') return { matchesAccountContinuityToken: token => token === 'page-token' }
       if (name === '@supabase/supabase-js') return { createClient: () => service }
       if (name === '@/lib/courses/read-model') return { getStudentCourseBySlugForVerifiedStudent: async (_client, slug) =>
-        slug === 'principles-economics-1' ? { status: 'ok', course: { repository: { repositoryCourseId: COURSE } } }
-          : { status: 'not-found' } }
+        state.lookup ?? (slug === 'principles-economics-1' ? { status: 'ok', course: { repository: { repositoryCourseId: COURSE } } }
+          : { status: 'not-found' }) }
       if (name === '@/lib/entitlements/server') return { readEntitlementForVerifiedStudent: async () => state.entitlement,
         readPlansOnSale: async () => true }
       if (name === './provider' && parent?.filename.endsWith('/lib/campus-bot/server.ts')) {
@@ -331,4 +331,27 @@ test('Make flashcards and Explain again: the server decides what each asks, the 
   f.calls.length = 0
   assert.equal((await f.post({ ...ASK, action: 'quiz' })).status, 400)
   assert.deepEqual(f.calls, [])
+}))
+
+test('tester access off the test site: the course read refuses, so Ask starts nothing', async () => fixture(async f => {
+  // getStudentCourseBySlugForVerifiedStudent answers 'unavailable' for tester access read off the test site.
+  f.state.lookup = { status: 'unavailable' }
+  const response = await f.post(ASK)
+  assert.equal(response.status, 503)
+  assert.deepEqual(await response.json(), { status: 'unavailable' })
+  assert.deepEqual(f.calls.map(call => call.name), [], 'no admission and no provider call')
+}))
+
+test('a tester-funded admission reaching a server off the test site never calls the provider', async () => fixture(async f => {
+  const saved = process.env.NEXT_PUBLIC_SUPABASE_URL
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://abcdefghijklmnopqrst.supabase.co'
+  try {
+    f.state.replies = { begin_campus_bot_explanation: { ...explainStarted(), funding: 'tester' } }
+    const response = await f.post(EXPLAIN)
+    assert.deepEqual(await response.json(), { status: 'unavailable' })
+    assert.deepEqual(f.calls.map(call => call.name), ['begin_campus_bot_explanation'], 'the reservation lapses unused')
+  } finally {
+    if (saved === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = saved
+  }
 }))

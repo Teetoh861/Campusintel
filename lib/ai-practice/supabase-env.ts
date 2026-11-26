@@ -15,6 +15,7 @@ import { getStudentCourseByIdForVerifiedStudent } from '@/lib/courses/read-model
 import { createClient } from '@/lib/supabase/server'
 import { createConfiguredProvider, isAiPracticeAvailable, readAiPracticeConfig } from './config'
 import { acceptedGrantSources, effectiveAllowance } from './entitlement'
+import { fundedByTesterOffSite } from '@/lib/tester/site.cjs'
 import { extractUploadText } from './extract'
 import { formatProviderDiagnostic } from './provider'
 import { executeAiPracticeCommand } from './student-flow'
@@ -49,7 +50,7 @@ const documentRow = z.object({
   rejection_reason: z.string().nullable(), source_text: z.string().nullable(),
 })
 const allowanceRow = z.object({ state: z.enum(['not-entitled', 'active', 'expired']),
-  source: z.enum(['trial', 'early_access', 'paid', 'test']).optional(), total: z.number().int().nullable(),
+  source: z.enum(['trial', 'early_access', 'paid', 'test', 'tester']).optional(), total: z.number().int().nullable(),
   used: z.number().int(),
   ends_at: z.string().optional(), source_char_limit: z.number().int().positive().nullish() })
 // A token-funded start names the model and written-token cap the set was reserved for (20261103100000).
@@ -189,6 +190,7 @@ export function createSupabaseAiPracticeEnv(client: StudentClient, userId: strin
       if (error || !parsed.success) return null
       const { state, generation_id: generationId, model, max_output_tokens: maxOutputTokens } = parsed.data
       if (state === 'started' && generationId) {
+        if (fundedByTesterOffSite(data)) return null
         const providerTimeout = config.status === 'enabled' ? config.timeoutMs : 0
         const lifetime = parsed.data.reservation_seconds
         if (lifetime === undefined || lifetime * 1000 <= 2 * providerTimeout + AI_ADMISSION_TIMEOUT_MS + AI_SETTLEMENT_TIMEOUT_MS) {

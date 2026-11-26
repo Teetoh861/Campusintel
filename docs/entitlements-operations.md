@@ -386,3 +386,57 @@ terms. The read path, course gate and same-session updates need no change.
 - Upgrade prompts to a paid plan, since no paid plan exists yet.
 - Analytics: `trial_activated` is recorded. A claimed free month is recorded in the audit trail
   (`early-access.claimed`); no analytics event is emitted from the database.
+
+## Tester access (test site only, removable)
+
+`20261125200000_owner_tester_access.sql` lets a named account test the whole platform on the test site without a plan.
+While it is on, the account can save any department, level and semester itself (the running-semester rule does not
+apply to it). Every course of that selection opens. Campus Bot works with no session, week or free pass limits, up to
+a daily cap (3,000,000 tokens per UTC day by default, the same token measure as the plan limits). It shows "Full
+access" until the end date, offers no plans, and pauses the free pass and free month offers. Platform limits, the
+per-student limits and the feature switches still apply. Nothing is a grant, an order or plan use.
+
+It works only where both of these hold:
+- the database holds the test-site row, which is inserted by hand, once, in the **test** project's SQL editor and
+  never by a function, migration or seed;
+- the app's Supabase URL is the test project (`znwluaiylogqapansuht`) or a local stack (127.0.0.1 or localhost).
+
+The tester commands refuse every other project before anything is sent. The database refuses without the row.
+
+Switch the test site on (test project SQL editor only):
+
+```sql
+insert into private.tester_site (project_ref, enabled_by, reason)
+  values ('znwluaiylogqapansuht', '<your name>', '<why>');
+insert into private.entitlement_events (user_id, grant_id, event, actor, detail)
+  values (null, null, 'operator.tester-site-enabled', 'operator:<your name>', jsonb_build_object('reason', '<why>'));
+```
+
+Kill switch, which stops every tester effect at once: `delete from private.tester_site where singleton;`
+
+| Situation | Command |
+| --- | --- |
+| Add a tester (7 days by default, at most 30) | `tester-grant --user <uuid> [--days <n>] [--daily-cap <tokens>] --actor <name> --reason <text>` |
+| Extend: the same command, which renews to `<days>` from now | `tester-grant --user <uuid> --days <n> --actor <name> --reason <text>` |
+| Check the setting, the testers, their ends and today's use | `tester-status [--user <uuid>]` |
+| Revoke | `tester-revoke --user <uuid> --actor <name> --reason <text>` |
+
+Every change is audited in `private.entitlement_events` (`operator.tester-granted`, `-renewed`, `-revoked`,
+`-refused`).
+
+`tester-grant` refuses:
+- an account scheduled for deletion (`account-restricted`);
+- an operator account (`operator-account`);
+- any account with a payment order or a paid grant (`payment-records`);
+- any account with an unrevoked grant (`has-grants`, listing them);
+- a fourth active tester (`too-many-testers`).
+
+Tester access also steps aside by itself the moment the account gets a grant or a payment order. A single order,
+even an abandoned one, ends it on that account for good. Use a fresh account. Test payments on a different account.
+
+Before removal: revoke every tester and wait until `tester-status` shows nothing in flight. Then apply the removal
+migration, which restores each function named in the header of `20261125200000` and drops what it created, and
+remove the code: `lib/tester/`, the `tester` values in `lib/courses/access.ts`, `lib/entitlements/contract.ts`,
+`presentation.ts` and `server.ts`, `lib/ai-practice` (`upload-contract.ts`, `entitlement.ts`, `supabase-env.ts`,
+`quiz-pass.ts`, `topic-set-server.ts`), `lib/campus-bot/server.ts`, `app/profile-selection/page.tsx`,
+`scripts/entitlements/tester.cjs` and its line in `ops.cjs`, the tests, and this section.

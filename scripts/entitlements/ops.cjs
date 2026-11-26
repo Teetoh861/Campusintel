@@ -29,9 +29,12 @@
 //       campus-bot-cap | campus-bot-writer | campus-bot-refill | ai-limits | payment-verify | payment-fulfil | refund | refund-retry |
 //       reconcile-now ...
 //       Plan payments: see scripts/entitlements/payments.cjs and docs/payments-operations.md.
+//   node scripts/entitlements/ops.cjs tester-grant | tester-revoke | tester-status ...
+//       Owner tester access on the test site only: see scripts/entitlements/tester.cjs.
 const { courseSelectionCall } = require('./course-selection.cjs')
 const { courseAdditionCall } = require('./course-additions.cjs')
 const { authAdminReader, paymentCommand } = require('./payments.cjs')
+const { assertTesterProject, isTesterCommand, testerCall } = require('./tester.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
@@ -120,6 +123,8 @@ async function run(args, env = process.env, transport = fetch, write = text => p
     throw new Error(`${command} is retired: there is no Early Access list. Students claim their free month on the ` +
       'site; see docs/entitlements-operations.md')
   }
+  // Tester commands refuse every project but the test one before the key is read or anything is sent.
+  if (isTesterCommand(command)) assertTesterProject(env)
   const rpc = connection(env, transport)
   switch (command) {
     case 'status': return print(await rpc('admin_entitlement_status', { p_user_id: required(opts, 'user', UUID) }))
@@ -165,6 +170,12 @@ async function run(args, env = process.env, transport = fetch, write = text => p
     case 'purge-claims': return print({ removed: await rpc('purge_discovery_pass_claims', {}) })
     case 'claim-keys': return print(await rpc('admin_discovery_claim_keys', {}))
     default: {
+      const tester = testerCall(command, opts, { required, integer, note })
+      if (tester !== null) {
+        const result = await rpc(tester.fn, tester.body)
+        // The end the operator needs, in Lagos time, ahead of the database's own answer.
+        return print(result && result.expires_at ? { ends: lagos(result.expires_at), ...result } : result)
+      }
       const payment = paymentCommand(command, opts, { rpc, env, authAdmin: authAdminReader(env, transport),
         helpers: { required, integer, note } })
       if (payment !== null) return print(await payment())

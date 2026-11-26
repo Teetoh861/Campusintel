@@ -429,6 +429,7 @@ export const ACCESS_SOURCE_LABEL: Record<AccessSource, string> = {
   trial: 'Free trial',
   early_access: FREE_MONTH_LABEL,
   manual: 'Full access',
+  tester: 'Full access',
   // Named by the plan itself where the summary carries it (paidPlanName).
   paid: 'Paid plan',
 }

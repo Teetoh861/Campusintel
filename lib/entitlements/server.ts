@@ -16,6 +16,7 @@ import { getAuthSecretKey, getSupabaseConfig, isStudentAuthEnabled } from '@/lib
 import { getBucket } from '@/lib/auth/rate-limit'
 import { getStudentSessionContext } from '@/lib/auth/student-state'
 import { createClient } from '@/lib/supabase/server'
+import { isTesterSite } from '@/lib/tester/site.cjs'
 import { z } from 'zod'
 import { claimHashes, normalizeClaimEmail, readClaimHashKeys } from './claim-hash'
 import { discoveryOffered, entitlementCommandSchema, entitlementSummarySchema, freeMonthCouldBeClaimed } from './contract'
@@ -146,6 +147,8 @@ export async function readEntitlementForVerifiedStudent(client: StudentClient,
     if (error) return { status: error.code === LIVE_SESSION_REQUIRED_CODE ? 'signed-out' : 'unavailable' }
     const parsed = entitlementSummarySchema.safeParse(data)
     if (!parsed.success) return { status: 'unavailable' }
+    // Tester access is shown only where this server talks to the test site's database.
+    if (parsed.data.access?.source === 'tester' && !isTesterSite()) return { status: 'unavailable' }
     // Only a student the database could still give a pass is asked about; everyone else is simply not eligible.
     const askable = discoveryEligibility && discoveryOffered(parsed.data) && parsed.data.trial.status === 'available'
     // The month is asked about only while the database's own instants say the claim could be open for this account.
