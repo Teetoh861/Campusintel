@@ -27,7 +27,7 @@ type Notice = { message: string; reload?: boolean; field?: Field; support?: bool
 /** open: courses can change; first-pick: a plan is running, so this first save sets them; locked: set for the semester. */
 export type CourseSelectionMode = 'open' | 'first-pick' | 'locked'
 
-export const FIRST_PICK_WARNING = 'Once you save, you can’t change your department, level or semester until the semester ends.'
+export const FIRST_PICK_WARNING = "Please check these carefully. You can't change them yourself during the semester. If something is wrong later, Contact & Support can change it for you."
 export const CHANGED_ELSEWHERE = 'Your courses were just updated. Check them and try again.'
 
 const FIELD_ERRORS: Record<Field, { id: string; message: string }> = {

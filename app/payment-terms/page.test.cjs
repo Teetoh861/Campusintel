@@ -44,7 +44,7 @@ test('every section in order, ending with Changes; no older wording', async () =
 
 test('each "message us" is the message-us link: WhatsApp when configured, otherwise Help & Support', async () => {
   const chat = await render('2348000000000')
-  assert.equal((chat.match(/<a href="https:\/\/wa\.me\/2348000000000" target="_blank" rel="noopener noreferrer"[^>]*>message us<\/a>/g) || []).length, 3)
+  assert.equal((chat.match(/<a href="https:\/\/wa\.me\/2348000000000" target="_blank" rel="noopener noreferrer"[^>]*>[Mm]essage us<\/a>/g) || []).length, 3)
   const fallback = await render(null)
-  assert.equal((fallback.match(/<a href="\/contact"[^>]*>message us<\/a>/g) || []).length, 3)
+  assert.equal((fallback.match(/<a href="\/contact"[^>]*>[Mm]essage us<\/a>/g) || []).length, 3)
 })

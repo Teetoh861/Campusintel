@@ -13,8 +13,8 @@ test('current destinations have unique semantic IDs and independent canonical hr
     myCourses: { id: 'myCourses', href: '/my-courses', label: 'My Courses' },
     courses: { id: 'courses', href: '/courses', label: 'All Courses' },
     bookmarks: { id: 'bookmarks', href: '/bookmarks', label: 'Bookmarks' },
-    tutors: { id: 'tutors', href: '/tutors', label: 'Tutors' },
-    contact: { id: 'contact', href: '/contact', label: 'Help & Support' },
+    tutors: { id: 'tutors', href: '/tutors', label: 'Tutor waitlist' },
+    contact: { id: 'contact', href: '/contact', label: 'Contact & Support' },
     account: { id: 'account', href: '/account', label: 'Profile' },
     materials: { id: 'materials', href: '/materials', label: 'Request material' },
     access: { id: 'access', href: '/access', label: 'Plan & Access' },
@@ -38,10 +38,10 @@ test('locked desktop and menu navigation use canonical objects without contextua
 test('Footer subsets use canonical destinations and their one name each', () => {
   assert.deepEqual(STUDENT_FOOTER_GROUPS.explore.map(({ destination, label }) =>
     [destination.id, destination.href, label]), [
-    ['myCourses', '/my-courses', 'My Courses'], ['courses', '/courses', 'All Courses'], ['tutors', '/tutors', 'Tutors'], ['bookmarks', '/bookmarks', 'Bookmarks'],
+    ['myCourses', '/my-courses', 'My Courses'], ['courses', '/courses', 'All Courses'], ['tutors', '/tutors', 'Tutor waitlist'], ['bookmarks', '/bookmarks', 'Bookmarks'],
   ])
   assert.deepEqual(STUDENT_FOOTER_GROUPS.support.map(destination =>
-    [destination.id, destination.href, destination.label]), [['contact', '/contact', 'Help & Support']])
+    [destination.id, destination.href, destination.label]), [['contact', '/contact', 'Contact & Support']])
   for (const { destination } of STUDENT_FOOTER_GROUPS.explore) {
     assert.equal(destination, STUDENT_DESTINATIONS[destination.id])
   }

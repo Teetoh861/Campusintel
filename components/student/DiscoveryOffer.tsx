@@ -20,14 +20,14 @@ type Offer =
   | { state: 'used-elsewhere'; courseCode: string | null }
 
 function startLabel(kind: DiscoveryKind, pass: DiscoveryPass): string {
-  return kind === 'cbt' ? `Take a ${pass.discovery.cbt_questions}-question CBT exam` : 'Choose a notes topic'
+  return kind === 'cbt' ? `Take a ${pass.discovery.cbt_questions}-question CBT exam` : 'Choose a study guide topic'
 }
 
 const OPENED_LABEL: Record<DiscoveryKind, string> = {
-  cbt: 'Continue your CBT exam', study_guide: 'Open your notes topic',
+  cbt: 'Continue your CBT exam', study_guide: 'Open your study guide topic',
 }
 // What was used on another course, mid-sentence ("Your … was used on ACC 101.").
-const USED_LABEL: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'notes topic' }
+const USED_LABEL: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'study guide topic' }
 // The study family each preview needs the course to publish.
 const FAMILY: Record<DiscoveryKind, keyof BuildTimeStudy> = { cbt: 'cbtPractice', study_guide: 'notes' }
 

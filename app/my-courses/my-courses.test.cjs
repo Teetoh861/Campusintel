@@ -148,7 +148,7 @@ test('verified student sees the PageBand, real context/counts and every course i
   assert.match(html, /3 courses · 1 ready to study/)
   assert.ok(html.indexOf('BUA201') < html.indexOf('BUA203') && html.indexOf('BUA203') < html.indexOf('BUA205'))
   assert.equal(nodes(tree).filter(node => node.type === f.StudentCourseRow).length, 3, 'rows come from the shared owner')
-  assert.match(html, /Notes · Practice · Theory/)
+  assert.match(html, /Study guide · Practice · Theory/)
   assert.match(html, /class="student-page-root" data-student-app="true"/)
   assert.equal((html.match(/<li\b/g) || []).length, 3)
   assert.match(html, /aria-label="Your semester courses"/)
@@ -170,20 +170,32 @@ test('summary derives total/readiness and singular grammar from the actual cours
   }
 }))
 
-test('Change and error recovery retain canonical routes, compact borders and shared focus', async () => fixture(async f => {
+test('selection changes go through support, and error recovery retains canonical routes and shared focus', async () => fixture(async f => {
   const check = html => {
     assert.ok(html)
     const classes = new Set(/class="([^"]+)"/.exec(html)[1].split(/\s+/))
     for (const token of ['min-h-11', 'border-student-border-strong', 'student-focus-control', 'bg-student-surface', 'py-2']) assert.ok(classes.has(token), token)
     assert.equal(classes.has('border-transparent'), false)
   }
-  check(anchor(await f.render(), '/profile-selection'))
+  const html = await f.render()
+  assert.equal(anchor(html, '/profile-selection'), undefined)
+  assert.ok(anchor(html, '/contact#your-courses'))
+  assert.match(html, /Picked the wrong department, level or semester\?/)
+  for (const field of ['department', 'academicLevel', 'academicPeriod']) {
+    f.state.profile = { ...profile, selection: { ...profile.selection,
+      [field]: { ...profile.selection[field], isActive: false } } }
+    const inactive = await f.render()
+    assert.equal((inactive.match(/Your department, level or semester is no longer available\./g) || []).length, 1)
+    assert.ok(anchor(inactive, '/contact#your-courses'))
+    assert.doesNotMatch(inactive, /Picked the wrong department|Update your profile/)
+  }
+  f.state.profile = profile
   for (const [status, href] of [['missing-profile', '/contact'], ['invariant-failure', '/contact'], ['unavailable', '/my-courses']]) {
     f.state.result = { status }
     check(anchor(await f.render(), href))
   }
   const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8')
-  assert.match(source, /href=\{PROFILE_SELECTION_PATH\}/)
+  assert.doesNotMatch(source, /href=\{PROFILE_SELECTION_PATH\}/)
   assert.match(source, /STUDENT_DESTINATIONS\.materials\.href/)
 }))
 
@@ -254,7 +266,7 @@ test('domain failures retain truthful recovery and never look like an empty seme
     assert.match(html, /role="alert"/)
     assert.ok(anchor(html, href))
     // The way to the team is the page by its name.
-    assert.equal(/>Help &amp; Support<\/a>/.test(html), href === '/contact', status)
+    assert.equal(/>Contact &amp; Support<\/a>/.test(html), href === '/contact', status)
     assert.doesNotMatch(html, /Contact support/)
     assert.doesNotMatch(html, /current-student|live-session|department-id|Supabase|provider error|BUA201|Your courses are not available yet/)
   }

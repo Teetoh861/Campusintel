@@ -1,7 +1,6 @@
 // components/dashboard/SupportingActions.tsx — Material destinations and quieter help/account rows.
 import Link from 'next/link'
 import { LifeBuoy, UserRound, UsersRound } from 'lucide-react'
-import { StatusRail } from '@/components/student/StatusRail'
 import { studentFocusCard, studentFocusRow } from '@/components/student/ui'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import type { ReactElement } from 'react'
@@ -33,7 +32,7 @@ export function SupportingActions(): ReactElement {
       <div className="dashboard-utility-group">
         <Link href={destinations.tutors.href} className={`dashboard-utility-row ${studentFocusRow}`}>
           <UsersRound aria-hidden="true" size={20} className="dashboard-utility-icon" />
-          <div><h3>{destinations.tutors.label} <StatusRail status="waitlist">Waitlist</StatusRail></h3></div>
+          <div><h3>{destinations.tutors.label}</h3></div>
         </Link>
         <Link href={destinations.contact.href} className={`dashboard-utility-row ${studentFocusRow}`}>
           <LifeBuoy aria-hidden="true" size={20} className="dashboard-utility-icon" />

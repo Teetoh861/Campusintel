@@ -130,7 +130,7 @@ test('the button opens the confirmation with the approved words, and nothing is 
     button(render(), 'Get free access').props.onClick()
     // The title carries the day the page was given, so the terms only say when it starts.
     assert.equal(dialog(html()), 'Free until 16 December What free access gives, and its terms. ' +
-      'Full access to your courses, notes and practice Campus Bot included ' +
+      'Full access to your courses, study guides and practice Campus Bot included ' +
       'Starts now You can’t change your department, level or semester until the semester ends. ' +
       'Not now Start free access')
     assert.deepEqual(posts, [], 'opening the confirmation claims nothing')

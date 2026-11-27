@@ -94,7 +94,8 @@ test('the topics in order, each with its count before practice and its progress 
   // One way back, and nothing else to choose: Exam mode starts from the course page's card.
   assert.deepEqual(anchors(html).filter(link => !link.includes('student-topic-row')).map(link => [link.match(/href="([^"]+)"/)[1], text(link)]),
     [['/courses/central-route', 'Back to course']])
-  assert.doesNotMatch(html, /Exam mode|mode=exam|student-meta|Pick a topic/)
+  assert.doesNotMatch(html, /Exam mode|mode=exam|Pick a topic/)
+  assert.match(text(html), /111 questions in the bank/, 'the full bank size is shown with topic counts')
   assert.deepEqual(f.metadata, { title: 'Practise by topic | CampusIntell', robots: { index: false, follow: false } })
 }))
 
@@ -130,7 +131,7 @@ test('a locked course shows the one unlock notice; signed-out, unknown and unrea
   f.state.result = institutional({ state: 'locked' }, null)
   const locked = await f.html()
   assert.match(locked, /<h1[^>]*>Practise by topic<\/h1>/)
-  assert.match(text(locked), /Included with a plan\. Notes · Practice See how to unlock Back to course$/)
+  assert.match(text(locked), /Included with a plan\. Study guide · Practice See how to unlock Back to course$/)
   assert.equal((locked.match(/class="student-notice"/g) || []).length, 1)
   assert.doesNotMatch(locked, /student-topic-list|Configured first/)
   assert.equal(f.calls.some(call => Array.isArray(call) && call[0] === 'topics'), false, 'no topic is read for a locked course')

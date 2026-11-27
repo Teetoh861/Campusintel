@@ -20,6 +20,7 @@ import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/studen
 import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { SelectionSummary } from '@/components/profile/SelectionSummary'
+import { SelectionChangeHelp } from '@/components/profile/SelectionChangeHelp'
 import { createClient } from '@/lib/supabase/server'
 import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import type { ReactElement } from 'react'
@@ -71,7 +72,7 @@ export default async function AccountPage(): Promise<ReactElement> {
             <h2 id="academic-profile-heading" className="student-section-title">Academic details</h2>
             {profile.status === 'complete' ? <>
               <div className="mt-4 min-w-0"><SelectionSummary selection={profile.selection} /></div>
-              <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'mt-4')}>Edit</Link>
+              <div className="mt-3"><SelectionChangeHelp /></div>
             </> : <div className="mt-3"><Feedback tone="error" message={profile.status === 'missing-profile' || profile.status === 'invariant-failure'
               ? <>{profile.status === 'missing-profile' ? 'We couldn’t find your profile.' : 'We couldn’t load your profile.'}{' '}
                 <Link href={STUDENT_DESTINATIONS.contact.href} prefetch={false} className="whitespace-nowrap underline underline-offset-2">

@@ -8,7 +8,7 @@ const { fixture } = require('../../components/student/control-fixture.cjs')
 
 const LONG_TITLE = 'Actuarial Mathematics and Contingencies: Life Insurance Models, Annuities and Applications '.repeat(3).trim()
 const ready = (n, extra = {}) => ({ code: `BUA${String(n).padStart(3, '0')}`, title: `Course ${n}`, href: `/courses/course-${n}`,
-  learningTypes: ['Notes', 'Practice'], ...extra })
+  learningTypes: ['Study guide', 'Practice'], ...extra })
 const entry = (n, row = ready(n)) => ({ slug: `course-${n}`, code: row.code ?? `REPO${n}`, contentKey: `key-${n}`, row })
 const catalogOf = count => Array.from({ length: count }, (_, i) => entry(i + 1))
 const keysOf = count => Array.from({ length: count }, (_, i) => `key-${i + 1}`)
@@ -332,7 +332,7 @@ test('each row is a course link and a sibling toggle: two independent targets, n
       assert.match(row, /<button type="button" aria-label="Bookmark Course \d" aria-pressed="true"/)
       assert.doesNotMatch(row, /Free|credits|Difficulty|Exam-critical|Tracked|View course|Open course|data-level/)
     }
-    assert.match(html, /Notes · Practice/)
+    assert.match(html, /Study guide · Practice/)
     assert.equal((html.match(/<h1\b/g) || []).length, 0, 'the band owns the one h1; the register adds none')
     for (const file of ['BookmarksClient.tsx', 'page.tsx', 'presentation.ts']) {
       const source = fs.readFileSync(path.join(__dirname, file), 'utf8')
@@ -364,7 +364,7 @@ test('repository-only rows present the shared label, never a code, and name the 
     assert.ok(html.includes(LONG_TITLE), 'long titles stay complete')
     assert.doesNotMatch(html, /line-clamp|truncate|text-ellipsis/)
   }, { catalog: [entry(1, { repositoryOnly: true, title: 'Business Statistics', href: '/courses/business-statistics', learningTypes: ['Practice'] }),
-    entry(2, { code: 'ACT301', title: LONG_TITLE, href: '/courses/course-2', learningTypes: ['Notes'] })],
+    entry(2, { code: 'ACT301', title: LONG_TITLE, href: '/courses/course-2', learningTypes: ['Study guide'] })],
   snapshot: { mode: 'account', keys: keysOf(2) } }))
 
 test('loading, unavailable and empty states come from the shared owners with real destinations', async () => {

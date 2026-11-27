@@ -1,7 +1,7 @@
 // components/landing/LandingHeader.tsx — Landing header: logo, two section links from tablet up, and account entry.
 import Image from 'next/image'
 import Link from 'next/link'
-import { btnBase, btnGhost, btnNavy, btnSm, buttonClassName } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnGhost, btnSm, buttonClassName } from '@/components/chrome/ui'
 import { landingContent } from '@/lib/landing/content'
 import styles from './landing.module.css'
 import type { ReactElement } from 'react'
@@ -33,7 +33,7 @@ export function LandingHeader(): ReactElement {
             {header.login.label}
           </Link>
           <Link href={header.register.href} prefetch={false}
-            className={buttonClassName(btnBase, btnSm, btnNavy, 'whitespace-nowrap rounded-full')}>
+            className={buttonClassName(btnBase, btnSm, btnAccent, 'whitespace-nowrap rounded-full')}>
             {header.register.label}
           </Link>
         </div>

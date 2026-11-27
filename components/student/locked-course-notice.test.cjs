@@ -81,7 +81,7 @@ test('a locked course is one notice: what it has and one button to Plan & Access
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'no second notice linking to the same page')
   assert.ok(html.includes(`<h2 class="student-notice-title">Included with a plan.</h2><p class="student-notice-text">${HAS}</p>`), html)
   assert.deepEqual(links(html), [['/access', 'Get your free pass']], 'a student who can still get a free pass: that, and no second button to the same page')
-  assert.doesNotMatch(html, /GST|open fully|Try your department courses|CBT exam|study guide|one per|preview them first|Discovery|See how to unlock/i,
+  assert.doesNotMatch(html, /GST|open fully|Try your department courses|CBT exam|one per|preview them first|Discovery|See how to unlock/i,
     'no repetition, no GST line, and what the pass includes stays in the modal')
   // No pass to get: the way to unlock, in the words the plan state uses.
   assert.deepEqual(links(render('2349012345678', { passHours: null, has: SOME })), [['/access', 'See how to unlock']])

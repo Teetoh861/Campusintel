@@ -7,7 +7,7 @@ import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { ProblemNotice } from './ProblemNotice'
-import { PRACTICE_COPY, minutesOf, plural, practiceIdentity } from './practice-presentation'
+import { PRACTICE_COPY, minutesOf, practiceIdentity } from './practice-presentation'
 import type { PracticeProblem } from './practice-presentation'
 import type { PracticeBrief } from './types'
 import type { ReactElement } from 'react'
@@ -19,6 +19,7 @@ type Props = {
   repositoryOnly: boolean
   // The server's question count and time for the exam that would start.
   brief: PracticeBrief
+  bankSize: number
   starting: boolean
   error: PracticeProblem | null
   lastResultHref: string | null
@@ -26,18 +27,18 @@ type Props = {
   onRetry: () => void
 }
 
-/** The two facts an exam needs before it starts, the timer's one rule, and Start exam. A brief that changed since the
+/** The exam's question count, bank size and duration, the timer's one rule, and Start exam. A brief that changed since the
  * page loaded shows its new numbers here, under the notice that says so. */
-export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, brief, starting, error, lastResultHref,
+export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnly, brief, bankSize, starting, error, lastResultHref,
   onStart, onRetry }: Props): ReactElement {
   const minutes = minutesOf(brief.durationSeconds)
   const identity = practiceIdentity(courseCode, courseTitle, repositoryOnly, 'exam')
 
   return <StudentPage band={<PageBand title={PRACTICE_COPY.examMode} context={<p>{identity.context}</p>} />}>
-    <dl className="student-practice-facts">
-      <Fact label="Questions" value={plural(brief.questionCount, 'question')} />
-      <Fact label="Time" value={plural(minutes, 'minute')}>{PRACTICE_COPY.timerRule}</Fact>
-    </dl>
+    <p className="border-y border-student-border py-4 font-semibold text-student-primary">
+      {bankSize > brief.questionCount ? `${brief.questionCount} questions from a bank of ${bankSize}` : `${bankSize} questions`} · {minutes} min
+    </p>
+    <p className="student-practice-help">{PRACTICE_COPY.timerRule}</p>
 
     <div className="student-practice-row">
       <button type="button" className={studentAction(btnNavy, studentFocusDark)} disabled={starting}
@@ -50,8 +51,4 @@ export function IntroScreen({ courseCode, courseTitle, courseHref, repositoryOnl
       <Link href={lastResultHref} prefetch={false} className="underline">{PRACTICE_COPY.lastResult}</Link>
     </p> : null}
   </StudentPage>
-}
-
-function Fact({ label, value, children }: { label: string; value: string; children?: string }) {
-  return <div><dt>{label}</dt><dd><b>{value}</b>{children}</dd></div>
 }

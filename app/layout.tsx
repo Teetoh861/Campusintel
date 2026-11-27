@@ -1,5 +1,5 @@
 // Root layout — shared navigation, student design tokens, and legacy styles.
-import { Hanken_Grotesk } from 'next/font/google'
+import localFont from 'next/font/local'
 import { Analytics } from '@vercel/analytics/next'
 import { readStudentChromeState } from '@/lib/auth/server-chrome'
 
@@ -16,16 +16,22 @@ import { NavigationSessionProvider } from '@/components/auth/NavigationSession'
 import type { Metadata, Viewport } from 'next'
 import type { ReactElement, ReactNode } from 'react'
 
-const hanken = Hanken_Grotesk({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+// Latin-only WOFF2 subsets and their OFL licenses live in app/fonts; builds need no font fetch.
+const hanken = localFont({
+  src: [
+    { path: './fonts/HankenGrotesk-Latin.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/HankenGrotesk-Latin.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/HankenGrotesk-Latin.woff2', weight: '600', style: 'normal' },
+    { path: './fonts/HankenGrotesk-Latin.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/HankenGrotesk-Latin.woff2', weight: '800', style: 'normal' },
+  ],
   display: 'swap',
   variable: '--font-hanken',
 })
 
 const SITE_TITLE = 'CampusIntell'
 const SITE_DESCRIPTION =
-  'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.'
+  'Verified past questions, study guides and timed exam practice for UNILAG students.'
 
 export const metadata: Metadata = {
   title: SITE_TITLE,

@@ -116,7 +116,7 @@ export const PLAN_COPY = {
   } satisfies Record<PlanTier, string>,
   perPeriod: { semester: '/ semester', session: '/ session' } satisfies Record<PlanPeriod, string>,
   courses: { semester: 'All your courses for this semester', session: 'All your courses for both semesters' },
-  study: 'Course notes, practice questions and timed exams',
+  study: 'Study guides, practice questions and timed exams',
   plusIntro: 'Everything in Standard, plus:',
   plusBenefit: '2× Campus Bot use',
   choose: (tier: PlanTier) => `Choose ${PLAN_TIER_NAME[tier]}`,
@@ -239,7 +239,7 @@ export const RETURN_COPY = {
 
 /** What a paid plan opens, in this order; each line only when one of the student's own courses has it. */
 const UNLOCKED_FEATURES = [
-  { has: 'notes', line: 'Notes by topic' },
+  { has: 'notes', line: 'Study guide by topic' },
   { has: 'cbtPractice', line: 'Practice with instant feedback' },
   { has: 'cbtPractice', line: 'Exam mode' },
   { has: 'theory', line: 'Theory questions with suggested answers' },
@@ -287,7 +287,7 @@ export const FREE_PASS_COPY = {
   line: (hours: number) => `Try your department courses free for ${passDays(hours)} days.`,
   start: 'Get your free pass',
   modalTitle: 'Your free pass',
-  gives: ['A full exam from one of your courses', 'A complete notes topic from one of your courses',
+  gives: ['A full exam from one of your courses', 'A complete study guide topic from one of your courses',
     'Practise from your notes'],
   terms: (hours: number) => [`It lasts ${passDays(hours)} days from now.`, 'Each student can have one free pass.',
     COURSES_FIXED_LINE],
@@ -318,7 +318,7 @@ export const FREE_MONTH_COPY = {
   instead: (day: string) => `You can get free access until ${day} instead.`,
   // The confirmation. Its title carries the day, so the terms only say when it starts.
   description: 'What free access gives, and its terms.',
-  gives: ['Full access to your courses, notes and practice', 'Campus Bot included'],
+  gives: ['Full access to your courses, study guides and practice', 'Campus Bot included'],
   terms: (_day: string) => ['Starts now', COURSES_FIXED_LINE],
   confirm: 'Start free access',
   cancel: 'Not now',
@@ -376,7 +376,7 @@ export const TERMS_COPY = {
     columns: ['Semester', 'Session (both semesters)'],
     rows: [{ plan: 'Standard', semesterKobo: 400000, sessionKobo: 700000 }, { plan: 'Plus', semesterKobo: 600000, sessionKobo: 1100000 }],
   },
-  intro: 'Both plans include all your department courses for your level, with notes, practice questions and Campus Bot. ' +
+  intro: 'Both plans include all your department courses for your level, with study guides, practice questions and Campus Bot. ' +
     'Plus gives you twice as much Campus Bot. GST courses are always free.',
   sections: [
     { heading: 'Paying', body: 'Pay once by card or bank transfer. Your plan doesn’t renew on its own, so you’re only charged ' +
@@ -391,13 +391,12 @@ export const TERMS_COPY = {
     { heading: 'Campus Bot', body: 'Campus Bot has a 5-hour limit and a weekly limit. Your usage bar shows what’s left and ' +
       'when it resets.' },
     { heading: 'Your account', body: 'Your plan is just for you, and you can be signed in on one device at a time.' },
-    { heading: 'Refunds', body: 'Changed your mind? You can get a full refund within 48 hours of paying, as long as you ' +
-      'haven’t started an exam, made a Campus Bot question set or flashcards, answered more than 10 practice ' +
-      'questions, opened more ' +
-      'than 3 notes topics or had more than 10 Campus Bot replies. GST courses don’t count, and you can get one refund ' +
-      'this way. Just message us, and please don’t use your plan while we process it. Refunds go back to the card or ' +
-      'account you paid with, and your plan ends once the refund is made. If a problem on our side stops you from ' +
-      'using your plan, we’ll refund you.' },
+    { heading: 'Refunds', body: "Full refund within 48 hours of paying, as long as you haven't:",
+      points: ['started an exam', 'made a Campus Bot question set or flashcards', 'answered more than 10 practice questions',
+        'opened more than 3 study guide topics', 'had more than 10 Campus Bot replies'],
+      after: "GST courses don't count, and you can get one refund this way. Message us to ask, and please don't use your plan " +
+        "while we process it. The money goes back to the card or account you paid with, and your plan ends once it's refunded. " +
+        "If a problem on our side stops you using your plan, we'll refund you." },
     { heading: 'Wrong amount', body: 'Paid too much? Your plan starts and we refund the extra. Paid too little? It’s ' +
       'refunded in full.' },
     { heading: 'Changes', body: 'Prices may change for future plans. A plan you’ve already paid for keeps its price and end date.' },
@@ -474,7 +473,7 @@ export function trialGrantName(policy: TrialPolicy | null): string {
 /** The preview names a student sees, in the order the course page offers them. */
 export const DISCOVERY_PREVIEW_LABEL: Record<DiscoveryKind, string> = {
   cbt: 'CBT exam',
-  study_guide: 'notes topic',
+  study_guide: 'study guide topic',
 }
 
 export type AccessNotice = { id: string; tone: 'info' | 'error'; title: string; body: string; action: string }

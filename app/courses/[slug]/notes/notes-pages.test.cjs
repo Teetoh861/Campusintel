@@ -102,7 +102,7 @@ test('the topic list links every topic to its own page, in order', async () => p
     ['/courses/use-of-english/notes/2', '2 IAS 2 Inventories 5 lessons'],
     ['/courses/use-of-english/notes/3', '3 Plain note'],
   ])
-  assert.match(html, /<h1[^>]*>Notes<\/h1>/)
+  assert.match(html, /<h1[^>]*>Study guide<\/h1>/)
   assert.match(text(html), /GST111 · Communication in English/)
   assert.ok(anchors(html).some(link => link.includes('href="/courses/use-of-english"') && /Back to course/.test(link)))
   assert.doesNotMatch(html, /data-note-item/, 'the list counts nothing as opened')
@@ -206,7 +206,7 @@ test('a topic shows its note type only when the course mixes types', async () =>
   state.result = { ...full(), learning: { ...full().learning, notes: [first, second] } }
   assert.deepEqual(await rows(), ['1 First topic', '2 Second topic'], 'one type: no repeated type line')
   state.result = { ...full(), learning: { ...full().learning, notes: [first, calculator] } }
-  assert.deepEqual(await rows(), ['1 First topic Topic note', '2 Trick note Calculator trick'], 'mixed types are named')
+  assert.deepEqual(await rows(), ['1 First topic Study guide topic', '2 Trick note Calculator trick'], 'mixed types are named')
 }))
 
 test('a wide table keeps its first column in view, with its row lines, while the rest scrolls', () => {

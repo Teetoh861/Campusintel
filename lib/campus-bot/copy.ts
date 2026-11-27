@@ -9,11 +9,11 @@ export const CAMPUS_BOT_COPY = {
   // Explain.
   explain: 'Explain',
   explaining: 'Campus Bot is explaining…',
-  fromNotes: 'From your notes:',
-  notCovered: 'The notes for this course don’t cover this question.',
+  fromNotes: 'From your study guide:',
+  notCovered: 'The study guide for this course doesn’t cover this question.',
   /** A calculation course's explanation that did not pass its check: where the question is taught. */
   checkFailed: (topic: string) => `This question is from ${topic}.`,
-  openNotes: 'Open notes',
+  openNotes: 'Open study guide',
   explainFailed: 'Campus Bot couldn’t explain this. Try again.',
 
   // Ask Campus Bot: its button in a topic's Campus Bot area, then the chat.
@@ -23,7 +23,7 @@ export const CAMPUS_BOT_COPY = {
   close: 'Close',
   answering: 'Campus Bot is answering…',
   you: 'You',
-  outsideNotes: 'This isn’t covered in this topic’s notes.',
+  outsideNotes: 'This isn’t covered in this study guide topic.',
   // Marking an answer to Campus Bot's check question (owner's mock 8, 23 November 2026).
   correct: 'Correct',
   notQuite: 'Not quite',
@@ -63,8 +63,8 @@ export const CAMPUS_BOT_COPY = {
       `${left} of ${total} Campus Bot ${total === 1 ? 'set' : 'sets'} left on your free pass.`,
     failed: 'We couldn’t create your questions.',
     /** The one label a set written from a notes topic carries (docs/student-copy.md rule 6). */
-    label: 'Made by Campus Bot from this topic’s notes.',
-    fromNotes: 'From the notes:',
+    label: 'Made by Campus Bot from this study guide topic.',
+    fromNotes: 'From the study guide:',
     backToTopic: 'Back to topic',
     /** The set's heading for screen readers; the page's title already names the topic. */
     heading: 'Quiz',

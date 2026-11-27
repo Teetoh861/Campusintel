@@ -91,8 +91,8 @@ test('public and student auth actions independently retain compact sizes and out
 
 test('desktop and Sheet consume the locked breakpoint groups; Profile remains an ordinary destination', async () => fixture(async f => {
   await f.respond({ enabled: true, signedIn: true })
-  const expected = [['All Courses', '/courses'], ['Tutors', '/tutors'],
-    ['Help & Support', '/contact'], ['Profile', '/account']]
+  const expected = [['All Courses', '/courses'], ['Tutor waitlist', '/tutors'],
+    ['Contact & Support', '/contact'], ['Profile', '/account']]
   const desktop = nodes(f.nav()).find(node => node.props?.className === 'ml-auto hidden items-center gap-1 desktop:flex')
   assert.deepEqual(links(desktop), expected)
   const content = nodes(f.nav()).find(node => node.type === f.sheet.SheetContent)

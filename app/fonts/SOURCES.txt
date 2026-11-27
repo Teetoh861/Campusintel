@@ -1,0 +1,25 @@
+Latin-only WOFF2 subsets made with fonttools from the Google Fonts sources
+below, distributed under the SIL Open Font License. Each original license
+is included beside its font, with trailing whitespace removed.
+
+HankenGrotesk-Latin.woff2
+Normal style; configured weights 400, 500, 600, 700, 800.
+The variable weight axis is limited to 400-800.
+https://github.com/google/fonts/tree/main/ofl/hankengrotesk
+Source TTF blob: ed6efac663fab76e550a2c994d95ca143587da18
+License blob: 9c8185d846e13882e03bdd700743e717e67189dc
+
+CampusDisplay-Latin.woff2 (derived from Playfair Display)
+Normal style; configured weights 700, 800.
+The variable weight axis is limited to 700-800.
+The derivative family is named Campus Display; the original copyright
+and OFL license are retained in CampusDisplay-OFL.txt.
+https://github.com/google/fonts/tree/main/ofl/playfairdisplay
+Source TTF blob: 7a09eb71f10622fd083134ac9ed46f59b21bee18
+License blob: 13153890847ba9bde8a852596d1515261156e474
+
+Unicode coverage follows Google Fonts' Latin subset: U+0000-00FF, U+0131,
+U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193,
+U+2212, U+2215, U+FEFF, U+FFFD. The source fonts contain no naira glyph;
+the existing system-font fallback for that sign is unchanged.

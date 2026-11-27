@@ -8,8 +8,8 @@ export const STUDENT_DESTINATIONS = {
   myCourses: { id: 'myCourses', href: '/my-courses', label: 'My Courses' },
   courses: { id: 'courses', href: '/courses', label: 'All Courses' },
   bookmarks: { id: 'bookmarks', href: '/bookmarks', label: 'Bookmarks' },
-  tutors: { id: 'tutors', href: '/tutors', label: 'Tutors' },
-  contact: { id: 'contact', href: '/contact', label: 'Help & Support' },
+  tutors: { id: 'tutors', href: '/tutors', label: 'Tutor waitlist' },
+  contact: { id: 'contact', href: '/contact', label: 'Contact & Support' },
   account: { id: 'account', href: '/account', label: 'Profile' },
   materials: { id: 'materials', href: '/materials', label: 'Request material' },
   // Contextual only (Profile, Dashboard, locked courses); the locked navigation groups do not list it.

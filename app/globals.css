@@ -6,6 +6,12 @@
 @tailwind components;
 @tailwind utilities;
 
+*,
+*::before,
+*::after {
+  font-variant-ligatures: none;
+}
+
 :root {
   /* Approved source colors. Semantic roles below determine their use. */
   --ci-brand-navy: #1E417C;

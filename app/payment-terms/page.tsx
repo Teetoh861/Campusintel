@@ -10,7 +10,7 @@ import type { ReactElement } from 'react'
 
 export const metadata = { title: 'Payment terms | CampusIntell' }
 
-const LINK = 'font-semibold text-student-primary underline underline-offset-2'
+const LINK = 'inline-flex min-h-11 items-center font-semibold text-student-primary underline underline-offset-2'
 
 /** The app's message-us link: WhatsApp when a number is configured, otherwise Help & Support. */
 function MessageUs({ text }: { text: string }): ReactElement {
@@ -53,6 +53,12 @@ export default function PaymentTermsPage(): ReactElement {
       {TERMS_COPY.sections.map(section => <section key={section.heading} aria-labelledby={`terms-${section.heading}`}>
         <h2 id={`terms-${section.heading}`} className="student-section-title">{section.heading}</h2>
         <Body text={section.body} />
+        {'points' in section && <>
+          <ul className="mt-2 list-disc space-y-1 pl-6 text-student-text-secondary">
+            {section.points.map(point => <li key={point}>{point}</li>)}
+          </ul>
+          <Body text={section.after} />
+        </>}
       </section>)}
     </div>
   </StudentPage>

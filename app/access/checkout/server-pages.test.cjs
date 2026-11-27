@@ -14,7 +14,7 @@ const { FREE_MONTH_COPY } = require('../../../lib/entitlements/presentation.ts')
 
 const ORDER = '3f2c9a1b-7d4e-4c2a-9b1f-0123456789ab'
 const NOW = '2026-11-03T12:00:00.000+00:00'
-const text = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+const text = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replaceAll('&#x27;', "'").trim()
 const catalogue = [
   { plan: 'plus_session', tier: 'plus', period: 'session', price_kobo: 1100000 },
   { plan: 'plus_semester', tier: 'plus', period: 'semester', price_kobo: 600000 },
@@ -237,7 +237,7 @@ test('the return page reads our own order only; another student\'s order and unk
   const ok = await returned(ORDER.toUpperCase(), { rpc: { data: mine, error: null } })
   assert.deepEqual(ok.rpcCalls, [['get_my_payment_order', { p_order_id: ORDER }]])
   assert.match(ok.html, new RegExp(`data-order="${ORDER}" data-read="paid" data-courses="2" ` +
-    'data-features="Notes by topic\\|Practice with instant feedback\\|Exam mode"'), 'only what these courses have: no theory')
+    'data-features="Study guide by topic\\|Practice with instant feedback\\|Exam mode"'), 'only what these courses have: no theory')
   // A course still locked (read before the payment confirmed): nothing is claimed until the page reads it again.
   const locked = { ...courses, courses: [courses.courses[0], { ...courses.courses[1], content: { state: 'locked' } }] }
   assert.match((await returned(ORDER, { rpc: { data: mine, error: null }, courses: locked })).html, /data-features="null"/)
@@ -278,10 +278,10 @@ test('a receipt shows our order\'s plan, amount, date, reference and status; any
 test('Payment terms state the approved terms in plain words', async () => {
   const words = text((await page('../../payment-terms/page.tsx', undefined, {})).html)
   for (const line of [/Standard ₦4,000 ₦7,000 Plus ₦6,000 ₦11,000/,
-    /You can get a full refund within 48 hours of paying, as long as you haven’t started an exam, made a Campus Bot question set or flashcards, answered more than 10 practice questions, opened more than 3 notes topics or had more than 10 Campus Bot replies\./,
-    /GST courses don’t count, and you can get one refund this way\./,
-    /If a problem on our side stops you from using your plan, we’ll refund you\./,
-    /Refunds go back to the card or account you paid with, and your plan ends once the refund is made\./,
+    /Full refund within 48 hours of paying, as long as you haven't: started an exam made a Campus Bot question set or flashcards answered more than 10 practice questions opened more than 3 study guide topics had more than 10 Campus Bot replies/,
+    /GST courses don't count, and you can get one refund this way\./,
+    /If a problem on our side stops you using your plan, we'll refund you\./,
+    /The money goes back to the card or account you paid with, and your plan ends once it's refunded\./,
     /Paid too much\? Your plan starts and we refund the extra\. Paid too little\? It’s refunded in full\./,
     /Prices may change for future plans\. A plan you’ve already paid for keeps its price and end date\./]) {
     assert.match(words, line)
