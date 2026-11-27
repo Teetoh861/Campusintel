@@ -82,6 +82,7 @@ async function PracticeTopics({ slug }: { slug: string }): Promise<ReactElement>
   // A course without topics practises in Exam mode, which starts from the course page's Practice card.
   if (topics.length === 0) redirect(`${route.href}#cbtPractice`)
   return <StudentPage band={<PageBand title={PRACTICE_COPY.byTopic} context={context} aside={backToCourse} />}>
+    <p className="student-meta mb-3">{practice.bankSize} questions in the bank</p>
     <ol className="student-topic-list" aria-label="Topics">
       {topics.map(row => <li key={row.topic}>
         <Link href={`${practice.href}?topic=${encodeURIComponent(row.topic)}`} prefetch={false}

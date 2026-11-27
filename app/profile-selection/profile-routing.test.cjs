@@ -7,7 +7,7 @@ const { elementNodes } = require('../../lib/test/element-walker.cjs')
 
 
 const nodes = element => elementNodes(element)
-// The words of a message that may hold a link (Reload, Help & Support), without rendering it.
+// The words of a message that may hold a link (Reload, Contact & Support), without rendering it.
 const textOf = node => typeof node === 'string' || typeof node === 'number' ? String(node)
   : Array.isArray(node) ? node.map(textOf).join('') : node?.props ? textOf(node.props.children) : ''
 const COURSES_UNREADABLE = 'We couldn’t load your courses. Reload'
@@ -81,23 +81,24 @@ test('signed-out entry points retain Auth redirects without reading the account 
   assert.equal((await f.signedOutGate({ children: 'login form' })).props.children.length, 2)
 }))
 
-test('incomplete account reaches selection; completed account stays and offers intentional editing', async () => fixture(async f => {
+test('first selection is setup; a saved selection is editing, and Account sends corrections to support', async () => fixture(async f => {
   await assert.rejects(f.account, /redirect:\/profile-selection/)
   let page = await f.selectionPage()
-  assert.equal(page.props.title, 'Edit profile')
-  assert.equal(page.props.description, 'Set up your profile to see your courses.', 'a new student is told what the form is for, once')
+  assert.equal(page.props.title, 'Set up your profile')
+  assert.equal(page.props.description, undefined, 'the setup heading already names the task')
   assert.equal(page.props.children[1].type.name, 'ProfileSelectionForm')
   assert.equal(page.props.children[1].props.continuityToken, 'page:student:fixture-session')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   const account = await f.account()
   assert.equal(nodes(account).find(node => node.type?.name === 'StudentPage').props.band.props.title, 'Profile')
-  // The section is headed "Academic details", so its one button is just "Edit".
-  const link = nodes(account).find(node => node.props?.children === 'Edit')
-  assert.equal(link.props.href, '/profile-selection')
+  assert.equal(hrefsOf(account).includes('/profile-selection'), false)
+  assert.ok(nodes(account).some(node => node.type?.name === 'SelectionChangeHelp'))
   page = await f.selectionPage()
-  assert.equal(page.props.title, 'Edit profile', 'one title whatever the account state')
+  assert.equal(page.props.title, 'Edit profile', 'the account already has a saved selection')
   assert.equal(page.props.description, undefined, 'the labelled fields need no line above them')
   assert.equal(page.props.children[1].props.initial.status, 'complete')
+  f.state.profile = { status: 'incomplete', revision: 0, firstName: null, options, selection }
+  assert.equal((await f.selectionPage()).props.title, 'Edit profile', 'a saved selection is editing even without a name yet')
 }))
 
 test('account and profile error links use shared secondary button focus', async () => fixture(async f => {
@@ -110,8 +111,6 @@ test('account and profile error links use shared secondary button focus', async 
     for (const token of ['border-transparent', 'px-5', 'py-2.5', 'text-[15px]']) assert.equal(actual.has(token), false)
     assert.equal(actual.has('underline'), false)
   }
-  f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
-  check(nodes(await f.account()).find(node => node.props?.children === 'Edit'))
   f.state.profile = { status: 'unavailable' }
   check(nodes(await f.selectionPage()).find(node => node.props?.children === 'Back to profile'))
 }))
@@ -130,10 +129,10 @@ test('auth and selection redirects terminate, including a completed student open
 }))
 
 test('missing, invariant, unavailable and disabled states remain controlled', async () => fixture(async f => {
-  // Both pages say it in the app's one way ("We couldn’t …"); the Profile page adds the way to Help & Support.
+  // Both pages say it in the app's one way ("We couldn’t …"); the Profile page adds the way to Contact & Support.
   for (const [status, onAccount, onForm] of [
-    ['missing-profile', 'We couldn’t find your profile. Help & Support', 'We couldn’t find your profile'],
-    ['invariant-failure', 'We couldn’t load your profile. Help & Support', 'We couldn’t load your profile'],
+    ['missing-profile', 'We couldn’t find your profile. Contact & Support', 'We couldn’t find your profile'],
+    ['invariant-failure', 'We couldn’t load your profile. Contact & Support', 'We couldn’t load your profile'],
     ['unavailable', "We couldn’t complete your request", "We couldn’t complete your request"],
   ]) {
     f.state.profile = { status }
@@ -178,7 +177,7 @@ test('Profile uses the Student App band and shows real personal/academic details
   assert.deepEqual(summaryRows.filter(node => node.type === 'dt').map(node => node.props.children), ['Department', 'Level', 'Semester'])
   assert.deepEqual(summaryRows.filter(node => node.type === 'dd').map(node => node.props.children[0]),
     ['Fixture department', 'Fixture level', 'Fixture semester'])
-  assert.equal(nodes(sections[1]).find(node => node.props?.children === 'Edit')?.props.href, '/profile-selection')
+  assert.ok(nodes(sections[1]).some(node => node.type?.name === 'SelectionChangeHelp'))
   assert.equal(nodes(sections[2]).find(node => node.props?.children === 'View your plan')?.props.href, '/access')
   // Each card holds its heading and its one action; no sentence explains the email, the plan card or the page.
   assert.deepEqual(nodes(sections[0]).filter(node => node.type === 'p'), [])
@@ -198,16 +197,20 @@ test('Profile uses the Student App band and shows real personal/academic details
 }))
 
 test('Profile selection uses the student workspace for incomplete, complete and error states', async () => fixture(async f => {
+  const { generateMetadata } = require('./page.tsx')
+  assert.equal((await generateMetadata()).title, 'Set up your profile | CampusIntell')
   let page = await f.selectionPage()
   let frame = page.type(page.props)
   assert.match(frame.props.className, /app-container student-workspace student-page/)
-  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Edit profile')
+  assert.equal(nodes(frame).find(node => node.type === 'h1')?.props.children, 'Set up your profile')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.status, 'incomplete')
   f.state.profile = { status: 'complete', revision: 0, firstName: 'Adaeze', options, selection }
   page = await f.selectionPage()
   assert.equal(page.props.title, 'Edit profile')
+  assert.equal((await generateMetadata()).title, 'Edit profile | CampusIntell')
   assert.equal(nodes(page).find(node => node.type?.name === 'ProfileSelectionForm')?.props.initial.selection, selection)
   f.state.profile = { status: 'unavailable' }
+  assert.equal((await generateMetadata()).title, 'Profile | CampusIntell')
   page = await f.selectionPage()
   assert.match(nodes(page).find(node => node.props?.className?.includes('student-surface'))?.props.className,
     /student-surface/)

@@ -1,90 +1,55 @@
-// Contact (/contact) — Variant B. VISUAL RESKIN ONLY: three method rows with
-// WhatsApp highlighted (amber-tinted), then phone (tel:) and email (mailto:) as
-// clean white rows. The number comes from the shared env helper; the email from
-// lib/contact.ts so it's correct everywhere by construction.
-import { BlueCover } from '@/components/chrome/BlueCover'
-import { buildWhatsAppUrl, WHATSAPP_NUMBER } from '@/lib/whatsapp'
+import { btnAccent, btnGhost } from '@/components/chrome/ui'
+import { SelectionSummary } from '@/components/profile/SelectionSummary'
+import { PageBand } from '@/components/student/PageBand'
+import { StudentPage } from '@/components/student/StudentPage'
+import { studentAction } from '@/components/student/ui'
 import { CONTACT_EMAIL } from '@/lib/contact'
+import { getCurrentStudentProfile } from '@/lib/profile/student-profile'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
-
+import { whatsAppChatUrl } from '@/lib/whatsapp'
 import type { ReactElement } from 'react'
 
-// Per-request, so a signed-in student's header is right from the first render.
+// Public support routes with private selection details only for the verified current student.
 export const dynamic = 'force-dynamic'
 export const metadata = { title: `${STUDENT_DESTINATIONS.contact.label} | CampusIntell` }
 
-const WRAP = 'app-container'
+const ROUTES = [
+  { title: 'Report a wrong question or answer', message: 'Hello CampusIntell, I want to report a wrong question or answer.' },
+  { title: "Something isn't working", message: "Hello CampusIntell, something isn't working." },
+  { title: 'Ask about my subscription', message: 'Hello CampusIntell, I have a question about my subscription.' },
+] as const
 
-// Pretty-print a digits-only number for display. Conservatively NG-specific:
-// +234 ### ### #### when the input is a 13-digit number starting 234,
-// otherwise fall back to "+<digits>" so a non-NG configuration still renders
-// something sensible.
-function formatPhone(digits: string): string {
-  if (!digits) return ''
-  if (digits.length === 13 && digits.startsWith('234')) {
-    return `+234 ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9, 13)}`
-  }
-  return `+${digits}`
+/** Offer both existing contact methods, with the student's chosen reason already filled in. */
+function ContactActions({ subject, message }: { subject: string; message: string }): ReactElement {
+  const whatsapp = whatsAppChatUrl(message)
+  const email = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`
+  return <div className="mt-3 flex flex-wrap gap-3">
+    {whatsapp && <a href={whatsapp} target="_blank" rel="noopener noreferrer" className={studentAction(btnAccent)}>
+      WhatsApp
+    </a>}
+    <a href={email} className={studentAction(btnGhost)}>Email</a>
+  </div>
 }
 
-/** Render the existing public information with shared responsive gutters. */
-export default function ContactPage(): ReactElement {
-  const phoneDisplay = formatPhone(WHATSAPP_NUMBER)
-  const telHref = `tel:+${WHATSAPP_NUMBER}`
-  const waHref = buildWhatsAppUrl()
-  return (
-    <>
-      <BlueCover
-        crumbs={[{ label: 'Home', href: '/' }, { label: STUDENT_DESTINATIONS.contact.label }]}
-        title={STUDENT_DESTINATIONS.contact.label}
-        lede="Questions, missing materials or an error to report?"
-      />
-
-      <section className="bg-ci-paper student-page" data-screen-label="Contact methods">
-        <div className={WRAP}>
-          <div className="mx-auto flex max-w-[680px] flex-col gap-4">
-            {/* WhatsApp: the highlighted/primary method (amber-tinted) */}
-            <a
-              className="group flex items-center justify-between gap-4 rounded-[14px] border border-ci-accent-100 bg-ci-accent-50 p-[18px_22px] transition-[transform,box-shadow] duration-150 hover:-translate-y-[2px] hover:shadow-ci-card"
-              href={waHref}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <div className="min-w-0">
-                <div className="inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-ci-accent-600">
-                  <span className="h-[7px] w-[7px] rounded-full bg-ci-accent" />
-                  WhatsApp · fastest
-                </div>
-                <div className="mt-1 text-[18px] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{phoneDisplay}</div>
-              </div>
-            </a>
-
-            <a
-              className="group flex items-center justify-between gap-4 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-[2px] hover:border-ci-border-2 hover:shadow-ci-card"
-              href={telHref}
-            >
-              <div className="min-w-0">
-                <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Call</div>
-                <div className="mt-1 text-[18px] font-bold text-ci-navy-900 [font-variant-numeric:tabular-nums]">{phoneDisplay}</div>
-              </div>
-            </a>
-
-            <a
-              className="group flex items-center justify-between gap-4 rounded-[14px] border border-ci-border bg-ci-white p-[18px_22px] transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-[2px] hover:border-ci-border-2 hover:shadow-ci-card"
-              href={`mailto:${CONTACT_EMAIL}`}
-            >
-              <div className="min-w-0">
-                <div className="text-[12px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">Email</div>
-                <div className="mt-1 break-words text-[18px] font-bold text-ci-navy-900">{CONTACT_EMAIL}</div>
-              </div>
-            </a>
-          </div>
-
-          <p className="mx-auto mt-6 max-w-[680px] text-[14px] text-ci-gray-600">
-            We reply within a day, Monday to Saturday, 9 am to 6 pm.
-          </p>
-        </div>
-      </section>
-    </>
-  )
+/** Show support choices and, when available, only this student's saved academic selection. */
+export default async function ContactPage(): Promise<ReactElement> {
+  const profile = await getCurrentStudentProfile()
+  const selection = profile.status === 'complete' || profile.status === 'incomplete' ? profile.selection : undefined
+  const current = selection ? [selection.department.label, selection.academicLevel.label, selection.academicPeriod.label].join(' · ') : null
+  return <StudentPage band={<PageBand title={STUDENT_DESTINATIONS.contact.label} />}>
+    <div className="student-stack max-w-[680px]">
+      {selection && current && <section id="your-courses" aria-labelledby="your-courses-heading" className="student-surface student-anchor">
+        <h2 id="your-courses-heading" className="student-section-title">Your courses are set from</h2>
+        <div className="mt-3"><SelectionSummary selection={selection} /></div>
+        <h3 className="mt-4 font-semibold text-student-text-primary">Request a change</h3>
+        <ContactActions subject="Request a change to my courses"
+          message={`Hello CampusIntell, I'd like to request a change to my department, level or semester. My current selection is ${current}.`} />
+      </section>}
+      {ROUTES.map((route, index) => <section key={route.title} aria-labelledby={`contact-route-${index}`} className="student-surface">
+        <h2 id={`contact-route-${index}`} className="student-section-title">{route.title}</h2>
+        <ContactActions subject={route.title} message={route.message} />
+      </section>)}
+      <p className="text-sm text-student-text-secondary">We reply within a day, Monday to Saturday, 9 am to 6 pm.</p>
+    </div>
+  </StudentPage>
 }

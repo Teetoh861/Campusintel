@@ -40,9 +40,9 @@ type PageProps = { params: Promise<{ slug: string; kind: string }> }
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Free pass | CampusIntell', robots: { index: false, follow: false } }
 
-const TITLE: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'Notes topic' }
+const TITLE: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'Study guide topic' }
 // The same two, mid-sentence ("Your … is on ACC 101.").
-const NOUN: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'notes topic' }
+const NOUN: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'study guide topic' }
 
 export default async function PreviewPage({ params }: PageProps): Promise<ReactElement> {
   const { slug, kind: segment } = await params
@@ -158,7 +158,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         </section>
       }
       if (result.topics === null || result.topics.length === 0) {
-        return <NotOffered course={course} what="notes topics" />
+        return <NotOffered course={course} what="study guide topics" />
       }
       return <section className="student-surface student-surface-raised" aria-labelledby="topics-title">
         <h2 id="topics-title" className="student-section-title">Choose one topic</h2>
@@ -190,7 +190,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
       return <Notice tone="info" title={`This comes with a ${DISCOVERY_PASS_NOUN}.`} action={<Link href={STUDENT_DESTINATIONS.access.href}
         prefetch={false} className={studentAction(btnNavy, studentFocusDark)}>Get your {DISCOVERY_PASS_NOUN}</Link>} />
     case 'nothing-to-preview':
-      return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'notes topics'} />
+      return <NotOffered course={course} what={kind === 'cbt' ? 'a CBT exam' : 'study guide topics'} />
     default:
       return <Notice title="We couldn’t load this." action={<a href={`${course.href}/preview/${PREVIEW_SEGMENT[kind]}`}
         className={studentAction(btnGhost, 'bg-student-surface')}>Try again</a>}>Nothing was used.</Notice>

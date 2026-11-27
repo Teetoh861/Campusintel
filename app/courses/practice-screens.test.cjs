@@ -167,13 +167,13 @@ test('results show the server grading with the locked bands, truthful counts and
 test('Exam mode starts from the server brief and the timer rule, with one button, and names repository identity honestly', async () => withTsx(async () => {
   const { IntroScreen } = require(QUIZ + 'IntroScreen.tsx')
   const render = props => renderToStaticMarkup(React.createElement(IntroScreen, { ...identity,
-    brief: { questionCount: 50, durationSeconds: 3600 }, starting: false, error: null,
+    brief: { questionCount: 50, durationSeconds: 3600 }, bankSize: 200, starting: false, error: null,
     lastResultHref: null, onStart() {}, ...props }))
   const html = render({})
   assert.equal(count(html, /<h1\b/g), 1)
   assert.match(html, /<h1[^>]*>Exam mode<\/h1>/)
   assert.doesNotMatch(html, /student-page-band-lede|CBT practice|One timed attempt|This attempt/, 'the title names the mode; nothing sits under it')
-  assert.match(text(html), /Questions 50 questions Time 60 minutes Once you start, the timer keeps running, even if you leave or lose connection\./)
+  assert.match(text(html), /50 questions from a bank of 200 · 60 min Once you start, the timer keeps running, even if you leave or lose connection\./)
   assert.doesNotMatch(html, /fresh set|can’t be resumed|ends the attempt|new set of questions|new order each time|Answering|Finishing|Move freely/)
   // One button starts the exam: no tick box, and nothing to confirm first.
   assert.doesNotMatch(html, /role="checkbox"|ready to start|Confirm you/)
@@ -181,8 +181,12 @@ test('Exam mode starts from the server brief and the timer rule, with one button
   assert.doesNotMatch(html, /<button[^>]*disabled=""[^>]*>Start exam/)
   assert.match(html, /<a[^>]*href="\/courses\/bua-216"[^>]*>Back to course<\/a>/, 'Exam mode\'s way back is the course page, by its name')
   assert.doesNotMatch(html, /practice target|Bank sections|study guide|BUA202|last result/i)
-  const whole = render({ brief: { questionCount: 50, durationSeconds: 1800 } })
-  assert.match(text(whole), /Questions 50 questions Time 30 minutes/)
+  const whole = render({ brief: { questionCount: 50, durationSeconds: 1800 }, bankSize: 50 })
+  assert.match(text(whole), /50 questions · 30 min/)
+  assert.doesNotMatch(whole, /from a bank/)
+  const smaller = render({ bankSize: 49 })
+  assert.match(text(smaller), /49 questions · 60 min/)
+  assert.doesNotMatch(smaller, /50 questions|from a bank/)
   const repository = render({ repositoryOnly: true, courseCode: 'INS 999', courseTitle: 'Principles of Insurance' })
   assert.match(repository, /Additional study material · Principles of Insurance/)
   assert.doesNotMatch(repository, /Check that this material matches your course and syllabus/)
@@ -194,8 +198,8 @@ test('Exam mode starts from the server brief and the timer rule, with one button
   assert.match(changed, /role="alert"[\s\S]*The exam has changed/)
   const last = render({ lastResultHref: '/courses/bua-216/quiz?attempt=a' })
   assert.match(last, /href="\/courses\/bua-216\/quiz\?attempt=a"[^>]*>See your last result</)
-  for (const out of [html, whole, repository, starting, changed]) {
-    assert.doesNotMatch(out, /repository|published|question bank|selected at random|timer has not started/i)
+  for (const out of [html, whole, smaller, repository, starting, changed]) {
+    assert.doesNotMatch(out, /repository|published|question bank|random|new set|fresh set|shuffl|order each|try it more than once|timer has not started/i)
   }
 }))
 

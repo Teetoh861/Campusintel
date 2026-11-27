@@ -10,7 +10,7 @@ import { mixesNoteTypes, notesBlocked, resolve, topicLine } from './shared'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Notes | CampusIntell', robots: { index: false, follow: false } }
+export const metadata = { title: 'Study guide | CampusIntell', robots: { index: false, follow: false } }
 
 export default async function NotesPage({ params }: { params: Promise<{ slug: string }> }): Promise<ReactElement> {
   const { slug } = await params
@@ -21,12 +21,12 @@ export default async function NotesPage({ params }: { params: Promise<{ slug: st
 
 async function Notes({ slug }: { slug: string }): Promise<ReactElement> {
   const result = await resolve(slug)
-  const blocked = await notesBlocked(result, slug, `/courses/${slug}/notes`, 'Notes')
+  const blocked = await notesBlocked(result, slug, `/courses/${slug}/notes`, 'Study guide')
   if (blocked) return blocked
   if (result.status !== 'ready') return notFound()
   const { course, notes } = result
   const showType = mixesNoteTypes(notes)
-  return <StudentPage band={<PageBand title="Notes" context={<p>{course.code} · {course.title}</p>}
+  return <StudentPage band={<PageBand title="Study guide" context={<p>{course.code} · {course.title}</p>}
     aside={<Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>Back to course</Link>} />}>
     <ol className="student-topic-list" aria-label="Topics">
       {notes.map((note, index) => {

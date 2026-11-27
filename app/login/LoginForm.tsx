@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FormField, AUTH_SUBMIT } from '@/components/chrome/FormField'
-import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { AuthFormLayout, authSecondaryNav, type AuthFormFeedback } from '@/components/auth/AuthFormLayout'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
@@ -59,7 +59,7 @@ export function LoginForm({ next }: { next: string }) {
       primaryAction={<button disabled={busy} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{busy ? 'Signing in…' : 'Sign in'}</button>}
       secondaryActions={<>
         <Link href={AUTH_PATHS.forgot} className={authSecondaryNav}>Forgot password?</Link>
-      <Link href={AUTH_PATHS.register + '?next=' + encodeURIComponent(next)} className={authSecondaryNav}>Create account</Link>
+      <Link href={AUTH_PATHS.register + '?next=' + encodeURIComponent(next)} className={cx(btnBase, btnSm, btnAccent)}>Create account</Link>
       </>}
     />
   </form>

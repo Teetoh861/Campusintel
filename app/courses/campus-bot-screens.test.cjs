@@ -41,17 +41,17 @@ test('the approved lines, word for word', () => {
   assert.equal(copy.name, 'Campus Bot')
   assert.equal(copy.explain, 'Explain')
   assert.equal(copy.explaining, 'Campus Bot is explaining…')
-  assert.equal(copy.fromNotes, 'From your notes:')
-  assert.equal(copy.notCovered, 'The notes for this course don’t cover this question.')
+  assert.equal(copy.fromNotes, 'From your study guide:')
+  assert.equal(copy.notCovered, 'The study guide for this course doesn’t cover this question.')
   assert.equal(copy.checkFailed('Demand'), 'This question is from Demand.')
-  assert.equal(copy.openNotes, 'Open notes')
+  assert.equal(copy.openNotes, 'Open study guide')
   assert.equal(copy.explainFailed, 'Campus Bot couldn’t explain this. Try again.')
   assert.equal(copy.ask, 'Ask a question')
   assert.equal(copy.askPlaceholder('Demand'), 'Ask about Demand')
   assert.equal(copy.send, 'Send')
   assert.equal(copy.answering, 'Campus Bot is answering…')
   assert.equal(copy.you, 'You')
-  assert.equal(copy.outsideNotes, 'This isn’t covered in this topic’s notes.')
+  assert.equal(copy.outsideNotes, 'This isn’t covered in this study guide topic.')
   // Marking a check answer: the owner's mock 8 words, and no others.
   assert.deepEqual([copy.correct, copy.notQuite, copy.quickCheck, copy.tryAnother, copy.memoryTrick, copy.answerPlaceholder],
     ['Correct', 'Not quite', 'Quick check', 'Try another', 'Memory trick:', 'Type your answer…'])
@@ -128,18 +128,18 @@ test('Explain: Campus Bot’s block names itself, shows the explanation as text 
   const show = result => renderToStaticMarkup(h(ExplanationBlock, { result, courseHref: '/courses/principles-economics-1' }))
   const explained = show({ status: 'explained', text: 'B is right.\n<img src=x onerror=alert(1)> <b>bold</b>', topic: { number: 3, title: 'Demand' } })
   assert.match(text(explained), /^Campus Bot B is right\./)
-  assert.match(text(explained), /From your notes: Demand$/)
+  assert.match(text(explained), /From your study guide: Demand$/)
   assert.deepEqual(links(explained), [['/courses/principles-economics-1/notes/3', 'Demand']])
   assert.doesNotMatch(explained, /<img|<b>/, 'markup in a reply is shown as its characters, never as HTML')
   assert.match(explained, /&lt;img src=x onerror=alert\(1\)&gt;/)
   assert.match(explained, /aria-label="Campus Bot"/)
   assert.equal(text(show({ status: 'explained', text: 'B is right.', topic: null })), 'Campus Bot B is right.')
 
-  assert.equal(text(show({ status: 'not-covered' })), 'Campus Bot The notes for this course don’t cover this question.')
+  assert.equal(text(show({ status: 'not-covered' })), 'Campus Bot The study guide for this course doesn’t cover this question.')
   const unchecked = show({ status: 'check-failed', topic: { number: 5, title: 'Break-even' } })
-  assert.equal(text(unchecked), 'Campus Bot This question is from Break-even. Open notes')
-  assert.deepEqual(links(unchecked), [['/courses/principles-economics-1/notes/5', 'Open notes']])
-  assert.equal(text(show({ status: 'check-failed', topic: null })), 'Campus Bot The notes for this course don’t cover this question.')
+  assert.equal(text(unchecked), 'Campus Bot This question is from Break-even. Open study guide')
+  assert.deepEqual(links(unchecked), [['/courses/principles-economics-1/notes/5', 'Open study guide']])
+  assert.equal(text(show({ status: 'check-failed', topic: null })), 'Campus Bot The study guide for this course doesn’t cover this question.')
 
   const panel = renderToStaticMarkup(h(ExplainPanel, { attemptId: 'a', questionId: 'q', continuityToken: 't',
     courseHref: '/courses/x', ...HREFS }))
@@ -205,9 +205,9 @@ test('Ask Campus Bot: the button, then the chat — each turn under its name, an
     { id: '3', role: 'student', text: 'And GDP?' }, { id: '4', role: 'bot', text: 'In general, it is total output.', inNotes: false }]
   const log = props => renderToStaticMarkup(h(ChatLog, { turns, answering: false, problem: null, ...HREFS, ...props }))
   assert.equal(text(log()), 'You What is demand? Campus Bot Your notes say &lt;i&gt;it falls&lt;/i&gt; as price rises. '
-    + 'You And GDP? Campus Bot This isn’t covered in this topic’s notes. In general, it is total output.')
+    + 'You And GDP? Campus Bot This isn’t covered in this study guide topic. In general, it is total output.')
   assert.doesNotMatch(log(), /<i>/, 'a reply is text, never HTML')
-  assert.equal((log().match(/This isn’t covered in this topic’s notes\./g) ?? []).length, 1)
+  assert.equal((log().match(/This isn’t covered in this study guide topic\./g) ?? []).length, 1)
   assert.match(text(log({ answering: true })), /Campus Bot is answering…$/)
   assert.match(text(log({ problem: { status: 'limit', limit: 'pass', resetsAt: null } })), /You’ve used your free pass messages\. Plan & Access$/)
   assert.deepEqual(buttons(log({ problem: { status: 'failed' }, onRetry() {} })), ['Try again'])
@@ -246,7 +246,7 @@ test('Ask Campus Bot marks an answer (mock 8): the badge, the memory trick, Quic
   assert.equal(text(right), 'Campus Bot Correct A parameter describes the whole population.')
 
   // "Not covered" shows only on an unmarked reply the notes don't cover, never on a reply to the check question.
-  const outside = 'This isn’t covered in this topic’s notes.'
+  const outside = 'This isn’t covered in this study guide topic.'
   assert.match(text(log([{ ...asked, inNotes: false, check: null }])), new RegExp(`^Campus Bot ${outside}`))
   assert.doesNotMatch(text(log([{ ...wrong, inNotes: false }])), new RegExp(outside))
   assert.doesNotMatch(text(log([{ ...wrong, verdict: 'correct', inNotes: false }])), new RegExp(outside))

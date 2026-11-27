@@ -129,7 +129,7 @@ test('the free card counts the student\'s other courses, in today\'s wording whi
 
 test('with a database from before the pass, the page shows a neutral plan: no pass, no button, no 72 hours', async () => {
   const html = await render(preDiscoveryDatabase)
-  assert.doesNotMatch(html, /Free pass|data-activation|72 hours|CBT exam|notes topic/)
+  assert.doesNotMatch(html, /Free pass|data-activation|72 hours|CBT exam|study guide topic/)
   assert.match(html, /Free GST courses/)
   assert.doesNotMatch(html, /7-day|seven-day|full access for 7/i, 'nor is the seven-day trial that database would issue advertised')
 })
@@ -146,7 +146,7 @@ test('regression F4: on a database from before the pass, no trial status names a
   }
   for (const [label, wire] of Object.entries(cases)) {
     const html = await render(wire)
-    assert.doesNotMatch(html, /Free pass|data-activation|72 hours|CBT exam|notes topic|your pass|a pass/i, label)
+    assert.doesNotMatch(html, /Free pass|data-activation|72 hours|CBT exam|study guide topic|your pass|a pass/i, label)
   }
   assert.match(await render(cases['ended seven-day trial']), /Your free trial has ended\./,
     'a trial that was issued is still described as what it was')

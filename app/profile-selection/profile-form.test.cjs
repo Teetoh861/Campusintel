@@ -35,7 +35,7 @@ test('one-time name completion pre-fills persisted academic choices and never in
 }, true))
 
 const nodes = element => elementNodes(element)
-// The words of a message that may hold a link (Help & Support), without rendering it.
+// The words of a message that may hold a link (Contact & Support), without rendering it.
 const textOf = node => typeof node === 'string' || typeof node === 'number' ? String(node)
   : Array.isArray(node) ? node.map(textOf).join('') : node?.props ? textOf(node.props.children) : ''
 
@@ -291,8 +291,8 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
   const cases = [
     [503, { status: 'unavailable', details: 'private SQL error' }, 'We couldn’t save your changes. Try again.'],
     [400, { status: 'invalid-selection' }, 'Check your details and try again.'],
-    [409, { status: 'missing-profile' }, 'We couldn’t find your profile. Help & Support'],
-    [409, { status: 'invariant-failure' }, 'We couldn’t load your profile. Help & Support'],
+    [409, { status: 'missing-profile' }, 'We couldn’t find your profile. Contact & Support'],
+    [409, { status: 'invariant-failure' }, 'We couldn’t load your profile. Contact & Support'],
     [400, { status: 'invalid-request' }, 'We couldn’t save your changes. Try again.'],
   ]
   for (const [status, body, message] of cases) {
@@ -301,7 +301,7 @@ test('failed, unavailable, invalid and revoked saves have controlled outcomes', 
     assert.equal(textOf(f.notice()), message)
     assert.doesNotMatch(textOf(f.notice()), /SQL|provider|private|Please contact/)
     // Only support can fix a missing or broken profile, so the message links there.
-    assert.equal(elementNodes(f.notice()).some(node => node.props?.href === '/contact'), /Help & Support$/.test(message), body.status)
+    assert.equal(elementNodes(f.notice()).some(node => node.props?.href === '/contact'), /Contact & Support$/.test(message), body.status)
     // The page's name never breaks across two lines, however narrow the screen.
     for (const link of elementNodes(f.notice()).filter(node => node.props?.href === '/contact')) {
       assert.match(link.props.className, /(?:^| )whitespace-nowrap(?: |$)/, body.status)
@@ -445,7 +445,7 @@ test('locked with an inactive saved course still sends the saved courses, never 
 
 test('first pick while a plan is running: warned before saving, then the same save', async () => fixture(async f => {
   f.setMode('first-pick'); f.remount()
-  assert.equal(firstPick(f.render()).props.children, 'Once you save, you can’t change your department, level or semester until the semester ends.')
+  assert.equal(firstPick(f.render()).props.children, "Please check these carefully. You can't change them yourself during the semester. If something is wrong later, Contact & Support can change it for you.")
   assert.equal(coursesSet(f.render()), false)
   assert.equal(selects(f.render()).length, 3)
   f.choose('department', f.ids.department); f.choose('academic-level', f.ids.level); f.choose('academic-period', f.ids.period)

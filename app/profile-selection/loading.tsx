@@ -1,6 +1,5 @@
 import { ProfilePageFrame } from '@/components/profile/ProfilePageFrame'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PROFILE_TITLE } from '@/lib/profile/paths'
 
 function PendingField() {
   return <div className="space-y-1">
@@ -11,7 +10,7 @@ function PendingField() {
 
 /** Keep the private page's loading state within the student profile workspace. */
 export default function Loading() {
-  return <ProfilePageFrame title={PROFILE_TITLE} narrow>
+  return <ProfilePageFrame title="Profile" narrow>
     <div role="status" aria-live="polite" aria-busy="true"
       className="student-surface student-surface-raised space-y-3">
       <span className="sr-only">Please wait.</span>

@@ -152,7 +152,7 @@ export function NoteBody({ note, links, level = 4 }: { note: ManagedNote; links?
   </>
 }
 
-export const NOTE_KICKER = { topic_note: 'Topic note', calculator_trick: 'Calculator trick', guide_topic: 'Notes' } as const
+export const NOTE_KICKER = { topic_note: 'Study guide topic', calculator_trick: 'Calculator trick', guide_topic: 'Study guide' } as const
 
 /** One published note, rendered the same wherever a student may read it. */
 export function NoteArticle({ note }: { note: ManagedNote }): ReactElement {
@@ -180,7 +180,7 @@ export function NotesCard({ notes, href }: {
   notes: ReadonlyArray<ManagedNote>; href: string; number?: number
 }): ReactElement {
   return <StudySection id="notes">
-    <CardRow card href={href} title="Open notes" line={countOf(notes.length, 'topic')} />
+    <CardRow card href={href} title="Open study guide" line={countOf(notes.length, 'topic')} />
   </StudySection>
 }
 
@@ -193,6 +193,7 @@ export function PracticeCard({ practice, topics, topicsHref }: {
   const exam = (card: boolean) => <CardRow card={card} href={`${practice.href}?mode=exam`} title={PRACTICE_COPY.examMode}
     line={`${practice.attemptSize} questions · ${practice.timerSeconds / 60} min`} />
   return <StudySection id="cbtPractice">
+    <p className="student-meta">{countOf(practice.bankSize, 'question')} in the bank</p>
     {topics.length === 0 ? exam(true) : <div className="student-topic-card student-topic-choices">
       <CardRow href={topicsHref} title={PRACTICE_COPY.byTopic} line={topicsLine(topics)} />
       {exam(false)}

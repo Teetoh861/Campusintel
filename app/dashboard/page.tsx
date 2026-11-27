@@ -95,7 +95,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
   // when it ends, so the line is not said twice.
   const running = plan !== null && plan.paid === null && plan.access?.source === 'early_access'
     && accessNotice(plan)?.id !== 'access-ending' ? plan.access.ends_at : null
-  return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} />} workspaceClassName="dashboard-workspace">
+  return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} canChange={plan?.access?.source === 'tester'} />} workspaceClassName="dashboard-workspace">
     {freeMonth !== null && <FreeMonthCard {...freeMonth} />}
     {running !== null && <p className="dashboard-free-month student-enter" data-free-month="active">
       {FREE_MONTH_COPY.active(formatFreeMonthDay(running))}</p>}

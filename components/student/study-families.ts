@@ -3,7 +3,7 @@ import type { StudyAvailability } from '@/lib/courses/read-model'
 
 /** Locked product order: Notes, Practice, Theory. Every surface lists families in this order. */
 export const STUDY_FAMILIES = [
-  { id: 'notes', label: 'Notes' },
+  { id: 'notes', label: 'Study guide' },
   { id: 'cbtPractice', label: 'Practice' },
   { id: 'theory', label: 'Theory' },
 ] as const

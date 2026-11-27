@@ -78,7 +78,7 @@ test('the topic is the page’s title, and the set carries the topic’s label',
   assert.match(html, /<h1[^>]*>Price Elasticity of Demand<\/h1>/)
   assert.match(text(html), /^ECO101 · Topic 2 Price Elasticity of Demand Back to topic/)
   assert.deepEqual(links(html), [['/courses/principles-economics-1/notes/2', 'Back to topic']])
-  assert.match(text(html), /Question 1 of 5 · 0 correct so far Made by Campus Bot from this topic’s notes\. Elasticity Question 1\?/)
+  assert.match(text(html), /Question 1 of 5 · 0 correct so far Made by Campus Bot from this study guide topic\. Elasticity Question 1\?/)
   assert.match(html, /<h2[^>]*class="sr-only"[^>]*>Quiz<\/h2>/, 'the visible title already names the topic')
   for (const hidden of ['Personal practice', 'Practise from your notes', 'Made by Campus Bot from your notes.']) {
     assert.equal(text(html).includes(hidden), false, hidden)

@@ -162,7 +162,7 @@ test('the gated page reads central truth once and institutional identity wins ov
   // Approved desktop frame: a contents rail beside one bounded reading column, both inside the shared workspace.
   assert.match(html, /class="student-workspace student-page-workspace student-detail-workspace"><aside class="student-detail-rail"><nav aria-label="Study sections" class="student-detail-nav"><p class="student-detail-kicker student-detail-nav-label">Contents<\/p><ol>/)
   assert.deepEqual([...html.matchAll(/student-detail-nav-number">(\d\d)<\/span>([^<]+)</g)].map(match => [match[1], match[2]]),
-    [['01', 'Notes'], ['02', 'Practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
+    [['01', 'Study guide'], ['02', 'Practice'], ['03', 'Theory'], ['04', 'Course overview'], ['05', 'Reading list']])
   assert.match(html, /<\/aside><div class="student-detail-reading">/)
   assert.ok(html.indexOf('student-detail-rail') < html.indexOf('id="notes"'), 'the rail precedes the reading column')
 }))
@@ -176,7 +176,8 @@ test('practice is one card: Practise by topic with one line about the topics, th
     assert.equal((section.match(/class="student-topic-card student-topic-choices"/g) || []).length, 1, 'one card')
     assert.doesNotMatch(html, /student-topic-list|student-topic-number|\/quiz\?topic=|Configured first|Ratios|Third/,
       'the topics are on the page the card opens, never on the course page')
-    assert.doesNotMatch(section, /student-meta|Pick a topic|marked as you go/, 'one line per choice and nothing else')
+    assert.doesNotMatch(section, /Pick a topic|marked as you go/)
+    assert.match(section, /111 questions in the bank/, 'the total bank size is visible beside the topic counts')
     return anchors(section).map(link => [link.match(/href="([^"]+)"/)[1], text(link).trim(),
       /class="student-topic-row student-focus-control"/.test(link)])
   }
@@ -211,9 +212,9 @@ test('the three study cards share one width, and the course page lists no topic 
   assert.doesNotMatch(rows, /^\.student-topic-(list|card|row|choices) \{[^}]*max-width/m, 'no card sets a width of its own')
   // Every card is one line and its action: four links, in order.
   const cards = html.slice(html.indexOf('id="notes"'), html.indexOf('id="overview"'))
-  assert.deepEqual(anchors(cards).map(link => text(link).trim()), ['Open notes 3 topics', 'Practise by topic 2 topics',
+  assert.deepEqual(anchors(cards).map(link => text(link).trim()), ['Open study guide 3 topics', 'Practise by topic 2 topics',
     'Exam mode 50 questions · 30 min', 'Start theory practice 2 questions'])
-  assert.doesNotMatch(cards, /<ol|<ul|<li|student-detail-numbered|student-meta/, 'no list and no extra line between the cards')
+  assert.doesNotMatch(cards, /<ol|<ul|<li|student-detail-numbered/, 'no list and no extra line between the cards')
   // The overview lists no topics either: not the stored syllabus, not the practice topics. The rest of it stays.
   assert.doesNotMatch(html, /Syllabus topics|Chapter one|>CH 1</)
   assert.match(text(html), /Course overview Published overview body\. Second paragraph\. Key takeaways 01 Takeaway Remember this Exam focus 01 Focus area Formula sheet Break-even/)
@@ -227,7 +228,7 @@ test('notes are one compact card that opens the topic list; no note is read on t
   const html = await f.html()
   const cards = anchors(html).filter(link => link.includes('href="/courses/central-route/notes"'))
   assert.equal(cards.length, 1)
-  assert.equal(text(cards[0]).trim(), 'Open notes 3 topics')
+  assert.equal(text(cards[0]).trim(), 'Open study guide 3 topics')
   // The card is a topic row held to the width every study card and topic list shares: one rule sets them all.
   assert.match(cards[0], /class="student-topic-row student-topic-card student-focus-control"/)
   const rows = fs.readFileSync(path.join(__dirname, '../../../styles/instant-practice.css'), 'utf8')
@@ -322,7 +323,7 @@ test('a locked course keeps its identity, renders no study content or reading li
   const html = await f.html()
   assert.match(html, /<h1[^>]*>Institutional title<\/h1>/)
   assert.doesNotMatch(html, /Confirmed for|Business Administration|Insurance/)
-  assert.match(text(html), /Included with a plan\. Notes · Practice See how to unlock/)
+  assert.match(text(html), /Included with a plan\. Study guide · Practice See how to unlock/)
   assert.doesNotMatch(html, /GST|open fully|open when you subscribe/, 'one line: what the course has, no repetition, no GST')
   assert.equal((html.match(/class="student-notice"/g) || []).length, 1, 'one notice')
   assert.ok(anchors(html).some(link => link.includes('href="/access"')))
@@ -378,7 +379,7 @@ test('no free access on a locked course when the database offers none, or the re
   f.state.result = { status: 'ok', course: institutional({ state: 'locked' }), learning: null, practice: null }
   f.state.plan = planRead(null)
   assert.equal((await f.granted()).props.freeMonth, null)
-  assert.match(text(await f.html()), /Included with a plan\. Notes · Practice See how to unlock /)
+  assert.match(text(await f.html()), /Included with a plan\. Study guide · Practice See how to unlock /)
   f.state.plan = planRead(FREE_ACCESS)
   f.state.revision = null
   assert.equal((await f.granted()).props.freeMonth, null, 'free access must be bound to the courses the student saw (D7)')
@@ -423,8 +424,8 @@ test('owner content rule: a free pass offers only what the locked course publish
       .map(match => `${match[1]}: ${text(match[2]).trim()}`) }
   }
   assert.deepEqual((await offer({ notes: true, cbtPractice: true, theory: false })).offers,
-    ['available: Take a 50-question CBT exam', 'available: Choose a notes topic'])
-  assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a notes topic'],
+    ['available: Take a 50-question CBT exam', 'available: Choose a study guide topic'])
+  assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a study guide topic'],
     'no CBT exam on a course with no practice')
   assert.deepEqual((await offer({ notes: false, cbtPractice: true, theory: false })).offers, ['available: Take a 50-question CBT exam'],
     'no notes topic on a course with no notes')
@@ -437,9 +438,9 @@ test('owner content rule: a free pass offers only what the locked course publish
   assert.deepEqual((await offer({ notes: false, cbtPractice: false, theory: false })).offers, ['opened: Continue your CBT exam'])
   // A preview used on another course is not mentioned on a course that does not offer that kind.
   f.state.plan = passRead([{ kind: 'cbt', content_key: 'another-key', submitted: true }])
-  assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a notes topic'])
+  assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a study guide topic'])
   assert.deepEqual((await offer({ notes: true, cbtPractice: true, theory: false })).offers,
-    ['used-elsewhere: Your CBT exam was used.', 'available: Choose a notes topic'])
+    ['used-elsewhere: Your CBT exam was used.', 'available: Choose a study guide topic'])
 }))
 
 test('the browser tab names the course as the page does, and only for a live session', async () => fixture(async f => {

@@ -1,6 +1,7 @@
 import { authUnavailableMessage, createAuthDiagnostic } from '@/lib/auth/unavailable'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { cache } from 'react'
 import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
 import { AuthUnavailable } from '@/components/auth/AuthShell'
 import { Feedback } from '@/components/chrome/Feedback'
@@ -19,10 +20,22 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ProfileSelectionForm } from './ProfileSelectionForm'
 import type { CourseSelectionMode } from './ProfileSelectionForm'
+import type { StudentProfileState } from '@/lib/profile/student-profile'
+import type { Metadata } from 'next'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: `${PROFILE_TITLE} | CampusIntell`, robots: { index: false, follow: false } }
+const readProfile = cache(getCurrentStudentProfile)
+
+function profileTitle(profile: StudentProfileState): string {
+  if (profile.status === 'incomplete') return profile.selection ? PROFILE_TITLE : 'Set up your profile'
+  return profile.status === 'complete' ? PROFILE_TITLE : 'Profile'
+}
+
+/** Name the tab from the same verified selection as the form, sharing the request's profile read. */
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: `${profileTitle(await readProfile())} | CampusIntell`, robots: { index: false, follow: false } }
+}
 
 /**
  * Locked when the database says the courses are set for the semester. A first pick while a plan or pass is running is
@@ -51,7 +64,7 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
   // Where a save returns to: only Confirm courses or a practice result (allow-listed); otherwise the home page.
   const diagnostic = createAuthDiagnostic('/profile-selection')
   const returnPath = selectionReturnPath((await searchParams)?.return)
-  if (!isStudentAuthEnabled()) return <ProfilePageFrame title={PROFILE_TITLE} narrow>
+  if (!isStudentAuthEnabled()) return <ProfilePageFrame title="Profile" narrow>
     <div className="student-surface"><AuthUnavailable /></div>
   </ProfilePageFrame>
   let continuityToken: string | undefined
@@ -59,19 +72,18 @@ export default async function ProfileSelectionPage({ searchParams }: { searchPar
     const context = await getStudentSessionContext()
     if (context !== null) continuityToken = issueAccountContinuityToken(context.user.id, context.sessionId)
   } catch (error) {
-    return <ProfilePageFrame title={PROFILE_TITLE} narrow>
+    return <ProfilePageFrame title="Profile" narrow>
       <div className="student-surface"><Feedback tone="error" message={authUnavailableMessage('/profile-selection', error, diagnostic)} /></div>
     </ProfilePageFrame>
   }
   if (!continuityToken) redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
-  const profile = await getCurrentStudentProfile()
+  const profile = await readProfile()
   if (profile.status === 'signed-out') {
     redirect(AUTH_PATHS.login + '?next=' + encodeURIComponent(PROFILE_SELECTION_PATH))
   }
   const complete = profile.status === 'complete'
   const mode = profile.status === 'incomplete' || complete ? await courseSelectionMode() : 'open'
-  return <ProfilePageFrame title={PROFILE_TITLE}
-    description={mode !== null && profile.status === 'incomplete' ? 'Set up your profile to see your courses.' : undefined} narrow>
+  return <ProfilePageFrame title={profileTitle(profile)} narrow>
     <AuthFlowSync signedIn continuityToken={continuityToken} />
     {mode === null ? <div className="student-surface">
       <Feedback tone="error" message={<>We couldn’t load your courses. <a href={PROFILE_SELECTION_PATH}

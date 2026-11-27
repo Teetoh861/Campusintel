@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { FormField, AUTH_SUBMIT } from '@/components/chrome/FormField'
-import { btnBase, btnSm, btnNavy, cx } from '@/components/chrome/ui'
+import { btnAccent, btnBase, btnSm, cx } from '@/components/chrome/ui'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { AuthFormLayout, authSecondaryNav } from '@/components/auth/AuthFormLayout'
 import { useAuthSubmit } from '@/components/auth/useAuthSubmit'
@@ -34,11 +34,11 @@ export function RegisterForm({ next }: { next: string }) {
     <AuthFormLayout
       fields={<>
         <FormField id="email" label="Email" type="email" autoComplete="email" maxLength={EMAIL_MAX_LENGTH} {...register('email')} error={errors.email?.message} disabled={pending} />
-    <PasswordField id="password" label="Password" autoComplete="new-password" {...register('password')} error={errors.password?.message} disabled={pending} />
+    <PasswordField id="password" label="Password" autoComplete="new-password" help="At least 8 characters." helpBelow {...register('password')} error={errors.password?.message} disabled={pending} />
     <PasswordField id="confirmation" label="Confirm password" autoComplete="new-password" {...register('confirmation')} error={errors.confirmation?.message} disabled={pending} />
       </>}
       feedback={{ message: error, tone: 'error' }}
-      primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnNavy, AUTH_SUBMIT)}>{pending ? 'Creating account…' : 'Create account'}</button>}
+      primaryAction={<button disabled={pending} className={cx(btnBase, btnSm, btnAccent, AUTH_SUBMIT)}>{pending ? 'Creating account…' : 'Create account'}</button>}
       secondaryActions={<>
         <Link href={AUTH_PATHS.login} className={authSecondaryNav}>Already have an account? Sign in</Link>
       </>}

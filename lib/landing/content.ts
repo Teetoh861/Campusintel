@@ -40,7 +40,7 @@ export const FREE_ACCESS_LAST_DAY = '30 December'
 const REGISTER = '/register'
 const LOGIN = '/login'
 // Said once, in the hero.
-const PITCH = 'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.'
+const PITCH = 'Verified past questions, study guides and timed exam practice for UNILAG students.'
 const NUMBER = new Intl.NumberFormat('en-GB')
 
 export const landingContent = {
@@ -131,8 +131,8 @@ export const landingContent = {
     items: [
       { icon: 'past-questions', highlight: true, title: 'Verified past questions',
         text: 'Past questions and new questions for your course, each one vetted by our team.' },
-      { icon: 'notes', title: 'Notes by topic',
-        text: 'Notes that follow your course outline, one topic at a time.' },
+      { icon: 'notes', title: 'Study guide by topic',
+        text: 'Study guides that follow your course outline, one topic at a time.' },
       { icon: 'exam', title: 'Exam mode',
         text: 'Timed practice that holds your results until the end.' },
       // Named here only: the showcase row below explains it.

@@ -336,7 +336,7 @@ export function QuizClient(props: Props): ReactElement | null {
     return <InstantStarting {...identity} topicsHref={topicsHref} topic={view.topic} error={problem} busy={busy}
       onRetry={retry} />
   }
-  return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief}
+  return <IntroScreen {...identity} courseHref={props.courseHref} brief={brief} bankSize={bankSize}
     starting={busy} error={problem} onRetry={retry} lastResultHref={props.lastResultHref}
     onStart={() => start('new', null, brief)} />
 }

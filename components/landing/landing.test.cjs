@@ -59,7 +59,7 @@ function withModules(env, overrides, run) {
     if (name in overrides) return overrides[name]
     if (name.endsWith('.module.css')) return cssModule
     // The landing asks for one typeface only; any other request fails the render.
-    if (name === 'next/font/google') return { Playfair_Display: () => ({ variable: 'font-display' }) }
+    if (name === 'next/font/local') return { __esModule: true, default: () => ({ variable: 'font-display' }) }
     if (name === 'next/link') return ({ href, prefetch, children, ...props }) =>
       React.createElement('a', { href, 'data-prefetch': prefetch === false ? 'off' : undefined, ...props }, children)
     // next/image as it renders: lazy unless the component asks for eager, so React's own preload hints are the real ones.
@@ -164,7 +164,7 @@ test('the page runs in the agreed order and the retired sections are gone', asyn
   // the FAQ has three questions.
   const features = /<section id="features"[\s\S]*?<\/section>/.exec(html)[0]
   assert.deepEqual([...features.matchAll(/<h3>([^<]*)<\/h3>/g)].map(match => match[1]),
-    ['Verified past questions', 'Notes by topic', 'Exam mode', 'Campus Bot practice from your notes'])
+    ['Verified past questions', 'Study guide by topic', 'Exam mode', 'Campus Bot practice from your notes'])
   // The Campus Bot card is its name alone; the other three add one sentence.
   assert.deepEqual([...features.matchAll(/<li class="fcard[^"]*">([\s\S]*?)<\/li>/g)].map(card => count(card[1], /<p>/g)), [1, 1, 1, 0])
   const { showcase, faq } = await content()
@@ -213,7 +213,7 @@ test('landing copy claims only what the product does', async t => {
   noMatch(text, /\bAI\b|model answer|self-assess|unverified|not verified|\bgraded\b/i)
   for (const phrase of ['Practice questions from your own notes.', 'PDF, Word and text files',
     'For a course with no study materials yet, Campus Bot builds practice questions from the notes you upload.',
-    'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.']) {
+    'Verified past questions, study guides and timed exam practice for UNILAG students.']) {
     assert.ok(text.includes(phrase), phrase)
   }
   // Campus Bot practice is explained once, in the showcase: its card only names it and no FAQ answer repeats it.
@@ -224,8 +224,8 @@ test('landing copy claims only what the product does', async t => {
   assert.deepEqual(faq.items.filter(item => /Campus Bot|your notes|upload/.test(said(item))), [])
   // The hero says what the product is; the footer does not say it again.
   assert.equal('text' in footer, false)
-  assert.equal(count(text, /for UNILAG Management Sciences students\./g), 1)
-  noMatch(text, /for UNILAG students/)
+  assert.equal(count(text, /for UNILAG students\./g), 1)
+  noMatch(text, /for UNILAG Management Sciences students/)
 })
 
 test('the landing reads as decided on 16 November: one name for each thing, and nothing said twice', async () => {
@@ -233,8 +233,8 @@ test('the landing reads as decided on 16 November: one name for each thing, and 
   const text = visibleText(html)
   const { brand, tryQuestion, showcase, faq } = await content()
   // One name for notes, and the line the sample card already shows is not said above it.
-  noMatch(text, /study guide|These come straight from/i)
-  assert.ok(text.includes('Notes by topic'))
+  noMatch(text, /Notes by topic|These come straight from/i)
+  assert.ok(text.includes('Study guide by topic'))
   // The showcase row is labelled by what it is; the theory row has gone with the theory questions (22 Nov).
   assert.deepEqual(showcase.map(row => row.eyebrow), ['Campus Bot'])
   assert.equal(showcase[0].shots[0].alt, 'Uploading notes to Practise from your notes')
@@ -264,7 +264,7 @@ test('the page title and description say CampusIntell and describe the product',
   // app's one name for notes.
   match(metadata, /const SITE_TITLE = 'CampusIntell'\n/)
   const lead = (await content()).hero.lead
-  assert.equal(lead, 'Verified past questions, notes and timed exam practice for UNILAG Management Sciences students.')
+  assert.equal(lead, 'Verified past questions, study guides and timed exam practice for UNILAG students.')
   assert.ok(metadata.includes(`'${lead}'`), 'the description is the hero lead')
   match(metadata, /siteName: 'CampusIntell'/)
   noMatch(metadata, /CampusIntel(?!l)|inside track|Academic [Ii]ntelligence|decoded exam patterns/)
@@ -791,8 +791,8 @@ test('nothing moves by itself: no looping animation, no entrance and no lift on 
 
 test('the landing loads two font files: the display face here and the app\'s body face', () => {
   const fonts = fs.readFileSync(path.join(__dirname, 'fonts.ts'), 'utf8')
-  assert.deepEqual([...fonts.matchAll(/^export const (\w+) = (\w+)\(/gm)].map(match => [match[1], match[2]]), [['landingDisplay', 'Playfair_Display']])
-  noMatch(fonts, /italic|Source_Sans|style:/)
+  assert.deepEqual([...fonts.matchAll(/^export const (\w+) = (\w+)\(/gm)].map(match => [match[1], match[2]]), [['landingDisplay', 'localFont']])
+  noMatch(fonts, /italic|Source_Sans/)
   const css = landingCss()
   match(ruleBody(css, '.landing'), /font-family: var\(--font-hanken\), system-ui, sans-serif;/)
   noMatch(css, /--landing-body|font-style: italic/)
@@ -801,7 +801,7 @@ test('the landing loads two font files: the display face here and the app\'s bod
     return fs.readdirSync(path.join(root, folder), { withFileTypes: true }).flatMap(entry => entry.isDirectory()
       ? walk(`${folder}/${entry.name}`) : /\.tsx?$/.test(entry.name) ? [`${folder}/${entry.name}`] : [])
   }).filter(file => /next\/font\/google/.test(fs.readFileSync(path.join(root, file), 'utf8')))
-  assert.deepEqual(fontUsers.sort(), ['app/layout.tsx', 'components/landing/fonts.ts'])
+  assert.deepEqual(fontUsers, [], 'builds need no Google Fonts fetch')
   noMatch(fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8'), /Playfair|Source_Sans/)
 })
 

@@ -23,7 +23,7 @@ import { notesBlocked, resolve } from '../shared'
 import type { ReactElement } from 'react'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Notes | CampusIntell', robots: { index: false, follow: false } }
+export const metadata = { title: 'Study guide | CampusIntell', robots: { index: false, follow: false } }
 
 type Params = { params: Promise<{ slug: string; topic: string }> }
 
@@ -37,7 +37,7 @@ export default async function NotesTopicPage({ params }: Params): Promise<ReactE
 async function Topic({ slug, topic, continuityToken }: { slug: string; topic: string; continuityToken: string }): Promise<ReactElement> {
   if (!/^[1-9]\d{0,3}$/.test(topic)) return notFound()
   const result = await resolve(slug)
-  const blocked = await notesBlocked(result, slug, `/courses/${slug}/notes/${topic}`, 'Notes')
+  const blocked = await notesBlocked(result, slug, `/courses/${slug}/notes/${topic}`, 'Study guide')
   if (blocked) return blocked
   if (result.status !== 'ready') return notFound()
   const { course, notes, practiceHref, theoryItems } = result

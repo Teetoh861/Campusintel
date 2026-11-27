@@ -101,7 +101,7 @@ test('sprint plan 23 Oct item 2: home is a real personalized command centre with
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const html = await f.html()
   for (const text of ['Hi, Ọlá', 'Business Administration', '200 Level', 'First Semester',
-    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request material', 'Help &amp; Support', 'Profile', 'Waitlist']) assert.ok(html.includes(text), text)
+    'My Courses', 'Practice', 'All Courses', 'Bookmarks', 'Request material', 'Contact &amp; Support', 'Profile', 'Tutor waitlist']) assert.ok(html.includes(text), text)
   assert.doesNotMatch(html, /Welcome back|Your study space/, 'a first visit is greeted like any other, with no filler beside the university')
   assert.doesNotMatch(html, /streak|GPA|credits remaining|Tobi|not-a-name@|Saved files/)
   assert.match(courseCard(html), /<h2 id="my-courses-title">My Courses<\/h2>/)
@@ -110,6 +110,26 @@ test('sprint plan 23 Oct item 2: home is a real personalized command centre with
   assert.equal(f.state.courseReads, 1)
   assert.deepEqual(f.state.progressReads, ['session'], 'one practice read for every course, for the verified session')
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8'), /CourseRow|use client|cache\(|unstable_cache|use cache/)
+}))
+
+test('only verified tester access keeps Dashboard Change; ordinary students use the selection support panel', async () => fixture(async f => {
+  for (const source of ['paid', 'early_access', 'tester']) {
+    f.state.plan = planRead({ tier: 'full', access: { source, ends_at: hoursFromNow(24 * 20) } })
+    const html = await f.html()
+    assert.equal(html.includes('href="/profile-selection"'), source === 'tester', source)
+    assert.equal(html.includes('href="/contact#your-courses"'), source !== 'tester', source)
+    assert.equal(html.includes('Picked the wrong department, level or semester?'), source !== 'tester', source)
+  }
+  f.state.plan = { status: 'unavailable' }
+  assert.doesNotMatch(await f.html(), /href="\/profile-selection"/)
+  for (const field of ['department', 'academicLevel', 'academicPeriod']) {
+    f.state.profile.selection[field].isActive = false
+    const html = await f.html()
+    assert.equal((html.match(/Your department, level or semester is no longer available\./g) || []).length, 1)
+    assert.match(html, /href="\/contact#your-courses"/)
+    assert.doesNotMatch(html, /Picked the wrong department|Update your profile/)
+    f.state.profile.selection[field].isActive = true
+  }
 }))
 
 test('Practice describes Campus Bot practice according to its availability, separate from material requests', async () => fixture(async f => {
@@ -130,7 +150,7 @@ test('Practice describes Campus Bot practice according to its availability, sepa
   assert.match(html, /id="practice-title">Practice<\/h2>/)
   assert.doesNotMatch(html, /Practice quizzes|dashboard-status/)
   assert.match(upload, /class="student-status-rail" data-status="unavailable">Unavailable right now/)
-  assert.match(html, /class="student-status-rail" data-status="waitlist">Waitlist/)
+  assert.match(html, /<h3>Tutor waitlist<\/h3>/)
   f.state.aiAvailable = true
   const enabled = await f.html()
   assert.doesNotMatch(enabled, /Unavailable right now|Currently unavailable|Coming soon/)
@@ -281,7 +301,7 @@ test('Courses and material retains personal Bookmarks first and quiet icon-led h
     ['/tutors', '/contact', '/account'])
   assert.equal((utilities.match(/class="[^"]*dashboard-utility-icon"/g) || []).length, 3)
   assert.doesNotMatch(utilities, /dashboard-utility-arrow|lucide-arrow-right/)
-  assert.match(utilities, /data-status="waitlist">Waitlist/)
+  assert.match(utilities, /<h3>Tutor waitlist<\/h3>/)
   assert.doesNotMatch(utilities, /Sign out|Log out|Logout|<button/)
 }))
 
@@ -294,8 +314,8 @@ test('Dashboard actions stay arrow-free with their labels, destinations and keyb
   const expected = [
     ['/my-courses', 'View your courses', 'card'], ['/my-courses', 'Choose a course', 'control'],
     ['/bookmarks', 'Open bookmarks', 'card'], ['/courses', 'Browse all courses', 'card'],
-    ['/materials', 'Send a request', 'card'], ['/tutors', 'Tutors', 'row'],
-    ['/contact', 'Help &amp; Support', 'row'], ['/account', 'Profile', 'row'],
+    ['/materials', 'Send a request', 'card'], ['/tutors', 'Tutor waitlist', 'row'],
+    ['/contact', 'Contact &amp; Support', 'row'], ['/account', 'Profile', 'row'],
   ]
   assert.equal(actions.length, expected.length)
   for (const [index, [href, label, focus]] of expected.entries()) {
@@ -328,7 +348,7 @@ test('server guards redirect absent sessions or incomplete names and keep failur
   f.state.profile = { status: 'invariant-failure' }
   const broken = await f.html()
   assert.match(broken, /complete your request right now/)
-  assert.match(broken, /<a[^>]*href="\/contact"[^>]*>Help &amp; Support<\/a>/)
+  assert.match(broken, /<a[^>]*href="\/contact"[^>]*>Contact &amp; Support<\/a>/)
   assert.doesNotMatch(broken, /Contact support|Hi, Ọlá/)
 }))
 

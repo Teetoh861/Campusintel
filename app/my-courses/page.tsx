@@ -11,8 +11,8 @@ import { PageBand } from '@/components/student/PageBand'
 import { ResultNotice } from '@/components/student/ResultNotice'
 import { StudentCourseRow } from '@/components/student/StudentCourseRow'
 import { StudentPage } from '@/components/student/StudentPage'
+import { SelectionChangeHelp } from '@/components/profile/SelectionChangeHelp'
 import { redirectForStudentState } from '@/components/student/result-state'
-import { INACTIVE_SELECTION_COPY } from '@/components/student/selection-copy'
 import { studentAction } from '@/components/student/ui'
 import { readCampusBotLinks } from '@/lib/ai-practice/campus-bot-courses'
 import { AUTH_MESSAGES } from '@/lib/auth/constants'
@@ -25,7 +25,6 @@ import { getCurrentStudentCoursesForVerifiedStudent, getStudentCourseUnavailabil
 import { formatCourseProgress, homeCoursesFrom } from '@/lib/dashboard/home-courses'
 import { readPracticeProgress } from '@/lib/practice/progress'
 import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
-import { PROFILE_SELECTION_PATH } from '@/lib/profile/paths'
 import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { ResultStateId } from '@/components/student/result-state'
@@ -65,12 +64,10 @@ function SemesterContext({ selection, total, ready }: {
   const labels = [selection.department.label, selection.academicLevel.label, selection.academicPeriod.label]
   const inactive = [selection.department, selection.academicLevel, selection.academicPeriod].some(item => !item.isActive)
   return <MyCoursesBand
-    context={<p>{labels.join(' · ')}{inactive && <span className="student-context-inactive">{INACTIVE_SELECTION_COPY.sentence}</span>}</p>}
+    context={<p>{labels.join(' · ')}</p>}
     aside={<div className="student-band-actions">
       {total > 0 && <p className="student-summary">{total} {total === 1 ? 'course' : 'courses'} · {ready} ready to study</p>}
-      <Link href={PROFILE_SELECTION_PATH} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface')}>
-        Change<span className="sr-only"> academic details</span>
-      </Link>
+      <SelectionChangeHelp inactive={inactive} />
     </div>} />
 }
 

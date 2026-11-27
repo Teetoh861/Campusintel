@@ -23,8 +23,8 @@ const render = async item => renderToStaticMarkup(React.createElement((await sub
 
 test('study families keep the locked product order and exact availability copy', async () => {
   const { STUDY_FAMILIES, STUDY_COPY, getStudyFamilyLabels } = await subject()
-  assert.deepEqual(STUDY_FAMILIES.map(family => family.label), ['Notes', 'Practice', 'Theory'])
-  assert.deepEqual(getStudyFamilyLabels(study({ theory: true, notes: true, cbtPractice: true })), ['Notes', 'Practice', 'Theory'])
+  assert.deepEqual(STUDY_FAMILIES.map(family => family.label), ['Study guide', 'Practice', 'Theory'])
+  assert.deepEqual(getStudyFamilyLabels(study({ theory: true, notes: true, cbtPractice: true })), ['Study guide', 'Practice', 'Theory'])
   assert.deepEqual(getStudyFamilyLabels(study({ theory: true, overview: true })), ['Theory'])
   assert.deepEqual(getStudyFamilyLabels(study({ overview: true })), [], 'overview is never a study family')
   assert.equal(STUDY_COPY.notYetAvailable, 'Study materials are not available.')
@@ -37,19 +37,19 @@ test('ready rows are one canonical link and advertise only existing families in 
   assert.ok(anchors(html)[0].includes('href="/courses/resolved-slug"'))
   assert.match(html, /student-focus-row/)
   assert.match(html, /BUA201 institutional title/)
-  assert.match(html, /Notes · Practice · Theory/)
+  assert.match(html, /Study guide · Practice · Theory/)
   assert.doesNotMatch(html, /Open course|Available:|Overview|Practice quiz|<button\b/)
   for (const [flags, expected] of [
-    [{ notes: true, overview: false }, 'Notes'],
+    [{ notes: true, overview: false }, 'Study guide'],
     [{ theory: true, overview: true }, 'Theory'],
     [{ cbtPractice: true, overview: true }, 'Practice'],
-    [{ notes: true, cbtPractice: true }, 'Notes · Practice'],
-    [{ notes: true, theory: true }, 'Notes · Theory'],
+    [{ notes: true, cbtPractice: true }, 'Study guide · Practice'],
+    [{ notes: true, theory: true }, 'Study guide · Theory'],
     [{ theory: true, cbtPractice: true, overview: true }, 'Practice · Theory'],
   ]) {
     const partial = await render({ ...ready, content: { ...ready.content, study: study(flags) } })
     assert.ok(partial.includes(`<p>${expected}</p>`), expected)
-    assert.equal(partial.includes('Notes'), flags.notes === true, 'Notes follows study.notes, never the overview')
+    assert.equal(partial.includes('Study guide'), flags.notes === true, 'Notes follows study.notes, never the overview')
     assert.equal(anchors(partial).length, 1)
     assert.doesNotMatch(partial, /unavailable|disabled|<del\b/)
   }
@@ -84,7 +84,7 @@ const repositoryTitle = course => ({ ...course, repository: { ...course.reposito
 test('the serializable presentation adapter is the one derivation every consumer composes', async () => {
   const { presentStudentCourseRow } = await subject()
   assert.deepEqual(presentStudentCourseRow(ready), { code: 'BUA201', title: 'BUA201 institutional title',
-    href: '/courses/resolved-slug', learningTypes: ['Notes', 'Practice', 'Theory'] })
+    href: '/courses/resolved-slug', learningTypes: ['Study guide', 'Practice', 'Theory'] })
   assert.deepEqual(presentStudentCourseRow(unbuilt), { code: 'BUA203', title: 'BUA203 institutional title', unavailable: 'missing' })
   assert.deepEqual(presentStudentCourseRow(unshelved), { code: 'BUA205', title: 'BUA205 institutional title', unavailable: 'temporary' })
   assert.deepEqual(presentStudentCourseRow(noLearning), { code: 'BUA207', title: 'BUA207 institutional title', unavailable: 'missing',
