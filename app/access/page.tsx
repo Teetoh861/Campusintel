@@ -38,7 +38,7 @@ export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Plan & Access | CampusIntell', robots: { index: false, follow: false } }
 
 const PATH = STUDENT_DESTINATIONS.access.href
-const LINK = 'font-semibold text-student-primary underline underline-offset-2'
+const LINK = 'inline-flex min-h-11 items-center font-semibold text-student-primary underline underline-offset-2'
 // How long after paying the refund rule is shown beside the plan (the rule itself is on Payment terms).
 const REFUND_WINDOW_MS = 48 * 60 * 60 * 1000
 
@@ -179,7 +179,7 @@ function Subscribed({ paid, now }: { paid: PaidPlan; /** The database's clock at
       </dl>
     </div>
     <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
-      className={'inline-flex min-h-11 items-center ' + LINK}>View your courses</Link>
+      className={LINK}>View your courses</Link>
     <p className="text-sm text-student-text-secondary">Need to change your courses?{' '}
       <a href={buildWhatsAppUrl(COURSE_CHANGE_MESSAGE)} target="_blank" rel="noopener noreferrer"
         className={LINK}>Message us</a>.</p>

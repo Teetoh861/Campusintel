@@ -75,7 +75,8 @@ const chatReply = z.union([
 const keptFlashcards = z.object({ cards: flashcardsSchema }).strict()
 const askBegin = z.union([
   limits.extend({ state: z.literal('started'), reply_id: uuid, reservation_seconds: z.number().int().positive(),
-    course: courseLabel, topic: z.object({ title: z.string().min(1) }), passages: z.unknown() }),
+    course: courseLabel, topic: z.object({ title: z.string().min(1) }), passages: z.unknown(),
+    history_messages: z.union([z.literal(6), z.literal(12)]).optional().default(CHAT_LIMITS.turns) }),
   z.object({ state: z.literal('answered'), reply: z.union([chatReply, keptFlashcards]).nullable() }),
   limitRow,
   z.object({ state: z.enum(PLAIN_ASK) }),
@@ -195,7 +196,7 @@ export function createSupabaseAskEnv(client: StudentClient, userId: string, sess
       if (notes === null || !outlasts(row.reservation_seconds, CHAT_TIMEOUT_MS)) return null
       return { state: 'started', replyId: row.reply_id,
         limits: { model: row.model, maxInputTokens: row.max_input_tokens, maxOutputTokens: row.max_output_tokens },
-        course: row.course, topicTitle: row.topic.title, notes }
+        course: row.course, topicTitle: row.topic.title, notes, historyMessages: row.history_messages }
     },
     async finish(replyId, settlement: AskSettlement): Promise<boolean> {
       // Flashcards are a delivered reply of their own shape ({cards}); the database records them as a set.

@@ -6,7 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { run } = require('./ops.cjs')
 
-const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret' }
+const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://znwluaiylogqapansuht.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_fixture' }
 const LAUNCH = ['activate-launch', '--confirm-public-launch', '--actor', 'founder', '--reason', 'public launch']
 // The migration that ends free access, and closes the claim, at the end of 30 December (Lagos).
 const MIGRATION = 'supabase/migrations/20261126100000_free_until_30_december.sql'
@@ -19,7 +19,7 @@ function harness(reply = () => ({ state: 'added' })) {
     return new Response(JSON.stringify(reply(body)), { status: 200 })
   }
   const output = []
-  return { requests, output, run: (args, env = ENV) => run(args, env, transport, text => output.push(text)) }
+  return { requests, output, run: (args, env = ENV) => run([...args, '--project', 'test'], env, transport, text => output.push(text)) }
 }
 
 test('the retired list commands are refused by name and nothing is sent', async () => {
@@ -31,7 +31,7 @@ test('the retired list commands are refused by name and nothing is sent', async 
     await assert.rejects(h.run(command), new RegExp(`^Error: ${command[0]} is retired: there is no Early Access list\\. ` +
       'Students claim free access on the site; see docs/entitlements-operations\\.md$'))
     // Not even a configuration error: the command is refused before the connection is read.
-    await assert.rejects(h.run(command, {}), /is retired/)
+    await assert.rejects(h.run(command, {}), /project test requires/)
   }
   assert.equal(h.requests.length, 0)
   assert.equal(h.output.length, 0)
@@ -89,7 +89,7 @@ test('the launch prints when it was recorded and when the claim closes, in Lagos
     claim_closes_at: '2026-12-30T23:00:00+00:00', short_window: false }
   const h = harness(() => reply)
   await h.run(LAUNCH)
-  assert.deepEqual(JSON.parse(h.output.at(-1)), { state: 'launched', launch_recorded: 'Tue, 1 Dec 2026, 09:00 (Lagos)',
+  assert.deepEqual(JSON.parse(h.output.at(-1)), { project: 'test', state: 'launched', launch_recorded: 'Tue, 1 Dec 2026, 09:00 (Lagos)',
     claim_closes: 'Thu, 31 Dec 2026, 00:00 (Lagos)', ...reply })
   // Run again by mistake: the database changes nothing and the tool still says when the claim closes.
   const again = harness(() => ({ state: 'already-launched', actual_launch_at: reply.actual_launch_at,
@@ -150,7 +150,7 @@ test('configure sends the planned launch only: no claim days, and the post-Early
       p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'launch date' }],
     ['admin_configure_early_access', { p_planned_launch_at: null, p_enrollment_days: null,
       p_trial_after_early_access: null, p_actor: 'owner', p_reason: 'no change' }]])
-  assert.deepEqual(h.output.map(text => JSON.parse(text)), [{ state: 'changed' }, { state: 'changed' }])
+  assert.deepEqual(h.output.map(text => JSON.parse(text)), [{ state: 'changed', project: 'test' }, { state: 'changed', project: 'test' }])
 })
 
 test('the report is one read and prints what the database answered', async () => {
@@ -162,5 +162,5 @@ test('the report is one read and prints what the database answered', async () =>
   const h = harness(() => report)
   await h.run(['early-access-report'])
   assert.deepEqual(h.requests.map(r => [r.fn, r.body]), [['admin_early_access_report', {}]])
-  assert.deepEqual(JSON.parse(h.output[0]), report)
+  assert.deepEqual(JSON.parse(h.output[0]), { ...report, project: 'test' })
 })

@@ -352,6 +352,12 @@ test('the history sent with a message leaves out flashcards and the turn that as
   assert.deepEqual(chatHistory(turns), [{ role: 'student', text: 'What is a statistic?' },
     { role: 'bot', text: 'It describes a sample.', check: 'What does a parameter describe?' },
     { role: 'student', text: 'Explain again' }, { role: 'bot', text: 'Put simply, a sample is part of the group.' }])
+  const longChat = Array.from({ length: 16 }, (_, i) => ({ id: String(i), role: 'bot',
+    text: `${i}:` + 'x'.repeat(700), check: 'q'.repeat(400) }))
+  const sent = chatHistory(longChat)
+  assert.equal(sent.length, 12, 'the page may send twelve; admission chooses how many the plan may use')
+  assert.ok(sent[0].text.startsWith('4:'))
+  assert.ok(sent.every(turn => turn.text.length === 600 && turn.check.length === 300))
   // A Quick check asked before the flashcards still waits for its answer, as the server reads it.
   const { awaitingAnswer } = require('./[slug]/notes/AskCampusBot.tsx')
   assert.equal(awaitingAnswer(turns.slice(0, 4)), true)

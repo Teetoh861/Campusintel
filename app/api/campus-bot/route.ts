@@ -12,9 +12,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 // An explanation and its check are bounded by their own deadlines (25 s and 35 s) plus the database work around them.
 export const maxDuration = 120
-// A chat message of 500 characters and six earlier turns of 600, each with a check question of 300, at up to three
-// bytes a character (17,700 bytes), with room to spare.
-const COMMAND_MAX_BYTES = 24 * 1024
+// 500 new characters + twelve turns of 600 and checks of 300: 11,300 UTF-16 units. JSON may escape each as six
+// ASCII bytes (67,800), plus the bounded identifiers, action and structure. The strict command schema still limits fields.
+const COMMAND_MAX_BYTES = 72 * 1024
 
 const HTTP_STATUS: Partial<Record<CampusBotResult['status'], number>> = {
   'signed-out': 401,

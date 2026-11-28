@@ -13,6 +13,7 @@ import { loginSchema } from '@/lib/auth/schemas'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { createFreshStudentSessionClient } from '@/lib/supabase/server'
 import { requireVerifiedSession } from '@/lib/auth/verified-session'
+import { endOtherStudentSessions } from '@/lib/auth/one-device'
 import { checkResendAcknowledgment } from '@/lib/auth/signup-result'
 import { recordSuccessfulLogin } from '@/lib/analytics/server'
 import { readAccountLifecycle } from '@/lib/account/lifecycle'
@@ -51,6 +52,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       })
       if (sessionError) throw authUnavailable(sessionError, 'identity')
       if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw authUnavailable(null, 'identity')
+      await endOtherStudentSessions(client, session.access_token)
       // The Auth trigger denies a login already expired at session creation with a
       // generic provider failure. This read still catches expiry during transfer;
       // never bypass that trigger or look up an unauthenticated account for copy.

@@ -1,5 +1,7 @@
 # Campus Bot limits: full report
 
+Historical verification: the limits recorded below predate the owner’s launch decisions. Current limits and chat caps are in [Campus Bot launch limits](campus-bot-explain-ask.md#launch-limits-and-chat-memory-27-november-2026) and `20261127300000_campus_bot_launch_limits.sql`.
+
 Implementation: 2026-11-03. Validation: 2026-11-04. Branch: `feat/campus-bot-limits`.
 Original 2b baseline: `4986919`; review fixes: `25b52dc`; validated owner-decision commit: `0de367b`.
 This report includes the subsequent owner decision that Early Access receives Standard limits during its free month.

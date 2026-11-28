@@ -3,37 +3,38 @@
 // Explicit invocation only. Every change requires --actor and --reason and is written to the audit trail by the
 // database function it calls. Students start their own free pass and claim their own free access (Early Access) on the
 // site, so there is no operator command for either, and no list: the import, member and sweep commands are retired.
-//   node scripts/entitlements/ops.cjs status --user <uuid>
-//   node scripts/entitlements/ops.cjs grant --user <uuid> --days <n> --actor <name> --reason <text>
-//   node scripts/entitlements/ops.cjs change-grant --grant <uuid> --action extend|revoke|restore|set-ai-units
+//   node scripts/entitlements/ops.cjs status --project <test|production> --user <uuid>
+//   node scripts/entitlements/ops.cjs grant --project <test|production> --user <uuid> --days <n> --actor <name> --reason <text>
+//   node scripts/entitlements/ops.cjs change-grant --project <test|production> --grant <uuid> --action extend|revoke|restore|set-ai-units
 //       [--until <ISO time>] [--units <n>] --actor <name> --reason <text>
-//   node scripts/entitlements/ops.cjs early-access-report
+//   node scripts/entitlements/ops.cjs early-access-report --project <test|production>
 //       The launch, when the claim closes (the end of 30 December, Lagos), whether it is open, and the claims made.
-//   node scripts/entitlements/ops.cjs configure-early-access [--planned-launch <ISO>] --actor <name> --reason <text>
+//   node scripts/entitlements/ops.cjs configure-early-access --project <test|production> [--planned-launch <ISO>] --actor <name> --reason <text>
 //       Records the planned launch date (informational). --enrollment-days is retired (20261126100000): free access is
 //       claimed from the launch until the end of 30 December, whatever the launch date. --trial-after-early-access is
 //       retired (20261023120000): no account that has had Early Access gets a pass.
-//   node scripts/entitlements/ops.cjs activate-launch --confirm-public-launch --actor <name> --reason <text>
+//   node scripts/entitlements/ops.cjs activate-launch --project <test|production> --confirm-public-launch --actor <name> --reason <text>
 //       Records the ACTUAL public launch (once, now) and opens the claim until the end of 30 December (Lagos). It enrols
 //       nobody and prints when the claim closes. Refused, with nothing recorded, once that end has passed, or while the
 //       database still has the 10-day claim window (apply 20261126100000 first). --allow-short-claim-window is retired.
-//   node scripts/entitlements/ops.cjs purge-claims
+//   node scripts/entitlements/ops.cjs purge-claims --project <test|production>
 //       Removes expired email claims (free pass and free access; past discovery_claim_retention, 5 years). pg_cron also
 //       runs this daily (campusintell-discovery-claim-purge); the command is for an immediate purge.
-//   node scripts/entitlements/ops.cjs claim-keys
+//   node scripts/entitlements/ops.cjs claim-keys --project <test|production>
 //       Which ENTITLEMENT_CLAIM_HASH_KEYS versions live claims still reference, so a retired key is dropped safely.
-//   node scripts/entitlements/ops.cjs selection-status | selection-change | calendar | term-set | term-extend ...
+//   node scripts/entitlements/ops.cjs selection-status --project <test|production> | selection-change | calendar | term-set | term-extend ...
 //       A student's course selection and the semester calendar: see scripts/entitlements/course-selection.cjs.
-//   node scripts/entitlements/ops.cjs payment-status | payments-health | open-sales | close-sales | campus-bot-model |
+//   node scripts/entitlements/ops.cjs payment-status --project <test|production> | payments-health | open-sales | close-sales | campus-bot-model |
 //       campus-bot-cap | campus-bot-writer | campus-bot-refill | ai-limits | payment-verify | payment-fulfil | refund | refund-retry |
 //       reconcile-now ...
 //       Plan payments: see scripts/entitlements/payments.cjs and docs/payments-operations.md.
-//   node scripts/entitlements/ops.cjs tester-grant | tester-revoke | tester-status ...
+//   node scripts/entitlements/ops.cjs tester-grant --project <test|production> | tester-revoke | tester-status ...
 //       Owner tester access on the test site only: see scripts/entitlements/tester.cjs.
 const { courseSelectionCall } = require('./course-selection.cjs')
 const { courseAdditionCall } = require('./course-additions.cjs')
 const { authAdminReader, paymentCommand } = require('./payments.cjs')
 const { assertTesterProject, isTesterCommand, testerCall } = require('./tester.cjs')
+const { PROJECT_REFS, matchesSupabaseProject } = require('../../lib/supabase/projects.cjs')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const REQUEST_TIMEOUT_MS = 30_000
@@ -68,6 +69,7 @@ function options(args) {
     const arg = args[index]
     if (!arg.startsWith('--')) { parsed._.push(arg); continue }
     const name = arg.slice(2)
+    if (name === 'project' && Object.hasOwn(parsed, name)) throw new Error('--project may be given only once')
     if (['dry-run', 'confirm-public-launch', 'allow-short-claim-window', 'allow-empty', 'confirm', 'destination-confirmed',
       'everyone'].includes(name)) { parsed[name] = true; continue }
     const value = args[index + 1]
@@ -129,8 +131,14 @@ function connection(env, transport) {
 async function run(args, env = process.env, transport = fetch, write = text => process.stdout.write(text)) {
   const [command, ...rest] = args
   const opts = options(rest)
+  const project = required(opts, 'project', /^(test|production)$/)
+  // Do not construct a connection or an Auth reader before the target is verified: both read the secret key.
+  if (!matchesSupabaseProject(project, env.NEXT_PUBLIC_SUPABASE_URL)) {
+    throw new Error(`project ${project} requires https://${PROJECT_REFS[project]}.supabase.co; nothing was sent`)
+  }
   const note = () => ({ p_actor: required(opts, 'actor'), p_reason: required(opts, 'reason') })
-  const print = value => write(`${JSON.stringify(value, null, 2)}\n`)
+  const print = value => write(`${JSON.stringify(value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? { ...value, project } : { project, result: value }, null, 2)}\n`)
   if (RETIRED.has(command)) {
     throw new Error(`${command} is retired: there is no Early Access list. Students claim free access on the ` +
       'site; see docs/entitlements-operations.md')

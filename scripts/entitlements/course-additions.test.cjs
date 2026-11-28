@@ -2,12 +2,12 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { randomUUID } = require('node:crypto')
 const { run } = require('./ops.cjs')
-const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:61721', SUPABASE_SECRET_KEY: 'local-fixture' }
+const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://znwluaiylogqapansuht.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_fixture' }
 const user = randomUUID(), course = randomUUID(), term = randomUUID(), request = randomUUID()
 const note = ['--actor', 'Ops', '--reason', 'separate course requested']
 function harness() {
   const calls = []
-  return { calls, run: args => run(args, ENV, async (url, init) => {
+  return { calls, run: args => run([...args, '--project', 'test'], ENV, async (url, init) => {
     calls.push({ name: new URL(url).pathname.split('/').at(-1), body: JSON.parse(init.body) })
     return new Response(JSON.stringify({ state: 'added' }))
   }, () => {}) }

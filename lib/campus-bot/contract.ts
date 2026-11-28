@@ -6,7 +6,8 @@ import { z } from 'zod'
 
 /** A chat message, and the earlier turns sent with it: the page keeps the chat, so only the last few travel. A bot
  *  turn carries the check question it asked, if any; a reply's memory trick has its own, shorter limit. */
-export const CHAT_LIMITS = { messageChars: 500, turnChars: 600, turns: 6, checkChars: 300, memoryTrickChars: 200 } as const
+export const CHAT_LIMITS = { messageChars: 500, turnChars: 600, turns: 6, plusTurns: 12,
+  checkChars: 300, memoryTrickChars: 200 } as const
 
 /** The buttons under Campus Bot's newest reply that are chat requests (owner decisions B5 and B6, mock 8): explain the
  *  last reply again, more simply, or make flashcards from this topic's notes. The server decides what each one asks. */
@@ -42,7 +43,7 @@ export const campusBotCommandSchema = z.discriminatedUnion('operation', [
   // shows them, and the server ignores them.
   z.object({ operation: z.literal('ask'), courseSlug, itemId: uuid, requestId: uuid,
     message: z.string().max(CHAT_LIMITS.messageChars).refine(value => value.trim().length > 0),
-    history: z.array(chatTurn).max(CHAT_LIMITS.turns), action: chatAction.optional() }).strict(),
+    history: z.array(chatTurn).max(CHAT_LIMITS.plusTurns), action: chatAction.optional() }).strict(),
 ])
 export type CampusBotCommand = z.input<typeof campusBotCommandSchema>
 export type ParsedCampusBotCommand = z.output<typeof campusBotCommandSchema>

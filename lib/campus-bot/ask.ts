@@ -7,7 +7,7 @@
 import 'server-only'
 import { CHAT_LIMITS } from './contract'
 import { readFlashcards } from './flashcards'
-import { callCampusBotModel, fitNotesPrompt } from './model-call'
+import { callCampusBotModel, fitChatPrompt, fitNotesPrompt } from './model-call'
 import { buildAskPrompt, buildFlashcardsPrompt, EXPLAIN_AGAIN_MESSAGE } from './prompts'
 import { announcesQuestion, answerLeak, asksTwoQuestions, BOLD_MAX, BOLD_MAX_MEMORY_TRICK, boldTerms, capWords,
   comparable, containsAnswer, echoLeak, hasEmoji, hasStressCapitals, isLeadIn, lowerStressCapitals, mentionsChat,
@@ -32,7 +32,7 @@ export type KeptFlashcards = { cards: Flashcard[] }
 
 export type AskBegin =
   | { state: 'started'; replyId: string; limits: CampusBotModelLimits; course: CourseLabel; topicTitle: string
-      notes: NotesContext }
+      notes: NotesContext; historyMessages: 6 | 12 }
   // This message was already answered: the reply (or flashcards) while it is kept, null once it has been deleted.
   | { state: 'answered'; reply: ChatReply | KeptFlashcards | null }
   | { state: 'session-limit' | 'week-limit'; resetsAt: string | null }
@@ -266,8 +266,8 @@ export function checkPending(history: ReadonlyArray<ChatTurn>): boolean {
 }
 
 /** The recent turns as data for the prompt: the last few only, each cleaned and within its length. */
-export function recentTurns(history: ReadonlyArray<ChatTurn>): ChatTurn[] {
-  return history.slice(-CHAT_LIMITS.turns).flatMap(turn => {
+export function recentTurns(history: ReadonlyArray<ChatTurn>, limit: 6 | 12 = CHAT_LIMITS.turns): ChatTurn[] {
+  return history.slice(-limit).flatMap(turn => {
     const text = studentText(turn.text, CHAT_LIMITS.turnChars)
     if (text === '') return []
     const check = turn.role === 'bot' && turn.check !== undefined ? studentText(turn.check, CHAT_LIMITS.checkChars) : ''
@@ -309,16 +309,16 @@ export async function askCampusBot(env: AskEnv, command: AskCommand): Promise<As
 
   if (command.action === 'flashcards') return makeFlashcards(env, begun, provider)
 
-  // The whole prompt stays within the input cap admitted: as much of the topic's notes as fits.
-  const turns = recentTurns(command.history)
+  // The plan allowance comes only from admission. Give up the oldest messages before any of the topic's notes.
+  const availableTurns = recentTurns(command.history, begun.historyMessages)
   const explainAgain = command.action === 'explain-again'
-  const fitted = fitNotesPrompt(begun.notes,
-    notes => buildAskPrompt(begun.course, begun.topicTitle, notes, turns, message, explainAgain), begun.limits)
+  const fitted = fitChatPrompt(begun.notes, availableTurns,
+    (notes, turns) => buildAskPrompt(begun.course, begun.topicTitle, notes, turns, message, explainAgain), begun.limits)
   if (fitted === null) {
     await env.finish(begun.replyId, { outcome: 'failed', usage: null })
     return { status: 'failed' }
   }
-  const { prompt } = fitted
+  const { prompt, turns } = fitted
   const reply = await callCampusBotModel(provider, { ...prompt, limits: begun.limits, effort: 'low',
     timeoutMs: CHAT_TIMEOUT_MS })
   if (reply.kind === 'failed') {

@@ -9,6 +9,15 @@
 begin;
 select no_plan();
 
+-- These legacy behavior scenarios use their original scale; launch defaults are asserted in launch_batch_2.test.sql.
+-- Keep the multi-request/overrun fixtures independent of later owner changes to live budgets.
+update private.campus_bot_tiers set
+  session_tokens=case tier when 'standard' then 350000 else 700000 end,
+  week_tokens=case tier when 'standard' then 700000 else 1400000 end;
+-- Pin the original feature-test reservation; launch_batch_2.test.sql covers the shipped 18000/1500 caps.
+update private.campus_bot_request_caps set read_tokens_max=14000,written_tokens_max=800 where step='chat';
+
+
 -- The owner content rule (20261122120000) withdraws content this test uses as fixtures. It is rolled back here, inside
 -- this test's transaction, so the content stands as the earlier migrations left it.
 select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),

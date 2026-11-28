@@ -53,7 +53,7 @@ export type Turn = { id: string; role: 'student' | 'bot'; text: string; inNotes?
 
 /** The turns sent with a message: never flashcards, nor the turn that asked for them. */
 export function chatHistory(turns: ReadonlyArray<Turn>): Extract<CampusBotCommand, { operation: 'ask' }>['history'] {
-  return turns.filter(turn => !turn.cards && turn.action !== 'flashcards').slice(-CHAT_LIMITS.turns)
+  return turns.filter(turn => !turn.cards && turn.action !== 'flashcards').slice(-CHAT_LIMITS.plusTurns)
     .map(turn => turn.role === 'bot' && turn.check
       ? { role: 'bot' as const, text: turn.text.slice(0, CHAT_LIMITS.turnChars),
         check: turn.check.slice(0, CHAT_LIMITS.checkChars) }
