@@ -96,6 +96,7 @@ export default async function DashboardPage(): Promise<ReactElement> {
   const running = plan !== null && plan.paid === null && plan.access?.source === 'early_access'
     && accessNotice(plan)?.id !== 'access-ending' ? plan.access.ends_at : null
   return <>{continuity}<StudentPage band={<StudentIdentity profile={profile} canChange={plan?.access?.source === 'tester'} />} workspaceClassName="dashboard-workspace">
+    {await import('@/components/orientation/QuizCard').then(({ QuizCard }) => <QuizCard />)}
     {freeMonth !== null && <FreeMonthCard {...freeMonth} />}
     {running !== null && <p className="dashboard-free-month student-enter" data-free-month="active">
       {FREE_MONTH_COPY.active(formatFreeMonthDay(running))}</p>}

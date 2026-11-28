@@ -168,7 +168,8 @@ test('academic identity owns a full-width band outside the bounded course/action
   const inner = band.props.children[1]
   assert.ok(inner.props.className.split(' ').includes('student-workspace'), 'only the inner academic content is constrained')
   assert.equal(shell.props.workspaceClassName, 'dashboard-workspace')
-  const [offer, month, notice, next, primary, supporting] = shell.props.children
+  const [quiz, offer, month, notice, next, primary, supporting] = shell.props.children
+  assert.equal(quiz.type.name, 'QuizCard', 'the isolated orientation card precedes study actions')
   assert.deepEqual([offer, month], [false, false], 'no free month card or line unless the database gives one')
   assert.equal(notice.type.name, 'AccessNotice', 'the plan notice leads the workspace')
   assert.ok(!next, 'no Continue card before the student has started')
@@ -189,7 +190,7 @@ test('a student who can claim free access sees one card at the top of the Dashbo
   f.state.revision = 7
   f.state.current.courses = [mappedCourse(0, 'ready')]
   const tree = await f.page(), shell = tree.props.children[1]
-  const [offer, month] = shell.props.children
+  const [, offer, month] = shell.props.children
   assert.equal(offer.type.name, 'FreeMonthCard')
   // endsOn: the last Lagos day the end covers, not the 31st its midnight falls on. closesInMs: 30 Dec 23:00 UTC less the
   // database's now, 27 Oct 09:00.
@@ -216,14 +217,14 @@ test('free access is offered by the database clock: on 1 December and on its las
   // in 13 hours.
   for (const [now, closesInMs] of [['2026-12-01T08:00:00.000Z', 2_559_600_000], ['2026-12-30T10:00:00.000Z', 13 * 3_600_000]]) {
     f.state.plan = planRead({ now, free_month: MONTH })
-    const [offer] = (await f.page()).props.children[1].props.children
+    const [, offer] = (await f.page()).props.children[1].props.children
     assert.deepEqual(offer.props, { continuityToken: 'page-token', profileRevision: 7, endsOn: '30 December', closesInMs }, now)
     assert.equal(words(offerCard(await f.html())), 'Free until 30 December Full access to your courses and Campus Bot. Get free access', now)
   }
 }))
 
 test('no free access card when the database offers none, the revision cannot be read, or the plan cannot be read', async () => fixture(async f => {
-  const offered = async () => (await f.page()).props.children[1].props.children[0]
+  const offered = async () => (await f.page()).props.children[1].props.children[1]
   f.state.plan = planRead()
   assert.equal(await offered(), false)
   f.state.plan = planRead({ free_month: MONTH })
