@@ -1,5 +1,10 @@
 # Free pass, free access (Early Access) and entitlement operations
 
+Every ops command requires `--project test` or `--project production`. The URL must be exactly
+`https://znwluaiylogqapansuht.supabase.co` for test or `https://ckhkrognfftrqsjtablr.supabase.co` for
+production. A missing or mismatched target is refused before reading the key or sending a request; local URLs
+are refused. Every result names the project. Examples below use production unless they explicitly name test.
+
 Owner: founder/operations. Implements PRD v1.4 §4.5 and §4.9 as amended by the owner. On 2026-10-21 the Discovery Pass
 became one click by a signed-in student and **collects no phone number**. On 2026-11-16 the pre-launch Early Access
 list was retired: Early Access became a grant the student claims on the site after launch
@@ -18,7 +23,7 @@ call or deployment was made while building it.
 | Discovery Pass (`source = 'trial'`, `trial_policy = 'discovery'`, since `20261021100000_discovery_pass.sql`) | One tap on Plan & Access by the signed-in student (`activate_discovery_pass`), once per account and once per confirmed email address (for 5 years); never for an account that has ever had Early Access or an address that has claimed free access, and not while free access can be claimed (from the launch until the end of 30 December 2026, Lagos). Offered only to students who are eligible, decided on the server before render. No phone number, SMS or code | **A restricted sample, never full access.** For `discovery_hours` (72) on database time: one CBT exam of exactly `discovery_cbt_questions` (50) valid questions from one actively offered course the student picks. It opens only if that course's whole CBT duration fits before the pass ends, and is never shortened. Answers are saved as the student goes; at the database deadline the exam closes and is marked from the last sheet saved in time. Nothing sent after the deadline is marked, and `discovery_cbt_grace_seconds` (120) only replays an already marked result. Plus one complete study-guide topic the student picks from one actively offered course. Every other topic stays locked. No theory preview. Nothing renews | One accepted upload (`discovery_ai_uploads`, 1, enforced when an upload becomes ready, however many were reserved; refused files cost nothing) of at most `discovery_ai_source_chars` (20,000) characters. Only that upload can use the pass. `discovery_ai_generations` (1) delivered set of exactly five valid questions; a short or malformed set is a failed attempt and is not charged. At most `discovery_ai_attempts` (3) provider attempts, failed ones included |
 | Seven-day trial (`source = 'trial'`, `trial_policy = 'seven-day'`) | Issued before `20261021100000`; no new ones | Every course until its own original end | Its original allowance under the shared AI rules |
 | Free access, "Free until 30 December" (Early Access, `source = 'early_access'`) | **Claimed by the student** on the site (`claim_early_access`) while the claim is open: from the actual launch until the end of 30 December 2026 (Lagos). Once per account and once per confirmed email address (for 5 years). Never with a current paid plan or a throwaway email domain, and only once the student's courses are confirmed | The student's courses from the claim until the end of 30 December 2026 (Lagos): the same end for every claim, so an earlier claim gets more days. Claims made before `20261126100000` keep their one-calendar-month end. It sets their courses for the semester | Campus Bot at the Standard plan's limits (`20261103160000`), until the same end |
-| Operator grant | `scripts/entitlements/ops.cjs grant` | Every course for the stated days | None (course access only) |
+| Operator grant | `scripts/entitlements/ops.cjs grant --project production` | Every course for the stated days | None (course access only) |
 
 Free is the institutional `is_free` flag, never `courses.is_shared`. Login stays email and password. Running out of
 AI units never closes courses. Revoking or expiring any grant ends its course access **and** its AI at once.
@@ -91,7 +96,7 @@ unchanged and listed above.
 Shared campus addresses: nobody is refused by address. On launch day watch `private.entitlement_events` for
 `discovery.origin-notice`: a lecture hall activating behind one NAT address is expected and needs no action; a run of
 notices from one address with no matching registrations is worth a look at the grants created in that window
-(`status`, `change-grant --action revoke`). The figures live in `lib/entitlements/server.ts` (`ACTIVATION_LIMIT`) and
+(`status --project production`, `change-grant --project production --action revoke`). The figures live in `lib/entitlements/server.ts` (`ACTIVATION_LIMIT`) and
 `consume_discovery_activation_limit` together; the database refuses any other values.
 
 ### Email claims
@@ -106,7 +111,7 @@ version and an expiry. It never holds the address, and nothing in the database c
 
 Rotation: prepend a new version (`3:<new>,2:<old>`). New claims are written under version 3; lookups try every listed
 version, so claims under version 2 keep blocking their addresses. Drop version 2 from the list only when
-`ops.cjs claim-keys` shows no live claim under it (at the latest 24 months after the rotation).
+`ops.cjs claim-keys --project production` shows no live claim under it (at the latest 24 months after the rotation).
 
 The database checks the configuration on every activation and **fails closed** (`claim-key-missing`,
 `claim-key-replaced`, shown to the student as "not available right now", logged by the server and audited as
@@ -119,15 +124,15 @@ The database checks the configuration on every activation and **fails closed** (
 - a version that unexpired claims were written under but the configuration no longer carries is refused, so a key
   dropped early stops activation instead of making those claims unmatchable. Put it back; nothing was reset.
 
-`ops.cjs claim-keys` reports `live` (versions unexpired claims still reference, with counts and the last expiry) and
+`ops.cjs claim-keys --project production` reports `live` (versions unexpired claims still reference, with counts and the last expiry) and
 `registered` (versions the ledger has been written with). No key, hash or check value is ever printed.
 
 Retention (owner decision, 23 October 2026): each claim expires `discovery_claim_retention` (**5 years**) after the
 pass was activated, and survives account deletion. `20261023120000_discovery_eligibility.sql` re-dated every live claim
 to `claimed_at + 5 years`; an already expired claim is not revived. An expired claim blocks nothing even before it is
 removed. pg_cron purges expired rows daily (job `campusintell-discovery-claim-purge`, 03:17 UTC), and
-`ops.cjs purge-claims` does the same at once. `private.early_access_claims` is the same record for free access: the
-same hash, keys, 5-year retention and purge, one row per address that claimed. The key checks, `claim-keys` and the
+`ops.cjs purge-claims --project production` does the same at once. `private.early_access_claims` is the same record for free access: the
+same hash, keys, 5-year retention and purge, one row per address that claimed. The key checks, `claim-keys --project production` and the
 purge count both tables. Changing the policy value later affects new claims only. No hosted database ever held the earlier unkeyed shape of this
 table, so there are no rows to migrate; the migration is edited in place before its first hosted run.
 
@@ -229,7 +234,7 @@ The public landing page's FAQ answers "Can I try it before paying?" with "Yes. G
 free, and a free pass lets you try your department courses." after it (owner decisions, 25 and 26 November 2026). The
 page is static and cannot see the launch: the answer is picked when the page is built and again on the visitor's device,
 by date only. Before the live launch nobody can claim yet (the free pass is what a new student gets then), so production
-gets the release that first carries this page on launch day, immediately before the migration and `activate-launch`
+gets the release that first carries this page on launch day, immediately before the migration and `activate-launch --project production`
 (below; owner decision, 26 November 2026: a release rule, not a build-time launch switch). A build made after the end of 30 December carries the free pass answer in its HTML; until then, a visitor
 whose device clock is behind, or who has JavaScript off, still reads the free access answer, so redeploy production
 once after the end of 30 December.
@@ -237,11 +242,11 @@ once after the end of 30 December.
 ### Launch
 
 ```
-node scripts/entitlements/ops.cjs early-access-report
-node scripts/entitlements/ops.cjs activate-launch --confirm-public-launch --actor <founder> --reason "public launch"
+node scripts/entitlements/ops.cjs early-access-report --project production
+node scripts/entitlements/ops.cjs activate-launch --project production --confirm-public-launch --actor <founder> --reason "public launch"
 ```
 
-`early-access-report` is read-only. It shows `claim_cutoff` (the end), `claim_closes_at` (the stored close: null before
+`early-access-report --project production` is read-only. It shows `claim_cutoff` (the end), `claim_closes_at` (the stored close: null before
 launch, then the same instant) and `claim_open`. Before launch, `if_launched_now` says what a launch now would decide:
 `claim_would_close_at` (the cutoff) and `claim_would_open` (false once the cutoff has passed, when a launch is refused).
 Since `20261126100000` it has no `claim_days`. `months` counts the grants (claimed, running, ended, revoked; the key
@@ -249,7 +254,7 @@ keeps its old name) and `address_records` the live address records. `retired_lis
 list table, which nothing reads. Instants print as the database returns them: the end reads
 `2026-12-30T23:00:00+00:00`.
 
-`activate-launch` records `actual_launch_at` once, from the database clock, and opens the claim until the cutoff. It
+`activate-launch --project production` records `actual_launch_at` once, from the database clock, and opens the claim until the cutoff. It
 enrols nobody and cannot be undone. It stores the close and prints the launch time and the close in Lagos time:
 `claim_closes` reads "Thu, 31 Dec 2026, 00:00 (Lagos)", the first instant after 30 December. It is refused, and
 **records nothing**, only once the cutoff has passed ("launch NOT recorded: free access could be claimed only until …,
@@ -261,7 +266,7 @@ changes nothing and prints the recorded times. The database also keeps the old s
 `admin_activate_public_launch(actor, reason, limit)`, for callers built before the claim: it ignores the limit and never
 allows a launch after the cutoff. The script always calls the three-argument form with `p_allow_short_window` false.
 
-`configure-early-access --planned-launch <ISO>` records the planned launch date, which is informational.
+`configure-early-access --project production --planned-launch <ISO>` records the planned launch date, which is informational.
 `--enrollment-days` is retired by `20261126100000`: the tool refuses it by name and sends nothing, and otherwise sends
 no days. (The database still stores days an older tool sends before launch and refuses a change to them after it,
 `claim-window-fixed`; nothing reads them.) No command changes the cutoff or the stored close. `import-early-access`,
@@ -276,10 +281,10 @@ a launch). It writes no grant and no audit event: the report taken before and af
 
 1. Deploy the app with this change first (the develop build on the test site, `main` on production). It reads a
    one-month end correctly; the old app on the new database would name 31 December and one month. On production this
-   is the launch-day release, followed straight away by steps 2-5 and `activate-launch`: its landing page promises free
+   is the launch-day release, followed straight away by steps 2-5 and `activate-launch --project production`: its landing page promises free
    access, which nobody can claim before the launch. On the test site, apply the migration right after the develop
    deploy.
-2. `early-access-report`: note `actual_launch_at`, `claim_closes_at` and `months`. Production must show no launch and
+2. `early-access-report --project production`: note `actual_launch_at`, `claim_closes_at` and `months`. Production must show no launch and
    `months.claimed` 0; if it shows a launch or any claim, stop and ask the owner. On the test site, also count the
    grants from the retired list: `select count(*) from public.entitlement_grants where source = 'early_access' and
    reference ? 'member_id';`. Their addresses were never written to `private.early_access_claims`, so once the window
@@ -289,16 +294,16 @@ a launch). It writes no grant and no audit event: the report taken before and af
    file sorts before the newest remote version. Never use `--include-all`.
 4. `supabase db push`, at a quiet moment. The cutoff update waits for claims in flight: they finish under the old rule,
    with a one-month end, and claims after the commit end at the new close.
-5. `early-access-report` again: on the test site `claim_cutoff` and `claim_closes_at` are both
+5. `early-access-report --project production` again: on the test site `claim_cutoff` and `claim_closes_at` are both
    `2026-12-30T23:00:00+00:00`, `claim_open` is true, and `actual_launch_at` and `months` are unchanged.
 
 On the test site the claim is then open from the recorded launch until the end of 30 December, so a window that had
 already closed reopens (owner decision, 25 November 2026) and the offer comes back for eligible students. The free pass
 is hidden again until then from every account without free access; passes already running continue. Grants already
-claimed keep their ends. `activate-launch` answers `already-launched` with the new `claim_closes_at`.
+claimed keep their ends. `activate-launch --project production` answers `already-launched` with the new `claim_closes_at`.
 
 Production has no launch, so step 5 reads `claim_closes_at` null and `if_launched_now` with `claim_would_close_at`
-`2026-12-30T23:00:00+00:00` and `claim_would_open` true. Production must have the migration before `activate-launch`,
+`2026-12-30T23:00:00+00:00` and `claim_would_open` true. Production must have the migration before `activate-launch --project production`,
 which then runs without any flag; afterwards `claim_closes_at` is `2026-12-30T23:00:00+00:00`.
 
 ### One per account and per address
@@ -310,8 +315,8 @@ may still claim free access. A repeat address is refused and audited as `early-a
 "Free access isn’t available on this account."
 
 A double tap, a second tab or a lost response is a replay: `claim_early_access` answers `already-claimed` with the
-grant's own end, and the student sees their free access. Revoking it (`change-grant --action revoke`) does not let the
-account or the address claim again. `change-grant --action extend` moves its end as for any grant; the rule that every
+grant's own end, and the student sees their free access. Revoking it (`change-grant --project production --action revoke`) does not let the
+account or the address claim again. `change-grant --project production --action extend` moves its end as for any grant; the rule that every
 claim ends at the end of 30 December covers what students claim, not an end date an operator sets by hand.
 
 ### Concurrency
@@ -378,17 +383,17 @@ transaction. The audit trail never contains phone numbers, email addresses or co
 
 | Situation | Command |
 | --- | --- |
-| See an account's grants, pass claim, free access, AI allowance and history | `status --user <uuid>` |
-| Remove expired email claims / see which claim key versions are still referenced | `purge-claims` / `claim-keys` |
-| Activation outage or support compensation | `grant --user <uuid> --days <n>` (course access, no AI) |
-| Extend, revoke or restore a grant (revoking ends its AI at once) | `change-grant --grant <uuid> --action extend --until <ISO>` / `revoke` / `restore` |
-| Generations disputed during a trial | `change-grant --grant <uuid> --action set-ai-units --units <n>` |
-| A student says they could not claim free access | `status --user <uuid>` for the account, `early-access-report` for the claim window. The team never starts free access for a student; compensate with `grant --user <uuid> --days <n>` (course access, no AI) |
-| One person claimed on two accounts with different addresses | `change-grant --grant <uuid> --action revoke` on the later grant |
-| Record the planned launch date (informational) | `configure-early-access --planned-launch <ISO>` (`--enrollment-days` and `--trial-after-early-access` are retired and refused; no command moves the end of free access) |
+| See an account's grants, pass claim, free access, AI allowance and history | `status --project production --user <uuid>` |
+| Remove expired email claims / see which claim key versions are still referenced | `purge-claims --project production` / `claim-keys --project production` |
+| Activation outage or support compensation | `grant --project production --user <uuid> --days <n>` (course access, no AI) |
+| Extend, revoke or restore a grant (revoking ends its AI at once) | `change-grant --project production --grant <uuid> --action extend --until <ISO>` / `revoke` / `restore` |
+| Generations disputed during a trial | `change-grant --project production --grant <uuid> --action set-ai-units --units <n>` |
+| A student says they could not claim free access | `status --project production --user <uuid>` for the account, `early-access-report --project production` for the claim window. The team never starts free access for a student; compensate with `grant --project production --user <uuid> --days <n>` (course access, no AI) |
+| One person claimed on two accounts with different addresses | `change-grant --project production --grant <uuid> --action revoke` on the later grant |
+| Record the planned launch date (informational) | `configure-early-access --project production --planned-launch <ISO>` (`--enrollment-days` and `--trial-after-early-access` are retired and refused; no command moves the end of free access) |
 
 The tool needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` (an `sb_secret_` key over HTTPS when hosted). A
-student who believes a pass or free access claim is wrong (for example an address they never controlled) is handled with `grant`, never by freeing the claim.
+student who believes a pass or free access claim is wrong (for example an address they never controlled) is handled with `grant --project production`, never by freeing the claim.
 
 ## Courses are set for the semester
 
@@ -401,26 +406,26 @@ lifts by itself. If no semester after today has been entered, locks stay on.
 
 | Situation | Command |
 | --- | --- |
-| See a student's courses, lock state, reason, semester end and history | `selection-status --user <uuid>` |
-| Change a student's courses on request (they stay locked) | `selection-change --user <uuid> --department <key> --level <key> --semester <key> --expected-revision <n>` |
+| See a student's courses, lock state, reason, semester end and history | `selection-status --project production --user <uuid>` |
+| Change a student's courses on request (they stay locked) | `selection-change --project production --user <uuid> --department <key> --level <key> --semester <key> --expected-revision <n>` |
 | Set a combination that has no courses yet | the same, with `--allow-empty` |
-| See the semesters, extensions and calendar history | `calendar` |
-| Enter or move a semester's resumption date (only before it resumes) | `term-set --session 2026/2027 --semester first-semester --resumes-on 2026-11-09` |
-| Delay one department's end, or every department's | `term-extend --session 2026/2027 --semester first-semester --department <key>\|all --last-day <YYYY-MM-DD>` |
+| See the semesters, extensions and calendar history | `calendar --project production` |
+| Enter or move a semester's resumption date (only before it resumes) | `term-set --project production --session 2026/2027 --semester first-semester --resumes-on 2026-11-09` |
+| Delay one department's end, or every department's | `term-extend --project production --session 2026/2027 --semester first-semester --department <key>\|all --last-day <YYYY-MM-DD>` |
 
 - Every command except the two reads needs `--actor` and `--reason`, and is recorded in `private.course_selection_events`.
-- `--expected-revision` is the `revision` shown by `selection-status`. If the student saved in between, the command
+- `--expected-revision` is the `revision` shown by `selection-status --project production`. If the student saved in between, the command
   answers `conflict`; read the status again.
 - A semester ends exactly four months after its resumption date, at 00:00 Lagos (resuming 9 Nov 2026, the last day is
   8 Mar 2027). The migration enters 2026/2027 First Semester with the default resumption date of Mon 9 Nov 2026; move
-  it with `term-set` until that day.
-- `term-extend` takes the department's new last day. Giving the semester's own last day removes the extension. It is
+  it with `term-set --project production` until that day.
+- `term-extend --project production` takes the department's new last day. Giving the semester's own last day removes the extension. It is
   refused (`ended`) once that department's semester has ended, and nothing changes; handle a late request for one
-  student with `selection-change`. Semesters may not overlap, and a department's end may not pass the next semester's.
-- Before restoring a revoked grant (`change-grant --action restore`), check the student's courses with
-  `selection-status`: a restored grant sets whatever courses the student has at that moment.
+  student with `selection-change --project production`. Semesters may not overlap, and a department's end may not pass the next semester's.
+- Before restoring a revoked grant (`change-grant --project production --action restore`), check the student's courses with
+  `selection-status --project production`: a restored grant sets whatever courses the student has at that moment.
 - A selection change touches no grant, preview or practice attempt. If a pass was spent on the wrong courses because of
-  a team mistake, compensate with `grant` separately.
+  a team mistake, compensate with `grant --project production` separately.
 
 ## Account deletion
 
@@ -446,7 +451,7 @@ the period.
    as it is. It replaced a claim window of **10 days** after the actual launch, closing no later than the end of 30
    November 2026 (Lagos), with one calendar month from each claim, so that every month ended within 2026 (decided 16
    November 2026, `20261116120000_early_access_claim.sql`; 14 days was the policy from 5 November 2026, and 28 days
-   before that). A launch after 20 November then gave a shorter window, and `activate-launch` asked for
+   before that). A launch after 20 November then gave a shorter window, and `activate-launch --project production` asked for
    `--allow-short-claim-window`, now retired.
 3. Trial after Early Access: **decided 23 October 2026**, never (`trial_after_early_access` retired, kept false).
 4. Retention and deletion: keyed pass claims and keyed free access claims expire 5 years after they were made
@@ -455,7 +460,7 @@ the period.
    whether to delete the retired list, and privacy-notice wording.
 5. Whether to set the platform-wide daily activation guard (`discovery_activations_per_day`, off by default) and
    whether the per-account request limit (5 per 15 minutes) and the per-address notice threshold (60) suit launch day.
-6. The moment to run `activate-launch`, which is irreversible and opens the free access claim. Production needs
+6. The moment to run `activate-launch --project production`, which is irreversible and opens the free access claim. Production needs
    `20261126100000` first (see "Applying `20261126100000_free_until_30_december.sql`"), and the release that first
    carries the landing FAQ's free access answer goes out the same day, just before it.
 
@@ -487,7 +492,7 @@ It works only where both of these hold:
   never by a function, migration or seed;
 - the app's Supabase URL is the test project (`znwluaiylogqapansuht`) or a local stack (127.0.0.1 or localhost).
 
-The tester commands refuse every other project before anything is sent. The database refuses without the row.
+The tester commands require `--project test` and refuse every other project or any local URL before the key is read or anything is sent. The database refuses without the row.
 
 Switch the test site on (test project SQL editor only):
 
@@ -502,15 +507,15 @@ Kill switch, which stops every tester effect at once: `delete from private.teste
 
 | Situation | Command |
 | --- | --- |
-| Add a tester (7 days by default, at most 30) | `tester-grant --user <uuid> [--days <n>] [--daily-cap <tokens>] --actor <name> --reason <text>` |
-| Extend: the same command, which renews to `<days>` from now | `tester-grant --user <uuid> --days <n> --actor <name> --reason <text>` |
-| Check the setting, the testers, their ends and today's use | `tester-status [--user <uuid>]` |
-| Revoke | `tester-revoke --user <uuid> --actor <name> --reason <text>` |
+| Add a tester (7 days by default, at most 30) | `tester-grant --project test --user <uuid> [--days <n>] [--daily-cap <tokens>] --actor <name> --reason <text>` |
+| Extend: the same command, which renews to `<days>` from now | `tester-grant --project test --user <uuid> --days <n> --actor <name> --reason <text>` |
+| Check the setting, the testers, their ends and today's use | `tester-status --project test [--user <uuid>]` |
+| Revoke | `tester-revoke --project test --user <uuid> --actor <name> --reason <text>` |
 
 Every change is audited in `private.entitlement_events` (`operator.tester-granted`, `-renewed`, `-revoked`,
 `-refused`).
 
-`tester-grant` refuses:
+`tester-grant --project test` refuses:
 - an account scheduled for deletion (`account-restricted`);
 - an operator account (`operator-account`);
 - any account with a payment order or a paid grant (`payment-records`);
@@ -520,9 +525,18 @@ Every change is audited in `private.entitlement_events` (`operator.tester-grante
 Tester access also steps aside by itself the moment the account gets a grant or a payment order. A single order,
 even an abandoned one, ends it on that account for good. Use a fresh account. Test payments on a different account.
 
-Before removal: revoke every tester and wait until `tester-status` shows nothing in flight. Then apply the removal
+Before removal: revoke every tester and wait until `tester-status --project test` shows nothing in flight. Then apply the removal
 migration, which restores each function named in the header of `20261125200000` and drops what it created, and
 remove the code: `lib/tester/`, the `tester` values in `lib/courses/access.ts`, `lib/entitlements/contract.ts`,
 `presentation.ts` and `server.ts`, `lib/ai-practice` (`upload-contract.ts`, `entitlement.ts`, `supabase-env.ts`,
 `quiz-pass.ts`, `topic-set-server.ts`), `lib/campus-bot/server.ts`, `app/profile-selection/page.tsx`,
 `scripts/entitlements/tester.cjs` and its line in `ops.cjs`, the tests, and this section.
+
+## Grant recovery safeguards (27 November 2026)
+
+`20261127300100_change_grant_restore.sql` requires a paid grant's own order to have status `paid` before restore
+or extension. Unpaid, refund-pending, refunded and refund-failed orders refuse the change. It does not change any
+payment or refund function. A free-access restore refuses another active free-access grant held by the account or
+an account with the same confirmed canonical email. Extending an unrevoked expired grant can revive access, so it
+applies that same identity check. Revoke never revives access; set-ai-units changes only a capped allowance.
+The claim's lock order is retained: policy, account prefix, claim keys, claim hash rows, grant.

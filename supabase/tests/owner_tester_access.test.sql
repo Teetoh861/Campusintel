@@ -5,6 +5,10 @@
 -- Time is simulated by moving timestamps. Everything rolls back.
 begin;
 select no_plan();
+
+-- Pin the original feature-test reservation; launch_batch_2.test.sql covers the shipped 18000/1500 caps.
+update private.campus_bot_request_caps set read_tokens_max=14000,written_tokens_max=800 where step='chat';
+
 select is(array[private.study_guide('study_guide_bua203', 'rollback'), private.study_guide('study_guide_lag_bua210', 'rollback'),
     private.official_bank_bua203('rollback'), private.official_bank_lag_bua210('rollback')],
   array_fill('rolled-back'::text, array[4]), 'the BUA203 and LAG-BUA210 copies (20261125100000) rolled back for this test');

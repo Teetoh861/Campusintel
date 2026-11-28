@@ -8,6 +8,13 @@
 begin;
 select no_plan();
 
+-- These legacy behavior scenarios use their original scale; launch defaults are asserted in launch_batch_2.test.sql.
+-- Keep the multi-request/overrun fixtures independent of later owner changes to live budgets.
+update private.campus_bot_tiers set
+  session_tokens=case tier when 'standard' then 350000 else 700000 end,
+  week_tokens=case tier when 'standard' then 700000 else 1400000 end;
+
+
 -- The running First Semester began 100 days ago; nothing else is in the calendar.
 delete from private.academic_term_extensions;
 delete from private.academic_terms where session_label <> '2026/2027';

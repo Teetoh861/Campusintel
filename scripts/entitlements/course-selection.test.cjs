@@ -4,7 +4,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { run } = require('./ops.cjs')
 
-const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret' }
+const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://znwluaiylogqapansuht.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_fixture' }
 const USER = '6f1c2d4e-8a9b-4c3d-9e2f-1a2b3c4d5e6f'
 
 function harness(reply = () => ({ state: 'changed' }), status = 200) {
@@ -14,19 +14,19 @@ function harness(reply = () => ({ state: 'changed' }), status = 200) {
     return new Response(JSON.stringify(reply()), { status })
   }
   const output = []
-  return { requests, output, run: args => run(args, ENV, transport, text => output.push(text)) }
+  return { requests, output, run: args => run([...args, '--project', 'test'], ENV, transport, text => output.push(text)) }
 }
 
 const change = ['selection-change', '--user', USER, '--department', 'accounting', '--level', '200-level',
   '--semester', 'first-semester', '--expected-revision', '4']
 
 test('selection-change sends the keys, the revision shown by selection-status, the actor and the reason', async () => {
-  const h = harness(() => ({ state: 'changed', revision: 5 }))
+  const h = harness(() => ({ state: 'changed', revision: 5, project: 'test' }))
   await h.run([...change, '--actor', 'Ops', '--reason', 'asked on WhatsApp'])
   assert.deepEqual(h.requests, [{ fn: 'admin_change_course_selection', body: { p_user_id: USER,
     p_department_key: 'accounting', p_level_key: '200-level', p_period_key: 'first-semester', p_expected_revision: 4,
     p_allow_empty: false, p_actor: 'Ops', p_reason: 'asked on WhatsApp' } }])
-  assert.deepEqual(JSON.parse(h.output[0]), { state: 'changed', revision: 5 })
+  assert.deepEqual(JSON.parse(h.output[0]), { state: 'changed', revision: 5, project: 'test' })
   await h.run([...change, '--allow-empty', '--actor', 'Ops', '--reason', 'courses come later'])
   assert.equal(h.requests.at(-1).body.p_allow_empty, true, 'an empty combination needs the explicit flag (D12)')
 })

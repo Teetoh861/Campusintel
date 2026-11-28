@@ -87,7 +87,7 @@ test('plans: Semester first; the switch shows Session prices with the saving lin
     assert.match(semester, /Standard For studying all your courses\. ₦4,000 \/ semester/)
     assert.match(semester, /Plus For students who use Campus Bot a lot\. ₦6,000 \/ semester/)
     assert.match(semester, /All your courses for this semester Study guides, practice questions and timed exams Campus Bot: explains answers, helps while you read and makes practice from your notes/)
-    assert.match(semester, /Everything in Standard, plus: 2× Campus Bot use Choose Plus/)
+    assert.match(semester, /Everything in Standard, plus: 2× Campus Bot use Longer Campus Bot chat memory Choose Plus/)
     assert.match(semester, /Session Save ₦1,000/)
     assert.match(html(), /<legend class="sr-only">Billing period<\/legend>/)
     find(render(), node => node.type === 'input' && node.props.value === 'session').props.onChange()

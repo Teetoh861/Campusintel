@@ -4,6 +4,7 @@
 // Secrets are read here and passed to the adapter only; they are never logged or returned.
 import 'server-only'
 import { isVerifiedLocalEnvironment } from '@/lib/ai-practice/entitlement'
+import { matchesSupabaseProject } from '@/lib/supabase/projects.cjs'
 import { bachsApiBase, createBachsProvider } from './bachs'
 import { createFakeProvider } from './fake'
 import type { FakeProvider } from './fake'
@@ -40,8 +41,13 @@ export function readPaymentsConfig(env: Env = process.env, options: { fetch?: ty
   PaymentsConfig {
   const key = env.BACHS_API_KEY ?? ''
   const base = bachsApiBase(key)
-  // A live key moves real money, so it is used only by a production build; a sandbox key works anywhere.
-  const keyAllowed = base !== null && (key.startsWith('sk_sandbox_') || env.NODE_ENV === 'production')
+  // A production build can also be a preview or the test site. Only the live deployment may move real money.
+  const liveAllowed = env.VERCEL_ENV === 'production'
+    && matchesSupabaseProject('production', env.NEXT_PUBLIC_SUPABASE_URL)
+  const keyAllowed = base !== null && (key.startsWith('sk_sandbox_') || liveAllowed)
+  if (base !== null && key.startsWith('sk_live_') && !liveAllowed) {
+    console.error('payments: live key refused outside the production deployment of the live Supabase project')
+  }
   const secrets = webhookSecrets(env)
   const bachs = keyAllowed && secrets.length > 0
     ? createBachsProvider({ apiKey: key, webhookSecrets: secrets, fetch: options.fetch }) : null

@@ -1,5 +1,10 @@
 # Campus Bot Explain and Ask Campus Bot
 
+Every ops command requires `--project test` or `--project production`. The URL must be exactly
+`https://znwluaiylogqapansuht.supabase.co` for test or `https://ckhkrognfftrqsjtablr.supabase.co` for
+production. A missing or mismatched target is refused before reading the key or sending a request; local URLs
+are refused. Every result names the project. Examples below use production unless they explicitly name test.
+
 Two Campus Bot features (owner decisions of 16 November 2026), built by
 `supabase/migrations/20261117100000_campus_bot_explain_ask.sql` and `lib/campus-bot/`.
 
@@ -23,16 +28,16 @@ All settings live in `private.campus_bot_settings` and change through `scripts/e
 
 | Setting | Launch value | Command |
 | --- | --- | --- |
-| Explain, Ask Campus Bot, topic sets | off, off, off | `campus-bot-feature --feature explain\|ask\|topic-sets --state on\|off` |
-| Free pass explanations / messages | 5 / 10 per pass | `campus-bot-reply-limits --pass-explanations <n> --pass-messages <n>` |
-| Platform explanations / messages per UTC day | 3,000 / 10,000 | `campus-bot-reply-limits --daily-explanations <n> --daily-messages <n>` |
-| Undelivered replies per student per UTC day | 20 | `campus-bot-reply-limits --undelivered-per-day <n>` |
-| Writer / checker | Haiku 5.5 / Sonnet 5.5 | `campus-bot-writer --model haiku`, `campus-bot-checker --model sonnet` |
-| Per-request caps (read / written tokens) | explain 8,000 / 800; explain-check 4,000 / 2,000; chat 14,000 / 800 | `campus-bot-cap --step explain\|explain-check\|chat` |
-| Calculation courses | the 16 with 40-minute exams (below) | `campus-bot-course --course <key> --calculation on\|off` |
+| Explain, Ask Campus Bot, topic sets | off, off, off | `campus-bot-feature --project production --feature explain\|ask\|topic-sets --state on\|off` |
+| Free pass explanations / messages | 5 / 10 per pass | `campus-bot-reply-limits --project production --pass-explanations <n> --pass-messages <n>` |
+| Platform explanations / messages per UTC day | 3,000 / 10,000 | `campus-bot-reply-limits --project production --daily-explanations <n> --daily-messages <n>` |
+| Undelivered replies per student per UTC day | 20 | `campus-bot-reply-limits --project production --undelivered-per-day <n>` |
+| Writer / checker | Haiku 5.5 / Sonnet 5.5 | `campus-bot-writer --project production --model haiku`, `campus-bot-checker --project production --model sonnet` |
+| Per-request caps (read / written tokens) | explain 8,000 / 800; explain-check 4,000 / 2,000; chat 18,000 / 1,500 | `campus-bot-cap --project production --step explain\|explain-check\|chat` |
+| Calculation courses | the 16 with 40-minute exams (below) | `campus-bot-course --project production --course <key> --calculation on\|off` |
 | Kept chat reply, reservation | 10 minutes, 180 seconds | database only |
 
-`campus-bot-status` prints all of it with today's request counts and what is saved.
+`campus-bot-status --project production` prints all of it with today's request counts and what is saved.
 
 The provider is the existing Campus Bot configuration (`AI_PRACTICE_ENABLED`, `ANTHROPIC_API_KEY`). Without it the
 pages offer neither feature; explanations already saved are still served.
@@ -54,7 +59,7 @@ pages offer neither feature; explanations already saved are still served.
 - **Reserve, then settle.** A request reserves its worst case at its caps before the provider is called; only a
   delivered explanation or reply is charged, and never more than was reserved. The server bounds the whole prompt
   (instructions, notes, question or chat, and the reply's schema) by the input cap it was admitted with, leaving off
-  the least relevant passages until it fits; a prompt that still could not fit is never sent. Nothing is charged for
+  the oldest chat messages first. Chat passages are dropped only if the notes with no history still exceed the cap. Explain keeps its existing passage fitting. A prompt that still cannot fit is never sent. Nothing is charged for
   "not covered", a failed check, a timeout, a refusal or an unusable reply, or for a reservation the server never
   settled (released after 180 seconds).
 - **Checked again at delivery.** A reply that finishes after the student lost access to the course, an exam opened
@@ -72,8 +77,8 @@ charge. A corrected question is a new revision, so new attempts get a new explan
 question keep theirs. Republishing or withdrawing a notes topic removes the explanations written from it, and the
 course's "not covered" answers, which the change may now answer. On a calculation course the check runs once, before
 an explanation is saved; a failed check is saved as "show the notes topic", so no generated text is ever shown for it.
-`campus-bot-clear-explanations --course <key> --confirm` removes a course's saved explanations after a review finds a
-problem; `campus-bot-explanations --course <key>` lists them with their questions.
+`campus-bot-clear-explanations --project production --course <key> --confirm` removes a course's saved explanations after a review finds a
+problem; `campus-bot-explanations --project production --course <key>` lists them with their questions.
 
 ## Chats
 
@@ -212,3 +217,18 @@ published note, or the free pass's pinned topic as pinned), `private.campus_bot_
 `lib/campus-bot/notes-context.ts` (passages into a prompt), `lib/campus-bot/model-call.ts` (the one provider call shape),
 the step names in `lib/campus-bot/steps.ts`, the `topic_sets` switch, `CampusBotArea` on the topic pages and
 `CampusBotStatus` for its states.
+
+## Launch limits and chat memory (27 November 2026)
+
+`20261127300000_campus_bot_launch_limits.sql` sets Standard to 105,000 tokens per 5 hours and 1,050,000 per week,
+and Plus to 210,000 per 5 hours and 2,100,000 per week. It does not refill windows or rewrite usage. Both limits still
+count actual delivered use. Admission alone gives Plus and tester accounts up to twelve previous messages; other
+accounts get six. The request cannot supply a plan.
+
+The chat caps are 18,000 read and 1,500 written everywhere. A Haiku chat reserves 25,500 weighted tokens
+(18,000 + 5 × 1,500); other writer models apply their configured price weight. The largest published topic,
+ENT211's Contemporary Issues in Entrepreneurship, has 23,712 characters of passage bodies. The full prompt with
+twelve maximum-length wire messages needs 21,500 read tokens rounded to 500, above the owner's 18,000 ceiling.
+Oldest messages yield first. Every one of the 197 current published topics keeps every lesson at 18,000; none loses
+a lesson. `node -r ./lib/auth/test-loader.cjs scripts/campus-bot/chat-capacity.cjs` repeats this check against committed
+content; supply a JSON snapshot path to check database-extracted passages and course labels.

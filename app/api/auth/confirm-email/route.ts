@@ -12,6 +12,8 @@ import { confirmSchema } from '@/lib/auth/schemas'
 import { getSafeReturnPath } from '@/lib/auth/redirect'
 import { createFreshStudentSessionClient } from '@/lib/supabase/server'
 import { requireVerifiedSession } from '@/lib/auth/verified-session'
+import { endOtherStudentSessions } from '@/lib/auth/one-device'
+import { readAccountLifecycle } from '@/lib/account/lifecycle'
 import { recordConfirmedSignup } from '@/lib/analytics/server'
 
 /** Verify credentials server-side; serialize only a validated destination. */
@@ -39,6 +41,9 @@ export async function POST(request: Request) {
       })
       if (sessionError) throw authUnavailable(sessionError, 'identity')
       if (requireVerifiedSession(transferred, body.email).user.id !== session.user.id) throw authUnavailable(null, 'identity')
+      await endOtherStudentSessions(client, session.access_token)
+      // An already revoked token is a harmless logout to the SDK, but cannot complete a racing sign-in.
+      if ((await readAccountLifecycle(client)).status === 'signed-out') throw authUnavailable(null, 'identity')
       await recordConfirmedSignup()
       return response
     } catch (error) {

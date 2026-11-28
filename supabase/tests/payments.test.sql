@@ -140,8 +140,14 @@ select is((select jsonb_agg(jsonb_build_array(plan_key,tier,period,price_kobo,cu
   'catalogue defaults: four plans, tier and period separate (no per-semester set count since part 2b)');
 select is((select jsonb_agg(jsonb_build_array(tier,session_hours,session_tokens,week_days,week_tokens,written_token_weight)
   order by tier) from private.campus_bot_tiers),
-  '[["plus",5,700000,7,1400000,5],["standard",5,350000,7,700000,5]]'::jsonb,
-  'Campus Bot budgets: 7-day week, 5-hour session half of it, written tokens weighted 5');
+  '[["plus",5,210000,7,2100000,5],["standard",5,105000,7,1050000,5]]'::jsonb,
+  'owner-approved Campus Bot budgets: 5-hour session, 7-day week, written tokens weighted 5');
+-- These legacy behavior scenarios use their original scale; launch defaults are asserted in launch_batch_2.test.sql.
+-- Keep the multi-request/overrun fixtures independent of later owner changes to live budgets.
+update private.campus_bot_tiers set
+  session_tokens=case tier when 'standard' then 350000 else 700000 end,
+  week_tokens=case tier when 'standard' then 700000 else 1400000 end;
+
 select is((select jsonb_agg(jsonb_build_array(model,price_weight) order by model) from private.campus_bot_models),
   '[["haiku",1],["sonnet",20]]'::jsonb,'model price weights, Haiku = 1');
 -- The sets' two steps. Explain and Ask Campus Bot have their own (campus_bot_explain_ask.test.sql).

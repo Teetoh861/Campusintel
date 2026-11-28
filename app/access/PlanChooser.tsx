@@ -48,7 +48,7 @@ export function PlanChooser({ plans, first }: {
         const plan = shown === 'session' ? prices.session : prices.semester
         if (plan === null) return null
         const features = tier === 'standard'
-          ? [PLAN_COPY.courses[plan.period], PLAN_COPY.study, CAMPUS_BOT_PLAN_LINE] : [PLAN_COPY.plusBenefit]
+          ? [PLAN_COPY.courses[plan.period], PLAN_COPY.study, CAMPUS_BOT_PLAN_LINE] : [PLAN_COPY.plusBenefit, PLAN_COPY.plusMemory]
         return <li key={tier} className="student-surface flex h-full flex-col" data-plan={plan.plan}>
           <h3 className="text-xl font-bold text-student-text-primary">{PLAN_TIER_NAME[tier]}</h3>
           <p className="mt-1.5 text-sm text-student-text-secondary">{PLAN_COPY.cardLine[tier]}</p>

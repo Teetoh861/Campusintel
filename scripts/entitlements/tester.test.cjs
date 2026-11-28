@@ -15,7 +15,7 @@ function harness(reply = () => ({ state: 'granted', expires_at: '2026-12-02T10:0
     return new Response(JSON.stringify(reply()), { status: 200 })
   }
   const output = []
-  return { requests, output, run: (args, env) => run(args, env, transport, text => output.push(text)) }
+  return { requests, output, run: (args, env) => run([...args, '--project', 'test'], env, transport, text => output.push(text)) }
 }
 
 const GRANT = ['tester-grant', '--user', USER, '--actor', 'est', '--reason', 'owner testing']
@@ -26,15 +26,15 @@ test('every project but the test one is refused before anything is sent, whateve
     'https://znwluaiylogqapansuht.supabase.co.evil.example', 'http://[::1]:54321', '', undefined]) {
     for (const args of [GRANT, ['tester-revoke', '--user', USER, '--actor', 'est', '--reason', 'done'], ['tester-status']]) {
       await assert.rejects(h.run(args, { NEXT_PUBLIC_SUPABASE_URL: url, SUPABASE_SECRET_KEY: 'sb_secret_prod' }),
-        /tester commands run only against the test project \(znwluaiylogqapansuht\) or, from a local development or test run, a local stack; nothing was sent/)
+        /nothing was sent/)
     }
   }
   assert.equal(h.requests.length, 0)
   assert.equal(h.output.length, 0)
 })
 
-test('the test project and a local stack are accepted, and only the named function is called', async () => {
-  for (const env of [TEST, LOCAL]) {
+test('the named test project is accepted, and only the named function is called', async () => {
+  for (const env of [TEST]) {
     const h = harness()
     await h.run(GRANT, env)
     assert.equal(new URL(h.requests[0].url).origin, new URL(env.NEXT_PUBLIC_SUPABASE_URL).origin)
@@ -72,7 +72,7 @@ test('every change needs an account, an actor and a reason', async () => {
   assert.equal(h.requests.length, 0)
 })
 
-test('a local stack is accepted only from a positively local run', async () => {
+test('all local stacks are refused; a hosted test target needs no deployment flag', async () => {
   const h = harness()
   for (const env of [{ ...LOCAL, NODE_ENV: undefined }, { ...LOCAL, NODE_ENV: 'production' },
     { ...LOCAL, VERCEL_ENV: 'development' }, { ...LOCAL, VERCEL_ENV: 'preview' },
@@ -80,9 +80,9 @@ test('a local stack is accepted only from a positively local run', async () => {
     await assert.rejects(h.run(GRANT, env), /nothing was sent/, JSON.stringify(env))
   }
   assert.equal(h.requests.length, 0)
-  await h.run(GRANT, { ...LOCAL, NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321', NODE_ENV: 'development' })
-  assert.equal(h.requests.length, 1)
+  await assert.rejects(h.run(GRANT, { ...LOCAL, NEXT_PUBLIC_SUPABASE_URL: 'http://localhost:54321', NODE_ENV: 'development' }), /nothing was sent/)
+  assert.equal(h.requests.length, 0)
   // The test project needs nothing else: a hosted shell has no NODE_ENV.
   await h.run(GRANT, { ...TEST, NODE_ENV: 'production', VERCEL_ENV: 'production' })
-  assert.equal(h.requests.length, 2)
+  assert.equal(h.requests.length, 1)
 })

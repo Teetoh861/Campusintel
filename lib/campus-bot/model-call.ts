@@ -37,6 +37,19 @@ export function fitNotesPrompt<N extends { passages: ReadonlyArray<unknown> }, P
   return null
 }
 
+/** Keep the whole topic before chat history. Only notes that exceed the cap with no history may lose passages. */
+export function fitChatPrompt<N extends { passages: ReadonlyArray<unknown> }, T, P extends CampusBotPromptShape>(
+  notes: N, turns: ReadonlyArray<T>, build: (notes: N, turns: ReadonlyArray<T>) => P, limits: CampusBotModelLimits,
+): { notes: N; turns: ReadonlyArray<T>; prompt: P } | null {
+  for (let dropped = 0; dropped <= turns.length; dropped += 1) {
+    const recent = turns.slice(dropped)
+    const prompt = build(notes, recent)
+    if (promptFits(prompt, limits)) return { notes, turns: recent, prompt }
+  }
+  const fitted = fitNotesPrompt(notes, remaining => build(remaining, []), limits)
+  return fitted === null ? null : { ...fitted, turns: [] }
+}
+
 type CampusBotPromptShape = { system: string; user: string; outputSchema: Record<string, unknown> }
 
 /** Whether a prompt fits the input cap it was admitted with. */

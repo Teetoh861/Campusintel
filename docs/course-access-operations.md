@@ -1,5 +1,10 @@
 # Semester course access — part 1
 
+Every ops command requires `--project test` or `--project production`. The URL must be exactly
+`https://znwluaiylogqapansuht.supabase.co` for test or `https://ckhkrognfftrqsjtablr.supabase.co` for
+production. A missing or mismatched target is refused before reading the key or sending a request; local URLs
+are refused. Every result names the project. Examples below use production unless they explicitly name test.
+
 Full plans (`early_access`, `manual`, `paid`, legacy seven-day trial) cover free courses and the student's confirmed department/level/semester list, plus explicitly added courses. Discovery and AI permissions are separate and are not changed by this migration.
 
 `20261029100000_own_course_access.sql` retains all recorded grant dates and history. Each full grant binds once to a calendar term using its original issuance/start window. Effective access ends at the earlier of its recorded end and its bound department's semester end. An old grant cannot cover or lock the next semester. Missing selection or calendar denies non-free access. Current holders lose outside-list access immediately when the migration is applied.
@@ -11,10 +16,10 @@ Full plans (`early_access`, `manual`, `paid`, legacy seven-day trial) cover free
 Use the existing service-configured operator tool. Get the current term and profile revision first; `--course` takes an institutional course UUID, not a repository UUID. Actor and reason are required for mutations.
 
 ```sh
-node scripts/entitlements/ops.cjs selection-status --user <student-uuid>
-node scripts/entitlements/ops.cjs course-status --user <student-uuid>
-node scripts/entitlements/ops.cjs course-add --user <student-uuid> --course <institutional-course-uuid> --term <term-uuid> --expected-profile-revision <revision> --request <request-uuid> --actor <operator-name> --reason <reason>
-node scripts/entitlements/ops.cjs course-revoke --user <student-uuid> --addition <addition-uuid> --expected-revision <revision> --actor <operator-name> --reason <reason>
+node scripts/entitlements/ops.cjs selection-status --project production --user <student-uuid>
+node scripts/entitlements/ops.cjs course-status --project production --user <student-uuid>
+node scripts/entitlements/ops.cjs course-add --project production --user <student-uuid> --course <institutional-course-uuid> --term <term-uuid> --expected-profile-revision <revision> --request <request-uuid> --actor <operator-name> --reason <reason>
+node scripts/entitlements/ops.cjs course-revoke --project production --user <student-uuid> --addition <addition-uuid> --expected-revision <revision> --actor <operator-name> --reason <reason>
 ```
 
 An addition requires an active full plan for the same term. Pending grants are bound first; without a qualifying plan the command returns `needs-plan` and records no addition. It ends no later than the student's current semester and its stored end; grant expiry/revocation also closes it. It never changes the student's list, issues a full plan or rolls into a new semester. An identical request key returns the same record and its current revocation state (`revoked` with `revoked_at` after revocation); conflicting reuse is refused. Revoke retains the record and audit. To re-add a revoked course, use a new request key and reason.

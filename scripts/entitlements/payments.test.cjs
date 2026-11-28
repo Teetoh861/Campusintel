@@ -5,14 +5,15 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { run } = require('./ops.cjs')
-const { localFakeProvider } = require('../../lib/payments/config.ts')
+const paymentConfig = require('../../lib/payments/config.ts')
+const { localFakeProvider } = paymentConfig
 const { fakeCheckoutId } = require('../../lib/payments/fake.ts')
 
 const ORDER = '9e4a1d85-6f70-4182-9d9e-0f1a2b3c4d5e'
 const USER = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d'
 const REQUEST = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e'
 const EMAIL = 'ada.obi@example.test'
-const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321', SUPABASE_SECRET_KEY: 'local-secret', NODE_ENV: 'test',
+const ENV = { NEXT_PUBLIC_SUPABASE_URL: 'https://znwluaiylogqapansuht.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_fixture', NODE_ENV: 'test',
   PAYMENTS_PROVIDER: 'fake', ENTITLEMENT_CLAIM_HASH_KEYS: `1:${'k'.repeat(40)}` }
 const NOTE = ['--actor', 'ops', '--reason', 'support ticket 42']
 
@@ -43,7 +44,13 @@ function harness(replies = {}) {
     return new Response(JSON.stringify(typeof reply === 'function' ? reply(body) : reply ?? { state: 'ok' }), { status: 200 })
   }
   const output = []
-  return { requests, output, run: args => run(args, ENV, transport, text => output.push(text)),
+  return { requests, output, run: async args => {
+    // Only the transport target is hosted-shaped. Provider behavior is a local injected fixture; no real money moves.
+    const read = paymentConfig.readPaymentsConfig
+    paymentConfig.readPaymentsConfig = () => ({ providerFor: id => id === 'fake' ? localFakeProvider() : null })
+    try { return await run([...args, '--project', 'test'], ENV, transport, text => output.push(text)) }
+    finally { paymentConfig.readPaymentsConfig = read }
+  },
     printed: () => JSON.parse(output.at(-1)) }
 }
 
@@ -81,7 +88,7 @@ test('refund is a dry run by default: eligibility with keyed identity hashes, no
   assert.equal(eligibility.p_requested_at, '2026-11-02T12:30:00.000Z')
   assert.equal(eligibility.p_identity_hashes.length, 1)
   assert.match(eligibility.p_identity_hashes[0], /^[0-9a-f]{64}$/)
-  assert.deepEqual(h.printed(), { dryRun: true, eligibility: { standard_allowed: true } })
+  assert.deepEqual(h.printed(), { dryRun: true, eligibility: { standard_allowed: true }, project: 'test' })
   assert.doesNotMatch(JSON.stringify(h.requests) + h.output.join(''), /ada\.obi/)
   // The same email always gives the same identity; case and spaces do not make a second person.
   const again = harness({ admin_payment_status: orderStatus() })
@@ -136,7 +143,7 @@ test('payment-verify asks the provider and fulfils as the operator; manual evide
   await assert.rejects(h.run(['payment-fulfil', '--order', ORDER, ...NOTE]), /--provider-ref is required/)
   const settled = harness({ admin_payment_status: orderStatus({ status: 'paid' }) })
   await settled.run(['payment-verify', '--order', ORDER, ...NOTE])
-  assert.deepEqual(settled.printed(), { state: 'settled', orderStatus: 'paid' })
+  assert.deepEqual(settled.printed(), { state: 'settled', orderStatus: 'paid', project: 'test' })
 })
 
 test('reconcile-now runs one bounded batch through the same fulfil path', async () => {

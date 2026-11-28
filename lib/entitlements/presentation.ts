@@ -119,6 +119,7 @@ export const PLAN_COPY = {
   study: 'Study guides, practice questions and timed exams',
   plusIntro: 'Everything in Standard, plus:',
   plusBenefit: '2× Campus Bot use',
+  plusMemory: 'Longer Campus Bot chat memory',
   choose: (tier: PlanTier) => `Choose ${PLAN_TIER_NAME[tier]}`,
   payment: 'Pay by card or bank transfer.',
   refund: 'Full refund within 48 hours of paying, as long as you haven’t made a Campus Bot question set or flashcards, or used a large part of your plan.',
@@ -389,7 +390,7 @@ export const TERMS_COPY = {
     { heading: 'Your courses', body: 'Your plan is for the department, level and semester you confirm before paying. To ' +
       'change them or add a carry-over course, message us.' },
     { heading: 'Campus Bot', body: 'Campus Bot has a 5-hour limit and a weekly limit. Your usage bar shows what’s left and ' +
-      'when it resets.' },
+      'when it resets. Plus doubles both limits, and Campus Bot remembers up to the last 12 messages of a chat instead of 6.' },
     { heading: 'Your account', body: 'Your plan is just for you, and you can be signed in on one device at a time.' },
     { heading: 'Refunds', body: "Full refund within 48 hours of paying, as long as you haven't:",
       points: ['started an exam', 'made a Campus Bot question set or flashcards', 'answered more than 10 practice questions',
