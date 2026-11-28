@@ -1,4 +1,5 @@
-// app/courses/[slug]/quiz/AssessmentConfirmation.tsx — Confirm submitting or exiting with contained focus and truthful counts.
+// app/courses/[slug]/quiz/AssessmentConfirmation.tsx — Confirm submitting with contained focus and truthful counts.
+// Leaving asks "End exam?" instead (components/student/EndExamDialog.tsx).
 'use client'
 
 import {
@@ -15,34 +16,30 @@ type Props = {
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
   onRestoreFocus: (event: Event) => void
-} & ({ kind: 'exit'; body: string; unsafe?: boolean } | { kind: 'submit'; answered: number; unanswered: number; flagged: number })
+  kind: 'submit'
+  answered: number
+  unanswered: number
+  flagged: number
+}
 
 /** Confirm a final decision; the safe action always receives initial focus. */
 export function AssessmentConfirmation(props: Props): ReactElement {
-  const submitting = props.kind === 'submit'
   return <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
     <AlertDialogContent className="student-practice-dialog z-[70] motion-reduce:!animate-none" onCloseAutoFocus={props.onRestoreFocus}>
       <AlertDialogHeader>
-        <AlertDialogTitle className="text-left text-[20px] font-bold text-student-primary">
-          {submitting ? PRACTICE_COPY.submitTitle : PRACTICE_COPY.exitTitle}
-        </AlertDialogTitle>
+        <AlertDialogTitle className="text-left text-[20px] font-bold text-student-primary">{PRACTICE_COPY.submitTitle}</AlertDialogTitle>
         <AlertDialogDescription className="text-left text-[15px] leading-[1.5] text-student-text-secondary">
-          {props.kind === 'submit' ? PRACTICE_COPY.submitBody : props.body}
+          {PRACTICE_COPY.submitBody}
         </AlertDialogDescription>
       </AlertDialogHeader>
-      {props.kind === 'submit' ? <dl className="student-practice-summary">
+      <dl className="student-practice-summary">
         <SummaryCount label="Answered" value={props.answered} />
         <SummaryCount label="Unanswered" value={props.unanswered} />
         <SummaryCount label="Flagged" value={props.flagged} />
-      </dl> : null}
+      </dl>
       <AlertDialogFooter className="student-practice-foot sm:space-x-0">
-        {submitting ? <>
-          <AlertDialogCancel className={studentAction(btnGhost, 'mt-0')}>Keep going</AlertDialogCancel>
-          <AlertDialogAction className={studentAction(btnNavy, studentFocusDark)} onClick={props.onConfirm}>{PRACTICE_COPY.submitExam}</AlertDialogAction>
-        </> : <>
-          <AlertDialogAction className={studentAction(btnGhost)} onClick={props.onConfirm}>{props.unsafe ? 'Leave anyway' : 'Exit'}</AlertDialogAction>
-          <AlertDialogCancel className={studentAction(btnNavy, studentFocusDark, 'mt-0')}>Stay</AlertDialogCancel>
-        </>}
+        <AlertDialogCancel className={studentAction(btnGhost, 'mt-0')}>Keep going</AlertDialogCancel>
+        <AlertDialogAction className={studentAction(btnNavy, studentFocusDark)} onClick={props.onConfirm}>{PRACTICE_COPY.submitExam}</AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

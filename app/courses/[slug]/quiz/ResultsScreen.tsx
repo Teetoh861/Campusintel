@@ -9,6 +9,7 @@ import { btnGhost, btnNavy } from '@/components/chrome/ui'
 import { Notice } from '@/components/student/Notice'
 import { PageBand } from '@/components/student/PageBand'
 import { StudentPage } from '@/components/student/StudentPage'
+import { tapGuardProps, useTapGuard } from '@/components/student/tap-guard'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import { wholeBankAttempt } from '@/lib/practice/contract'
 import { ProblemNotice } from './ProblemNotice'
@@ -59,6 +60,8 @@ export function ResultsScreen(props: Props): ReactElement {
   // Results is entered by transition or by URL; the screen hands focus to its heading exactly once when it mounts.
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [])
+  // Entered in place of the exam, the result ignores taps for a moment: a double tap's second tap presses nothing here.
+  const tapGuard = useTapGuard()
 
   return <StudentPage band={<PageBand title={PRACTICE_COPY.examResultTitle} lede={lede} context={<p>{identity.context}</p>} titleRef={heading} />}>
     {/* Time running out is in the line under the title; a notice only when it cost the student answers. */}
@@ -67,7 +70,7 @@ export function ResultsScreen(props: Props): ReactElement {
     </div> : null}
     {error ? <div className="mb-6 max-w-[720px]"><ProblemNotice problem={error} busy={starting} onRetry={props.onRetry} /></div> : null}
     {starting ? <p role="status" className="student-practice-help mb-6">{PRACTICE_COPY.starting}</p> : null}
-    <div className="student-practice-results">
+    <div className="student-practice-results" {...tapGuardProps(tapGuard)}>
       <section aria-labelledby="student-practice-score-heading">
         <h2 id="student-practice-score-heading" className="sr-only">Your score</h2>
         <div className="student-practice-score">

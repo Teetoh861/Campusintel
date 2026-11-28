@@ -23,8 +23,9 @@ function startLabel(kind: DiscoveryKind, pass: DiscoveryPass): string {
   return kind === 'cbt' ? `Take a ${pass.discovery.cbt_questions}-question CBT exam` : 'Choose a study guide topic'
 }
 
+// An exam left open (only a closed browser or a dropped connection leaves one) is offered as every open exam is.
 const OPENED_LABEL: Record<DiscoveryKind, string> = {
-  cbt: 'Continue your CBT exam', study_guide: 'Open your study guide topic',
+  cbt: 'Resume your exam', study_guide: 'Open your study guide topic',
 }
 // What was used on another course, mid-sentence ("Your … was used on ACC 101.").
 const USED_LABEL: Record<DiscoveryKind, string> = { cbt: 'CBT exam', study_guide: 'study guide topic' }

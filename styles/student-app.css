@@ -367,6 +367,13 @@
 /* Focused assessment: the ordinary header, drawer and footer leave while an attempt is active. */
 body[data-screen='active'] > nav,
 body[data-screen='active'] > footer { display: none; }
+/* A timed exam on screen (practice or free pass): they leave from the first paint, before the page can run anything,
+   so no link leaves the exam without "End exam?". */
+body:has([data-exam-open]) > nav,
+body:has([data-exam-open]) > footer { display: none; }
+
+/* A result that has just replaced an exam ignores taps for a moment (components/student/tap-guard.ts). */
+[data-tap-guard] { pointer-events: none; }
 .student-practice-bar { position: sticky; top: 0; z-index: 40; min-height: var(--student-practice-bar); background: var(--student-surface); border-bottom: 1px solid var(--student-border); }
 .student-practice-bar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-block: 10px; }
 .student-practice-context { flex: 1 1 140px; min-width: 0; color: var(--student-text-muted); font-size: 13px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

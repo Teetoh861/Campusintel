@@ -28,6 +28,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AskCampusBot } from '../../notes/AskCampusBot'
 import { QuizMe } from '../../notes/QuizMe'
+import { PRACTICE_COPY } from '../../quiz/practice-presentation'
 import { NoteArticle } from '../../sections'
 import { DiscoveryExam } from './DiscoveryExam'
 import { OpenPreview } from './OpenPreview'
@@ -103,6 +104,8 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
   const signInHref = `${AUTH_PATHS.login}?next=${encodeURIComponent(returnPath)}`
   const band = <PageBand title={TITLE[kind]} lede={`${course.code} · ${course.title}`}
     context={endsAt !== null && <p>{DISCOVERY_PASS_LABEL} · ends {formatAccessDate(endsAt)}</p>} />
+  // The exam owns its way out: Exit (which ends it) while it runs, Back to course under its result.
+  const exam = result.status === 'ready' && result.preview.kind === 'cbt'
   return <StudentPage band={band}>
     <div className="grid min-w-0 max-w-3xl gap-4">
       <PreviewBody result={result} kind={kind} course={course} examQuestions={examQuestions} offered={offered}
@@ -115,9 +118,10 @@ async function Preview({ slug, kind, continuityToken }: { slug: string; kind: Di
         {quiz ? <QuizMe courseSlug={course.slug} itemId={pinned.item_id} passLine={passLine}
           continuityToken={continuityToken} signInHref={signInHref} reloadHref={returnPath} /> : null}
       </CampusBotArea> : null}
-      <Link href={course.href} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
+      {exam ? null : <Link href={course.href} prefetch={false}
+        className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
         Back to course
-      </Link>
+      </Link>}
     </div>
   </StudentPage>
 }
@@ -147,8 +151,7 @@ function PreviewBody({ result, kind, course, examQuestions, offered, continuityT
         return <section className="student-surface student-surface-raised" aria-labelledby="open-title">
           <h2 id="open-title" className="student-section-title">{course.code} CBT exam</h2>
           <p className="student-detail-prose mt-2">
-            {examQuestions !== null && <>{examQuestions} questions · </>}{minutes} minutes. The timer starts when you
-            begin and keeps running if you leave.
+            {examQuestions !== null && <>{examQuestions} questions · </>}{minutes} minutes. {PRACTICE_COPY.timerRule}
           </p>
           <p className="student-meta mt-2">Your free pass includes one CBT exam, on the course you start it on.</p>
           <div className="mt-4">
@@ -205,9 +208,9 @@ function Pinned({ preview, now, course, continuityToken, plansOnSale }: {
   preview: DiscoveryPreview; now: string; course: CourseIdentity; continuityToken: string; plansOnSale: boolean
 }): ReactElement {
   if (preview.kind === 'cbt') {
-    return <DiscoveryExam continuityToken={continuityToken} courseSlug={course.slug} questions={preview.questions}
-      deadlineAt={preview.deadline_at} serverNow={now} savedSheet={preview.saved} initialResult={preview.result}
-      plansOnSale={plansOnSale} />
+    return <DiscoveryExam continuityToken={continuityToken} courseSlug={course.slug} courseHref={course.href}
+      questions={preview.questions} deadlineAt={preview.deadline_at} serverNow={now} savedSheet={preview.saved}
+      initialResult={preview.result} plansOnSale={plansOnSale} />
   }
   return <>{preview.items.map(item => <NoteArticle key={item.item_id}
     note={{ itemId: item.item_id, publishedRevision: item.revision, ...item.note }} />)}

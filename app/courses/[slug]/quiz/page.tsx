@@ -1,8 +1,9 @@
 // app/courses/[slug]/quiz/page.tsx — Practice entry. The student's own attempts come first: an attempt URL, then the
 // course's open attempt, whatever the student's access or the bank is now (an attempt started may always finish, and
-// its review stays the student's). Then ?topic= starts instant feedback on that topic and ?mode=exam opens the exam
-// (its latest unseen result first, then its brief); anything else goes back to the course page's Practice card. Current
-// access and a live bank decide only whether a fresh attempt may start.
+// its review stays the student's). An open exam is offered to resume from every entry, a topic's too: practice in that
+// course waits for it, so no answer is marked during it. Then ?topic= starts instant feedback on that topic and
+// ?mode=exam opens the exam (its latest unseen result first, then its brief); anything else goes back to the course
+// page's Practice card. Current access and a live bank decide only whether a fresh attempt may start.
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { StudentAccessGate } from '@/components/auth/StudentAccessGate'
@@ -24,7 +25,7 @@ import { practicePolicyFor, readPracticeAttempt, readPracticeState } from '@/lib
 import { readPracticeTopics } from '@/lib/practice/topics'
 import { createClient } from '@/lib/supabase/server'
 import { QuizClient } from './QuizClient'
-import { PRACTICE_COPY, attemptHref, practiceContext } from './practice-presentation'
+import { PRACTICE_COPY, practiceContext } from './practice-presentation'
 import type { QuizInitial } from './QuizClient'
 import type { StudentCourseLookupResult } from '@/lib/courses/read-model'
 import type { Metadata } from 'next'
@@ -155,16 +156,9 @@ async function Quiz({ slug, continuityToken, entry }: { slug: string; continuity
       return await quiz({ kind: 'graded', attempt: open.attempt, latest: true })
     }
     return retry()
-  } else if (state.status === 'open' && entry.topic !== null) {
-    // Practice waits while an exam is open in this course, so no answer is marked during it.
-    return <StudentPage band={band}>
-      <Notice tone="info" title={PRACTICE_COPY.examOpenTitle} action={<>
-        <Link href={attemptHref(route.href, state.attempt.id)} prefetch={false}
-          className={studentAction(btnNavy, studentFocusDark)}>{PRACTICE_COPY.resumeExam}</Link>
-        {backToCourse}
-      </>} />
-    </StudentPage>
   }
+  // An open exam is offered as every open exam is, the exam with its time left and Resume your exam, from Exam mode, the
+  // practice page and a topic alike: practice in this course waits for it.
   if (state.status === 'open' && !openTopic) {
     const left = Date.parse(state.attempt.deadlineAt) - Date.parse(state.now)
     return await quiz({ kind: 'resume', attemptId: state.attempt.id, answered: state.attempt.answered,

@@ -1,4 +1,6 @@
-// User regression: blocked device storage plus an outage must never silently discard a pending choice on Exit.
+// User regression: blocked device storage plus an outage must never silently discard a pending choice. Leaving ends the
+// exam (J1), so Exit asks "End exam?" and never navigates away; the pending choice stays on the page and goes with the
+// hand-in once the connection is back, whether or not this device could keep a copy.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const Module = require('node:module')
@@ -14,7 +16,7 @@ const flush = async () => { for (let n = 0; n < 12; n++) await Promise.resolve()
 async function fixture(blocked, run) {
   const original = Module._load, savedWindow = global.window, savedDocument = global.document
   let active, offline = false
-  const navigations = [], requests = [], records = new Map(), timers = new Map()
+  const navigations = [], requests = [], records = new Map(), timers = new Map(), listeners = []
   const store = { getItem: key => { if (blocked) throw Error('blocked'); return records.get(key) ?? null },
     setItem: (key, value) => { if (blocked) throw Error('full'); records.set(key, value) }, removeItem: key => records.delete(key) }
   const hooks = {
@@ -36,10 +38,16 @@ async function fixture(blocked, run) {
         owner.effects.push(() => { prior?.cleanup?.(); owner.slots[n] = { deps, cleanup: effect() } })
       }
     },
+    useSyncExternalStore(subscribe, getSnapshot) { return getSnapshot() },
   }
-  global.window = { sessionStorage: store, localStorage: store, location: { assign: href => navigations.push(href) },
+  const history = { state: null, pushState(state) { this.state = state }, back() {} }
+  global.window = { sessionStorage: store, localStorage: store, history,
+    location: { href: `http://localhost/courses/use-of-english/quiz?attempt=${ATTEMPT}`, assign: href => navigations.push(href) },
     setTimeout: fn => { const id = timers.size + 1; timers.set(id, fn); return id }, clearTimeout: id => timers.delete(id),
-    setInterval: () => 0, clearInterval() {}, addEventListener() {}, removeEventListener() {} }
+    setInterval: () => 0, clearInterval() {},
+    addEventListener: (type, fn) => { listeners.push([type, fn]) },
+    removeEventListener: (type, fn) => { const at = listeners.findIndex(entry => entry[0] === type && entry[1] === fn)
+      if (at !== -1) listeners.splice(at, 1) } }
   global.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} }
   Module._load = function(name, ...args) {
     if (name === 'react') return { ...React, ...hooks }
@@ -48,6 +56,8 @@ async function fixture(blocked, run) {
     if (name === '@/lib/practice/client') return { postPracticeCommand: async command => {
       requests.push(command)
       if (offline) return { status: 'unavailable' }
+      if (command.action === 'submit') return { status: 'graded', now: NOW, attempt: { id: ATTEMPT, status: 'submitted',
+        result: { timedOut: false, score: 1, total: 1 } } }
       return { status: 'saved', now: NOW, deadlineAt: DEADLINE, revision: 0, answers: {} }
     } }
     return original.call(this, name, ...args)
@@ -55,9 +65,10 @@ async function fixture(blocked, run) {
   try {
     await withTsx(async () => {
       const { ActiveAttempt } = require('./ActiveAttempt.tsx')
-      const { AssessmentConfirmation } = require('./AssessmentConfirmation.tsx')
+      const graded = []
       const props = { continuityToken: 'verified-student', courseCode: 'GST 101', courseTitle: 'Use of English',
-        repositoryOnly: false, courseHref: '/courses/use-of-english', serverNow: NOW, onGraded() {},
+        repositoryOnly: false, courseHref: '/courses/use-of-english', serverNow: NOW, onGraded: attempt => graded.push(attempt),
+        received: { sentAt: performance.now() - 20, receivedAt: performance.now() },
         attempt: { id: ATTEMPT, status: 'in_progress', saved: { revision: 0, answers: {} }, deadlineAt: DEADLINE,
           questions: [{ questionId: Q, prompt: 'Choose the appropriate word.', options: ['A', 'B'], section: 'Grammar' }] } }
       const instance = { slots: [], effects: [], index: 0 }
@@ -68,7 +79,7 @@ async function fixture(blocked, run) {
         for (const effect of instance.effects) effect()
         const nodes = elementNodes(tree)
         return { question: nodes.find(node => node.type?.name === 'QuestionScreen'),
-          exit: nodes.find(node => node.type === AssessmentConfirmation && node.props.kind === 'exit') }
+          end: nodes.find(node => node.type?.name === 'EndExamDialog') }
       }
       try {
         render(); await flush(); render(); await flush()
@@ -77,9 +88,9 @@ async function fixture(blocked, run) {
         offline = true
         first.question.props.onSelectOption(1)
         render().question.props.onLeave([])
-        const opened = render().exit
-        await run({ render, opened, navigations, requests, records, AssessmentConfirmation, timers,
-          reconnect: () => { offline = false }, flush })
+        const opened = render().end
+        await run({ render, opened, navigations, requests, records, graded, flush,
+          reconnect: () => { offline = false; for (const [type, fn] of [...listeners]) if (type === 'online') fn() } })
       } finally { for (const value of instance.slots) value?.cleanup?.() }
     })
   } finally {
@@ -89,27 +100,23 @@ async function fixture(blocked, run) {
   }
 }
 
-test('blocked storage and an outage require Stay or Leave anyway before losing a pending answer', async () => fixture(true, async f => {
-  assert.equal(f.opened.props.open, true)
-  assert.match(f.opened.props.body, /Some answers aren’t saved yet\. If you leave now, they’ll be lost\./)
-  assert.deepEqual(f.navigations, [], 'opening Exit never leaves the attempt')
-  const buttons = elementNodes(f.AssessmentConfirmation(f.opened.props)).filter(node =>
-    typeof node.props?.children === 'string').map(node => node.props.children)
-  assert.ok(buttons.includes('Stay'))
-  assert.ok(buttons.includes('Leave anyway'))
-  f.opened.props.onOpenChange(false) // Stay: the choice is still on the question screen.
-  assert.equal(f.render().question.props.selected, 1)
-  f.render().question.props.onLeave([])
-  f.render().exit.props.onConfirm() // Explicit Leave anyway.
-  await f.flush()
-  assert.equal(f.navigations.length, 1)
-  assert.ok(f.requests.some(command => command.action === 'save'), 'leaving still tries to flush')
-}))
-
-test('a pending answer stored on the device can Exit without the loss warning while offline', async () => fixture(false, async f => {
-  assert.doesNotMatch(f.opened.props.body, /they’ll be lost/)
-  const stored = JSON.parse(f.records.get(`practice-unsent:${ATTEMPT}`))
-  assert.equal(stored.answers[Q], 1)
-  f.opened.props.onConfirm()
-  assert.equal(f.navigations.length, 1)
-}))
+for (const blocked of [true, false]) {
+  test(`${blocked ? 'blocked' : 'working'} storage and an outage: Exit asks "End exam?", and End hands the pending answer in once the connection is back`, async () => fixture(blocked, async f => {
+    assert.equal(f.opened.props.open, true)
+    assert.deepEqual(f.navigations, [], 'opening Exit never leaves the attempt')
+    f.opened.props.onKeepGoing() // Keep going: the choice is still on the question screen.
+    assert.equal(f.render().question.props.selected, 1)
+    if (!blocked) assert.equal(JSON.parse(f.records.get(`practice-unsent:${ATTEMPT}`)).answers[Q], 1, 'kept on this device too')
+    f.render().question.props.onLeave([])
+    f.render().end.props.onEnd()
+    await f.flush()
+    assert.equal(f.render().question.props.saveLine.text, 'We couldn’t submit your answers. Keep this page open.')
+    assert.deepEqual(f.navigations, [], 'still never navigates away')
+    assert.equal(f.graded.length, 0)
+    f.reconnect()
+    await f.flush()
+    const submit = f.requests.filter(command => command.action === 'submit').at(-1)
+    assert.deepEqual(submit.changes, { [Q]: 1 }, 'the pending choice goes with the hand-in')
+    assert.equal(f.graded.length, 1)
+  }))
+}

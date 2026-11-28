@@ -8,10 +8,11 @@
 // shows the sheet the database returned. The database applies one tab's requests in sequence order only, so a request
 // delayed on the network behind a newer one changes nothing ("stale"), and a retry is acknowledged, not reapplied.
 // Timing: a run of quick changes is one save, a change near the deadline is sent at once, a newer sheet overtakes a
-// slow request, a failed save is retried with bounded backoff while the exam is open, and the status reports at every
-// step whether the sheet is saved, saving, unsaved or could not be saved. "Saved" always means the database confirmed
-// this tab's latest change. A change is accepted only while the clock given here says the exam is open with enough
-// confidence; a null means the choice was refused and must not be shown as made.
+// slow request, a failed save is retried with capped backoff for as long as the exam is open (and at once when the page
+// asks, as it does when the connection comes back), and the status reports at every step whether the sheet is saved,
+// saving or unsaved, or was refused. "Saved" always means the database confirmed this tab's latest change. A change is
+// accepted only while the clock given here says the exam is open with enough confidence; a null means the choice was
+// refused and must not be shown as made.
 import type { SampleAnswers, SheetChanges, SheetDelta } from './discovery-contract'
 
 export type SaveState = 'saved' | 'saving' | 'unsaved' | 'failed' | 'closed'
@@ -33,6 +34,7 @@ export type SaveOutcome =
   | { kind: 'refused'; status: string; sheet?: SheetAnswer }
 
 export type AutosaveSnapshot = {
+  /** 'failed' only once the server refused this tab's saves (refusal); a network failure stays 'unsaved' and is retried. */
   state: SaveState
   /** This tab's latest change sequence. */
   revision: number
@@ -75,11 +77,9 @@ export const AUTOSAVE = {
   nearDeadlineMs: 15_000,
   /** Outside that window a newer sheet overtakes a save that has been in flight this long. */
   overtakeAfterMs: 5_000,
-  /** Retry backoff after a failed save: base × 2^(attempt − 1), capped. */
+  /** Retry backoff after a failed save: base × 2^(attempt − 1), capped. Retries never stop while the exam is open. */
   retryBaseMs: 2_000,
   retryMaxMs: 15_000,
-  /** Retries after which the student is asked to save by hand; a new change starts the count again. */
-  maxRetries: 8,
 } as const
 
 export function retryDelayMs(attempt: number): number {
@@ -149,8 +149,7 @@ export class ExamAutosave {
       : this.inFlight.size > 0 ? 'saving'
         : this.sequence <= this.acked ? 'saved'
           : remaining !== null && remaining <= 0 ? 'closed'
-            : this.attempts > AUTOSAVE.maxRetries ? 'failed'
-              : 'unsaved'
+            : 'unsaved'
     return { state, revision: this.sequence, savedRevision: this.acked, attempts: this.attempts, refusal: this.refusal }
   }
 
@@ -205,7 +204,7 @@ export class ExamAutosave {
     return Promise.all([...this.inFlight.values()].map(request => request.settled)).then(() => undefined)
   }
 
-  /** The student asked to save after the automatic retries gave up. */
+  /** Send unsaved changes now, without waiting for the planned retry (the connection is back, or the student asked). */
   retry(): void {
     this.attempts = 0
     void this.flush()
@@ -335,9 +334,9 @@ export class ExamAutosave {
       this.notify()
       return
     }
-    // A failure: retry with backoff, never spin.
+    // A failure: retry with capped backoff for as long as the exam is open, never spin.
     this.attempts += 1
-    if (this.attempts <= AUTOSAVE.maxRetries && this.clock() > 0 && this.inFlight.size === 0) {
+    if (this.clock() > 0 && this.inFlight.size === 0) {
       this.clearTimer()
       this.timer = this.options.schedule(() => { this.timer = null; this.dispatch() }, retryDelayMs(this.attempts))
     }

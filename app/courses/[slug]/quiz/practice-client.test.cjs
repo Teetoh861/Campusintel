@@ -2,7 +2,7 @@
 // trusted and never fatal; no line says "saved", "submitted" or a time the server has not confirmed.
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { PRACTICE_COPY, exitBodyFor, saveLineFor } = require('./practice-presentation.ts')
+const { PRACTICE_COPY, saveLineFor } = require('./practice-presentation.ts')
 const storageModule = () => {
   delete require.cache[require.resolve('./practice-storage.ts')]
   return require('./practice-storage.ts')
@@ -110,9 +110,13 @@ test('the attempt line never claims a save the server has not confirmed', () => 
   assert.deepEqual(saveLineFor(base), { text: 'All answers saved', retry: false })
   assert.equal(saveLineFor({ ...base, answered: 0 }), null, 'nothing answered, nothing to claim')
   assert.equal(saveLineFor({ ...base, save: 'saving' }).text, 'Saving…')
-  assert.equal(saveLineFor({ ...base, save: 'unsaved' }).text, 'Not saved yet. We’ll keep trying.')
+  // J6: an answer waiting for the connection says so in the owner's words, and recovers to "All answers saved".
+  assert.equal(saveLineFor({ ...base, save: 'unsaved' }).text, 'Not saved yet.')
   assert.deepEqual(saveLineFor({ ...base, save: 'failed' }), { text: 'We couldn’t save your answers. Keep this page open.', retry: true })
-  assert.equal(saveLineFor({ ...base, clockSynced: false }).text, 'Checking the time left…')
+  // J5: never "Checking the time left…": before the clock's first exchange the line says only what the answers say.
+  assert.deepEqual(saveLineFor({ ...base, clockSynced: false }), { text: 'All answers saved', retry: false })
+  assert.equal(saveLineFor({ ...base, clockSynced: false, answered: 0 }), null)
+  assert.equal(saveLineFor({ ...base, clockSynced: false, save: 'unsaved' }).text, 'Not saved yet.')
   assert.match(saveLineFor({ ...base, clockSynced: false, clockFailures: 2 }).text, /^Reconnecting…/)
   assert.equal(saveLineFor({ ...base, timeUp: true }).text, PRACTICE_COPY.timeUp)
   assert.equal(saveLineFor({ ...base, timeUp: true, submitFailing: true }).text, PRACTICE_COPY.timeUpOffline)
@@ -143,8 +147,8 @@ test('the attempt line never claims a save the server has not confirmed', () => 
   assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Refresh this page|Reconnect and tap|on this device|only on this page|didn’t go through/)
   for (const state of ['saving', 'unsaved', 'failed', 'closed']) {
     assert.doesNotMatch(saveLineFor({ ...base, save: state })?.text ?? '', /saved$/i)
-    assert.equal(exitBodyFor(state === 'closed' ? 'saving' : state, 3), PRACTICE_COPY.exitSaving)
   }
+  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Checking the time left|keep trying/i)
   assert.doesNotMatch(PRACTICE_COPY.timeUp + PRACTICE_COPY.timeUpOffline, /submitted/i,
     'time up waits for the server before saying the attempt was submitted')
   assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /timer has not started/i)

@@ -49,10 +49,13 @@ async function mount(load, reply, run) {
         owner.effects.push(() => { prior?.cleanup?.(); owner.slots[n] = { deps, cleanup: effect() } })
       }
     },
+    // Rendered on the client: no hydration, so no reading from the page's own navigation.
+    useSyncExternalStore(subscribe, getSnapshot) { return getSnapshot() },
   }
   class SimulatedClock {
     constructor(options) { this.options = options }
-    start() { this.options.onChange(device.remaining === null ? 'unsynced' : 'synced') }
+    state() { return device.remaining === null ? 'unsynced' : 'synced' }
+    start() { this.options.onChange(this.state()) }
     remaining() { return device.remaining }
     untilPassed() { return device.untilPassed }
     invalidate() {}
@@ -60,7 +63,9 @@ async function mount(load, reply, run) {
     stop() {}
   }
   const post = async command => { requests.push(command); return reply(command) }
-  global.window = { sessionStorage: store, localStorage: store, location: { assign() {}, pathname: '/exam' },
+  const history = { state: null, pushState(state) { this.state = state }, back() {} }
+  global.window = { sessionStorage: store, localStorage: store, history,
+    location: { assign() {}, pathname: '/exam', href: 'http://localhost/exam' },
     setTimeout: (fn, ms) => { nextTimer += 1; timers.set(nextTimer, { run: fn, ms }); return nextTimer },
     clearTimeout: id => { timers.delete(id) }, setInterval: fn => ticks.push(fn), clearInterval() {},
     addEventListener: (type, fn) => { listeners.push([type, fn]) },

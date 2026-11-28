@@ -40,12 +40,15 @@ test('score-only offers its one retake as Practise again, whatever the bank size
 test('free-pass timeout shows the timeout line alongside its score, without an answer review', async () => withTsx(() => {
   const { DiscoveryExam } = require('../preview/[kind]/DiscoveryExam.tsx')
   const render = timedOut => renderToStaticMarkup(React.createElement(DiscoveryExam, { continuityToken: 't', courseSlug: 'bua-216',
-    questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z', savedSheet: null,
-    initialResult: { score: 3, total: 50, timed_out: timedOut } }))
+    courseHref: '/courses/bua-216', questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z',
+    savedSheet: null, initialResult: { score: 3, total: 50, timed_out: timedOut } }))
   assert.match(render(true), /Your score.*3 of 50 correct.*Time ran out\..*Answers and explanations are included with full access\./s)
   assert.doesNotMatch(render(true), /3\/50/, 'scores read the same on every screen')
   assert.doesNotMatch(render(false), /Time ran out\./)
   assert.doesNotMatch(render(true), /correctOption|"explanation"\s*:|Review answers|input|Subscribe/)
+  // The exam has ended, so its way out is the ordinary one again; nothing hides the site's header any more.
+  assert.match(render(false), /href="\/courses\/bua-216"[^>]*>Back to course<\/a>/)
+  assert.doesNotMatch(render(false), /data-exam-open|>Exit</)
 }))
 
 test('the copy switch: once plans are on sale, a score names subscribing; closed keeps today\'s wording', async () => withTsx(() => {
@@ -62,7 +65,8 @@ test('the copy switch: once plans are on sale, a score names subscribing; closed
   assert.match(renderToStaticMarkup(React.createElement(ScoreOnly, { ...identity, attempt: { ...attempt, mode: 'instant',
     reviewUnavailableReason: 'needs-plan' }, canStartNew: false, starting: false, onRetake() {} })), /<h1[^>]*>Practice result<\/h1>/)
   const exam = plansOnSale => renderToStaticMarkup(React.createElement(DiscoveryExam, { continuityToken: 't',
-    courseSlug: 'bua-216', questions: [], deadlineAt: '2026-11-02T10:00:00Z', serverNow: '2026-11-02T11:00:00Z',
+    courseSlug: 'bua-216', courseHref: '/courses/bua-216', questions: [], deadlineAt: '2026-11-02T10:00:00Z',
+    serverNow: '2026-11-02T11:00:00Z',
     savedSheet: null, plansOnSale, initialResult: { score: 3, total: 50, timed_out: false } }))
   assert.match(exam(true), /included when you subscribe\..*href="\/access"[^>]*>Subscribe<\/a>/s)
   assert.doesNotMatch(exam(false), /Subscribe/)

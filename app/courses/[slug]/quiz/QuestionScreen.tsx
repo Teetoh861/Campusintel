@@ -11,7 +11,7 @@ import { Navigator, NavigatorLegend } from './Navigator'
 import { focusFirst } from './focus-return'
 import { PRACTICE_COPY, answeredLine, describeClock, formatClock, optionLetter, practiceIdentity, timerAnnouncement } from './practice-presentation'
 import type { AnswersMap, MarkedMap, PracticeQuestion, SaveLine } from './types'
-import type { ReactElement } from 'react'
+import type { ReactElement, Ref } from 'react'
 
 type Props = {
   courseCode: string
@@ -22,8 +22,8 @@ type Props = {
   total: number
   selected: number | undefined
   isMarked: boolean
-  // Seconds left on the server's deadline; null until a fresh exchange with the server says how long.
-  timeLeft: number | null
+  // Seconds left on the server's deadline, from the first render: the reading the exam came with, then the server's.
+  timeLeft: number
   isLowTime: boolean
   // Answers can change only with a trustworthy reading of the server's clock, before the deadline.
   canAnswer: boolean
@@ -31,6 +31,12 @@ type Props = {
   onRetrySave: () => void
   // A submission on its way: the Submit buttons say so and wait.
   submitting?: boolean
+  // Exit asks "End exam?"; not while the exam is already being handed in.
+  canExit?: boolean
+  // The Exit button, where the focus returns when "End exam?" was opened by the back button.
+  exitRef?: Ref<HTMLButtonElement>
+  // Exit: "End exam?", which returns focus here on Keep going.
+  onLeave: (returnFocusTo: ReadonlyArray<HTMLElement | null>) => void
   navOpen: boolean
   answeredCount: number
   markedCount: number
@@ -45,7 +51,6 @@ type Props = {
   onSubmit: (returnFocusTo: ReadonlyArray<HTMLElement | null>) => void
   onOpenNav: () => void
   onCloseNav: () => void
-  onLeave: (returnFocusTo: ReadonlyArray<HTMLElement | null>) => void
 }
 
 /** Present exactly one question; the page's only h1 names the exam, never the prompt. */
@@ -69,24 +74,25 @@ export function QuestionScreen(props: Props): ReactElement {
   const submitLabel = props.submitting ? PRACTICE_COPY.submitting : PRACTICE_COPY.submitExam
   const navigator = <Navigator total={total} current={current} answersMap={answersMap} markedMap={markedMap} onJump={props.onJump} />
 
+  // data-exam-open: the site's header and footer stay hidden from the first paint (student-app.css), before the page
+  // can run anything, so no link leaves the exam unasked.
   return <Sheet open={sheetOpen} onOpenChange={open => { if (open) props.onOpenNav(); else onCloseNav() }}>
-    <div className="student-practice-bar">
+    <div className="student-practice-bar" data-exam-open="">
       <div className="student-workspace student-practice-bar-inner">
         <p className="student-practice-context"><b>{identity.barCode}</b> · {identity.barTitle}</p>
         <div className="student-practice-tools">
-          <button type="button" className={studentAction(btnGhost, 'border-transparent px-3')} aria-haspopup="dialog"
-            onClick={event => props.onLeave([event.currentTarget])}>
+          <button ref={props.exitRef} type="button" className={studentAction(btnGhost, 'border-transparent px-3')}
+            aria-haspopup="dialog" disabled={props.canExit === false} onClick={event => props.onLeave([event.currentTarget])}>
             Exit
           </button>
-          <div className="student-practice-timer" role="timer"
-            aria-label={timeLeft === null ? 'Checking the time left' : describeClock(timeLeft)}
+          <div className="student-practice-timer" role="timer" aria-label={describeClock(timeLeft)}
             data-urgency={isLowTime ? 'low' : undefined}>
             <Clock aria-hidden="true" size={18} strokeWidth={2} />
             <span className="student-practice-timer-label">Time left</span>
-            <span>{timeLeft === null ? '––:––' : formatClock(timeLeft)}</span>
+            <span>{formatClock(timeLeft)}</span>
             {isLowTime ? <span className="student-practice-timer-suffix">left</span> : null}
           </div>
-          <span className="sr-only" aria-live="polite">{timeLeft === null ? '' : timerAnnouncement(timeLeft)}</span>
+          <span className="sr-only" aria-live="polite">{timerAnnouncement(timeLeft)}</span>
           <span className="student-practice-mobile">
             <SheetTrigger asChild>
               <button ref={navTrigger} type="button" className={studentAction(btnGhost, 'px-3')}>Questions</button>
