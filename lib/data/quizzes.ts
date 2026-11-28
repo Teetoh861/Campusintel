@@ -1,3 +1,6 @@
+import { OFFICIAL_BANK_SECTIONS } from './official-bank-sections'
+import { OFFICIAL_BANK_QUIZZES } from './official-bank-courses'
+
 export interface QuizQuestion {
   id: number
   questionId: string
@@ -8925,7 +8928,8 @@ export const quizzes: Record<string, CourseQuiz> = {
     title: 'Business Mathematics - CBT Assessment',
     totalQuestions: 100,
     maxQuizQuestions: 50,
-    quizDurationMinutes: 30,
+    // It publishes the LAG-ACS213 bank, whose exam runs 40 minutes for its calculations (owner, 25 Nov 2026).
+    quizDurationMinutes: 40,
     sections: [
       'Set Theory & Logic',
       'Sequences & Series',
@@ -24418,4 +24422,21 @@ export const quizzes: Record<string, CourseQuiz> = {
 
 export function getQuizByCourseSlug(slug: string): CourseQuiz | undefined {
   return quizzes[slug]
+}
+
+/** Keep historical quiz policy and presentation settings separate from its question bank. */
+export function getQuizConfigurationByCourseSlug(
+  slug: string,
+): Omit<CourseQuiz, 'questions' | 'totalQuestions'> | undefined {
+  const quiz = quizzes[slug] ?? OFFICIAL_BANK_QUIZZES[slug]
+  if (!quiz) return undefined
+  return {
+    courseSlug: quiz.courseSlug,
+    courseCode: quiz.courseCode,
+    title: quiz.title,
+    maxQuizQuestions: quiz.maxQuizQuestions,
+    quizDurationMinutes: quiz.quizDurationMinutes,
+    // A course whose questions now come from an official bank practises the bank's topics, in the bank's order.
+    sections: OFFICIAL_BANK_SECTIONS[slug] ? [...OFFICIAL_BANK_SECTIONS[slug]] : 'sections' in quiz ? quiz.sections : [],
+  }
 }

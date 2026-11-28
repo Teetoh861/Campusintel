@@ -1,31 +1,28 @@
 // Shared types for the quiz client + its screens. Kept separate so the
 // presentational screens don't have to import QuizClient.
-import type { QuizQuestion } from '@/lib/types'
+import type { GradedQuestion, PracticeQuestion } from '@/lib/practice/contract'
 
-export type Screen = 'intro' | 'active' | 'results'
-export type ReviewFilter = 'missed' | 'all'
+export type { GradedQuestion, PracticeQuestion }
+export type Screen = 'intro' | 'resume' | 'active' | 'results' | 'review'
+export type ReviewFilter = 'all' | 'to-review' | 'correct'
+export type ReviewStatus = 'correct' | 'incorrect' | 'unanswered'
 
-// qIndex (position in the attempt set) -> selected option index (0-based)
+// qIndex (position in the attempt) -> selected option index (0-based)
 export type AnswersMap = Record<number, number>
 export type MarkedMap = Record<number, boolean>
 
-export type QuizCoreProps = {
-  courseCode: string
-  courseTitle: string
-  courseSlug: string
-  sections: ReadonlyArray<string>
-  // Full bank; QuizClient samples and freezes an attempt before answer entry.
-  questions: ReadonlyArray<QuizQuestion>
-  timerSeconds: number
-  maxQuestions: number
-  totalInBank: number
+/** The brief a fresh start runs under: the server's question count and time, never worked out in the browser. */
+export type PracticeBrief = { questionCount: number; durationSeconds: number }
+
+/** The exact item/revision a graded attempt can report, and the attempt it ran in. */
+export type ReportTarget = {
+  courseId: string
+  itemId: string
+  revision: number
+  questionId: string
+  attemptId: string | null
 }
 
-export type SectionStat = {
-  name: string
-  letter: string
-  total: number
-  correct: number
-  // Per-position result, in attempt order — drives the breakdown ticks.
-  marks: ReadonlyArray<{ qIdx: number; ok: boolean }>
-}
+/** One line under the question about this tab's answers; never "saved" before the server confirmed it. `action` is the
+ * one way on when the line names something to do elsewhere: sign in, or load the page again. */
+export type SaveLine = { text: string; retry: boolean; action?: { label: string; href: string } } | null

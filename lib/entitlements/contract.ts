@@ -1,0 +1,185 @@
+// lib/entitlements/contract.ts — The student entitlement summary and the commands that may cross the client boundary.
+// Free courses never need an entitlement; full access is a server-issued grant (PRD v1.4 §4.5). Early Access, which
+// students know as free access ("Free until 30 December"), is claimed by the student while the claim is open
+// (20261116120000_early_access_claim.sql, 20261126100000_free_until_30_december.sql); nothing grants it automatically.
+// A new 'trial' grant is the Discovery Pass (20261021100000_discovery_pass.sql): previews and a small AI allowance, never
+// full access. A seven-day trial issued before that migration keeps its full access and is reported under `access`
+// until it ends.
+// No command carries a time, a date or a duration: every window and every end date is decided on the database clock.
+import { z } from 'zod'
+import { discoveryKind } from './discovery-contract'
+
+const timestamp = z.string().min(1)
+const HOURS_PER_DAY = 24
+
+export const TRIAL_POLICIES = ['seven-day', 'discovery'] as const
+export type TrialPolicy = (typeof TRIAL_POLICIES)[number]
+
+export const PLAN_TIERS = ['standard', 'plus'] as const
+export const PLAN_PERIODS = ['semester', 'session'] as const
+export type PlanTier = (typeof PLAN_TIERS)[number]
+export type PlanPeriod = (typeof PLAN_PERIODS)[number]
+const planKey = z.enum(['standard_semester', 'standard_session', 'plus_semester', 'plus_session'])
+export type PlanKey = z.infer<typeof planKey>
+const kobo = z.number().int().positive()
+
+// Part 3 (20261104100000): what the plan screens read. Prices come from the catalogue, never the client.
+const planOnSale = z.object({ plan: planKey, tier: z.enum(PLAN_TIERS), period: z.enum(PLAN_PERIODS), price_kobo: kobo })
+const termSummary = z.object({ session_label: z.string().min(1), period_key: z.string().min(1),
+  period_name: z.string().min(1), ends_at: timestamp })
+// The plan our own order says is paid, with its effective dates (capped at each semester's end).
+const paidPlan = z.object({ plan: planKey, tier: z.enum(PLAN_TIERS), period: z.enum(PLAN_PERIODS), order_id: z.string().uuid(),
+  amount_kobo: kobo, paid_at: timestamp, first_ends_at: timestamp.nullable(), second_starts_at: timestamp.nullable(),
+  second_ends_at: timestamp.nullable(), term_session_label: z.string().min(1),
+  // The semester the plan was bought for (20261104120000); absent from databases before that migration.
+  period_key: z.string().min(1).nullable().optional().default(null),
+  period_name: z.string().min(1).nullable().optional().default(null) })
+const receipt = z.object({ order_id: z.string().uuid(), plan: planKey, amount_kobo: kobo, paid_at: timestamp,
+  status: z.enum(['paid', 'paid-duplicate', 'refund-pending', 'refunded']) })
+
+const discoverySummary = z.object({
+  cbt_questions: z.number().int().positive(),
+  ai_sets: z.number().int().nonnegative(),
+  previews: z.array(z.object({ kind: discoveryKind, content_key: z.string().min(1), submitted: z.boolean() })),
+})
+
+// The database answer. Optional fields keep a rollout safe in both directions: this build reads a database from before
+// 20261021100000 (trial_days only, no trial policy, no discovery), and that database's consumers keep reading this one.
+const summaryWire = z.object({
+  now: timestamp,
+  // Informational only. Early Access never starts from the planned date.
+  planned_launch_at: timestamp,
+  // Set once by the founder; null until the platform has actually launched.
+  actual_launch_at: timestamp.nullable(),
+  // Length of a new trial, fixed by the database at activation. trial_days is the pre-Discovery field.
+  trial_hours: z.number().int().positive().optional(),
+  trial_days: z.number().int().positive().optional(),
+  expiry_notice_hours: z.number().int().positive(),
+  tier: z.enum(['full', 'free']),
+  // Full access only: 'trial' here is a seven-day trial issued before the Discovery Pass, never a pass.
+  // 'tester': owner tester access (20261125200000), honoured only on the test site (lib/entitlements/server.ts).
+  access: z.object({ source: z.enum(['trial', 'early_access', 'manual', 'paid', 'tester']), ends_at: timestamp }).nullable(),
+  // not-offered: this account has had Early Access. after-early-access is answered only by databases from before
+  // 20261023120000; neither is ever shown as a reason.
+  trial: z.object({ status: z.enum(['available', 'active', 'ended', 'after-early-access', 'not-offered']),
+    policy: z.enum(TRIAL_POLICIES).nullable().optional(),
+    starts_at: timestamp.nullable(), ends_at: timestamp.nullable(), available_from: timestamp.nullable() }),
+  // What a pass includes, and which previews it has used and on which course. No content is ever carried here.
+  discovery: discoverySummary.optional(),
+  // The account's own free access: not-listed (none), active or ended. The other statuses are answered only by
+  // databases from before 20261116120000, which enrolled a pre-launch list; this build shows nothing for them.
+  // enrollment_closes_at is the instant the claim closes, stored with the launch (20261126100000); a database from
+  // before that migration sends the launch plus the claim days.
+  early_access: z.object({
+    status: z.enum(['not-listed', 'awaiting-launch', 'pending', 'active', 'ended', 'enrollment-closed', 'unavailable',
+      'account-restricted']),
+    starts_at: timestamp.nullable(), ends_at: timestamp.nullable(), enrollment_closes_at: timestamp.nullable(),
+  }),
+  // `otp` is still sent (always null) for builds from before the Discovery Pass; it is dropped here with every other
+  // unknown key. No code, phone number or hint ever reaches a page.
+  // The copy switch: false (today's wording, no plans shown) unless the database says plans are on sale.
+  plans_on_sale: z.boolean().optional().default(false),
+  term: termSummary.nullable().optional().default(null),
+  plans: z.array(planOnSale).optional().default([]),
+  paid: paidPlan.nullable().optional().default(null),
+  receipts: z.array(receipt).optional().default([]),
+})
+
+/** The free access this student can claim now. `endsAt` is the end the database would give a claim made at its read
+ *  (since 20261126100000 the same instant for every claim: the end of 30 December, Lagos); the claim fixes the real end
+ *  the same way when the student confirms. `closesAt` is the instant the claim closes, stored with the launch. */
+export type FreeMonthOffer = { endsAt: string; closesAt: string }
+
+/**
+ * The summary every page reads. `trial.policy` is null until a trial exists; a database from before the Discovery Pass
+ * only ever issued seven-day trials and offers no pass, so `discovery` is null there. `discovery_eligible` and
+ * `free_month` are never on the wire: they are false and null here and set only by the server's own eligibility reads
+ * (lib/entitlements/server.ts), so a summary that did not pass through them never offers a pass or a free month.
+ */
+export const entitlementSummarySchema = summaryWire.transform((wire, context) => {
+  const { trial_days: trialDays, trial_hours: trialHours, discovery, ...summary } = wire
+  const hours = trialHours ?? (trialDays === undefined ? undefined : trialDays * HOURS_PER_DAY)
+  if (hours === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'trial length missing', path: ['trial_hours'] })
+    return z.NEVER
+  }
+  const legacy = discovery === undefined
+  const policy: TrialPolicy | null = wire.trial.policy ?? (legacy && wire.trial.starts_at !== null ? 'seven-day' : null)
+  // Neither offer is ever read from the wire; only the server's eligibility reads set them.
+  const unread: { discovery_eligible: boolean; free_month: FreeMonthOffer | null } =
+    { discovery_eligible: false, free_month: null }
+  return { ...summary, trial_hours: hours, trial: { ...wire.trial, policy }, discovery: legacy ? null : discovery,
+    ...unread }
+})
+
+export type EntitlementSummary = z.output<typeof entitlementSummarySchema>
+export type PlanOnSale = z.infer<typeof planOnSale>
+export type PaidPlan = z.infer<typeof paidPlan>
+export type Receipt = z.infer<typeof receipt>
+export type TermSummary = z.infer<typeof termSummary>
+export type DiscoverySummary = z.infer<typeof discoverySummary>
+
+/**
+ * The one check every student-facing surface uses before it mentions the Discovery Pass: the database affirmatively
+ * offers one (it answered with `discovery`). A database from before 20261021100000 would issue a seven-day full-access
+ * trial instead, so nothing may advertise a pass, a 72-hour allowance, an exam or a topic preview against it; those
+ * surfaces stay neutral. Activation itself is enforced in the database and fails closed regardless of this check.
+ */
+export function discoveryOffered(summary: EntitlementSummary | null | undefined):
+  summary is EntitlementSummary & { discovery: DiscoverySummary } {
+  return summary != null && summary.discovery !== null
+}
+export type AccessSource = NonNullable<EntitlementSummary['access']>['source']
+
+/**
+ * Whether the free month claim could be open for this account, from the database's own instants only (its `now`, the
+ * launch it recorded and the close it reports): launched, not yet closed, no month ever on this account and no paid
+ * plan. It decides only whether the server asks the database's eligibility read, which is the authority; the device
+ * and server clocks are never consulted.
+ */
+export function freeMonthCouldBeClaimed(summary: EntitlementSummary): boolean {
+  const { actual_launch_at: launch, early_access: early } = summary
+  if (launch === null || early.enrollment_closes_at === null) return false
+  if (early.status !== 'not-listed' || summary.paid !== null) return false
+  const now = Date.parse(summary.now)
+  return now >= Date.parse(launch) && now < Date.parse(early.enrollment_closes_at)
+}
+
+/** What one course offers this student now. `unknown` means the entitlement read failed: fail closed. */
+export type CourseAccess = 'full' | 'free' | 'unknown'
+
+// Each command names its action and nothing to fill in: no phone number, no code, no date and no time. The student is
+// the verified session; the database decides eligibility, the one-per-account rules and every window on its own clock.
+// profileRevision is the profile revision the page showed: the pass or the month then sets exactly those courses (D7).
+// Tabs opened before it existed send none for a pass and are activated unbound; a free month always names it.
+const profileRevision = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+export const entitlementCommandSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('activate-discovery-pass'), profileRevision: profileRevision.optional() }).strict(),
+  z.object({ action: z.literal('claim-free-month'), profileRevision }).strict(),
+])
+
+export type EntitlementCommand = z.infer<typeof entitlementCommandSchema>
+
+// rate-limited: too many activation requests from this account or address; nothing was started.
+// capacity: the platform-wide daily activation guard; nothing was started.
+// selection-changed: the courses changed after the page was shown (another tab); nothing was started.
+// offer-ended: the free month claim closed before the student confirmed; nothing was started.
+// offer-unavailable: this account cannot claim a free month (never a reason); nothing was started.
+const PLAIN_RESULTS = ['signed-out', 'session-changed', 'invalid-request', 'unavailable', 'capacity', 'rate-limited',
+  'trial-not-offered', 'selection-changed', 'offer-ended', 'offer-unavailable'] as const
+
+export const entitlementResultSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('pass-activated'), endsAt: timestamp }).strict(),
+  // The account already has its one trial grant (active, ended or revoked): a replay, never a second pass.
+  z.object({ status: z.literal('already-activated'), endsAt: timestamp }).strict(),
+  // This confirmed email address started a pass (on this or a since-deleted account) within the retention period.
+  // retentionMonths is accepted from servers built before 20261023120000 and never shown.
+  z.object({ status: z.literal('already-claimed'), retentionMonths: z.number().int().positive().optional() }).strict(),
+  z.object({ status: z.literal('early-access-active'), availableFrom: timestamp }).strict(),
+  // The free month is running: just claimed, or a replay of a claim already made. endsAt is the database's.
+  z.object({ status: z.literal('month-started'), endsAt: timestamp }).strict(),
+  ...PLAIN_RESULTS.map(status => z.object({ status: z.literal(status) }).strict()),
+])
+
+export type EntitlementResult = z.infer<typeof entitlementResultSchema>
+export type EntitlementResultStatus = EntitlementResult['status']

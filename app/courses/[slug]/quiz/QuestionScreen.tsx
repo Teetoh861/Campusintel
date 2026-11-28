@@ -1,348 +1,189 @@
-// QuestionScreen — Variant B active state (warm off-white, distraction-free).
-// VISUAL RESKIN ONLY: sticky top bar (progress + flag + timer + amber fill),
-// the stem, four option rows, a fixed mobile action bar / inline desktop, and
-// the question navigator (bottom sheet on mobile, sticky rail >=1024px). Every
-// handler, condition and computed display value below is unchanged from before.
+// app/courses/[slug]/quiz/QuestionScreen.tsx — The exam itself: context bar, timer, one question, native answers, navigator.
 'use client'
 
-import type { QuizQuestion } from '@/lib/types'
-import type { AnswersMap, MarkedMap } from './types'
-import { btnAccent, btnBase, btnGhost, btnSm, cx } from '@/components/chrome/ui'
-
-const WRAP = 'mx-auto w-full max-w-ci-content px-6 min-[900px]:px-10'
+import { useEffect, useId, useRef } from 'react'
+import { Check, Clock, Flag } from 'lucide-react'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { studentAction, studentFocusDark } from '@/components/student/ui'
+import { useIsDesktop } from '@/components/ui/use-mobile'
+import { Navigator, NavigatorLegend } from './Navigator'
+import { focusFirst } from './focus-return'
+import { PRACTICE_COPY, answeredLine, describeClock, formatClock, optionLetter, practiceIdentity, timerAnnouncement } from './practice-presentation'
+import type { AnswersMap, MarkedMap, PracticeQuestion, SaveLine } from './types'
+import type { ReactElement, Ref } from 'react'
 
 type Props = {
-  question: QuizQuestion
+  courseCode: string
+  courseTitle: string
+  repositoryOnly: boolean
+  question: PracticeQuestion
   current: number
   total: number
-  sectionLetter: string
-  sectionName: string
   selected: number | undefined
   isMarked: boolean
+  // Seconds left on the server's deadline, from the first render: the reading the exam came with, then the server's.
   timeLeft: number
   isLowTime: boolean
+  // Answers can change only with a trustworthy reading of the server's clock, before the deadline.
+  canAnswer: boolean
+  saveLine: SaveLine
+  onRetrySave: () => void
+  // A submission on its way: the Submit buttons say so and wait.
+  submitting?: boolean
+  // Exit asks "End exam?"; not while the exam is already being handed in.
+  canExit?: boolean
+  // The Exit button, where the focus returns when "End exam?" was opened by the back button.
+  exitRef?: Ref<HTMLButtonElement>
+  // Exit: "End exam?", which returns focus here on Keep going.
+  onLeave: (returnFocusTo: ReadonlyArray<HTMLElement | null>) => void
   navOpen: boolean
   answeredCount: number
   markedCount: number
   answersMap: AnswersMap
   markedMap: MarkedMap
-  onSelectOption: (optIdx: number) => void
+  onSelectOption: (optionIndex: number) => void
   onToggleMark: () => void
   onPrev: () => void
   onNext: () => void
-  onJump: (idx: number) => void
-  onSubmit: () => void
+  onJump: (index: number) => void
+  // Confirmations return focus to the first listed control that still exists, never to the body.
+  onSubmit: (returnFocusTo: ReadonlyArray<HTMLElement | null>) => void
   onOpenNav: () => void
   onCloseNav: () => void
 }
 
-export function QuestionScreen(props: Props) {
-  const {
-    question,
-    current,
-    total,
-    sectionLetter,
-    sectionName,
-    selected,
-    isMarked,
-    timeLeft,
-    isLowTime,
-    navOpen,
-    answeredCount,
-    markedCount,
-    answersMap,
-    markedMap,
-    onSelectOption,
-    onToggleMark,
-    onPrev,
-    onNext,
-    onJump,
-    onSubmit,
-    onOpenNav,
-    onCloseNav,
-  } = props
-
+/** Present exactly one question; the page's only h1 names the exam, never the prompt. */
+export function QuestionScreen(props: Props): ReactElement {
+  const { question, current, total, selected, isMarked, timeLeft, isLowTime, navOpen,
+    answeredCount, markedCount, answersMap, markedMap, onCloseNav } = props
+  const id = useId()
+  const desktop = useIsDesktop()
+  const navTrigger = useRef<HTMLButtonElement>(null)
+  const flagControl = useRef<HTMLButtonElement>(null)
+  // From 1200 the inline navigator is the only navigator: the sheet closes on the crossing and stays closed on the way back.
+  const sheetOpen = navOpen && !desktop
+  useEffect(() => { if (desktop && navOpen) onCloseNav() }, [desktop, navOpen, onCloseNav])
+  // The Questions trigger takes focus back; when it is hidden at desktop, the question's own Flag control does.
+  const sheetReturnFocus = () => [navTrigger.current, flagControl.current]
+  const positionId = `${id}-position`
+  const promptId = `${id}-prompt`
+  const identity = practiceIdentity(props.courseCode, props.courseTitle, props.repositoryOnly, 'exam')
+  const progress = answeredLine(answeredCount, total, markedCount)
   const isLast = current === total - 1
-  const progressPct = Math.round(((current + 1) / total) * 100)
+  const submitLabel = props.submitting ? PRACTICE_COPY.submitting : PRACTICE_COPY.submitExam
+  const navigator = <Navigator total={total} current={current} answersMap={answersMap} markedMap={markedMap} onJump={props.onJump} />
 
-  return (
-    <>
-      {/* sticky top bar (sits directly under the 74px nav) */}
-      <div className="sticky top-[74px] z-40 border-b border-ci-border bg-ci-paper/[0.92] backdrop-blur-[12px]">
-        <div className={WRAP}>
-          <div className="flex items-center gap-3 py-3">
-            <button
-              type="button"
-              className="inline-flex min-h-[44px] min-w-[44px] items-center gap-[10px] text-[12.5px] font-bold uppercase tracking-[0.1em] text-ci-navy [font-variant-numeric:tabular-nums]"
-              aria-label="Open question navigator"
-              onClick={onOpenNav}
-            >
-              <span className="grid grid-cols-2 gap-[2px]" aria-hidden="true">
-                <i className="block h-[5px] w-[5px] rounded-[1px] bg-current" />
-                <i className="block h-[5px] w-[5px] rounded-[1px] bg-current" />
-                <i className="block h-[5px] w-[5px] rounded-[1px] bg-current" />
-                <i className="block h-[5px] w-[5px] rounded-[1px] bg-current" />
-              </span>
-              Question {current + 1} <span className="text-ci-gray-500">/ {total}</span>
-            </button>
-
-            <span className="ml-auto" />
-
-            <button
-              type="button"
-              className={cx(
-                'inline-flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-[8px] border px-3 py-2 text-[13px] font-semibold transition-colors',
-                isMarked
-                  ? 'border-ci-accent bg-ci-accent-50 text-ci-accent-600'
-                  : 'border-ci-border-2 text-ci-gray-600 hover:border-ci-blue-200 hover:text-ci-navy',
-              )}
-              aria-pressed={isMarked}
-              onClick={onToggleMark}
-            >
-              <svg viewBox="0 0 16 16" className="h-[14px] w-[14px]" fill="none" aria-hidden="true">
-                <path d="M4 2v12M4 2.6h8l-2 2.6 2 2.6H4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span className="hidden min-[480px]:inline">{isMarked ? 'Flagged' : 'Flag'}</span>
-            </button>
-
-            <span
-              className={cx(
-                'inline-flex items-center gap-2 rounded-[8px] px-3 py-2 text-[14px] font-bold leading-none [font-variant-numeric:tabular-nums]',
-                isLowTime
-                  ? 'animate-pulse bg-r-600 text-white motion-reduce:animate-none'
-                  : 'bg-ci-blue-50 text-ci-navy',
-              )}
-              aria-live="polite"
-            >
-              <span className="h-[6px] w-[6px] rounded-full bg-current opacity-70" />
-              <span className="text-[10.5px] font-bold uppercase tracking-[0.12em] opacity-70">Time</span>
-              {formatClock(timeLeft)}
-            </span>
+  // data-exam-open: the site's header and footer stay hidden from the first paint (student-app.css), before the page
+  // can run anything, so no link leaves the exam unasked.
+  return <Sheet open={sheetOpen} onOpenChange={open => { if (open) props.onOpenNav(); else onCloseNav() }}>
+    <div className="student-practice-bar" data-exam-open="">
+      <div className="student-workspace student-practice-bar-inner">
+        <p className="student-practice-context"><b>{identity.barCode}</b> · {identity.barTitle}</p>
+        <div className="student-practice-tools">
+          <button ref={props.exitRef} type="button" className={studentAction(btnGhost, 'border-transparent px-3')}
+            aria-haspopup="dialog" disabled={props.canExit === false} onClick={event => props.onLeave([event.currentTarget])}>
+            Exit
+          </button>
+          <div className="student-practice-timer" role="timer" aria-label={describeClock(timeLeft)}
+            data-urgency={isLowTime ? 'low' : undefined}>
+            <Clock aria-hidden="true" size={18} strokeWidth={2} />
+            <span className="student-practice-timer-label">Time left</span>
+            <span>{formatClock(timeLeft)}</span>
+            {isLowTime ? <span className="student-practice-timer-suffix">left</span> : null}
           </div>
-        </div>
-        {/* thin amber progress fill */}
-        <div className="h-[3px] w-full bg-ci-blue-50">
-          <div className="h-full bg-ci-accent transition-[width] duration-200" style={{ width: `${progressPct}%` }} />
+          <span className="sr-only" aria-live="polite">{timerAnnouncement(timeLeft)}</span>
+          <span className="student-practice-mobile">
+            <SheetTrigger asChild>
+              <button ref={navTrigger} type="button" className={studentAction(btnGhost, 'px-3')}>Questions</button>
+            </SheetTrigger>
+          </span>
         </div>
       </div>
+    </div>
 
-      <section className="bg-ci-paper pb-[104px] pt-10 min-[900px]:pb-16">
-        <div className={WRAP}>
-          <div className="grid grid-cols-1 gap-10 min-[1024px]:grid-cols-[1fr_240px] min-[1024px]:items-start min-[1024px]:gap-12">
-            <div className="min-w-0">
-              <div className="text-[12.5px] font-bold uppercase tracking-[0.1em] text-ci-gray-500">
-                <span className="text-ci-navy">Section {sectionLetter}</span> · {sectionName.toUpperCase()}
-              </div>
-              <h1 className="mt-3 text-[clamp(20px,3vw,26px)] font-semibold leading-[1.3] tracking-[-0.01em] text-ci-navy-900">
-                {question.question}
-              </h1>
+    <div className="student-workspace student-practice-main">
+      <h1 className="sr-only">{identity.heading}</h1>
+      <div className="student-practice-columns">
+        <div className="student-practice-question">
+          <div className="student-practice-qhead">
+            <p className="student-practice-position" id={positionId}>Question {current + 1} <span>of {total}</span></p>
+            <button ref={flagControl} type="button" className="student-practice-flag student-focus-control" aria-pressed={isMarked} onClick={props.onToggleMark}>
+              <Flag aria-hidden="true" size={18} strokeWidth={2} />
+              <span>{isMarked ? 'Flagged' : 'Flag question'}</span>
+            </button>
+          </div>
+          <p className="student-practice-prompt" id={promptId}>{question.prompt}</p>
+          <fieldset className="student-practice-options" aria-labelledby={`${positionId} ${promptId}`}>
+            <legend className="sr-only">Choose one answer</legend>
+            {question.options.map((text, index) => {
+              const checked = selected === index
+              return <label key={index} className="student-practice-option" data-selected={checked ? 'true' : undefined}>
+                <input className="sr-only" type="radio" name={`${id}-answer`} value={index} checked={checked}
+                  disabled={!props.canAnswer} onChange={() => props.onSelectOption(index)} />
+                <span className="student-practice-option-mark" aria-hidden="true">{optionLetter(index)}</span>
+                <span className="student-practice-option-text">{text}</span>
+                <span className="student-practice-option-check" aria-hidden="true">
+                  <Check size={16} strokeWidth={2.5} /><span className="student-practice-option-check-text">Selected</span>
+                </span>
+              </label>
+            })}
+          </fieldset>
+          {props.saveLine ? <p role="status" className="student-practice-help">
+            {props.saveLine.text}
+            {props.saveLine.retry ? <> <button type="button" className={studentAction(btnGhost, 'border-transparent px-2')}
+              onClick={props.onRetrySave}>Try again</button></> : null}
+            {/* A full load, so signing in or reloading starts from the server's view of this attempt. */}
+            {props.saveLine.action ? <> <a href={props.saveLine.action.href} className={studentAction(btnGhost, 'border-transparent px-2')}>
+              {props.saveLine.action.label}</a></> : null}
+          </p> : null}
+          <div className="student-practice-steps">
+            <button type="button" className={studentAction(btnGhost)} disabled={current === 0} onClick={props.onPrev}>Previous</button>
+            <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup={isLast ? 'dialog' : undefined}
+              disabled={isLast && props.submitting}
+              onClick={event => { if (isLast) props.onSubmit([event.currentTarget]); else props.onNext() }}>{isLast ? submitLabel : 'Next'}</button>
+          </div>
+          <div className="student-practice-after student-practice-mobile">
+            <span>{progress}</span>
+            <button type="button" className={studentAction(btnGhost, 'border-transparent')} aria-haspopup="dialog"
+              disabled={props.submitting} onClick={event => props.onSubmit([event.currentTarget])}>
+              {submitLabel}
+            </button>
+          </div>
+        </div>
 
-              <div className="mt-6 flex flex-col gap-3">
-                {question.options.map((text, oi) => {
-                  const isSel = selected === oi
-                  return (
-                    <button
-                      key={oi}
-                      type="button"
-                      className={cx(
-                        'flex w-full items-center gap-4 rounded-[12px] border p-4 text-left transition-[border-color,background-color] duration-150',
-                        isSel
-                          ? 'border-ci-navy bg-ci-blue-50'
-                          : 'border-ci-border bg-ci-white hover:border-ci-blue-200',
-                      )}
-                      onClick={() => onSelectOption(oi)}
-                      aria-pressed={isSel}
-                    >
-                      <span
-                        className={cx(
-                          'flex h-8 w-8 flex-none items-center justify-center rounded-[8px] border text-[14px] font-bold',
-                          isSel ? 'border-ci-navy bg-ci-navy text-white' : 'border-ci-border-2 text-ci-navy',
-                        )}
-                      >
-                        {String.fromCharCode(65 + oi)}
-                      </span>
-                      <span className="text-[15.5px] leading-[1.45] text-ci-ink">{text}</span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* action bar: fixed bottom on mobile, inline on desktop */}
-              <div className="fixed inset-x-0 bottom-0 z-30 border-t border-ci-border bg-ci-paper/[0.95] py-3 backdrop-blur-[12px] min-[900px]:static min-[900px]:mt-8 min-[900px]:border-0 min-[900px]:bg-transparent min-[900px]:py-0 min-[900px]:backdrop-blur-none">
-                <div className={cx(WRAP, 'flex items-center justify-between gap-3 min-[900px]:px-0')}>
-                  <button
-                    type="button"
-                    className={cx(btnBase, btnSm, btnGhost, 'disabled:pointer-events-none disabled:opacity-40')}
-                    onClick={onPrev}
-                    disabled={current === 0}
-                  >
-                    Previous
-                  </button>
-                  {isLast ? (
-                    <button type="button" className={cx(btnBase, btnSm, btnAccent)} onClick={onSubmit}>
-                      Submit
-                    </button>
-                  ) : (
-                    <>
-                      {/* mobile-only early-submit affordance: on non-last
-                          questions the navigator rail is off-screen, so surface
-                          Submit here too. Hidden on desktop (min-[900px]) where
-                          the rail already carries "Submit assessment". */}
-                      <button
-                        type="button"
-                        className={cx(btnBase, btnSm, btnGhost, 'min-[900px]:hidden')}
-                        onClick={onSubmit}
-                      >
-                        Submit
-                      </button>
-                      <button type="button" className={cx(btnBase, btnSm, btnAccent)} onClick={onNext}>
-                        Next
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
+        <aside className="student-practice-desktop" aria-label="Question navigator">
+          <div className="student-practice-aside">
+            <h2>Questions</h2>
+            <p className="student-practice-count">{progress}</p>
+            {navigator}
+            <NavigatorLegend />
+            <div className="mt-5 flex flex-col">
+              <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup="dialog"
+                disabled={props.submitting} onClick={event => props.onSubmit([event.currentTarget])}>
+                {submitLabel}
+              </button>
             </div>
-
-            <Navigator
-              total={total}
-              current={current}
-              answersMap={answersMap}
-              markedMap={markedMap}
-              answeredCount={answeredCount}
-              markedCount={markedCount}
-              navOpen={navOpen}
-              onJump={onJump}
-              onCloseNav={onCloseNav}
-              onSubmit={onSubmit}
-            />
           </div>
+        </aside>
+      </div>
+    </div>
+
+    <SheetContent side="bottom" className="student-practice-sheet z-[70] rounded-t-[16px] border-student-border bg-student-surface p-5 text-student-text-primary"
+        closeClassName="student-focus-control top-5 right-5 h-11 w-11 flex items-center justify-center opacity-100 text-student-primary"
+        onCloseAutoFocus={event => { if (focusFirst(sheetReturnFocus())) event.preventDefault() }}>
+        <SheetHeader className="pr-12 text-left">
+          <SheetTitle className="text-[20px] font-bold text-student-primary">Questions</SheetTitle>
+          <SheetDescription className="text-[14px] text-student-text-muted">{progress}</SheetDescription>
+        </SheetHeader>
+        <div className="student-practice-navscroll" tabIndex={0} role="region" aria-label="Question numbers">{navigator}</div>
+        <NavigatorLegend />
+        <div className="student-practice-foot mt-5">
+          <button type="button" className={studentAction(btnGhost)} onClick={onCloseNav}>Back to question {current + 1}</button>
+          {/* This button leaves with the sheet, so the stable Questions trigger is the confirmation's return target. */}
+          <button type="button" className={studentAction(btnNavy, studentFocusDark)} aria-haspopup="dialog"
+            disabled={props.submitting} onClick={() => { onCloseNav(); props.onSubmit(sheetReturnFocus()) }}>{submitLabel}</button>
         </div>
-      </section>
-
-      {/* mobile sheet backdrop */}
-      <div
-        className={cx(
-          'fixed inset-0 z-40 bg-ci-navy-900/40 transition-opacity duration-200 min-[1024px]:hidden',
-          navOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
-        )}
-        onClick={onCloseNav}
-        aria-hidden="true"
-      />
-    </>
-  )
-}
-
-type NavigatorProps = {
-  total: number
-  current: number
-  answersMap: AnswersMap
-  markedMap: MarkedMap
-  answeredCount: number
-  markedCount: number
-  navOpen: boolean
-  onJump: (idx: number) => void
-  onCloseNav: () => void
-  onSubmit: () => void
-}
-
-function Navigator({
-  total,
-  current,
-  answersMap,
-  markedMap,
-  answeredCount,
-  markedCount,
-  navOpen,
-  onJump,
-  onCloseNav,
-  onSubmit,
-}: NavigatorProps) {
-  const leftCount = total - answeredCount
-  return (
-    <aside
-      className={cx(
-        // mobile: fixed bottom sheet, slides up when navOpen
-        'fixed inset-x-0 bottom-0 z-50 max-h-[82vh] overflow-y-auto rounded-t-[20px] border-t border-ci-border bg-ci-white p-5 shadow-ci-soft transition-transform duration-200',
-        navOpen ? 'translate-y-0' : 'translate-y-full',
-        // desktop: static sticky rail
-        'min-[1024px]:sticky min-[1024px]:inset-x-auto min-[1024px]:bottom-auto min-[1024px]:top-[150px] min-[1024px]:z-auto min-[1024px]:max-h-none min-[1024px]:translate-y-0 min-[1024px]:overflow-visible min-[1024px]:rounded-[16px] min-[1024px]:border min-[1024px]:shadow-ci-card',
-      )}
-    >
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-[12.5px] font-bold uppercase tracking-[0.12em] text-ci-gray-500">Navigator</span>
-        <button
-          type="button"
-          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-[13px] font-semibold text-ci-navy min-[1024px]:hidden"
-          onClick={onCloseNav}
-        >
-          Close
-        </button>
-      </div>
-
-      <div className="grid grid-cols-6 gap-2 min-[1024px]:grid-cols-5">
-        {Array.from({ length: total }, (_, i) => {
-          const answered = answersMap[i] !== undefined
-          const isCurrent = i === current
-          const isMarkedCell = Boolean(markedMap[i])
-          return (
-            <button
-              key={i}
-              type="button"
-              className={cx(
-                'relative flex h-[44px] min-w-[44px] items-center justify-center overflow-hidden rounded-[7px] border text-[13px] font-semibold [font-variant-numeric:tabular-nums] transition-colors',
-                answered
-                  ? 'border-ci-navy bg-ci-navy text-white'
-                  : 'border-ci-border-2 bg-ci-white text-ci-gray-600 hover:border-ci-navy hover:text-ci-navy',
-                isCurrent && 'ring-2 ring-ci-accent ring-offset-1 ring-offset-ci-white',
-              )}
-              aria-label={`Question ${i + 1}`}
-              aria-current={isCurrent ? 'true' : undefined}
-              onClick={() => onJump(i)}
-            >
-              {i + 1}
-              {isMarkedCell ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute right-0 top-0 h-0 w-0 border-l-[8px] border-t-[8px] border-l-transparent border-t-ci-accent"
-                />
-              ) : null}
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[12px] text-ci-gray-600">
-        <Legend className="border border-ci-border-2 bg-ci-white">Unanswered</Legend>
-        <Legend className="border-ci-navy bg-ci-navy">Answered</Legend>
-        <Legend className="border border-ci-border-2 bg-ci-white ring-2 ring-ci-accent">Current</Legend>
-        <Legend className="border-ci-accent bg-ci-accent">Flagged</Legend>
-      </div>
-
-      <div className="mt-4">
-        <button type="button" className={cx(btnBase, btnSm, btnAccent, 'w-full')} onClick={onSubmit}>
-          Submit assessment
-        </button>
-      </div>
-      <div className="mt-3 text-center text-[12.5px] text-ci-gray-500 [font-variant-numeric:tabular-nums]">
-        {answeredCount} answered · {markedCount} flagged · {leftCount} left
-      </div>
-    </aside>
-  )
-}
-
-function Legend({ className, children }: { className: string; children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-[6px]">
-      <span className={cx('h-[12px] w-[12px] rounded-[3px]', className)} />
-      {children}
-    </span>
-  )
-}
-
-function formatClock(seconds: number) {
-  const safe = Math.max(0, Math.floor(seconds))
-  const m = Math.floor(safe / 60)
-  const s = safe % 60
-  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`
+      </SheetContent>
+  </Sheet>
 }

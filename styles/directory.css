@@ -13,7 +13,7 @@
 .dir-lede{font-size:16px;line-height:1.55;color:var(--n-700);max-width:52ch;margin-top:16px;text-wrap:pretty;}
 
 /* ---------- search + filter bar ---------- */
-.filterbar{position:sticky;top:62px;z-index:40;background:rgba(250,248,244,.92);backdrop-filter:blur(10px);border-bottom:var(--hair);}
+.filterbar{position:sticky;top:62px;z-index:40;background:var(--student-page-glass);backdrop-filter:blur(10px);border-bottom:var(--hair);}
 .filterbar .fb-in{padding:16px 0;display:flex;flex-direction:column;gap:14px;}
 
 /* search field (reuses the board search vocabulary) */
@@ -47,7 +47,7 @@
 /* ---------- the grid section ---------- */
 .dir-grid-sec{padding:36px 0 0;}
 .course.is-hidden{display:none;}
-/* the single teal exam-critical flag stays the one accent; nothing else colored */
+/* the exam-critical flag uses the shared signal role */
 
 /* ---------- empty / no-results state ---------- */
 .dir-empty{display:none;border:var(--hair);background:var(--n-0);padding:52px 28px;text-align:center;position:relative;}

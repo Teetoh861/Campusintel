@@ -1,0 +1,636 @@
+// lib/courses/read-model.ts — Central Student Course read model: institutional identity, applicability,
+// repository linkage, canonical route metadata and published study availability in one derivation.
+import 'server-only'
+import { z } from 'zod'
+import { isStudentAuthEnabled } from '@/lib/auth/config'
+import { getCourseByContentKey, getCourseBySlug } from '@/lib/data/courses'
+import { getQuizConfigurationByCourseSlug } from '@/lib/data/quizzes'
+import { getCourseAccessForVerifiedStudent } from '@/lib/courses/access'
+import type { CourseDecision } from '@/lib/courses/access'
+import { getPublishedCbtBankSizesWithVerifiedClient, getPublishedManagedContentWithVerifiedClient }
+  from '@/lib/managed-content/published'
+import { getUsableManagedQuiz } from '@/lib/managed-content/quiz'
+import { projectStudentLearning } from '@/lib/managed-content/student-projection'
+import { classifyStoredSelection } from '@/lib/profile/selection'
+import { readCourseSelection } from '@/lib/profile/course-selection'
+import { getStudentSessionUser } from '@/lib/auth/student-state'
+import { projectTheoryPractice } from '@/lib/theory-practice/projection'
+import type { User } from '@supabase/supabase-js'
+import type { ManagedNote, ManagedOverview, ManagedTheoryQuestion, StudentLearning }
+  from '@/lib/managed-content/student-projection'
+import type { CbtBankSize } from '@/lib/managed-content/published'
+import type { SelectionIds } from '@/lib/profile/selection'
+import type { createClient } from '@/lib/supabase/server'
+import type { Course } from '@/lib/types'
+
+type StudentClient = Awaited<ReturnType<typeof createClient>>
+
+// ---------------------------------------------------------------------------
+// Central types
+// ---------------------------------------------------------------------------
+
+export type CatalogueReference = { id: string; label: string; isActive: boolean }
+
+export type StudentCourseApplicability = {
+  department: CatalogueReference
+  academicLevel: CatalogueReference
+  academicPeriod: CatalogueReference
+}
+
+/** Canonical route metadata, resolvable only through the static course shelf. */
+export type StudentCourseRoute = { slug: string; href: string; course: Course }
+
+/** Structural repository state. Route capability lives here, independent of study readiness. */
+export type StudentCourseRepository =
+  | { state: 'unlinked' }
+  | { state: 'unshelved-repository'; repositoryCourseId: string; contentKey: string; isShared: boolean | null }
+  | { state: 'shelved'; repositoryCourseId: string; contentKey: string; isShared: boolean | null
+      route: StudentCourseRoute }
+
+export type StudyAvailability = { notes: boolean; cbtPractice: boolean; theory: boolean; overview: boolean }
+
+/** Published study state. `ready` requires at least one of notes, cbtPractice or theory. `locked` is a non-free
+ * course the student's current plan does not include; nothing of it was read. */
+export type CourseLockReason = 'outside-list' | 'needs-selection' | 'selection-locked'
+
+export type StudentCourseContent =
+  | { state: 'not-built'; reason: 'unlinked' }
+  | { state: 'ready'; study: StudyAvailability }
+  | { state: 'no-published-learning'; study: StudyAvailability }
+  | { state: 'locked'; reason?: CourseLockReason }
+  | { state: 'not-available' }
+  | { state: 'temporarily-unavailable'; reason: 'publication-read-failed' | 'projection-failed' | 'access-read-failed' }
+
+export type StudentCourse = {
+  institutionalCourseId: string
+  code: string
+  title: string
+  isFree: boolean
+  applicability: StudentCourseApplicability[]
+  repository: StudentCourseRepository
+  content: StudentCourseContent
+}
+
+type LinkedRepository = Exclude<StudentCourseRepository, { state: 'unlinked' }>
+type LinkedContent = Exclude<StudentCourseContent, { state: 'not-built' }>
+
+/** A shelved repository identity that no confirmed institutional course owns. */
+export type RepositoryOnlyCourse = {
+  repository: Extract<StudentCourseRepository, { state: 'shelved' }>
+  content: LinkedContent
+}
+
+export type StudentCatalogueResult =
+  | { status: 'ok'; courses: StudentCourse[] }
+  | { status: 'signed-out' | 'unavailable' | 'invariant-failure' }
+
+export type CurrentStudentCoursesResult =
+  | { status: 'ok'; selection: SelectionIds; courses: StudentCourse[]
+      // Practice bank size (published_cbt_summary) by institutional course id, for courses that offer CBT practice now.
+      cbtBankSizes: ReadonlyMap<string, number> }
+  | { status: 'signed-out' | 'missing-profile' | 'incomplete' | 'unavailable' | 'invariant-failure' }
+
+/** Course Detail payload: the validated managed bodies behind the one-course availability flags. */
+export type StudentCourseDetailLearning = {
+  overview: ManagedOverview | null
+  notes: ManagedNote[]
+  theoryQuestions: ManagedTheoryQuestion[]
+  // The theory page offers at least one question for practice. It shows every question either way.
+  theoryPractice: boolean
+  // The theory questions the theory page offers for practice (each has a published model answer), by item id.
+  theoryPracticeItems: string[]
+}
+
+/** Course Detail practice summary from the same usable-quiz result that set `cbtPractice`. The bank size is the
+ * count-only published_cbt_summary: the questions themselves never reach this model. */
+export type StudentCoursePractice = { href: string; bankSize: number; attemptSize: number; timerSeconds: number }
+
+type StudentCourseDetail = {
+  learning: StudentCourseDetailLearning | null
+  practice: StudentCoursePractice | null
+}
+
+/** A one-course `ok` result always resolved through the static shelf, so its route is guaranteed. */
+export type RoutedStudentCourse = StudentCourse & { repository: Extract<StudentCourseRepository, { state: 'shelved' }> }
+
+export type StudentCourseLookupResult =
+  | ({ status: 'ok'; course: RoutedStudentCourse } & StudentCourseDetail)
+  | ({ status: 'repository-only'; course: RepositoryOnlyCourse } & StudentCourseDetail)
+  | { status: 'signed-out' | 'not-found' | 'unavailable' | 'invariant-failure' }
+
+// ---------------------------------------------------------------------------
+// Structural query contract
+// ---------------------------------------------------------------------------
+
+const PROFILE_COLUMNS = 'department_id,academic_level_id,academic_period_id'
+const REFERENCE_COLUMNS = 'id,display_name,is_active'
+const REPOSITORY_COLUMNS = 'id,content_key,is_shared'
+// Embedded relationships use PostgREST's left join so an unlinked course stays visible.
+const IDENTITY_COLUMNS = `
+  id,course_code,display_title,is_free,repository_course_id,
+  repository:courses!institutional_courses_repository_course_id_fkey(${REPOSITORY_COLUMNS})`
+const APPLICABILITY_COLUMNS = `
+  department_id,academic_level_id,academic_period_id,
+  department:departments!course_applicability_department_id_fkey(${REFERENCE_COLUMNS}),
+  academic_level:academic_levels!course_applicability_academic_level_id_fkey(${REFERENCE_COLUMNS}),
+  academic_period:academic_periods!course_applicability_academic_period_id_fkey(${REFERENCE_COLUMNS})`
+const CATALOGUE_COLUMNS = `${IDENTITY_COLUMNS},
+  applicability:course_applicability!course_applicability_institutional_course_id_fkey(${APPLICABILITY_COLUMNS})`
+const CURRENT_STUDENT_COLUMNS = `institutional_course_id,${APPLICABILITY_COLUMNS},
+  institutional:institutional_courses!course_applicability_institutional_course_id_fkey(${IDENTITY_COLUMNS})`
+// PostgREST silently caps a result at supabase/config.toml `max_rows`; a capped catalogue is not the catalogue.
+const STRUCTURAL_ROW_CAP = 1000
+
+const uuid = z.string().uuid()
+const contentKey = z.string().min(1).max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+const referenceRow = z.object({ id: uuid, display_name: z.string().min(1), is_active: z.boolean() }).strict()
+const repositoryRow = z.object({ id: uuid, content_key: contentKey, is_shared: z.boolean().nullable() }).strict()
+const identityRow = z.object({
+  id: uuid,
+  course_code: z.string().min(1),
+  display_title: z.string().min(1),
+  is_free: z.boolean(),
+  repository_course_id: uuid.nullable(),
+  repository: repositoryRow.nullable(),
+}).strict()
+const applicabilityRow = z.object({
+  department_id: uuid,
+  academic_level_id: uuid,
+  academic_period_id: uuid,
+  department: referenceRow,
+  academic_level: referenceRow,
+  academic_period: referenceRow,
+}).strict()
+const catalogueRow = identityRow.extend({ applicability: applicabilityRow.array() }).strict()
+const currentStudentRow = applicabilityRow.extend({
+  institutional_course_id: uuid,
+  institutional: identityRow,
+}).strict()
+
+type IdentityRow = z.infer<typeof identityRow>
+type ApplicabilityRow = z.infer<typeof applicabilityRow>
+type Structure = Omit<StudentCourse, 'content'>
+
+// ---------------------------------------------------------------------------
+// Structural derivation (shared by every reader)
+// ---------------------------------------------------------------------------
+
+function toReference(row: z.infer<typeof referenceRow>): CatalogueReference {
+  return { id: row.id, label: row.display_name, isActive: row.is_active }
+}
+
+function compareIds(a: string, b: string): number {
+  return a === b ? 0 : a < b ? -1 : 1
+}
+
+function compareApplicability(a: StudentCourseApplicability, b: StudentCourseApplicability): number {
+  return compareIds(a.department.id, b.department.id) ||
+    compareIds(a.academicLevel.id, b.academicLevel.id) ||
+    compareIds(a.academicPeriod.id, b.academicPeriod.id)
+}
+
+function compareCodeThenId(a: StudentCourse, b: StudentCourse): number {
+  return compareIds(a.code, b.code) || compareIds(a.institutionalCourseId, b.institutionalCourseId)
+}
+
+/** Resolve the structural repository state; the route exists only through the static shelf. */
+function deriveRepository(identity: IdentityRow): StudentCourseRepository | null {
+  const { repository_course_id: repositoryCourseId, repository } = identity
+  if (repositoryCourseId === null) return repository === null ? { state: 'unlinked' } : null
+  if (repository === null || repository.id !== repositoryCourseId) return null
+  const linked = { repositoryCourseId, contentKey: repository.content_key, isShared: repository.is_shared }
+  const course = getCourseByContentKey(repository.content_key)
+  if (!course) return { state: 'unshelved-repository', ...linked }
+  return { state: 'shelved', ...linked,
+    route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course } }
+}
+
+/** Derive one institutional identity with all of its applicability; null is an invariant failure. */
+function deriveStructure(identity: IdentityRow, rows: ReadonlyArray<ApplicabilityRow>): Structure | null {
+  const repository = deriveRepository(identity)
+  if (repository === null) return null
+  const tuples = new Set<string>()
+  const applicability: StudentCourseApplicability[] = []
+  for (const row of rows) {
+    if (row.department.id !== row.department_id || row.academic_level.id !== row.academic_level_id ||
+        row.academic_period.id !== row.academic_period_id) return null
+    const tuple = `${row.department_id}/${row.academic_level_id}/${row.academic_period_id}`
+    if (tuples.has(tuple)) return null
+    tuples.add(tuple)
+    applicability.push({ department: toReference(row.department),
+      academicLevel: toReference(row.academic_level), academicPeriod: toReference(row.academic_period) })
+  }
+  applicability.sort(compareApplicability)
+  return {
+    institutionalCourseId: identity.id,
+    code: identity.course_code,
+    title: identity.display_title,
+    isFree: identity.is_free,
+    applicability,
+    repository,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Published study availability (shared by every reader)
+// ---------------------------------------------------------------------------
+
+/** One usable-quiz calculation yields both the CBT flag and the Detail practice summary. */
+function deriveStudy(learning: StudentLearning, repository: LinkedRepository, bankSize: number): {
+  study: StudyAvailability; practice: StudentCoursePractice | null
+} {
+  const { overview } = learning
+  const route = repository.state === 'shelved' ? repository.route : null
+  // The quiz keeps its repository policy, so an unshelved repository can never offer CBT.
+  const quiz = route === null ? null : getUsableManagedQuiz(route.slug,
+    getQuizConfigurationByCourseSlug(route.slug), bankSize)
+  const practice = quiz === null ? null
+    : { href: quiz.href, bankSize: quiz.bankSize, attemptSize: quiz.attemptSize, timerSeconds: quiz.timerSeconds }
+  return { practice, study: {
+    notes: learning.notes.length > 0,
+    cbtPractice: practice !== null,
+    theory: learning.theoryQuestions.length > 0,
+    overview: Boolean(overview && (
+      overview.body.trim() || overview.topics?.length || overview.examFocus?.length ||
+      overview.keyTakeaways?.length || overview.formulaSheet?.length
+    )),
+  } }
+}
+
+type ResolvedPublication = { content: LinkedContent } & StudentCourseDetail
+
+/** Per-course decisions, shared within this request only. Free courses need no grant/projection read. */
+type AccessDecision = CourseDecision & { selectionLocked?: boolean }
+type AccessReader = ((institutionalCourseId: string) => Promise<AccessDecision | 'signed-out' | 'unavailable'>)
+  & { testerOffSite: () => boolean }
+const ACCESS_BATCH_SIZE = 200
+
+function accessReader(client: StudentClient, courseIds: readonly string[]): AccessReader {
+  let selection: ReturnType<typeof readCourseSelection> | null = null
+  let pending: Promise<Map<string, CourseDecision> | 'signed-out' | 'unavailable'> | null = null
+  let offSite = false
+  const load = async (): Promise<Map<string, CourseDecision> | 'signed-out' | 'unavailable'> => {
+    const ids = [...new Set(courseIds)]
+    const decisions = new Map<string, CourseDecision>()
+    for (let offset = 0; offset < ids.length; offset += ACCESS_BATCH_SIZE) {
+      const read = await getCourseAccessForVerifiedStudent(client, ids.slice(offset, offset + ACCESS_BATCH_SIZE))
+      if (read.status !== 'ok') {
+        if (read.status === 'unavailable' && read.testerOffSite) offSite = true
+        return read.status
+      }
+      for (const [id, decision] of read.decisions) decisions.set(id, decision)
+    }
+    return decisions
+  }
+  const reader = async (id: string): Promise<AccessDecision | 'signed-out' | 'unavailable'> => {
+    pending ??= load()
+    const read = await pending
+    if (typeof read === 'string') return read
+    const decision = read.get(id)
+    if (!decision) return 'unavailable'
+    if (decision.reason !== 'needs-selection') return decision
+    selection ??= readCourseSelection(client)
+    const lock = await selection
+    return lock === null ? 'unavailable' : { ...decision, selectionLocked: lock.locked }
+  }
+  return Object.assign(reader, { testerOffSite: () => offSite })
+}
+
+/** A course's practice bank size, from one count-only read shared by every course of a reader call. */
+type BankSizeReader = (repositoryCourseId: string) => Promise<CbtBankSize | 'signed-out'>
+
+/** One published_cbt_summary read for every course of this reader call the student may read now (free, or included
+ * in the per-course decision); locked courses are never asked about. */
+function bankSizeReader(
+  client: StudentClient, candidates: ReadonlyArray<{ repositoryCourseId: string; institutionalCourseId: string;
+    isFree: boolean }>, access: AccessReader,
+): BankSizeReader {
+  let pending: Promise<Map<string, CbtBankSize> | 'signed-out'> | null = null
+  const load = async (): Promise<Map<string, CbtBankSize> | 'signed-out'> => {
+    const readable: string[] = []
+    for (const candidate of candidates) {
+      if (candidate.isFree) { readable.push(candidate.repositoryCourseId); continue }
+      const decision = await access(candidate.institutionalCourseId)
+      if (decision === 'signed-out') return 'signed-out'
+      if (decision !== 'unavailable' && decision.allowed) readable.push(candidate.repositoryCourseId)
+    }
+    const read = await getPublishedCbtBankSizesWithVerifiedClient(client, readable)
+    return read.status === 'signed-out' ? 'signed-out' : read.sizes
+  }
+  return async repositoryCourseId => {
+    pending ??= load()
+    const sizes = await pending
+    return sizes === 'signed-out' ? sizes : sizes.get(repositoryCourseId) ?? 'unavailable'
+  }
+}
+
+/** Read one linked repository's publication on the caller's verified client. A non-free course the plan does not
+ * include is never read; the database refuses that read too (CI403), so a race still yields `locked`. */
+async function resolvePublication(
+  client: StudentClient, repository: LinkedRepository, institutionalCourseId: string, isFree: boolean, access: AccessReader,
+  bankSizes: BankSizeReader,
+): Promise<ResolvedPublication | 'signed-out'> {
+  if (!isFree) {
+    const decision = await access(institutionalCourseId)
+    if (decision === 'signed-out') return 'signed-out'
+    if (decision === 'unavailable' || ['missing-calendar', 'unavailable'].includes(decision.reason)) {
+      return { content: { state: 'temporarily-unavailable', reason: 'access-read-failed' }, learning: null, practice: null }
+    }
+    if (decision.reason === 'needs-selection') return { content: { state: 'locked',
+      reason: decision.selectionLocked ? 'selection-locked' : 'needs-selection' }, learning: null, practice: null }
+    if (!decision.allowed) return { content: decision.reason === 'outside-list'
+      ? { state: 'locked', reason: 'outside-list' } : { state: 'locked' }, learning: null, practice: null }
+  }
+  return resolveAllowedPublication(client, repository, bankSizes)
+}
+
+/** The database authorizes material; request the bank count only after that read succeeds. */
+async function resolveAllowedPublication(
+  client: StudentClient, repository: LinkedRepository, bankSizes: BankSizeReader,
+): Promise<ResolvedPublication | 'signed-out'> {
+  const published = await getPublishedManagedContentWithVerifiedClient(client, repository.repositoryCourseId)
+  if (published.status === 'signed-out') return 'signed-out'
+  if (published.status === 'locked') return { content: { state: 'locked' }, learning: null, practice: null }
+  if (published.status !== 'ok') {
+    return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
+  }
+  const bankSize = await bankSizes(repository.repositoryCourseId)
+  if (bankSize === 'signed-out') return 'signed-out'
+  if (bankSize === 'locked') {
+    return { content: { state: 'locked' }, learning: null, practice: null }
+  }
+  if (bankSize === 'unavailable') {
+    return { content: { state: 'temporarily-unavailable', reason: 'publication-read-failed' }, learning: null, practice: null }
+  }
+  const projected = projectStudentLearning(published.content)
+  if (projected.status !== 'ok') {
+    return { content: { state: 'temporarily-unavailable', reason: 'projection-failed' }, learning: null, practice: null }
+  }
+  const { study, practice } = deriveStudy(projected.learning, repository, bankSize)
+  const { overview, notes, theoryQuestions } = projected.learning
+  // Overview is context only; it never makes a course ready to study.
+  const content: LinkedContent = study.notes || study.cbtPractice || study.theory
+    ? { state: 'ready', study } : { state: 'no-published-learning', study }
+  // The theory page offers the questions the published read marks as having a published model answer. A student's read
+  // never carries the answers themselves, so whether one is published is the read's flag, not the answer rows.
+  const theoryPracticeItems = projectTheoryPractice(published.content)
+    ?.filter(material => material.feedbackAvailable).map(material => material.question.itemId) ?? []
+  const theoryPractice = theoryPracticeItems.length > 0
+  return { content, learning: { overview, notes, theoryQuestions, theoryPractice, theoryPracticeItems }, practice }
+}
+
+type ResolvedContent = { content: StudentCourseContent; practiceBankSize: number | null }
+
+/** Catalogue readers keep only availability and the practice bank size; payload bodies never reach catalogue rows. */
+async function resolvePublishedContent(
+  client: StudentClient, repository: LinkedRepository, institutionalCourseId: string, isFree: boolean, access: AccessReader, bankSizes: BankSizeReader,
+): Promise<ResolvedContent | 'signed-out'> {
+  const resolved = await resolvePublication(client, repository, institutionalCourseId, isFree, access, bankSizes)
+  return resolved === 'signed-out' ? resolved
+    : { content: resolved.content, practiceBankSize: resolved.practice?.bankSize ?? null }
+}
+
+function resolveContent(
+  client: StudentClient, structure: Structure, access: AccessReader, bankSizes: BankSizeReader,
+): Promise<ResolvedContent | 'signed-out'> {
+  const { repository } = structure
+  if (repository.state === 'unlinked') {
+    return Promise.resolve({ content: { state: 'not-built', reason: 'unlinked' }, practiceBankSize: null })
+  }
+  return resolvePublishedContent(client, repository, structure.institutionalCourseId, structure.isFree, access, bankSizes)
+}
+
+type ResolvedCourses = { courses: StudentCourse[]; cbtBankSizes: Map<string, number>; testerOffSite: boolean }
+
+/** Bounded fan-out across linked identities only; one lost session fails the whole read. */
+async function resolveCourses(
+  client: StudentClient, structures: ReadonlyArray<Structure>,
+): Promise<ResolvedCourses | 'signed-out'> {
+  const access = accessReader(client, structures.filter(course => !course.isFree).map(course => course.institutionalCourseId))
+  const bankSizes = bankSizeReader(client, structures.flatMap(structure => structure.repository.state === 'unlinked' ? []
+    : [{ repositoryCourseId: structure.repository.repositoryCourseId, institutionalCourseId: structure.institutionalCourseId,
+      isFree: structure.isFree }]), access)
+  const contents = await Promise.all(structures.map(structure => resolveContent(client, structure, access, bankSizes)))
+  const courses: StudentCourse[] = []
+  const cbtBankSizes = new Map<string, number>()
+  for (const [index, resolved] of contents.entries()) {
+    if (resolved === 'signed-out') return 'signed-out'
+    const structure = structures[index]
+    courses.push({ ...structure, content: resolved.content })
+    if (resolved.practiceBankSize !== null) cbtBankSizes.set(structure.institutionalCourseId, resolved.practiceBankSize)
+  }
+  return { courses: courses.sort(compareCodeThenId), cbtBankSizes, testerOffSite: access.testerOffSite() }
+}
+
+/** Every identity the Student App presents as a course row: institutional, or repository-only. */
+export type PresentableStudentCourse = StudentCourse | RepositoryOnlyCourse
+
+type ActionableCourseState = {
+  repository: Extract<StudentCourseRepository, { state: 'shelved' }>
+  content: Extract<StudentCourseContent, { state: 'ready' }>
+}
+
+/** A course a student can open now: a canonical route plus currently published study content. */
+export type ActionableStudentCourse = StudentCourse & ActionableCourseState
+
+/** Institutional identity is the only presentable shape that carries a confirmed code and title. */
+export function isInstitutionalStudentCourse(course: PresentableStudentCourse): course is StudentCourse {
+  return 'institutionalCourseId' in course
+}
+
+/** Shelved AND ready is the one actionability rule, for institutional and repository-only identities alike. */
+export function isActionableStudentCourse<T extends PresentableStudentCourse>(course: T): course is T & ActionableCourseState {
+  return course.repository.state === 'shelved' && course.content.state === 'ready'
+}
+
+/** Whether the student's plan, not the content, is what stands between them and a shelved course. */
+export function isLockedStudentCourse<T extends PresentableStudentCourse>(course: T): course is T & {
+  repository: Extract<StudentCourseRepository, { state: 'shelved' }>; content: Extract<StudentCourseContent, { state: 'locked' }>
+} {
+  return course.repository.state === 'shelved' && course.content.state === 'locked'
+}
+
+/** Why a course cannot be opened: an honest content gap, the student's plan, or a temporary problem. */
+export function getStudentCourseUnavailability(course: PresentableStudentCourse):
+  'missing' | 'locked' | 'temporary' | null {
+  if (isActionableStudentCourse(course)) return null
+  if (course.repository.state === 'unlinked') return 'missing'
+  if (isLockedStudentCourse(course)) return 'locked'
+  if (course.repository.state === 'unshelved-repository') return 'temporary'
+  return course.content.state === 'no-published-learning' || course.content.state === 'not-available' ? 'missing' : 'temporary'
+}
+
+// ---------------------------------------------------------------------------
+// Readers
+// ---------------------------------------------------------------------------
+
+/** Whether the institutional course is still offered in any active academic context. */
+export function hasActiveCourseOffering(course: Pick<StudentCourse, 'applicability'>): boolean {
+  return course.applicability.some(({ department, academicLevel, academicPeriod }) =>
+    department.isActive && academicLevel.isActive && academicPeriod.isActive)
+}
+
+/** Read the offered institutional catalogue in one structural query on the verified client. */
+export async function getStudentCatalogueForVerifiedStudent(client: StudentClient): Promise<StudentCatalogueResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try {
+    const result = await client.from('institutional_courses').select(CATALOGUE_COLUMNS)
+    if (result.error || result.data === null) return { status: 'unavailable' }
+    const parsed = catalogueRow.array().safeParse(result.data)
+    if (!parsed.success || parsed.data.length >= STRUCTURAL_ROW_CAP) return { status: 'invariant-failure' }
+    const seen = new Set<string>()
+    const structures: Structure[] = []
+    for (const row of parsed.data) {
+      if (seen.has(row.id)) return { status: 'invariant-failure' }
+      seen.add(row.id)
+      const structure = deriveStructure(row, row.applicability)
+      if (structure === null) return { status: 'invariant-failure' }
+      if (hasActiveCourseOffering(structure)) structures.push(structure)
+    }
+    const resolved = await resolveCourses(client, structures)
+    return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'ok', courses: resolved.courses }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+export type StudentCourseByIdResult =
+  | { status: 'ok'; course: StudentCourse }
+  | { status: 'signed-out' | 'not-found' | 'unavailable' | 'invariant-failure' }
+
+/** Read one institutional course by its stable id, with the same structure and availability as the catalogue. */
+export async function getStudentCourseByIdForVerifiedStudent(
+  client: StudentClient, institutionalCourseId: string,
+): Promise<StudentCourseByIdResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  if (!uuid.safeParse(institutionalCourseId).success) return { status: 'not-found' }
+  try {
+    const result = await client.from('institutional_courses').select(CATALOGUE_COLUMNS)
+      .eq('id', institutionalCourseId).maybeSingle()
+    if (result.error) return { status: 'unavailable' }
+    if (result.data === null) return { status: 'not-found' }
+    const parsed = catalogueRow.safeParse(result.data)
+    if (!parsed.success || parsed.data.id !== institutionalCourseId) return { status: 'invariant-failure' }
+    const structure = deriveStructure(parsed.data, parsed.data.applicability)
+    if (structure === null) return { status: 'invariant-failure' }
+    const resolved = await resolveCourses(client, [structure])
+    if (resolved === 'signed-out') return { status: 'signed-out' }
+    // Tester access read by a server not on the test site: no content state at all, so no action can follow.
+    if (resolved.testerOffSite) return { status: 'unavailable' }
+    const [course] = resolved.courses
+    return course ? { status: 'ok', course } : { status: 'invariant-failure' }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+/** Read the verified student's saved selection and its institutional courses on the same client. */
+export async function getCurrentStudentCoursesForVerifiedStudent(
+  client: StudentClient, user: User,
+): Promise<CurrentStudentCoursesResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  try {
+    const profile = await client.from('profiles')
+      .select(PROFILE_COLUMNS).eq('id', user.id).maybeSingle()
+    if (profile.error) return { status: 'unavailable' }
+    if (profile.data === null) return { status: 'missing-profile' }
+    const stored = classifyStoredSelection(profile.data)
+    if (stored.kind === 'invariant-failure') return { status: 'invariant-failure' }
+    if (stored.kind === 'incomplete') return { status: 'incomplete' }
+
+    const selection = stored.ids
+    const result = await client.from('course_applicability')
+      .select(CURRENT_STUDENT_COLUMNS)
+      .eq('department_id', selection.departmentId)
+      .eq('academic_level_id', selection.academicLevelId)
+      .eq('academic_period_id', selection.academicPeriodId)
+    if (result.error || result.data === null) return { status: 'unavailable' }
+    const parsed = currentStudentRow.array().safeParse(result.data)
+    if (!parsed.success) return { status: 'invariant-failure' }
+
+    const seen = new Set<string>()
+    const structures: Structure[] = []
+    for (const row of parsed.data) {
+      const { institutional_course_id: institutionalCourseId, institutional, ...tuple } = row
+      if (institutionalCourseId !== institutional.id || seen.has(institutional.id) ||
+          tuple.department_id !== selection.departmentId ||
+          tuple.academic_level_id !== selection.academicLevelId ||
+          tuple.academic_period_id !== selection.academicPeriodId) {
+        return { status: 'invariant-failure' }
+      }
+      seen.add(institutional.id)
+      const structure = deriveStructure(institutional, [tuple])
+      if (structure === null) return { status: 'invariant-failure' }
+      structures.push(structure)
+    }
+    const resolved = await resolveCourses(client, structures)
+    if (resolved === 'signed-out') return { status: 'signed-out' }
+    return { status: 'ok', selection, courses: resolved.courses, cbtBankSizes: resolved.cbtBankSizes }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}
+
+/** Resolve one route slug through the static shelf, the repository row and its institutional owner. */
+export async function getStudentCourseBySlugForVerifiedStudent(
+  client: StudentClient, slug: string, { readRepositoryOnly = true }: { readRepositoryOnly?: boolean } = {},
+): Promise<StudentCourseLookupResult> {
+  if (!isStudentAuthEnabled()) return { status: 'unavailable' }
+  const course = getCourseBySlug(slug)
+  if (!course) return { status: 'not-found' }
+  try {
+    const bridge = await client.from('courses').select(REPOSITORY_COLUMNS)
+      .eq('content_key', course.contentKey).maybeSingle()
+    if (bridge.error) return { status: 'unavailable' }
+    if (bridge.data === null) return { status: 'not-found' }
+    const repositoryParsed = repositoryRow.safeParse(bridge.data)
+    if (!repositoryParsed.success || repositoryParsed.data.content_key !== course.contentKey) {
+      return { status: 'invariant-failure' }
+    }
+    const repositoryCourseId = repositoryParsed.data.id
+
+    const owner = await client.from('institutional_courses').select(CATALOGUE_COLUMNS)
+      .eq('repository_course_id', repositoryCourseId).maybeSingle()
+    if (owner.error) return { status: 'unavailable' }
+    if (owner.data === null) {
+      // Repository-only: never fabricate an institutional code, title or applicability.
+      const repository: RepositoryOnlyCourse['repository'] = {
+        state: 'shelved', repositoryCourseId, contentKey: course.contentKey,
+        isShared: repositoryParsed.data.is_shared,
+        route: { slug: course.slug, href: `/courses/${encodeURIComponent(course.slug)}`, course },
+      }
+      if (!readRepositoryOnly) return { status: 'repository-only',
+        course: { repository, content: { state: 'not-available' } }, learning: null, practice: null }
+      // The material RPC decides the current operator exception and refuses students. A refusal is
+      // not available; an unowned repository cannot be added to an institutional list.
+      const resolved = await resolveAllowedPublication(client, repository, async id => {
+        const read = await getPublishedCbtBankSizesWithVerifiedClient(client, [id])
+        return read.status === 'signed-out' ? 'signed-out' : read.sizes.get(id) ?? 'unavailable'
+      })
+      if (resolved !== 'signed-out' && resolved.content.state === 'locked') return { status: 'repository-only',
+        course: { repository, content: { state: 'not-available' } }, learning: null, practice: null }
+      return resolved === 'signed-out' ? { status: 'signed-out' } : { status: 'repository-only',
+        course: { repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
+    }
+    const ownerParsed = catalogueRow.safeParse(owner.data)
+    if (!ownerParsed.success) return { status: 'invariant-failure' }
+    const structure = deriveStructure(ownerParsed.data, ownerParsed.data.applicability)
+    if (structure === null || structure.repository.state !== 'shelved' ||
+        structure.repository.repositoryCourseId !== repositoryCourseId ||
+        structure.repository.route.slug !== course.slug) {
+      return { status: 'invariant-failure' }
+    }
+    const repository = structure.repository
+    const access = accessReader(client, [structure.institutionalCourseId])
+    const resolved = await resolvePublication(client, repository, structure.institutionalCourseId, structure.isFree, access,
+      bankSizeReader(client, [{ repositoryCourseId, institutionalCourseId: structure.institutionalCourseId,
+        isFree: structure.isFree }], access))
+    if (resolved === 'signed-out') return { status: 'signed-out' }
+    // Tester access read by a server not on the test site: no content state at all, so no action can follow.
+    if (access.testerOffSite()) return { status: 'unavailable' }
+    return { status: 'ok',
+      course: { ...structure, repository, content: resolved.content }, learning: resolved.learning, practice: resolved.practice }
+  } catch {
+    return { status: 'unavailable' }
+  }
+}

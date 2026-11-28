@@ -1,0 +1,406 @@
+'use client'
+// app/courses/[slug]/quiz/ActiveAttempt.tsx — One open server-run practice exam. The browser holds only the pinned
+// prompts and options; the database fixed the deadline at start, keeps the sheet saved before it and grades it once,
+// and only then returns correct options and explanations. The rules are the free-pass exam's, shared:
+// ExamClock supplies trusted time, from the first render (seeded by the reading the exam came with, then kept in step
+// with the server); ExamAutosave sends sequenced deltas under the persistent exam-tab identity, keeps what is unsaved on
+// this device and retries it for as long as the exam is open, at once when the connection comes back.
+// Leaving ends the exam: Exit and the back button ask "End exam?". End and see results hands the exam in with every
+// answer this page holds; Keep going returns to the same question. Once the student has handed it in, the answers stay
+// as they are until the result shows, and a hand-in that did not go through is tried again. At zero the answers lock
+// and every hand-in, automatic or tapped, waits for the server's deadline; the server grades only answers it received
+// in time.
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { EndExamDialog } from '@/components/student/EndExamDialog'
+import { useExamBackGuard } from '@/components/student/exam-back-guard'
+import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
+import { ExamClock, browserDocumentTiming, documentClockSeed } from '@/lib/entitlements/exam-clock'
+import { browserTabOptions, claimExamTabOnce } from '@/lib/entitlements/exam-tab'
+import { postPracticeCommand } from '@/lib/practice/client'
+import { AssessmentConfirmation } from './AssessmentConfirmation'
+import { QuestionScreen } from './QuestionScreen'
+import { focusFirst } from './focus-return'
+import { LOW_TIME_SECONDS, PRACTICE_COPY, attemptHref, saveLineFor, signInToAttemptHref } from './practice-presentation'
+import { clearUnsent, readFlags, readUnsent, writeFlags, writeUnsent } from './practice-storage'
+import type { AutosaveSnapshot, SaveOutcome } from '@/lib/entitlements/exam-autosave'
+import type { ClockReading, ClockState } from '@/lib/entitlements/exam-clock'
+import type { ExamTab } from '@/lib/entitlements/exam-tab'
+import type { GradedAttempt, OpenAttempt, PracticeResult, PracticeSheet } from '@/lib/practice/contract'
+import type { ReturnFocus } from './focus-return'
+import type { AttemptRefusal } from './practice-presentation'
+import type { ReactElement } from 'react'
+
+const TICK_MS = 1000
+// A hand-in that did not reach the server is asked again after this long while the network is down.
+const RETRY_MS = 10_000
+const MAX_AUTO_RETRIES = 30
+const NO_RETURN_FOCUS: ReturnFocus = []
+const noSubscription = () => () => {}
+/** Why the server refused this tab, during the attempt and once time is up, with the one way on. A refusal at time up
+ * is never left as "Getting your result…": the server grades at the deadline, so this attempt's page shows the result. */
+function refusalFor(status: string, courseHref: string, attemptId: string): AttemptRefusal {
+  const here = { label: PRACTICE_COPY.reload, href: attemptHref(courseHref, attemptId) }
+  const signIn = { label: PRACTICE_COPY.signIn, href: signInToAttemptHref(courseHref, attemptId) }
+  if (status === 'too-many-tabs') return { text: PRACTICE_COPY.otherTab,
+    timeUpText: 'Time is up.', timeUpAction: { label: PRACTICE_COPY.seeResult, href: here.href } }
+  if (status === 'session-changed') return { text: PRACTICE_COPY.sessionChangedTitle, action: here,
+    timeUpText: PRACTICE_COPY.timeUpSessionChanged, timeUpAction: here }
+  if (status === 'signed-out') return { text: 'You’ve been signed out. The timer is still running.', action: signIn,
+    timeUpText: PRACTICE_COPY.timeUpSignedOut, timeUpAction: signIn }
+  const back = { label: PRACTICE_COPY.backToCourse, href: courseHref }
+  if (status === 'not-found') return { text: PRACTICE_COPY.examGone, action: back, timeUpText: PRACTICE_COPY.timeUpGone,
+    timeUpAction: back }
+  return { text: 'We couldn’t update your exam. Try again.', action: here, timeUpText: PRACTICE_COPY.timeUpRetry, retry: true }
+}
+
+/** When the request that read `serverNow` left and when its answer arrived, on this page's monotonic clock. */
+export type ReadingTiming = { sentAt: number; receivedAt: number }
+
+type Props = {
+  continuityToken: string
+  courseCode: string
+  courseTitle: string
+  repositoryOnly: boolean
+  courseHref: string
+  attempt: OpenAttempt
+  /** The server's clock when this attempt was read: the countdown starts from it on the first render. */
+  serverNow: string
+  /** How that reading was timed, when this page sent the request (a start or a resume). Without it, a page rendered on
+   * the server is timed by its own navigation; otherwise answers wait for the clock's first exchange. */
+  received?: ReadingTiming | null
+  onGraded: (attempt: GradedAttempt, unsentAtDeadline: boolean) => void
+}
+
+function validSheet(answers: PracticeSheet, options: ReadonlyMap<string, number>): PracticeSheet {
+  return Object.fromEntries(Object.entries(answers).filter(([id, index]) => index < (options.get(id) ?? 0)))
+}
+
+export function ActiveAttempt(props: Props): ReactElement {
+  const { attempt, continuityToken, courseHref, onGraded } = props
+  const storageKey = `practice-attempt:${attempt.id}`
+  const options = useMemo(() => new Map(attempt.questions.map(question => [question.questionId, question.options.length])),
+    [attempt.questions])
+  const initialRemaining = Date.parse(attempt.deadlineAt) - Date.parse(props.serverNow)
+  // Rendered on the server and hydrated: the page's own navigation timed the reading. Decided on the first render.
+  const hydrating = useSyncExternalStore(noSubscription, () => false, () => true)
+  const fromDocument = useRef(hydrating)
+  const [answers, setAnswers] = useState<PracticeSheet>(() => validSheet(attempt.saved.answers, options))
+  const [current, setCurrent] = useState(0)
+  const [flags, setFlags] = useState<ReadonlySet<string>>(() => new Set())
+  const [remaining, setRemaining] = useState(initialRemaining)
+  const [clockState, setClockState] = useState<ClockState>('unsynced')
+  const [clockFailures, setClockFailures] = useState(0)
+  const [save, setSave] = useState<AutosaveSnapshot | null>(null)
+  const [busy, setBusy] = useState(false)
+  // Time is up here and the hand-in is waiting for the server's deadline (the buttons say Submitting… meanwhile).
+  const [awaitingDeadline, setAwaitingDeadline] = useState(false)
+  const [submitFailing, setSubmitFailing] = useState(false)
+  // The student handed the exam in (End and see results, or Submit exam): the answers stay as they are from here on.
+  const [ending, setEnding] = useState(false)
+  const [confirm, setConfirm] = useState<'submit' | 'end' | null>(null)
+  const [refusal, setRefusal] = useState<AttemptRefusal | null>(null)
+  // Once time is up: whether the automatic hand-in tries are still going; after the last, Try again takes over.
+  const [autoRetrying, setAutoRetrying] = useState(true)
+  const [navOpen, setNavOpen] = useState(false)
+  const [identity, setIdentity] = useState<ExamTab | null>(null)
+  const answersRef = useRef(answers)
+  const autosave = useRef<ExamAutosave | null>(null)
+  const examClock = useRef<ExamClock | null>(null)
+  const mounted = useRef<number | null>(null)
+  const sending = useRef(false)
+  const graded = useRef(false)
+  const autoRetries = useRef(0)
+  const returnFocus = useRef<ReturnFocus>(NO_RETURN_FOCUS)
+  const exitButton = useRef<HTMLButtonElement>(null)
+  const tab = identity?.tab ?? null
+  const timeUp = remaining <= 0
+  const handingIn = ending || busy || awaitingDeadline || timeUp
+  const canAnswer = clockState === 'synced' && !timeUp && !busy && !ending && refusal === null
+
+  // Flags live on this device only (D2), per attempt; read after mount so the server render never depends on storage.
+  useEffect(() => { setFlags(readFlags(attempt.id, attempt.questions.map(question => question.questionId))) },
+    [attempt.id, attempt.questions])
+
+  const remainingMs = useCallback((): number => {
+    const trusted = examClock.current?.remaining() ?? null
+    if (trusted !== null) return trusted
+    return mounted.current === null ? initialRemaining : initialRemaining - (performance.now() - mounted.current)
+  }, [initialRemaining])
+
+  // The back button asks "End exam?" too (quietly kept on the exam while it is being handed in); Keep going hands the
+  // focus to Exit.
+  const openEnd = useCallback((focus: ReturnFocus) => {
+    returnFocus.current = focus
+    setConfirm('end')
+  }, [])
+  const onBack = useCallback(() => openEnd([exitButton]), [openEnd])
+  const releaseBack = useExamBackGuard(storageKey, true, handingIn || identity === null, onBack)
+
+  // The graded attempt replaces this screen once, whichever request learnt of it first.
+  const finish = useCallback((result: GradedAttempt) => {
+    if (graded.current) return
+    graded.current = true
+    const pending = autosave.current
+    const unsent = result.result.timedOut && pending !== null && pending.snapshot().state !== 'saved' &&
+      pending.unsent().dirty.length > 0
+    pending?.stop()
+    clearUnsent(attempt.id)
+    releaseBack()
+    onGraded(result, unsent)
+  }, [attempt.id, onGraded, releaseBack])
+
+  const refuse = useCallback((outcome: PracticeResult) => {
+    if (outcome.status === 'graded' && outcome.attempt.status !== 'in_progress') { finish(outcome.attempt); return }
+    if (outcome.status !== 'unavailable') setRefusal(refusalFor(outcome.status, courseHref, attempt.id))
+  }, [finish, courseHref, attempt.id])
+
+  useEffect(() => {
+    // Held for the life of the page (claimExamTabOnce), so a remount reuses it and a duplicated tab is still answered.
+    let live = true
+    void claimExamTabOnce(browserTabOptions(storageKey)).then(next => { if (live) setIdentity(next) })
+    return () => { live = false }
+  }, [storageKey])
+
+  // The countdown runs from the first render: the reading the exam came with, then the clock's trusted reading.
+  useEffect(() => {
+    mounted.current = performance.now()
+    const timer = window.setInterval(() => setRemaining(remainingMs()), TICK_MS)
+    return () => window.clearInterval(timer)
+  }, [remainingMs])
+
+  useEffect(() => {
+    if (tab === null) return
+    const reading = { serverNow: Date.parse(props.serverNow), deadline: Date.parse(attempt.deadlineAt) }
+    const seed = props.received ? { reading, ...props.received }
+      : fromDocument.current ? documentClockSeed(reading, browserDocumentTiming(), performance.now()) : null
+    const sync = async (): Promise<ClockReading | null> => {
+      const outcome = await postPracticeCommand({ action: 'sync', attemptId: attempt.id, tab }, continuityToken)
+      if (outcome.status === 'saved' || outcome.status === 'stale' || outcome.status === 'too-many-tabs') {
+        autosave.current?.adopt({ revision: outcome.revision, answers: validSheet(outcome.answers, options) })
+        return { serverNow: Date.parse(outcome.now), deadline: Date.parse(outcome.deadlineAt) }
+      }
+      refuse(outcome)
+      return null
+    }
+    const controller = new ExamClock({
+      monotonic: () => performance.now(), wall: () => Date.now(), sync, seed,
+      schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
+      onChange: state => {
+        setClockState(state)
+        setClockFailures(failures => state === 'synced' ? 0 : failures + 1)
+        setRemaining(remainingMs())
+      },
+    })
+    examClock.current = controller
+    setClockState(controller.state())
+    setRemaining(remainingMs())
+    controller.start()
+    // Back into view after being hidden: the device may have slept, so the reading is read again before any tap.
+    const visible = () => { if (document.visibilityState === 'visible') controller.invalidate() }
+    // Back online: a clock that lost its reading asks again now instead of at its next planned try.
+    const online = () => { if (controller.state() === 'unsynced') controller.resync() }
+    document.addEventListener('visibilitychange', visible)
+    window.addEventListener('online', online)
+    return () => {
+      controller.stop()
+      examClock.current = null
+      document.removeEventListener('visibilitychange', visible)
+      window.removeEventListener('online', online)
+    }
+  }, [tab, attempt.id, attempt.deadlineAt, props.serverNow, props.received, continuityToken, options, remainingMs, refuse])
+
+  useEffect(() => {
+    if (identity === null) return
+    const send = async (delta: { tab: string; sequence: number; baseRevision: number; changes: Record<string, number | null> })
+      : Promise<SaveOutcome> => {
+      const changes = Object.fromEntries(Object.entries(delta.changes).filter((entry): entry is [string, number] =>
+        entry[1] !== null))
+      const outcome = await postPracticeCommand({ action: 'save', attemptId: attempt.id, tab: delta.tab,
+        sequence: delta.sequence, baseRevision: delta.baseRevision, changes }, continuityToken)
+      if (outcome.status === 'saved' || outcome.status === 'stale') {
+        return { kind: outcome.status, revision: outcome.revision, answers: validSheet(outcome.answers, options) }
+      }
+      if (outcome.status === 'too-many-tabs') {
+        setRefusal(refusalFor('too-many-tabs', courseHref, attempt.id))
+        return { kind: 'refused', status: outcome.status,
+          sheet: { revision: outcome.revision, answers: validSheet(outcome.answers, options) } }
+      }
+      if (outcome.status === 'unavailable') return { kind: 'failed' }
+      refuse(outcome)
+      return { kind: 'refused', status: outcome.status === 'graded' ? 'closed' : outcome.status }
+    }
+    // What this tab has not had confirmed is kept on this device on every report, so a reload sends it.
+    let controller: ExamAutosave | null = null
+    controller = new ExamAutosave({
+      tab: identity.tab, startSequence: identity.sequence, onSequence: sequence => identity.remember(sequence),
+      server: { revision: attempt.saved.revision, answers: validSheet(attempt.saved.answers, options) },
+      restored: readUnsent(attempt.id, options),
+      remaining: () => examClock.current?.remaining() ?? null, send,
+      schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
+      onChange: snapshot => {
+        setSave(snapshot)
+        if (controller !== null && !graded.current) writeUnsent(attempt.id, controller.unsent())
+      },
+      onRebase: merged => { answersRef.current = merged as PracticeSheet; setAnswers(merged as PracticeSheet) },
+    })
+    autosave.current = controller
+    writeUnsent(attempt.id, controller.unsent())
+    const sheet = controller.unsent().answers as PracticeSheet
+    answersRef.current = sheet
+    setAnswers(sheet)
+    // Leaving the page or switching apps sends whatever is unsaved (with keepalive, so it completes); the connection
+    // coming back sends it at once.
+    const flush = () => { void controller.flush() }
+    const hidden = () => { if (document.visibilityState === 'hidden') void controller.flush() }
+    const online = () => { controller.retry() }
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('online', online)
+    document.addEventListener('visibilitychange', hidden)
+    return () => {
+      controller.stop()
+      autosave.current = null
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('online', online)
+      document.removeEventListener('visibilitychange', hidden)
+    }
+  }, [identity, attempt.id, attempt.saved, continuityToken, options, refuse, courseHref])
+
+  /** Grade now, with every pending change this page holds. True when nothing more is to be tried. */
+  const submit = useCallback(async (): Promise<boolean> => {
+    if (sending.current || tab === null || graded.current) return graded.current
+    sending.current = true
+    setBusy(true)
+    setSubmitFailing(false)
+    const pending = autosave.current?.delta() ?? { tab, sequence: 0, baseRevision: 0, changes: {} }
+    const changes = Object.fromEntries(Object.entries(pending.changes).filter((entry): entry is [string, number] =>
+      entry[1] !== null))
+    const outcome = await postPracticeCommand({ action: 'submit', attemptId: attempt.id, tab: pending.tab,
+      sequence: pending.sequence, baseRevision: pending.baseRevision, changes }, continuityToken)
+    sending.current = false
+    setConfirm(null)
+    if (outcome.status === 'graded' && outcome.attempt.status !== 'in_progress') { finish(outcome.attempt); return true }
+    setBusy(false)
+    if (outcome.status === 'unavailable') { setSubmitFailing(true); return false }
+    refuse(outcome)
+    return true
+  }, [tab, attempt.id, continuityToken, finish, refuse])
+
+  /**
+   * A hand-in the student asks for: End and see results, Submit exam, or Try again. From here on the answers stay as
+   * they are. With time left on this device (or no reading to wait on) it goes at once. Once this device's zero has
+   * passed it goes with the time-up hand-in below, which waits for the server's deadline: sent before it, the attempt is
+   * still open there, so it would be recorded as submitted and its result would not say that time ran out. The clock is
+   * read at the tap, not from the countdown shown a moment ago, so a tap just after zero waits too; the countdown is
+   * brought up to date, which starts that hand-in.
+   */
+  const handIn = useCallback((): void => {
+    setEnding(true)
+    const left = examClock.current?.remaining() ?? null
+    if (left === null || left > 0 || Math.max(0, examClock.current?.untilPassed() ?? 0) === 0) { void submit(); return }
+    setRemaining(remainingMs())
+  }, [submit, remainingMs])
+
+  // A hand-in the student asked for that did not reach the server, with time left: asked again after a wait, and at
+  // once when the connection comes back. Time running out hands it over to the time-up hand-in below.
+  useEffect(() => {
+    if (!ending || !submitFailing || timeUp) return
+    const again = () => { void submit() }
+    const timer = window.setTimeout(again, RETRY_MS)
+    window.addEventListener('online', again)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('online', again)
+    }
+  }, [ending, submitFailing, timeUp, submit])
+
+  // At this device's zero the answers lock and anything unsaved is sent. The hand-in waits until the deadline has
+  // passed on the server too: this device's zero can come up to one clock exchange early, and an attempt handed in
+  // then is still open there, so it would be recorded as submitted and its result would not say that time ran out.
+  // While it waits the buttons say Submitting… (a tap joins this hand-in, see handIn). It keeps asking while the
+  // network is down; after the last automatic try the line offers Try again, and coming back online tries once more.
+  useEffect(() => {
+    if (!timeUp || graded.current) return
+    let cancelled = false
+    let timer: number | null = null
+    const untilDue = (): number => Math.max(0, examClock.current?.untilPassed() ?? 0)
+    async function attemptSubmit(): Promise<void> {
+      timer = null
+      if (cancelled) return
+      const wait = untilDue()
+      if (wait > 0) {
+        setAwaitingDeadline(true)
+        timer = window.setTimeout(() => { void attemptSubmit() }, wait)
+        return
+      }
+      setAwaitingDeadline(false)
+      if (await submit() || cancelled) return
+      if (autoRetries.current >= MAX_AUTO_RETRIES) { setAutoRetrying(false); return }
+      autoRetries.current += 1
+      timer = window.setTimeout(() => { void attemptSubmit() }, RETRY_MS)
+    }
+    void autosave.current?.flush()
+    void attemptSubmit()
+    const online = () => { if (untilDue() === 0) void submit() }
+    window.addEventListener('online', online)
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+      setAwaitingDeadline(false)
+      window.removeEventListener('online', online)
+    }
+  }, [timeUp, submit])
+
+  const question = attempt.questions[current]!
+  const answersMap = Object.fromEntries(attempt.questions.flatMap((item, index) =>
+    answers[item.questionId] === undefined ? [] : [[index, answers[item.questionId]!]]))
+  const markedMap = Object.fromEntries(attempt.questions.flatMap((item, index) => flags.has(item.questionId) ? [[index, true]] : []))
+  const answered = Object.keys(answersMap).length
+  const timeLeft = Math.max(0, Math.ceil(remaining / 1000))
+
+  function choose(option: number): void {
+    if (sending.current || ending) return
+    const next = { ...answersRef.current, [question.questionId]: option }
+    // The controller reads the clock now: a tap after the cutoff, or without a trustworthy reading, changes nothing.
+    if ((autosave.current?.change(next) ?? null) === null) { setRemaining(remainingMs()); return }
+    answersRef.current = next
+    setAnswers(next)
+  }
+
+  function toggleFlag(): void {
+    const next = new Set(flags)
+    if (next.has(question.questionId)) next.delete(question.questionId)
+    else next.add(question.questionId)
+    setFlags(next)
+    writeFlags(attempt.id, next)
+  }
+
+  const restore = (event: Event) => { if (focusFirst(returnFocus.current)) event.preventDefault() }
+  const saveState = save === null ? null : save.state
+
+  return <>
+    <QuestionScreen courseCode={props.courseCode} courseTitle={props.courseTitle} repositoryOnly={props.repositoryOnly}
+      question={question} current={current} total={attempt.questions.length} selected={answers[question.questionId]}
+      isMarked={flags.has(question.questionId)} timeLeft={timeLeft}
+      isLowTime={timeLeft <= LOW_TIME_SECONDS} canAnswer={canAnswer}
+      saveLine={saveLineFor({ timeUp, submitFailing, refusal, clockSynced: clockState === 'synced', clockFailures,
+        save: saveState, answered, submitting: busy && !timeUp, autoRetrying })}
+      submitting={busy || awaitingDeadline} canExit={!handingIn && identity !== null} exitRef={exitButton}
+      // Try again resends a submission that did not go through (and, at time up, the hand-in); otherwise the save.
+      onRetrySave={() => { if (timeUp || submitFailing || refusal !== null) handIn(); else autosave.current?.retry() }}
+      navOpen={navOpen} answeredCount={answered} markedCount={flags.size} answersMap={answersMap} markedMap={markedMap}
+      onSelectOption={choose} onToggleMark={toggleFlag}
+      onPrev={() => setCurrent(index => Math.max(0, index - 1))}
+      onNext={() => setCurrent(index => Math.min(attempt.questions.length - 1, index + 1))}
+      onJump={index => { setCurrent(index); setNavOpen(false) }}
+      onSubmit={focus => { returnFocus.current = focus; setConfirm('submit') }}
+      onOpenNav={() => setNavOpen(true)} onCloseNav={() => setNavOpen(false)}
+      onLeave={focus => { if (!handingIn && identity !== null) openEnd(focus) }} />
+    <AssessmentConfirmation kind="submit" open={confirm === 'submit'} onOpenChange={open => setConfirm(open ? 'submit' : null)}
+      answered={answered} unanswered={attempt.questions.length - answered} flagged={flags.size}
+      onConfirm={handIn} onRestoreFocus={restore} />
+    {/* It stays up, saying Submitting…, until the hand-in is done (submit closes it): the result replaces it, or the
+        exam says why not. */}
+    <EndExamDialog open={confirm === 'end'} submitting={busy || awaitingDeadline} onKeepGoing={() => setConfirm(null)}
+      onEnd={handIn} onRestoreFocus={restore} />
+  </>
+}

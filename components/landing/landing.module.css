@@ -1,0 +1,195 @@
+/* components/landing/landing.module.css — Landing layout and texture; every colour is a student token.
+   Nothing moves by itself: the only motion answers the visitor (a wrong answer, the quiz and FAQ changing state, a press). */
+
+.landing {
+  --l-bg: var(--student-brand-surface);
+  --l-surface: var(--student-elevated-surface);
+  --l-fg: var(--student-text-primary);
+  --l-muted: var(--student-text-secondary);
+  --l-line: var(--student-border);
+  --l-navy: var(--student-primary);
+  --l-navy-deep: var(--student-navigation-deep);
+  --l-blue: var(--ci-brand-blue);
+  --l-blue-text: var(--student-link);
+  --l-blue-soft: var(--ci-blue-100);
+  --l-orange: var(--student-accent);
+  --l-ok: var(--student-success);
+  --l-on-navy: var(--student-navigation-text);
+  --l-on-navy-muted: var(--student-navigation-text-muted);
+  --l-shadow: 0 18px 50px color-mix(in srgb, var(--ci-brand-navy) 14%, transparent);
+  --l-shadow-sm: 0 8px 22px color-mix(in srgb, var(--ci-brand-navy) 10%, transparent);
+  --l-display: var(--landing-display), Georgia, serif;
+  --l-header: 68px;
+  background: var(--l-bg);
+  color: var(--l-fg);
+  /* The app's own body typeface (set by the root layout), so the page needs no second body font. */
+  font-family: var(--font-hanken), system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.55;
+  overflow-x: clip;
+}
+/* Element defaults sit at zero specificity so section classes can set their own spacing. */
+:where(.landing) :is(h1, h2, h3) { font-family: var(--l-display); color: var(--l-navy); margin: 0; text-wrap: balance; }
+:where(.landing) h2 { font-size: clamp(1.9rem, 3.6vw, 2.9rem); line-height: 1.1; font-weight: 700; }
+:where(.landing) h3 { font-size: 1.25rem; line-height: 1.25; font-weight: 700; }
+:where(.landing) p { margin: 0; }
+:where(.landing) :is(ul, ol) { list-style: none; margin: 0; padding: 0; }
+
+.anchor { scroll-margin-top: calc(var(--l-header) + 8px); }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--l-blue-text); }
+.eyebrow::before { content: ""; width: 18px; height: 2px; background: var(--l-orange); border-radius: 2px; }
+.sec { padding-block: clamp(56px, 8vw, 96px); }
+.secHead { max-width: 40rem; margin-bottom: 36px; }
+.secHead h2 { margin-top: 12px; }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+/* On a phone the two actions share a row when they fit, and each takes the full width when they do not. */
+@media (max-width: 520px) { .ctas > a { flex: 1 1 auto; } }
+
+/* header: no menu at any width */
+.header { position: sticky; top: 0; z-index: 50; background: var(--l-bg); box-shadow: 0 1px 0 var(--l-line); }
+.headerBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--l-header); }
+.logo { height: 32px; width: auto; }
+.headerLinks { display: none; align-items: center; gap: 4px; margin-right: auto; }
+.headerActions { display: flex; align-items: center; gap: 8px; }
+/* On the narrowest phones the two account buttons tighten so the logo keeps its size. */
+@media (max-width: 400px) { .headerActions > a { padding-inline: 12px; } }
+@media (max-width: 349px) { .logo { height: 26px; } .headerActions { gap: 6px; } .headerActions > a { padding-inline: 9px; font-size: 13px; } }
+@media (min-width: 521px) { .logo { height: 40px; } }
+@media (min-width: 768px) { .headerBar { gap: 12px; } .headerLinks { display: flex; } }
+
+/* hero: the text is there from the first frame */
+.hero { position: relative; overflow: hidden; }
+.heroGrid { display: grid; grid-template-columns: 1fr; gap: 28px; align-items: center; padding-block: 36px 56px; }
+.landing .heroTitle { font-size: clamp(2.5rem, 5.6vw, 4.5rem); line-height: 1.03; font-weight: 800; letter-spacing: -.01em; }
+.emphasis { white-space: nowrap; color: var(--l-blue); }
+.lead { font-size: 1.2rem; color: var(--l-muted); max-width: 33rem; margin-top: 20px; }
+/* The frame is the photograph's own shape (900 by 975) and the picture covers all of it. */
+.heroFrame { display: block; justify-self: center; width: 100%; max-width: 440px; aspect-ratio: 900 / 975; }
+.heroImage { display: block; width: 100%; height: 100%; object-fit: cover;
+  filter: drop-shadow(0 20px 30px color-mix(in srgb, var(--l-navy-deep) 25%, transparent)); }
+@media (min-width: 700px) { .heroGrid { grid-template-columns: 1.1fr .9fr; gap: 32px; padding-block: 48px 56px; } }
+@media (min-width: 961px) { .heroGrid { grid-template-columns: 1.02fr .98fr; gap: 40px; padding-block: 56px 72px; } .heroFrame { max-width: 540px; } }
+
+/* try a question */
+.quizSec { background: linear-gradient(180deg, var(--l-bg), var(--l-surface) 60%, var(--l-bg)); }
+.quizGrid { display: grid; grid-template-columns: 1fr; gap: 56px; align-items: center; }
+@media (min-width: 901px) { .quizGrid { grid-template-columns: .85fr 1.15fr; } }
+.mode { margin-top: 26px; }
+.modeNote { margin-top: 4px; color: var(--l-muted); font-size: .95rem; }
+.switch { width: 56px; height: 30px; border-radius: 999px; background: var(--l-line); position: relative; flex: none; transition: background .3s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--l-surface); box-shadow: 0 2px 6px color-mix(in srgb, var(--l-fg) 25%, transparent); transition: transform .35s cubic-bezier(.34,1.56,.64,1); }
+[aria-checked="true"] > .switch { background: var(--l-blue); }
+[aria-checked="true"] > .switch::after { transform: translateX(26px); }
+/* Campus Bot sits on the card's top edge, clear of the card's own heading row. */
+.quizWrap { position: relative; max-width: 560px; width: 100%; justify-self: center; margin-top: 64px; }
+.qbot { position: absolute; width: 92px; height: auto; top: -76px; right: -8px; z-index: 2; }
+.bubble { position: absolute; top: -62px; right: 90px; background: var(--l-navy); color: var(--l-on-navy); font-size: .85rem; font-weight: 600; padding: 8px 12px; border-radius: 12px 12px 2px 12px; white-space: nowrap; z-index: 2; box-shadow: var(--l-shadow-sm); }
+.quiz { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: 28px; box-shadow: var(--l-shadow); padding: 22px; position: relative; }
+.quizHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: .85rem; color: var(--l-muted); font-weight: 600; }
+.coursePill { background: var(--l-blue-soft); color: var(--l-navy); padding: 5px 12px; border-radius: 999px; font-size: .78rem; font-weight: 700; }
+.modeTag { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.landing .question { font-family: inherit; font-size: 1.08rem; line-height: 1.45; margin: 16px 0 14px; color: var(--l-fg); font-weight: 600; }
+.opts { display: grid; gap: 9px; }
+.key { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: .8rem; background: var(--l-surface); border: 1px solid var(--l-line); flex: none; }
+.keyRight { background: var(--l-ok); color: var(--l-surface); border-color: var(--l-ok); }
+.keyWrong { background: var(--l-navy); color: var(--l-surface); border-color: var(--l-navy); }
+.keySaved { background: var(--l-blue); color: var(--l-surface); border-color: var(--l-blue); }
+.optText { flex: 1; min-width: 0; }
+.verdict { display: inline-flex; align-items: center; gap: 4px; font-size: .85rem; font-weight: 700; flex: none; }
+/* A wrong pick shakes once. */
+.shake { animation: shake .35s; }
+.explain { margin-top: 14px; padding: 12px 16px; border-radius: 12px; background: var(--l-blue-soft); border-left: 4px solid var(--l-blue); font-size: .93rem; line-height: 1.45; color: var(--l-fg); }
+.quizFoot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; font-size: .85rem; color: var(--l-muted); }
+.steps { display: flex; gap: 5px; }
+.stepDot { width: 18px; height: 6px; border-radius: 3px; background: var(--l-line); transition: background .3s; }
+.stepDone { background: var(--l-navy); }
+.stepNow { background: var(--l-blue); }
+.end { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 28px 8px; min-height: 360px; }
+.big { font-family: var(--l-display); font-size: 3.4rem; font-weight: 800; color: var(--l-navy); line-height: 1; }
+.end p { color: var(--l-muted); max-width: 22rem; }
+
+/* what you get: four still cards on the navy band */
+.band { background: var(--l-navy); color: var(--l-on-navy); position: relative; overflow: hidden; }
+.band::before { content: ""; position: absolute; inset: 0; background: url("/landing/pattern-on-navy.webp") 0 0 / 280px auto; opacity: .5; pointer-events: none;
+  -webkit-mask: linear-gradient(180deg, black, transparent 70%); mask: linear-gradient(180deg, black, transparent 70%); }
+.bandInner { position: relative; }
+.landing .band h2 { color: var(--l-on-navy); }
+.band .eyebrow { color: var(--ci-blue-200); }
+.cards { display: grid; grid-template-columns: 1fr; gap: 18px; }
+@media (min-width: 601px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1100px) { .cards { grid-template-columns: repeat(4, 1fr); } }
+.fcard { background: color-mix(in srgb, var(--l-on-navy) 6%, transparent); border: 1px solid color-mix(in srgb, var(--l-on-navy) 14%, transparent); border-radius: 24px; padding: 28px; }
+.fcardIcon { width: 50px; height: 50px; border-radius: 14px; display: grid; place-items: center; background: var(--l-surface); color: var(--l-navy); margin-bottom: 20px; }
+.landing .fcard h3 { color: var(--l-on-navy); font-size: 1.3rem; }
+.fcard p { color: var(--l-on-navy-muted); margin-top: 8px; }
+.fcardHi { background: var(--l-surface); border-color: var(--l-surface); }
+.landing .fcardHi h3 { color: var(--l-navy); }
+.fcardHi p { color: var(--l-muted); }
+.fcardHi .fcardIcon { background: var(--l-orange); color: var(--student-accent-text); }
+
+/* showcase rows */
+.row { display: grid; grid-template-columns: 1fr; gap: 32px; align-items: center; }
+.row + .row { margin-top: clamp(56px, 8vw, 96px); }
+.copy { max-width: 40rem; }
+.copy h2 { margin-top: 12px; }
+.copyText { color: var(--l-muted); margin-top: 16px; font-size: 1.12rem; }
+.ticks { margin-top: 24px; display: grid; gap: 12px; }
+.ticks li { display: flex; gap: 12px; align-items: flex-start; font-weight: 600; }
+.tick { flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%; background: var(--l-blue); color: var(--l-surface); display: grid; place-items: center; }
+.shots { display: grid; grid-template-columns: minmax(0, 350px); gap: 16px; align-items: start; }
+/* A real app screen is its own frame: the picture's shape and size, with no border and no rounding added. */
+.shot { display: block; width: 100%; height: auto; box-shadow: var(--ci-shadow-soft); }
+@media (min-width: 600px) { .shotsPair { grid-template-columns: repeat(2, minmax(0, 350px)); } }
+@media (min-width: 700px) {
+  .rowSingle { grid-template-columns: minmax(0, 350px) minmax(0, 1fr); gap: 48px; }
+  .rowSingle.flip .copy { order: 2; }
+}
+@media (min-width: 1100px) { .rowPair { grid-template-columns: minmax(0, 1fr) auto; gap: 56px; } }
+
+/* courses: one still line of figures */
+.figures { background: var(--l-surface); border-block: 1px solid var(--l-line); padding-block: 22px; }
+.figureList { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 4px 36px; color: var(--l-muted); font-weight: 600; }
+.figureList b { font-family: var(--l-display); font-size: 1.6rem; font-weight: 800; font-variant-numeric: lining-nums; color: var(--l-navy); margin-right: 4px; }
+
+/* faq */
+.faqGrid { display: grid; grid-template-columns: 1fr; gap: 28px; align-items: start; }
+@media (min-width: 901px) { .faqGrid { grid-template-columns: .8fr 1.2fr; gap: 56px; } }
+.faqList { display: grid; gap: 12px; }
+.faqItem { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: 18px; padding: 0 22px; transition: box-shadow .2s; }
+.faqItemOpen { box-shadow: var(--l-shadow-sm); }
+.landing .faqItem h3 { font-family: inherit; font-size: 1rem; }
+.faqSign { width: 30px; height: 30px; border-radius: 50%; background: var(--l-blue-soft); color: var(--l-blue); display: grid; place-items: center; flex: none; }
+.faqAnswer { color: var(--l-muted); padding-bottom: 20px; }
+/* The words sit beside the picture while they have 12rem, the width that holds the email address whole; on a narrower
+   phone they go below it, so the address is never split. */
+.help { background: var(--l-surface); border: 1px solid var(--l-line); border-radius: 22px; padding: 24px; margin-top: 28px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.helpBot { width: 64px; height: auto; flex: none; }
+.help p { color: var(--l-muted); font-size: .95rem; flex: 1 1 12rem; }
+
+/* final call to action */
+.cta { background: var(--l-navy); border-radius: 36px; padding: clamp(36px, 6vw, 72px); position: relative; overflow: hidden; color: var(--l-on-navy); }
+.cta::before { content: ""; position: absolute; inset: 0; background: url("/landing/pattern-on-navy.webp") 0 0 / 260px auto; pointer-events: none;
+  -webkit-mask: linear-gradient(110deg, transparent 30%, black); mask: linear-gradient(110deg, transparent 30%, black); }
+.cta > * { position: relative; }
+.landing .cta h2 { color: var(--l-on-navy); font-size: clamp(2rem, 4.4vw, 3.3rem); }
+.ctaText { color: var(--l-on-navy-muted); margin-top: 14px; font-size: 1.12rem; max-width: 30rem; }
+.faculty { margin-top: 10px; color: var(--l-on-navy-muted); }
+
+/* footer */
+.footer { margin-top: clamp(56px, 8vw, 96px); background: var(--l-surface); border-top: 1px solid var(--l-line); }
+.footerGrid { display: grid; grid-template-columns: 1fr; gap: 32px; padding-block: 56px 32px; }
+@media (min-width: 481px) { .footerGrid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 861px) {
+  .footerGrid { grid-template-columns: 1.4fr repeat(3, 1fr); }
+  .footerGridWide { grid-template-columns: 1.4fr repeat(3, 1fr) 1.4fr; }
+}
+.footer h2 { margin: 0 0 6px; font-family: inherit; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--l-navy); }
+.footerLogo { height: 38px; width: auto; margin-bottom: 14px; }
+.copyLine { border-top: 1px solid var(--l-line); padding-block: 20px calc(20px + env(safe-area-inset-bottom, 0px)); color: var(--l-muted); font-size: .88rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+/* All landing motion stops for visitors who ask for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .landing, .landing *, .landing *::before, .landing *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

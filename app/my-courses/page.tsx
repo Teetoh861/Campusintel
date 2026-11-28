@@ -1,0 +1,140 @@
+// app/my-courses/page.tsx — Request-scoped semester register with verified academic context.
+import Link from 'next/link'
+import { AuthFlowSync } from '@/components/auth/AuthFlowSync'
+import { btnGhost } from '@/components/chrome/ui'
+import { AccessNotice } from '@/components/student/AccessNotice'
+import { CourseRegister } from '@/components/student/CourseRow'
+import { EmptyState } from '@/components/student/EmptyState'
+import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
+import { Notice } from '@/components/student/Notice'
+import { PageBand } from '@/components/student/PageBand'
+import { ResultNotice } from '@/components/student/ResultNotice'
+import { StudentCourseRow } from '@/components/student/StudentCourseRow'
+import { StudentPage } from '@/components/student/StudentPage'
+import { SelectionChangeHelp } from '@/components/profile/SelectionChangeHelp'
+import { redirectForStudentState } from '@/components/student/result-state'
+import { studentAction } from '@/components/student/ui'
+import { readCampusBotLinks } from '@/lib/ai-practice/campus-bot-courses'
+import { AUTH_MESSAGES } from '@/lib/auth/constants'
+import { isStudentAuthEnabled } from '@/lib/auth/config'
+import { issueAccountContinuityToken } from '@/lib/auth/account-continuity'
+import { getStudentSessionContext } from '@/lib/auth/student-state'
+import { readEntitlementForVerifiedStudent } from '@/lib/entitlements/server'
+import { getCurrentStudentCoursesForVerifiedStudent, getStudentCourseUnavailability,
+  isActionableStudentCourse } from '@/lib/courses/read-model'
+import { formatCourseProgress, homeCoursesFrom } from '@/lib/dashboard/home-courses'
+import { readPracticeProgress } from '@/lib/practice/progress'
+import { getCurrentStudentProfileForVerifiedStudent } from '@/lib/profile/student-profile'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import { createClient } from '@/lib/supabase/server'
+import type { ResultStateId } from '@/components/student/result-state'
+import type { ReactElement } from 'react'
+import type { StudentProfileState } from '@/lib/profile/student-profile'
+
+const MY_COURSES_PATH = STUDENT_DESTINATIONS.myCourses.href
+
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'My Courses | CampusIntell', robots: { index: false, follow: false } }
+
+type CompleteProfile = Extract<StudentProfileState, { status: 'complete' }>
+type ErrorState = 'missing-profile' | 'unavailable' | 'invariant-failure' | 'selection-changed'
+
+const RESULT_STATE: Record<Exclude<ErrorState, 'selection-changed'>, ResultStateId> = {
+  'missing-profile': 'missing-profile', 'unavailable': 'courses-unavailable', 'invariant-failure': 'course-invariant',
+}
+
+function MyCoursesBand(props: Omit<Parameters<typeof PageBand>[0], 'title' | 'lede'>): ReactElement {
+  return <PageBand title={STUDENT_DESTINATIONS.myCourses.label} {...props} />
+}
+
+function MyCoursesError({ state }: { state: ErrorState }): ReactElement {
+  return <StudentPage band={<MyCoursesBand />}>
+    {state === 'selection-changed'
+      // Unique to this surface: the saved academic details moved while the page was composing.
+      ? <Notice title="Your courses have changed." action={
+        <a href={MY_COURSES_PATH} className={studentAction(btnGhost, 'bg-student-surface')}>Reload</a>
+      } />
+      : <ResultNotice state={RESULT_STATE[state]} retryHref={MY_COURSES_PATH} />}
+  </StudentPage>
+}
+
+function SemesterContext({ selection, total, ready }: {
+  selection: CompleteProfile['selection']; total: number; ready: number
+}): ReactElement {
+  const labels = [selection.department.label, selection.academicLevel.label, selection.academicPeriod.label]
+  const inactive = [selection.department, selection.academicLevel, selection.academicPeriod].some(item => !item.isActive)
+  return <MyCoursesBand
+    context={<p>{labels.join(' · ')}</p>}
+    aside={<div className="student-band-actions">
+      {total > 0 && <p className="student-summary">{total} {total === 1 ? 'course' : 'courses'} · {ready} ready to study</p>}
+      <SelectionChangeHelp inactive={inactive} />
+    </div>} />
+}
+
+/** Render only the current session owner's persisted institutional semester. */
+export default async function MyCoursesPage(): Promise<ReactElement> {
+  if (!isStudentAuthEnabled()) return <StudentPage band={<MyCoursesBand />}>
+    <Notice title={AUTH_MESSAGES.comingSoon} tone="info" />
+  </StudentPage>
+
+  let verified: {
+    client: Awaited<ReturnType<typeof createClient>>
+    context: NonNullable<Awaited<ReturnType<typeof getStudentSessionContext>>>
+    continuityToken: string
+  } | null
+  try {
+    const client = await createClient()
+    const context = await getStudentSessionContext(undefined, client)
+    verified = context === null ? null : {
+      client, context,
+      continuityToken: issueAccountContinuityToken(context.user.id, context.sessionId),
+    }
+  } catch { return <MyCoursesError state="unavailable" /> }
+  if (verified === null) redirectForStudentState('signed-out', MY_COURSES_PATH)
+  const { client, context, continuityToken } = verified
+
+  const [result, entitlement, progress] = await Promise.all([getCurrentStudentCoursesForVerifiedStudent(client, context.user),
+    readEntitlementForVerifiedStudent(client),
+    readPracticeProgress(context.sessionId).catch(() => ({ status: 'unavailable' as const }))])
+  if (result.status === 'signed-out' || result.status === 'incomplete') redirectForStudentState(result.status, MY_COURSES_PATH)
+  const continuity = <AuthFlowSync signedIn continuityToken={continuityToken} />
+  if (result.status !== 'ok') return <>{continuity}<MyCoursesError state={result.status} /></>
+
+  const profile = await getCurrentStudentProfileForVerifiedStudent(client, context.user)
+  if (profile.status === 'signed-out' || profile.status === 'incomplete') redirectForStudentState(profile.status, MY_COURSES_PATH)
+  if (profile.status !== 'complete') return <>{continuity}<MyCoursesError state={
+    profile.status === 'missing-profile' || profile.status === 'invariant-failure'
+      ? profile.status : 'unavailable'
+  } /></>
+  if (profile.selection.department.id !== result.selection.departmentId ||
+      profile.selection.academicLevel.id !== result.selection.academicLevelId ||
+      profile.selection.academicPeriod.id !== result.selection.academicPeriodId) {
+    return <>{continuity}<MyCoursesError state="selection-changed" /></>
+  }
+
+  const progressByCourse = new Map(homeCoursesFrom(result.courses, result.cbtBankSizes, progress).courses
+    .map(course => [course.id, course.progress === null ? undefined : formatCourseProgress(course.progress)]))
+  const campusBotLinks = await readCampusBotLinks(client, context.user, result.courses)
+
+  return <>{continuity}<StudentPage band={<SemesterContext selection={profile.selection} total={result.courses.length}
+    ready={result.courses.filter(isActionableStudentCourse).length} />}>
+    {result.courses.length === 0
+      ? <EmptyState title={EMPTY_COURSES_MESSAGE} icon={null} actions={null}>{null}</EmptyState>
+      : <section aria-labelledby="my-courses-list-title" className="student-stack">
+        <AccessNotice entitlement={entitlement.status === 'ok' ? entitlement.entitlement : null} />
+        <h2 id="my-courses-list-title" className="sr-only">Courses this semester</h2>
+        <CourseRegister label="Your semester courses">
+          {result.courses.map(course => <StudentCourseRow key={course.institutionalCourseId} course={course}
+            progress={progressByCourse.get(course.institutionalCourseId)} campusBotLinks={campusBotLinks}
+            plansOnSale={entitlement.status === 'ok' && entitlement.entitlement.plans_on_sale} />)}
+        </CourseRegister>
+        {result.courses.some(course => getStudentCourseUnavailability(course) === 'missing') &&
+          <div className="student-register-request">
+            <p>Missing material for one of your courses?</p>
+            <Link href={STUDENT_DESTINATIONS.materials.href} prefetch={false} className={studentAction('student-register-request-link')}>
+              {STUDENT_DESTINATIONS.materials.label}
+            </Link>
+          </div>}
+      </section>}
+  </StudentPage></>
+}

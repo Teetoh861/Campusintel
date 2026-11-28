@@ -1,0 +1,192 @@
+<!-- lib/auth/README.md — A2 authentication architecture, verification and deployment handoff. -->
+# Student authentication (A2)
+
+Student auth is server-only and separate from the custom admin cookie. Only literal
+`STUDENT_AUTH_ENABLED=true` enables it; keep it disabled until the remaining Phase A
+launch gates are complete. Missing configuration is read lazily and fails closed.
+
+The current email identity, hosted template contract and release procedure live in
+[transactional email release readiness](../../docs/transactional-email-release.md).
+The dated verification/audit documents in this directory record historical results,
+not current deployment status or email-initiation response contracts.
+
+The browser submits email/password/OTP in same-origin POST bodies. It never calls
+Supabase Auth. For login and confirmation, access and refresh tokens move directly from the Auth-only gateway
+into the request-scoped publishable-key SSR client. Supabase owns cookie names,
+chunking, rotation and expiry; the adapter enforces HttpOnly, SameSite=Lax, Path=/
+and Secure in production. The proxy runs on every page (not other API handlers or static
+files), so a refreshed session is saved wherever the student is. Every page is rendered
+per request: the proxy's live lifecycle answer reaches the root layout as the request-only
+`x-campus-chrome-state` header (always replaced, never taken from the client), and the
+header's first render uses it. It is presentation only. The nav then reads booleans from
+`/api/auth/session` and rechecks on focus/visibility changes. A pending recheck keeps
+the server-verified state. Any failed or inconclusive check shows neutral account controls:
+neither sign-in links nor the signed-in menu, until a definitive answer arrives.
+
+Confirmation and recovery emails display `{{ .Token }}` without action links.
+A GET never verifies a code. No email, code, hash or session credential is included
+in a destination. Recovery now uses email → server-verified code → password screens.
+`POST /api/auth/verify-recovery` verifies the code and issues a recovery-only grant;
+`POST /api/auth/reset-password` holds that grant before password replacement and
+global sign-out, so no other request can use it. The reset screen confirms the change
+itself ("Password changed", with Sign in); nothing about it travels in an address.
+Reset success is never reported if revocation fails. Normal logout uses
+local scope. Supabase global logout revokes refresh sessions; already-issued access
+JWTs can remain cryptographically valid until expiry. CampusIntell therefore uses a
+remote `getUser()` check as the single owner of student signed-in state; a JWT whose
+server-side session was revoked is signed out and its SSR cookies are cleared.
+
+`AUTH_INTERNAL_SECRET` derives purpose-separated keys for HMAC rate-limit indexes,
+recovery-grant indexes and verified-email bindings. Rate-limit records store
+no raw email or IP. The private consume RPC locks both buckets and charges each bucket with
+remaining capacity even when the other is exhausted. RLS grants no browser access;
+only service_role can execute the SECURITY DEFINER RPC, with an empty search_path.
+The RPC validates the exact policy tuple. Records older than the maximum one-hour
+window are removed on subsequent consume calls; idle tables do not grow.
+
+| Action | Account | Origin |
+| --- | --- | --- |
+| Login | 20 / 15 minutes | 30 / 5 minutes |
+| Register | 3 / hour | 20 / hour |
+| Resend confirmation | 3 / hour | 20 / hour |
+| Request recovery | 3 / hour | 20 / hour |
+| Confirm email OTP | 5 / 15 minutes | 20 / 15 minutes |
+| Verify recovery OTP | 5 / 15 minutes | 20 / 15 minutes |
+
+Requester-address handling assumes direct Vercel ingress and trusts only the
+platform's `x-vercel-forwarded-for` header when `VERCEL=1`, taking its first valid IP.
+When none exists, requests share one stricter `unknown` bucket, log only the header shape,
+and omit Auth IP forwarding. Other forwarding headers are never trusted. Non-Vercel development uses a stable
+local bucket and omits IP forwarding. Other production deployments fail closed.
+See [Vercel request headers](https://vercel.com/docs/headers/request-headers) and
+[Supabase IP forwarding](https://supabase.com/docs/guides/auth/rate-limits).
+Hosted forwarding requires a modern secret key and explicit dashboard enablement.
+
+## Verified recovery authorization
+
+Apply `supabase/migrations/20260915100000_recovery_grants.sql` and
+`supabase/migrations/20261112100000_recovery_grant_retry.sql` before deploying the
+handlers. `auth_recovery_grants` has RLS and no direct table access for anon,
+authenticated or service_role. Only service_role can invoke the narrowly scoped
+SECURITY DEFINER RPCs (issue, consume, claim, restore and finish); each has an empty
+search_path. No profile permissions change.
+
+The `ci-recovery-grant` cookie contains 32 random bytes encoded as base64url. It is
+HttpOnly, SameSite=Lax, Secure in production, scoped to `/api/auth`, and expires in
+10 minutes. It contains no email, OTP, password or Supabase token. It is not an SSR
+student-session cookie and cannot authorize `/account` or ordinary application data.
+
+The private record stores only a credential HMAC, verified user ID, email-binding
+HMAC, creation time and expiry. No Supabase token, OTP, password or raw email is
+persisted. The email binding prevents a stale tab for another account from using
+a newer cookie. All instances share the strong AUTH_INTERNAL_SECRET.
+
+Verification immediately revokes the temporary Supabase session with local-scope
+admin sign-out before issuing a grant. Failure to revoke prevents grant issuance.
+The password endpoint atomically holds the grant: one UPDATE ... RETURNING re-keys
+its row to a value only that request can rebuild, so the credential alone no longer
+finds it, and counts the attempt in the same statement (password_attempts), so two
+tabs or a double submit never get an uncounted try. It checks expiry and email binding,
+then calls server-only admin
+updateUserById. Unless the grant goes back (below), the same request then deletes it.
+Supabase Auth's password-update transaction globally revokes that user's refresh
+sessions. This behavior is verified against local GoTrue v2.192.0; repeat the real
+revocation check against hosted Auth before rollout. No normal student session is
+created during recovery. Existing access JWTs may remain cryptographically valid,
+but CampusIntell no longer treats that alone as an active student session.
+
+OTP verification retains the existing PASSWORD_RESET_SUBMIT account/origin limits.
+Each grant permits one password change. A new password the provider itself refuses
+(weak or reused) changes nothing, so the same request puts the grant back and the
+student stays on Change password: the same credential, so the same browser only, and
+the expiry it always had (restoring never writes the row's timestamps or its count,
+and the cookie is left untouched). One code allows five refused passwords: the fifth is
+not restored, the grant is used up and the student starts again with a new code. The
+password's length is checked before the grant is held, so it never counts. Any other
+provider failure never restores the grant.
+Issuing a newer grant replaces the prior grant for that user, held or not, and starts
+its count at zero.
+Email change, resend and logout discard the cookie-backed grant. A grant that cannot
+be held, and every password-update failure other than a refused password, clears the
+cookie and requires a new code.
+
+The migration requires pg_cron and schedules expiry cleanup every minute, independent
+of recovery traffic. The cleanup function is owner-only; service_role can execute
+only issue, consume, claim, restore and finish, and cannot read the table directly.
+Expiry is checked on every consume, claim and restore even before cleanup runs.
+Enable and monitor the cron job when deploying.
+Verify the migration and active cron job in each target environment's deployment evidence;
+repository documentation is not a live record of hosted migration state.
+
+## Verification commands
+
+```sh
+node --require ./lib/auth/test-loader.cjs --test lib/auth/*.test.ts lib/auth/*.test.cjs
+supabase db reset
+supabase test db
+pnpm exec tsc --noEmit
+pnpm build
+git diff --check
+pnpm audit --prod
+```
+
+The Node loader only replaces the server-only marker for isolated unit tests;
+Next's production boundary remains enforced. No new dependencies are required.
+Local email tests require restarting the Supabase stack after template/config changes.
+Use matching local Site URLs in Supabase and the application's environment.
+NEXT_PUBLIC values are fixed at build time when present during the build; configure
+the production canonical Site URL before building, not only before starting Node.
+
+## Human deployment configuration
+
+Follow [the current deployment handoff](../../docs/transactional-email-release.md)
+for application variables, Supabase/Resend settings, DNS, Reply-To and release tests.
+SMTP credentials remain outside the application and source control. Local template/config
+changes and SQL migrations do not configure hosted SMTP or hosted email templates.
+
+Email initiation acknowledges a request, never mailbox delivery. An eligible recipient's
+delivery failure, provider exception, recipient cooldown and an ineligible/nonexistent
+recipient's no-op all receive the same neutral response. Signup and resend have the same
+property: an existing confirmed signup or an ineligible resend can skip mail transport.
+The line after Resend code is "Check your email for a new code." It is the same for
+every address and does not claim that a message was delivered.
+Recipient-independent application/provider limits still return 429; signup password
+policy still returns 400. Application configuration failures and invalid SDK success
+envelopes fail closed. Verification and recovery grants retain their separate authority.
+
+Email-initiation diagnostics record only action and a bounded outcome (failed, exception,
+cooldown, limited, policy or invalid-acknowledgment). They contain no recipient, IP,
+password, OTP, token, provider message or raw acknowledgment. Monitor these events
+alongside private Supabase Auth and Resend delivery evidence. Do not capture request
+bodies or full email content in application logging, analytics or error reporting.
+
+## Local email delivery
+
+Local Supabase captures authentication emails in its local email-testing inbox
+(Mailpit/Inbucket); it does not deliver them to real external inboxes. Open the
+local inbox URL reported by `supabase status` to read confirmation and recovery
+codes. Return to the registration/login confirmation screen to enter the code.
+If that in-memory flow was lost, start again from sign up or sign in.
+This local setup does not change hosted Supabase or production SMTP delivery.
+
+## Availability diagnostics and deadlines
+
+Auth routes carry a server-generated eight-character reference through their response
+boundary. Unavailable responses and failed page guards log only the static route, bounded
+step and error code, reference, deployment identifier and elapsed milliseconds. Error
+objects, request bodies, email addresses, IPs, cookies and credentials are never logged.
+The reference stays in the response body and `X-CampusIntell-Auth-Reference` header;
+student-facing messages never show it. Expected email outcomes remain uniform across addresses.
+
+Each outbound Auth/RPC call has a ten-second deadline, including SDK waits and response
+bodies. The browser deadline is twenty seconds. Timeout reconciliation stays under the
+cross-document lock: confirmation checks the live session; password replacement never
+infers success from sign-out and requires a fresh recovery flow when its result is unknown.
+Neither mutation is replayed automatically. Missing Web Locks support has a specific
+browser-update message and never enables competing cookie writers.
+
+Confirmed invalid credentials, including `bad_jwt`, clear only the selected Auth cookie
+namespace at the proxy/route response boundary. The selector and unrelated cookies remain;
+removing the selector could enable legacy fallback. Network and ambiguous failures retain
+cookies and remain unavailable. No assurance-level, hosted-setting or session-lifetime
+policy is changed here.

@@ -1,9 +1,13 @@
 import { Course } from '@/lib/types'
 import { buildMaterialRequestEmailUrl } from '@/lib/material-email'
+import { OFFICIAL_BANK_COURSES } from './official-bank-courses'
+import { STUDY_GUIDE_NEW_COURSES } from './study-guide-courses'
 
-export const courses: Course[] = [
+/** The repository courses the content seed was generated from (scripts/managed-content/source-manifest.cjs). */
+export const repositorySeedCourses: Course[] = [
   {
     id: '1',
+    contentKey: 'entrepreneurship-innovation',
     slug: 'entrepreneurship-innovation',
     code: 'ENT211',
     title: 'Entrepreneurship and Innovation',
@@ -16,18 +20,7 @@ export const courses: Course[] = [
     credits: 2,
     difficulty: 'Easy',
     featured: true,
-    textbooks: [
-      {
-        title: 'Entrepreneurship: Successfully Launching New Ventures',
-        author: 'Barringer & Ireland',
-        edition: '5th Edition',
-      },
-      {
-        title: 'Innovation and Entrepreneurship',
-        author: 'Drucker',
-        edition: '1st Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1-2', description: 'Meaning of Entrepreneurship & Types of Entrepreneurs' },
       { chapter: '3-4', description: 'Innovation and Opportunity Recognition' },
@@ -72,6 +65,7 @@ export const courses: Course[] = [
   },
   {
     id: '2',
+    contentKey: 'principles-business-administration',
     slug: 'principles-business-administration',
     code: 'BUA201',
     title: 'Principles of Business Administration I',
@@ -114,18 +108,7 @@ export const courses: Course[] = [
         description: 'Management is a recognized profession requiring adherence to ethical codes like NIM. Uphold the NCCG 2018 principles: Responsibility, Accountability, Transparency, and Fairness. Strive to be a Transformational or Servant Leader who guides with honesty and empathy.',
       },
     ],
-    textbooks: [
-      {
-        title: 'Principles of Business',
-        author: 'Gitman & McDaniel',
-        edition: '8th Edition',
-      },
-      {
-        title: 'Introduction to Business Administration',
-        author: 'Rue & Byars',
-        edition: '9th Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1-2', description: 'Business Functions and Organizational Structure' },
       { chapter: '3-4', description: 'Marketing Fundamentals and Segmentation' },
@@ -175,6 +158,7 @@ export const courses: Course[] = [
   },
   {
     id: '3',
+    contentKey: 'business-statistics',
     slug: 'business-statistics',
     code: 'BUA203',
     title: 'Business Statistics',
@@ -184,18 +168,7 @@ export const courses: Course[] = [
     semester: 1,
     credits: 3,
     difficulty: 'Hard',
-    textbooks: [
-      {
-        title: 'Business Statistics',
-        author: 'Groebner, Shannon & Fry',
-        edition: '9th Edition',
-      },
-      {
-        title: 'Quantitative Methods for Business',
-        author: 'Anderson, Sweeney & Williams',
-        edition: '13th Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1-2', description: 'Data Collection Methods and Types' },
       { chapter: '3-4', description: 'Graphs, Tables, and Data Visualization' },
@@ -215,6 +188,7 @@ export const courses: Course[] = [
   },
   {
     id: '4',
+    contentKey: 'leadership-governance',
     slug: 'leadership-governance',
     code: 'BUA205',
     title: 'Leadership and Governance',
@@ -229,18 +203,7 @@ export const courses: Course[] = [
       test: 20,
       exam: 70,
     },
-    textbooks: [
-      {
-        title: 'Leadership: Theory and Practice',
-        author: 'Northouse',
-        edition: '8th Edition',
-      },
-      {
-        title: 'Corporate Governance',
-        author: 'Letza, Sun & Kirkbride',
-        edition: '1st Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1-3', description: 'Leadership Theories and Models' },
       { chapter: '4-5', description: 'Leadership Styles and Effectiveness' },
@@ -285,6 +248,7 @@ export const courses: Course[] = [
   },
   {
     id: '5',
+    contentKey: 'business-mathematics',
     slug: 'business-mathematics',
     code: 'BUA210',
     title: 'Business Mathematics',
@@ -294,18 +258,7 @@ export const courses: Course[] = [
     semester: 1,
     credits: 3,
     difficulty: 'Hard',
-    textbooks: [
-      {
-        title: 'Business Mathematics',
-        author: 'Clendening & Salzman',
-        edition: '13th Edition',
-      },
-      {
-        title: 'Mathematics for Business',
-        author: 'Kaplan',
-        edition: '1st Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1-2', description: 'Algebra Fundamentals and Functions' },
       { chapter: '3-4', description: 'Linear Functions and Equations' },
@@ -325,6 +278,7 @@ export const courses: Course[] = [
   },
   {
     id: '6',
+    contentKey: 'consumer-behaviour',
     slug: 'consumer-behaviour',
     code: 'BUA221',
     title: 'Consumer Behaviour',
@@ -334,18 +288,7 @@ export const courses: Course[] = [
     semester: 1,
     credits: 2,
     difficulty: 'Medium',
-    textbooks: [
-      {
-        title: 'Consumer Behavior',
-        author: 'Solomon',
-        edition: '12th Edition',
-      },
-      {
-        title: 'Consumer Behaviour: Buying, Having, and Being',
-        author: 'Belch & Belch',
-        edition: '6th Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1-2', description: 'Consumer Decision-Making Process' },
       { chapter: '3-4', description: 'Types of Consumers and Buyer Behavior' },
@@ -390,6 +333,7 @@ export const courses: Course[] = [
   },
   {
     id: '7',
+    contentKey: 'financial-accounting-1',
     slug: 'financial-accounting-1',
     code: 'ACC201',
     title: 'Financial Accounting I',
@@ -403,18 +347,7 @@ export const courses: Course[] = [
     difficulty: 'Hard',
     featured: true,
     examCritical: true,
-    textbooks: [
-      {
-        title: 'Financial Accounting',
-        author: 'Kieso, Weygandt & Warfield',
-        edition: '18th Edition',
-      },
-      {
-        title: 'Accounting Principles',
-        author: 'Weygandt, Kimmel & Kieso',
-        edition: '14th Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1', description: 'IASB Framework for the Preparation and Presentation of Financial Statements' },
       { chapter: '2', description: 'IFRS 15 - Revenue from Contracts with Customers' },
@@ -464,6 +397,7 @@ export const courses: Course[] = [
   },
   {
     id: '9',
+    contentKey: 'use-of-english',
     slug: 'use-of-english',
     code: 'GST111',
     title: 'Communication in English',
@@ -473,13 +407,7 @@ export const courses: Course[] = [
     semester: 1,
     credits: 2,
     difficulty: 'Medium',
-    textbooks: [
-      {
-        title: 'Use of English: A Communication Skills Approach',
-        author: 'UNILAG GST Unit',
-        edition: 'Current Edition',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1', description: 'Listening Skills' },
       { chapter: '2', description: 'The Sounds of English (Phonetics)' },
@@ -498,6 +426,7 @@ export const courses: Course[] = [
   },
   {
     id: '8',
+    contentKey: 'nigerian-peoples-and-culture',
     slug: 'nigerian-peoples-and-culture',
     code: 'GST112',
     title: 'Nigerian Peoples and Culture',
@@ -532,6 +461,7 @@ export const courses: Course[] = [
   },
   {
     id: '10',
+    contentKey: 'international-organisational-behaviour',
     slug: 'international-organisational-behaviour',
     code: 'BUA222',
     title: 'International Organisational Behaviour',
@@ -545,44 +475,7 @@ export const courses: Course[] = [
     difficulty: 'Medium',
     featured: true,
     examCritical: true,
-    textbooks: [
-      {
-        title: 'Cultures and Organizations: Software of the Mind',
-        author: 'Hofstede, G., Hofstede, G. J., & Minkov, M.',
-        edition: '3rd Edition',
-      },
-      {
-        title: 'Managing Across Cultures',
-        author: 'Schneider, S. C., Barsoux, J.-L., & Stahl, G. K.',
-        edition: '4th Edition',
-      },
-      {
-        title: 'Cross-Cultural Management: Essential Concepts',
-        author: 'Thomas, D. C., & Peterson, M. F.',
-        edition: '4th Edition',
-      },
-      {
-        title: 'Culture, Leadership, and Organizations: The GLOBE Study of 62 Societies',
-        author: 'House, R. J., et al.',
-        edition: '2004',
-      },
-      {
-        title: 'The Culture Map: Breaking Through the Invisible Boundaries of Global Business',
-        author: 'Meyer, E.',
-        edition: '2014',
-      },
-      {
-        title: 'Cultural Intelligence: Individual Interactions Across Cultures',
-        author: 'Earley, P. C., & Ang, S.',
-        edition: '2003',
-      },
-      {
-        title:
-          'Selected articles from Journal of International Business Studies, Cross-Cultural & Strategic Management, International Journal of Human Resource Management, and Harvard Business Review',
-        author: 'Various',
-        edition: 'Journal Articles',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1', description: 'The Imperative for International OB — Culture, the Onion Model, Values vs Practices' },
       { chapter: '2', description: "Cultural Frameworks I — Hofstede's Dimensions, Schwartz's Values, the Lewis Model" },
@@ -623,6 +516,7 @@ export const courses: Course[] = [
   },
   {
     id: '11',
+    contentKey: 'principles-business-administration-2',
     slug: 'principles-business-administration-2',
     code: 'BUA202',
     title: 'Principles of Business Administration II',
@@ -636,34 +530,7 @@ export const courses: Course[] = [
     difficulty: 'Medium',
     featured: false,
     examCritical: false,
-    textbooks: [
-      {
-        title: 'Fundamentals of Business',
-        author: 'Skripak, S.J. & Poff, R.',
-        edition: '3rd Edition',
-      },
-      {
-        title: 'Principles of Management',
-        author: 'Bright, D., et al.',
-        edition: '2019',
-      },
-      {
-        title: 'Introduction to Business',
-        author: 'Gitman, L.J., McDaniel, C., et al.',
-        edition: '2018',
-      },
-      {
-        title: 'Fundamentals of Management',
-        author: 'Griffin, R.W.',
-        edition: '8th Edition',
-      },
-      {
-        title:
-          'Journals (as listed on course outline): UNILAG Journal of Business; British Journal of Management; Nigerian Journal of Business and Social Sciences; Nigeria Journal of Management Studies',
-        author: 'Various',
-        edition: 'Journal Articles',
-      },
-    ],
+    textbooks: [],
     topics: [
       { chapter: '1', description: 'Human Resource Management: Nature, Scope, and Importance' },
       { chapter: '2', description: 'Human Resource Planning, Recruitment, Selection, and Employee Development' },
@@ -702,6 +569,7 @@ export const courses: Course[] = [
   },
   {
     id: "12",
+    contentKey: "quantitative-analysis-management",
     slug: "quantitative-analysis-management",
     code: "BUA204",
     title: "Quantitative Analysis in Management",
@@ -712,13 +580,7 @@ export const courses: Course[] = [
     difficulty: "Hard",
     featured: true,
     examCritical: true,
-    textbooks: [
-      { title: "Quantitative Analysis for Management", author: "Render, B., Stair, R. M., Hanna, M. E., & Hale, T. S.", edition: "13th ed., Global Edition (2018)" },
-      { title: "Statistics for Management", author: "Levin, R. I., & Rubin, D. S.", edition: "8th ed. (2017)" },
-      { title: "Statistics for Business and Economics", author: "Anderson, D. R., Sweeney, D. J., & Williams, T. A.", edition: "" },
-      { title: "Operations Research: An Introduction", author: "Taha, H. A.", edition: "10th ed. (2017)" },
-      { title: "Selected articles from Journal of the Operational Research Society, Decision Sciences, International Journal of Production Economics, Harvard Business Review", author: "Various", edition: "Journal Articles" },
-    ],
+    textbooks: [],
     topics: [
       { chapter: "1", description: "Week 1: Introduction to Quantitative Analysis in Management — Definition, Features, Importance, Areas of Application, Analytical Tools" },
       { chapter: "2", description: "Week 2: Basic Mathematical Concepts for Management — Core Concepts, Revenue/Cost/Profit Formulas, Break-Even Analysis" },
@@ -862,6 +724,7 @@ export const courses: Course[] = [
   },
   {
     id: "13",
+    contentKey: "philosophy-logic-human-existence",
     slug: "philosophy-logic-human-existence",
     code: "GST212",
     title: "Philosophy, Logic and Human Existence",
@@ -872,11 +735,7 @@ export const courses: Course[] = [
     difficulty: "Medium",
     featured: false,
     examCritical: true,
-    textbooks: [
-      { title: "Introduction to Logic", author: "Copi, I. M., & Cohen, C.", edition: "" },
-      { title: "Metaphysics, Phenomenology and African Philosophy", author: "Unah, J. I.", edition: "" },
-      { title: "Knowing Philosophy", author: "Omoregbe, J. I.", edition: "" },
-    ],
+    textbooks: [],
     topics: [
       { chapter: "1", description: "Conception, Nature, Scope and Problems of Philosophy" },
       { chapter: "2", description: "A Survey of the History of Philosophy" },
@@ -915,6 +774,7 @@ export const courses: Course[] = [
   },
   {
     id: "14",
+    contentKey: "introduction-financial-management",
     slug: "introduction-financial-management",
     code: "BUA216",
     title: "Introduction to Financial Management",
@@ -925,12 +785,7 @@ export const courses: Course[] = [
     difficulty: "Hard",
     featured: false,
     examCritical: true,
-    textbooks: [
-      { title: "Problems & Solutions in Financial Management", author: "Shiro, Abass A.", edition: "" },
-      { title: "Financial Management", author: "Pandey, I. M.", edition: "" },
-      { title: "Fundamentals of Financial Management", author: "Van Horne, J. C. & Wachowicz, J. M.", edition: "" },
-      { title: "Principles of Corporate Finance", author: "Brealey, R., Myers, S. & Allen, F.", edition: "" },
-    ],
+    textbooks: [],
     topics: [
       { chapter: "1", description: "Financial Ratio Analysis" },
       { chapter: "2", description: "Mathematics of Finance" },
@@ -965,6 +820,7 @@ export const courses: Course[] = [
   },
   {
     id: "15",
+    contentKey: "bua218",
     slug: "bua218",
     code: "BUA218",
     title: "Green Management",
@@ -1020,7 +876,7 @@ export const courses: Course[] = [
       },
       {
         id: "bua218-theory",
-        title: "BUA 218 Green Management — 20 Theory Questions with Model Answers (Topics 1–3)",
+        title: "BUA 218 Green Management — 20 Theory Questions with Suggested Answers (Topics 1–3)",
         type: "past-question",
         url: buildMaterialRequestEmailUrl(
           'BUA 218 — Green Management',
@@ -1032,8 +888,16 @@ export const courses: Course[] = [
     ],
   },]
 
+/** Every shelved course: the repository's, then those created for an official bank. */
+export const courses: Course[] = [...repositorySeedCourses, ...OFFICIAL_BANK_COURSES, ...STUDY_GUIDE_NEW_COURSES]
+
 export function getCourseBySlug(slug: string): Course | undefined {
   return courses.find((course) => course.slug === slug)
+}
+
+/** Resolves a platform registry key to its repository-owned course content. */
+export function getCourseByContentKey(contentKey: string): Course | undefined {
+  return courses.find((course) => course.contentKey === contentKey)
 }
 
 export function getCoursesByLevel(level: number): Course[] {

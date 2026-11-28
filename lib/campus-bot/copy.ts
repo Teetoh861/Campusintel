@@ -1,0 +1,100 @@
+// lib/campus-bot/copy.ts — Every line a student reads in Explain, Ask Campus Bot and Quiz me on this topic (owner-approved, 16 November 2026;
+// docs/student-copy.md). Output is labelled Campus Bot. The lines for a student without Campus Bot and for a limit are
+// kept here, with the wording approved for these two features, until the Campus Bot page's own lines match them.
+import { accessCopy, formatAccessTime, formatAccessWeekday } from '@/lib/entitlements/presentation'
+
+export const CAMPUS_BOT_COPY = {
+  name: 'Campus Bot',
+
+  // Explain.
+  explain: 'Explain',
+  explaining: 'Campus Bot is explaining…',
+  fromNotes: 'From your study guide:',
+  notCovered: 'The study guide for this course doesn’t cover this question.',
+  /** A calculation course's explanation that did not pass its check: where the question is taught. */
+  checkFailed: (topic: string) => `This question is from ${topic}.`,
+  openNotes: 'Open study guide',
+  explainFailed: 'Campus Bot couldn’t explain this. Try again.',
+
+  // Ask Campus Bot: its button in a topic's Campus Bot area, then the chat.
+  ask: 'Ask a question',
+  askPlaceholder: (topic: string) => `Ask about ${topic}`,
+  send: 'Send',
+  close: 'Close',
+  answering: 'Campus Bot is answering…',
+  you: 'You',
+  outsideNotes: 'This isn’t covered in this study guide topic.',
+  // Marking an answer to Campus Bot's check question (owner's mock 8, 23 November 2026).
+  correct: 'Correct',
+  notQuite: 'Not quite',
+  quickCheck: 'Quick check',
+  tryAnother: 'Try another',
+  memoryTrick: 'Memory trick:',
+  answerPlaceholder: 'Type your answer…',
+  // With the Try again button under it, the line does not repeat it. Without the button (a reply no longer kept, a
+  // message that could not be read), the line keeps "Try again." so the student still has a next step.
+  askFailed: 'Campus Bot couldn’t answer that.',
+  askFailedNoRetry: 'Campus Bot couldn’t answer that. Try again.',
+  // The buttons under Campus Bot's newest reply and its flashcards (owner decisions B5 and B6, mock 8; approved
+  // 23 November 2026). "Quiz me on this topic" is quiz.start.
+  explainAgain: 'Explain again',
+  makeFlashcards: 'Make flashcards',
+  flashcards: {
+    heading: 'Flashcards',
+    hint: 'Tap a card to flip it.',
+    term: 'Term',
+    meaning: 'Meaning',
+    previous: 'Previous',
+    next: 'Next',
+    position: (n: number, total: number) => `${n} of ${total}`,
+    making: 'Campus Bot is making your flashcards…',
+    // With Try again under it, and without, as askFailed and askFailedNoRetry.
+    failed: 'Campus Bot couldn’t make your flashcards.',
+    failedNoRetry: 'Campus Bot couldn’t make your flashcards. Try again.',
+  },
+
+  // Quiz me on this topic: its button in a topic's Campus Bot area, the wait, then the set on its own page (owner
+  // decisions of 16 November 2026).
+  quiz: {
+    start: 'Quiz me on this topic',
+    writing: 'Campus Bot is writing your questions…',
+    /** A free pass's sets left, before any is used: the one line about the pass the quiz shows. */
+    passLeft: (left: number, total: number) =>
+      `${left} of ${total} Campus Bot ${total === 1 ? 'set' : 'sets'} left on your free pass.`,
+    failed: 'We couldn’t create your questions.',
+    /** The one label a set written from a notes topic carries (docs/student-copy.md rule 6). */
+    label: 'Made by Campus Bot from this study guide topic.',
+    fromNotes: 'From the study guide:',
+    backToTopic: 'Back to topic',
+    /** The set's heading for screen readers; the page's title already names the topic. */
+    heading: 'Quiz',
+  },
+
+  // All three.
+  tryAgain: 'Try again',
+  busyTitle: 'Campus Bot is busy.',
+  busyLine: 'Try again in a few minutes.',
+  examOpen: 'Campus Bot is available when your exam ends.',
+  noConnection: 'No connection.',
+  signedOut: 'You’ve been signed out.',
+  signIn: 'Sign in',
+  reload: 'Reload',
+
+  /** A student without Campus Bot: one line and the one place it opens. */
+  notice: {
+    subscribe: accessCopy(true).aiNotEntitled,
+    'free-pass': 'Campus Bot opens with a free pass.',
+    plan: 'Campus Bot is included with a plan.',
+  },
+
+  limits: {
+    session: { title: 'You’ve used up Campus Bot for now.',
+      line: (iso: string | null) => iso ? `It resets at ${formatAccessTime(iso)}.` : '' },
+    week: { title: 'You’ve used up Campus Bot for this week.',
+      line: (iso: string | null) => iso ? `It resets ${formatAccessWeekday(iso)} at ${formatAccessTime(iso)}.` : '' },
+    passExplain: 'You’ve used your free pass explanations.',
+    passChat: 'You’ve used your free pass messages.',
+    passQuiz: 'You’ve used your free pass Campus Bot set.',
+    undelivered: { title: 'Campus Bot limit reached.', line: 'Try again tomorrow.' },
+  },
+} as const

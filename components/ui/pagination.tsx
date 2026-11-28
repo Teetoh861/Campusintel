@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
+import { ChevronLeft, MoreHorizontal } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { ButtonProps, buttonVariants } from '@/components/ui/button'
@@ -82,11 +82,10 @@ const PaginationNext = ({
   <PaginationLink
     aria-label="Go to next page"
     size="default"
-    className={cn('gap-1 pr-2.5', className)}
+    className={className}
     {...props}
   >
     <span>Next</span>
-    <ChevronRight className="h-4 w-4" />
   </PaginationLink>
 )
 PaginationNext.displayName = 'PaginationNext'

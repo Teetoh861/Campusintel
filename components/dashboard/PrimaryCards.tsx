@@ -1,0 +1,65 @@
+// components/dashboard/PrimaryCards.tsx — Course-file navigation and the complete Practice proposition.
+import Link from 'next/link'
+import { CBrandTexture } from '@/components/student/CBrandTexture'
+import { StatusRail } from '@/components/student/StatusRail'
+import { EMPTY_COURSES_MESSAGE } from '@/components/student/course-copy'
+import { studentFocusCard, studentFocusControl } from '@/components/student/ui'
+import { isActionableStudentCourse } from '@/lib/courses/read-model'
+import { isAiPracticeAvailable } from '@/lib/ai-practice/config'
+import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
+import type { StudentCourse } from '@/lib/courses/read-model'
+import type { ReactElement } from 'react'
+
+function courseSummary(courses: ReadonlyArray<StudentCourse>): string {
+  const total = `${courses.length} ${courses.length === 1 ? 'course' : 'courses'}`
+  const ready = courses.filter(isActionableStudentCourse).length
+  return ready > 0 ? `${total} · ${ready} ready to study` : total
+}
+
+function CourseFile({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
+  const empty = courses?.length === 0
+  const body = <>
+    {/* The count when it could be read; otherwise nothing, since View my courses below still works. */}
+    {courses !== null && !empty && <span className="dashboard-file-tab">{courseSummary(courses)}</span>}
+    <div className="dashboard-file-body">
+      <CBrandTexture />
+      <div className="dashboard-file-content">
+        {empty ? <p className="dashboard-primary-copy">{EMPTY_COURSES_MESSAGE}</p> : <>
+          <h2 id="my-courses-title">{STUDENT_DESTINATIONS.myCourses.label}</h2>
+          <span className="dashboard-primary-action">View your courses</span>
+        </>}
+      </div>
+    </div>
+  </>
+  return empty
+    ? <section aria-label="My Courses" className="dashboard-course-file student-enter student-enter-1">{body}</section>
+    : <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+      className={`dashboard-course-file student-interactive-card student-enter student-enter-1 ${studentFocusCard}`}>{body}</Link>
+}
+
+/** Two primary surfaces: current semester study and current/future personal practice. */
+export function PrimaryCards({ courses }: { courses: ReadonlyArray<StudentCourse> | null }): ReactElement {
+  const aiAvailable = isAiPracticeAvailable()
+  return <section aria-label="Study and practice" className="dashboard-primary-grid">
+    <CourseFile courses={courses} />
+    <article aria-labelledby="practice-title" className="dashboard-practice student-enter student-enter-2">
+      <div className="dashboard-practice-heading">
+        <h2 id="practice-title">Practice</h2>
+        <div className="dashboard-answer-sheet" aria-hidden="true">
+          {['A', 'B', 'C', 'D'].map(letter => <span key={letter}>{letter}</span>)}
+        </div>
+      </div>
+      <section aria-labelledby="upload-practice-title" className="dashboard-upload">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="upload-practice-title">Practise from your notes</h3>
+          {!aiAvailable && <StatusRail status="unavailable">Unavailable right now</StatusRail>}
+        </div>
+        {aiAvailable && <p>Campus Bot turns your notes into practice questions.</p>}
+      </section>
+      <Link href={STUDENT_DESTINATIONS.myCourses.href} prefetch={false}
+        className={`dashboard-practice-action ${studentFocusControl}`}>
+        Choose a course
+      </Link>
+    </article>
+  </section>
+}

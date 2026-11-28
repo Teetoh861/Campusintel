@@ -37,19 +37,24 @@ export interface FormulaEntry {
 
 export interface Course {
   id: string
+  // Immutable repository identity used by the platform course registry.
+  // Unlike `slug`, this does not change when a presentation URL changes.
+  readonly contentKey: string
   slug: string
   code: string
   title: string
-  overview: string
+  // Repository courses carry an overview; courses created for an official bank have none.
+  overview?: string
   // Short, punchy one-liner for the homepage featured cards (falls back to
   // overview where unset). Distinct from the longer overview prose.
   tagline?: string
   level: number // 200, 300, 400
   semester: number // 1, 2
-  credits: number
-  difficulty: 'Easy' | 'Medium' | 'Hard'
+  // Absent for a course created for a study guide: the owner's course list gives no units for it.
+  credits?: number
+  difficulty?: 'Easy' | 'Medium' | 'Hard'
   featured?: boolean // shown in the homepage's curated set
-  examCritical?: boolean // gets the teal "Exam-critical" treatment + "Start quiz" CTA
+  examCritical?: boolean // gets the "Exam-critical" treatment; quiz CTA still requires a usable quiz
   lecturer?: string
   assessmentStructure?: {
     assignment?: number
@@ -65,11 +70,6 @@ export interface Course {
   topics: Topic[]
   examFocus: string[]
   resources: Resource[]
-}
-
-export interface Bookmark {
-  courseId: string
-  savedAt: string
 }
 
 export interface QuizQuestion {
