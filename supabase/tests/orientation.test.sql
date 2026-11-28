@@ -1,0 +1,21 @@
+-- Static grant/schema checks run with the repository's complete SQL suite. Runtime races have an opt-in Node suite.
+begin;
+select plan(16);
+select has_table('private','orientation_events','events are private');
+select has_table('private','orientation_answers','answers are private');
+select has_function('public','orientation_poll',array['uuid'],'one player poll entry point');
+select ok(not has_table_privilege('authenticated','private.orientation_answers','SELECT'),'players have no direct answer access');
+select ok(not has_function_privilege('anon','public.orientation_poll(uuid)','EXECUTE'),'anon cannot poll');
+select ok(not has_function_privilege('anon','public.orientation_join(text,text,text)','EXECUTE'),'anon cannot join');
+select ok(private.orientation_is_open('2026-12-07 10:00:14.9+00','2026-12-07 10:00:00+00','2026-12-07 10:00:15+00'),'14.9 seconds is inside');
+select ok(not private.orientation_is_open('2026-12-07 10:00:15+00','2026-12-07 10:00:00+00','2026-12-07 10:00:15+00'),'exact close is outside');
+select has_table('private','orientation_staff','event staff are private');
+select ok(not has_function_privilege('anon','public.orientation_staff_events()','EXECUTE'),'anon cannot list staff events');
+select ok(not has_function_privilege('anon','public.orientation_staff_claim(uuid,text,boolean)','EXECUTE'),'anon cannot check or collect');
+select ok(private.orientation_valid_prizes('["Book voucher","Notebook"]'::jsonb),'named prizes are accepted');
+select ok(not private.orientation_valid_prizes('[""]'::jsonb),'empty prizes are refused');
+select has_function('private','orientation_ties',array['uuid'],'prize-affecting ties are planned privately');
+select col_type_is('private','orientation_draws','groups','jsonb','a draw records every affected group and its order');
+select ok(not has_function_privilege('authenticated','private.orientation_ties(uuid)','EXECUTE'),'players cannot call the private tie planner');
+select * from finish();
+rollback;
