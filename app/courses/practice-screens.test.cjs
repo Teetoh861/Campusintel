@@ -173,7 +173,7 @@ test('Exam mode starts from the server brief and the timer rule, with one button
   assert.equal(count(html, /<h1\b/g), 1)
   assert.match(html, /<h1[^>]*>Exam mode<\/h1>/)
   assert.doesNotMatch(html, /student-page-band-lede|CBT practice|One timed attempt|This attempt/, 'the title names the mode; nothing sits under it')
-  assert.match(text(html), /50 questions from a bank of 200 · 60 min Once you start, the timer keeps running, even if you leave or lose connection\./)
+  assert.match(text(html), /50 questions from a bank of 200 · 60 min The timer keeps running, even if your connection drops\./)
   assert.doesNotMatch(html, /fresh set|can’t be resumed|ends the attempt|new set of questions|new order each time|Answering|Finishing|Move freely/)
   // One button starts the exam: no tick box, and nothing to confirm first.
   assert.doesNotMatch(html, /role="checkbox"|ready to start|Confirm you/)
@@ -243,13 +243,17 @@ test('the attempt shows one question with native answers, one sr-only h1, a real
   assert.match(last, />Selected</)
   assert.match(html, /<button[^>]*aria-haspopup="dialog"[^>]*>Exit<\/button>/)
   assert.doesNotMatch(html, /Leave practice/)
-  // Without a fresh reading of the server's clock there is no time to show and no answer can change.
-  const checking = render({ timeLeft: null, canAnswer: false, saveLine: { text: 'Checking the time left…', retry: false } })
-  assert.match(checking, /role="timer" aria-label="Checking the time left"/)
-  assert.match(checking, />––:––</)
-  assert.equal(count(checking, /type="radio"[^>]*disabled=""/g), 4)
-  assert.match(checking, /role="status"[^>]*>Checking the time left…/)
+  // The exam marks itself open from the first paint, so the stylesheet hides the site's header and footer at once.
+  assert.match(html, /class="student-practice-bar" data-exam-open=""/)
+  // J5: the time left always shows, never a placeholder; answers wait only for a trustworthy reading.
+  const waiting = render({ canAnswer: false, saveLine: null })
+  assert.match(waiting, /role="timer" aria-label="Time left 42 minutes 18 seconds"/)
+  assert.doesNotMatch(waiting, /––:––|Checking the time left/)
+  assert.equal(count(waiting, /type="radio"[^>]*disabled=""/g), 4)
   assert.equal(count(html, /type="radio"[^>]*disabled=""/g), 0)
+  // While the exam is being handed in, Exit has nothing to ask.
+  assert.match(render({ canExit: false }), /<button[^>]*disabled=""[^>]*>Exit<\/button>/)
+  assert.doesNotMatch(html, /<button[^>]*disabled=""[^>]*>Exit<\/button>/)
   const failed = render({ saveLine: { text: 'We couldn’t save your answers. Keep this page open.', retry: true } })
   assert.match(failed, /Keep this page open\. <button[^>]*>Try again<\/button>/)
 }))
@@ -459,19 +463,37 @@ test('reports send the exact item, revision and saved attempt to the existing ba
 
 test('confirmations carry the locked copy and truthful counts; the safe action is the cancel', async () => screenFixture(async f => {
   const { AssessmentConfirmation } = require(QUIZ + 'AssessmentConfirmation.tsx')
-  const { PRACTICE_COPY, exitBodyFor } = require(QUIZ + 'practice-presentation.ts')
+  const { EndExamDialog } = require('../../components/student/EndExamDialog.tsx')
+  const { PRACTICE_COPY } = require(QUIZ + 'practice-presentation.ts')
   const strings = element => element.filter(node => typeof node.props?.children === 'string').map(node => node.props.children)
-  const exit = body => f.all(f.mount(AssessmentConfirmation, { kind: 'exit', body, open: true, onOpenChange() {}, onConfirm() {},
-    onRestoreFocus() {} }).render())
-  const saved = exit(exitBodyFor('saved', 3))
-  assert.ok(strings(saved).includes('Exit exam?'))
-  assert.ok(strings(saved).includes('Your answers are saved and the timer keeps running. Come back to this page before time runs out to continue.'))
-  assert.equal(saved.find(node => node.type?.displayName === 'AlertDialogCancel').props.children, 'Stay')
-  assert.equal(saved.find(node => node.type?.displayName === 'AlertDialogAction').props.children, 'Exit')
-  // "Saved" only once the server confirmed every answer; otherwise the answers are still saving.
-  for (const state of ['saving', 'unsaved', 'failed']) assert.equal(exitBodyFor(state, 3), PRACTICE_COPY.exitSaving)
-  assert.match(PRACTICE_COPY.exitSaving, /^Some answers are still saving\. The timer keeps running/)
-  assert.equal(exitBodyFor('saved', 0), PRACTICE_COPY.exitNothing)
+  // J1: leaving asks "End exam?" in the owner's words; Keep going is the safe choice, so it is the cancel (focused first).
+  const ended = [], kept = []
+  const end = f.all(f.mount(EndExamDialog, { open: true, onKeepGoing: () => kept.push(1), onEnd: () => ended.push(1) }).render())
+  assert.ok(strings(end).includes('End exam?'))
+  assert.ok(strings(end).includes('Your answers will be submitted and marked. You can’t change them after this.'))
+  const cancel = end.find(node => node.type?.displayName === 'AlertDialogCancel')
+  const action = end.find(node => node.type?.displayName === 'AlertDialogAction')
+  assert.deepEqual([action.props.children, cancel.props.children], ['End and see results', 'Keep going'])
+  // The dialog's Cancel starts from an outline button, whose hover text is dark: Keep going keeps white text on navy.
+  const { buttonVariants } = require('../../components/ui/button.tsx')
+  const keepGoing = require('tailwind-merge').twMerge(buttonVariants({ variant: 'outline' }), 'mt-2 sm:mt-0', cancel.props.className)
+  assert.match(keepGoing, /(^| )hover:text-student-primary-text( |$)/)
+  assert.doesNotMatch(keepGoing, /hover:text-accent-foreground/)
+  const click = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true } }
+  action.props.onClick(click)
+  assert.equal(click.defaultPrevented, true, 'End keeps the dialog up until the hand-in is done')
+  end.find(node => node.type?.displayName === 'AlertDialog').props.onOpenChange(false)
+  assert.deepEqual([ended.length, kept.length], [1, 1], 'End hands in; any other close is Keep going')
+  // While the hand-in is on its way both buttons wait, and nothing closes it: a second tap lands on Submitting….
+  const waiting = f.all(f.mount(EndExamDialog, { open: true, submitting: true, onKeepGoing: () => kept.push(1),
+    onEnd: () => ended.push(1) }).render())
+  const busy = waiting.find(node => node.type?.displayName === 'AlertDialogAction')
+  assert.deepEqual([busy.props.children, busy.props.disabled], ['Submitting…', true])
+  assert.equal(waiting.find(node => node.type?.displayName === 'AlertDialogCancel').props.disabled, true)
+  busy.props.onClick({ preventDefault() {} })
+  waiting.find(node => node.type?.displayName === 'AlertDialog').props.onOpenChange(false)
+  assert.deepEqual([ended.length, kept.length], [1, 1], 'neither a second End nor a close while it is on its way')
+  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Exit exam\?|Come back to this page|Leave anyway|Stay\b/)
   assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /can’t be resumed|won’t be submitted|Leave practice/)
   const submit = f.all(f.mount(AssessmentConfirmation, { kind: 'submit', open: true, answered: 39, unanswered: 11, flagged: 2,
     onOpenChange() {}, onConfirm() {}, onRestoreFocus() {} }).render())
@@ -500,6 +522,10 @@ test('the practice stylesheet hides global chrome only in the active attempt and
   const css = fs.readFileSync(path.join(__dirname, '../../styles/student-app.css'), 'utf8')
   const practice = css.slice(css.indexOf('/* Practice / CBT'))
   assert.match(practice, /body\[data-screen='active'\] > nav,\s*body\[data-screen='active'\] > footer \{ display: none; \}/)
+  // A timed exam hides them from the first paint, before the page can run anything (J1).
+  assert.match(practice, /body:has\(\[data-exam-open\]\) > nav,\s*body:has\(\[data-exam-open\]\) > footer \{ display: none; \}/)
+  // A result that has just replaced the exam ignores taps for a moment (components/student/tap-guard.ts).
+  assert.match(practice, /\[data-tap-guard\] \{ pointer-events: none; \}/)
   assert.doesNotMatch(practice, /data-screen='(?:results|review|intro)'/)
   assert.match(practice, /\.student-practice-navscroll \{[^}]*max-height: min\(calc\(100dvh - 400px\), 360px\)[^}]*overflow-y: auto/)
   assert.deepEqual([...new Set([...practice.matchAll(/@media \(min-width: (\d+)px\)/g)].map(match => match[1]))].sort(), ['1200', '768'])
@@ -729,6 +755,25 @@ test('results hands entry focus to its own heading once, after a submit and afte
     assert.match(f.html(React.createElement(ResultsScreen, screen.props)), /<h1 class="student-page-band-title" tabindex="-1">Exam result<\/h1>/,
       'the heading is a programmatic focus target, not a tab stop')
   }
+}))
+
+test('a result entered in place of the exam ignores taps for a moment, over every action; one rendered with the page never does', async () => screenFixture(async f => {
+  const { ResultsScreen } = require(QUIZ + 'ResultsScreen.tsx')
+  // Read from the source: requiring tap-guard.ts here would cache it bound to React's own hooks, outside the fixture.
+  const guardMs = Number(/export const TAP_GUARD_MS = (\d+)/.exec(fs.readFileSync(path.join(__dirname, '../../components/student/tap-guard.ts'), 'utf8'))[1])
+  const questions = choose(Array.from({ length: 10 }, (_, index) => question(index)), { 0: 1 })
+  const props = { ...identity, attempt: gradedAttempt(questions), canStartNew: true, unsentAtDeadline: false, starting: false,
+    error: null, onReview() {}, onRetake() {}, onRedo() {} }
+  const results = tree => f.all(tree).find(node => node.props?.className === 'student-practice-results')
+  const screen = f.mount(ResultsScreen, props)
+  const first = results(screen.render())
+  assert.equal(first.props['data-tap-guard'], '', 'mounted after the exam: a second tap presses nothing at first')
+  const labels = f.all(first).filter(node => node.type === 'button' || node.type?.displayName === 'Link' || node.props?.href)
+    .map(node => [node.props.children].flat().join(''))
+  assert.deepEqual(labels, ['Review answers', 'New questions', 'Same questions', 'Back to course'], 'every action is under the guard')
+  await new Promise(resolve => setTimeout(resolve, guardMs + 50))
+  assert.equal(results(screen.render()).props['data-tap-guard'], undefined, 'then the result takes taps')
+  assert.doesNotMatch(f.html(React.createElement(ResultsScreen, props)), /data-tap-guard/, 'a result rendered with the page takes taps at once')
 }))
 
 test('a report keeps its exact review item mounted and open through every page-size crossing until the dialog closes', async () => screenFixture(async f => {

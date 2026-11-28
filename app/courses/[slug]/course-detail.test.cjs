@@ -435,7 +435,7 @@ test('owner content rule: a free pass offers only what the locked course publish
   assert.match(text(empty.html), /Study materials are not available\./)
   // A CBT exam already opened on this course stays reachable, whatever the course publishes now.
   f.state.plan = passRead([{ kind: 'cbt', content_key: 'central-key', submitted: false }])
-  assert.deepEqual((await offer({ notes: false, cbtPractice: false, theory: false })).offers, ['opened: Continue your CBT exam'])
+  assert.deepEqual((await offer({ notes: false, cbtPractice: false, theory: false })).offers, ['opened: Resume your exam'])
   // A preview used on another course is not mentioned on a course that does not offer that kind.
   f.state.plan = passRead([{ kind: 'cbt', content_key: 'another-key', submitted: true }])
   assert.deepEqual((await offer({ notes: true, cbtPractice: false, theory: false })).offers, ['available: Choose a study guide topic'])

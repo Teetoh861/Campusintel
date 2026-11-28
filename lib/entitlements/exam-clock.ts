@@ -12,12 +12,19 @@
 // The same exchange also bounds the deadline from the other side: it cannot be later than if the server had read its
 // clock as its answer arrived. An exam is handed in at time up only once that has passed (untilPassed), so the server
 // closes it as timed out; handed in at the early cutoff, it could still be open there and be taken as submitted.
+// A reading the page already holds can seed the clock (seed): the server's clock and deadline that came with the exam,
+// with when that request left and when its answer had arrived on the monotonic clock. It is taken exactly like an
+// exchange (the whole round trip charged as elapsed), so answers can change from the first render, and the first
+// exchange still goes out at start and replaces it.
 export type ClockReading = {
   /** The server's clock when it answered, in epoch milliseconds. */
   serverNow: number
   /** The exam deadline on the server's clock, in epoch milliseconds. */
   deadline: number
 }
+
+/** A reading taken outside the clock, with the request's departure and the answer's arrival on the monotonic clock. */
+export type ClockSeed = { reading: ClockReading; sentAt: number; receivedAt: number }
 
 export type ClockState = 'unsynced' | 'synced'
 
@@ -32,6 +39,8 @@ export type ExamClockOptions = {
   cancel(handle: unknown): void
   /** The state or the reading changed. */
   onChange(state: ClockState): void
+  /** The reading the page came with, used until the first exchange lands. */
+  seed?: ClockSeed | null
 }
 
 export const EXAM_CLOCK = {
@@ -52,6 +61,33 @@ export function syncRetryMs(attempt: number): number {
   return Math.min(EXAM_CLOCK.retryMaxMs, EXAM_CLOCK.retryBaseMs * 2 ** Math.max(0, attempt - 1))
 }
 
+/** The parts of this document's navigation timing a seed needs (PerformanceNavigationTiming), in monotonic ms. */
+export type DocumentTiming = { requestStart: number; responseEnd: number }
+
+/**
+ * A seed from the server reading this document was rendered with. The server read its clock after the document's
+ * request left (requestStart) and before the answer carrying it had arrived: by responseEnd, or by `now` while the
+ * response is still streaming. Null without usable timing; the clock then waits for its first exchange.
+ */
+export function documentClockSeed(reading: ClockReading, timing: DocumentTiming | null, now: number): ClockSeed | null {
+  if (timing === null || !Number.isFinite(timing.requestStart) || timing.requestStart < 0) return null
+  const receivedAt = timing.responseEnd > timing.requestStart ? timing.responseEnd : now
+  return receivedAt < timing.requestStart ? null : { reading, sentAt: timing.requestStart, receivedAt }
+}
+
+/**
+ * This document's navigation timing, read in the browser; null when it is missing, or when the wall and monotonic
+ * clocks have drifted apart since the navigation began (the device may have slept), so nothing stale seeds the clock.
+ */
+export function browserDocumentTiming(): DocumentTiming | null {
+  try {
+    const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    if (entry === undefined || !Number.isFinite(performance.timeOrigin)) return null
+    if (Math.abs(Date.now() - performance.now() - performance.timeOrigin) > EXAM_CLOCK.maxDriftMs) return null
+    return { requestStart: entry.requestStart, responseEnd: entry.responseEnd }
+  } catch { return null }
+}
+
 export class ExamClock {
   /** The deadline on the monotonic clock, from the last trusted exchange; null without one. */
   private deadlineAt: number | null = null
@@ -67,7 +103,10 @@ export class ExamClock {
   private stopped = false
   private timer: unknown = null
 
-  constructor(private readonly options: ExamClockOptions) {}
+  constructor(private readonly options: ExamClockOptions) {
+    const seed = options.seed ?? null
+    if (seed !== null) this.accept(seed.reading, seed.sentAt, seed.receivedAt)
+  }
 
   state(): ClockState {
     return this.deadlineAt === null ? 'unsynced' : 'synced'
@@ -144,12 +183,7 @@ export class ExamClock {
       void this.exchange()
       return
     }
-    const roundTrip = receivedAt - sentAt
-    if (reading !== null && roundTrip >= 0 && roundTrip <= EXAM_CLOCK.maxRoundTripMs) {
-      // As if the server read its clock when the request left: the whole round trip counts as elapsed.
-      this.deadlineAt = sentAt + (reading.deadline - reading.serverNow)
-      this.roundTrip = roundTrip
-      this.drift = this.options.wall() - this.options.monotonic()
+    if (reading !== null && this.accept(reading, sentAt, receivedAt)) {
       this.attempts = 0
       this.options.onChange('synced')
       if (this.wanted) { this.wanted = false; this.resync() }
@@ -160,6 +194,19 @@ export class ExamClock {
     if (this.wanted) { this.wanted = false; this.resync(); return }
     this.clearTimer()
     this.timer = this.options.schedule(() => { this.timer = null; void this.exchange() }, syncRetryMs(this.attempts))
+  }
+
+  /** Take a reading whose round trip says something useful about the time left; false when it does not. */
+  private accept(reading: ClockReading, sentAt: number, receivedAt: number): boolean {
+    const roundTrip = receivedAt - sentAt
+    if (!(roundTrip >= 0 && roundTrip <= EXAM_CLOCK.maxRoundTripMs) || !Number.isFinite(reading.deadline - reading.serverNow)) {
+      return false
+    }
+    // As if the server read its clock when the request left: the whole round trip counts as elapsed.
+    this.deadlineAt = sentAt + (reading.deadline - reading.serverNow)
+    this.roundTrip = roundTrip
+    this.drift = this.options.wall() - this.options.monotonic()
+    return true
   }
 
   private clearTimer(): void {

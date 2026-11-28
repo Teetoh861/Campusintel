@@ -20,7 +20,8 @@ export const PRACTICE_COPY = {
   starting: 'Starting…',
   startExam: 'Start exam',
   submitExam: 'Submit exam',
-  timerRule: 'Once you start, the timer keeps running, even if you leave or lose connection.',
+  // The owner's line: leaving through Exit or the back button ends the exam, so only a dropped connection is named.
+  timerRule: 'The timer keeps running, even if your connection drops.',
   // Start and resume problems: the title says what happened, and the notice's one button is the way on.
   noConnectionTitle: 'No connection.',
   noConnectionBody: '',
@@ -37,12 +38,7 @@ export const PRACTICE_COPY = {
   // The number of questions or the time changed between the brief and the start: the brief shows the new ones.
   changedTitle: 'The exam has changed.',
   changedBody: 'Check the questions and time, then start.',
-  // Exit never ends the exam: the timer is the server's and keeps running.
-  exitTitle: 'Exit exam?',
-  exitUnsafe: 'Some answers aren’t saved yet. If you leave now, they’ll be lost.',
-  exitSaved: 'Your answers are saved and the timer keeps running. Come back to this page before time runs out to continue.',
-  exitNothing: 'The timer keeps running. Come back to this page before time runs out to continue.',
-  exitSaving: 'Some answers are still saving. The timer keeps running, so come back before time runs out.',
+  // Leaving an exam ends it: Exit and the back button ask "End exam?" (components/student/EndExamDialog.tsx).
   submitTitle: 'Submit exam?',
   submitBody: 'You won’t be able to change your answers.',
   // A submission or a save that did not go through. Each line sits beside its Try again button, which finishes the
@@ -50,8 +46,11 @@ export const PRACTICE_COPY = {
   submitFailed: 'We couldn’t submit your answers. Keep this page open.',
   saveFailed: 'We couldn’t save your answers. Keep this page open.',
   submitting: 'Submitting…',
+  // Only a closed browser or a dropped connection leaves an exam open; wherever one is offered, it is this.
   resumeTitle: 'Exam in progress',
-  resumeAction: 'Continue exam',
+  resumeAction: 'Resume your exam',
+  // While answers wait for the connection; they stay on this page and go as soon as they can.
+  notSaved: 'Not saved yet.',
   timeUp: 'Time is up. Getting your result…',
   timeUpOffline: 'Time is up. We’ll show your result as soon as you’re back online.',
   // The hand-in at time up was not answered after every automatic try, or was refused: never "Getting your result…" for good.
@@ -70,9 +69,6 @@ export const PRACTICE_COPY = {
   practiceGone: 'This practice is no longer available.',
   // Open in more tabs than an exam takes changes from: this tab stops saving, and the others carry on.
   otherTab: 'This exam is open in another tab. Continue there.',
-  // Practice by topic waits while an exam is open in the course, so no answer is marked during it.
-  examOpenTitle: 'Finish your exam first.',
-  resumeExam: 'Resume exam',
 } as const
 
 /** A start or resume problem; `retry` offers Try again, which repeats the same request; `action` links onward. */
@@ -202,19 +198,12 @@ export function saveLineFor(state: {
   // this page, so the one thing to do is keep it open. Try again sends the submission again.
   if (state.submitFailing) return { text: PRACTICE_COPY.submitFailed, retry: true }
   if (state.save === 'failed') return { text: PRACTICE_COPY.saveFailed, retry: true }
-  if (!state.clockSynced) {
-    return { text: state.clockFailures > 0 ? 'Reconnecting… Answers can’t be changed until the connection is back.'
-      : 'Checking the time left…', retry: false }
+  // The time left shows from the first render; only an exchange with the server that keeps failing is mentioned.
+  if (!state.clockSynced && state.clockFailures > 0) {
+    return { text: 'Reconnecting… Answers can’t be changed until the connection is back.', retry: false }
   }
   if (state.save === 'saving') return { text: 'Saving…', retry: false }
-  if (state.save === 'unsaved') return { text: 'Not saved yet. We’ll keep trying.', retry: false }
+  if (state.save === 'unsaved') return { text: PRACTICE_COPY.notSaved, retry: false }
   if (state.save === 'saved' && state.answered > 0) return { text: 'All answers saved', retry: false }
   return null
-}
-
-/** The Exit dialog's promise: "saved" only when the server confirmed every answer this tab gave. */
-export function exitBodyFor(save: 'saved' | 'saving' | 'unsaved' | 'failed' | 'closed' | null, answered: number, answersSafe = true): string {
-  if (!answersSafe) return `${PRACTICE_COPY.exitUnsafe} ${PRACTICE_COPY.exitNothing}`
-  if (save === 'saved' || save === null) return answered > 0 ? PRACTICE_COPY.exitSaved : PRACTICE_COPY.exitNothing
-  return PRACTICE_COPY.exitSaving
 }

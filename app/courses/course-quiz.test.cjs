@@ -233,7 +233,7 @@ test('practice by topic: a bare visit goes to the course\'s topic list; a topic 
   assert.match(html, /Included with a plan/, 'a locked course starts no topic')
 }))
 
-test('switching topics: another topic starts (closing the open run); the same topic reopens it; Exam mode opens its brief; an open exam blocks practice', async () => fixture(validQuiz, async f => {
+test('switching topics: another topic starts (closing the open run); the same topic reopens it; Exam mode opens its brief; an open exam is offered instead of a topic', async () => fixture(validQuiz, async f => {
   const OPEN = '55555555-5555-4555-8555-555555555555'
   const openInstant = { status: 'ready', now: '2026-10-24T10:00:00Z', attempt: { status: 'in_progress', id: OPEN,
     courseId: '40000000-0000-4000-8000-000000000007', mode: 'instant', topic: 'Bookkeeping & Errors', intent: 'new',
@@ -258,10 +258,18 @@ test('switching topics: another topic starts (closing the open run); the same to
   f.publishedState.locked = false
   f.publishedState.practice.state = { status: 'open', now: '2026-10-24T10:00:00Z', attempt: { id: ATTEMPT, mode: 'exam',
     deadlineAt: '2026-10-24T10:18:30Z', questionCount: 50, answered: 12, score: null, bankSize: 150 } }
-  const html = renderToStaticMarkup(await f.quizRoute(withTopic('Bookkeeping & Errors')))
-  assert.match(html, /Finish your exam first\./)
-  assert.match(html, new RegExp(`href="${quizHref}\\?attempt=${ATTEMPT}"[^>]*>Resume exam<`))
-  assert.doesNotMatch(html, /QuizClient/, 'no practice starts while the exam is open')
+  // J4: practice in this course waits for its open exam, so a topic offers that exam as every entry does (the resume
+  // card: the exam, its time left and Resume your exam), never "Finish your exam first" and never the topic.
+  const offer = { kind: 'resume', attemptId: ATTEMPT, answered: 12, total: 50, minutesLeft: 18 }
+  for (const visit of [withTopic('Bookkeeping & Errors'), params, exam()]) {
+    const route = await f.quizRoute(visit)
+    assert.deepEqual(route.props.initial, offer)
+    assert.doesNotMatch(renderToStaticMarkup(route), /Finish your exam first/)
+  }
+  // An exam started may always finish (D7): offered the same way when nothing new may start.
+  f.publishedState.locked = true
+  assert.deepEqual((await f.quizRoute(withTopic('Bookkeeping & Errors'))).props.initial, offer)
+  f.publishedState.locked = false
 }))
 
 test('the open attempt comes first: resume, whatever access is now (D7)', async () => fixture(validQuiz, async f => {

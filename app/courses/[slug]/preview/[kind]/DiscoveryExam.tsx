@@ -5,18 +5,26 @@
 // Whether a tap may still change an answer is decided by lib/entitlements/exam-clock.ts: a fresh exchange with the
 // server on mount (and again whenever the page comes back into view), with the whole round trip charged as elapsed
 // and the time since measured on the monotonic clock, so the cutoff here is never later than the real deadline and
-// the device's wall clock is never the authority. Until that exchange lands, answers cannot change. The clock is read
-// at the moment of the tap, not from the once-a-second countdown, and a refused tap changes nothing on screen.
+// the device's wall clock is never the authority. A page rendered on the server seeds that clock with its own reading,
+// timed by its navigation, so the time left shows and answers can change from the first render; otherwise answers wait
+// for the first exchange. The clock is read at the moment of the tap, not from the once-a-second countdown, and a
+// refused tap changes nothing on screen.
 // Answers are saved as the student goes through lib/entitlements/exam-autosave.ts: only the questions this tab
 // changed, over the revision it last received, so another tab's answers are never overwritten; the database answers
-// with the sheet that stands and this tab shows it. With time left, a submission is sent at once and carries the same
-// pending changes (no wait for a save in flight), and the database grades the sheet it holds once they are laid over
-// it; at time up every hand-in, automatic or tapped, waits for the server's deadline. While a submission is in flight
-// the answer controls are inert, so the screen cannot drift from what is being graded.
-// "Saved" is shown only once the server confirmed this tab's latest change.
-import { useCallback, useEffect, useRef, useState } from 'react'
+// with the sheet that stands and this tab shows it. What is not saved yet stays on this device and is retried for as
+// long as the exam is open, at once when the connection comes back. With time left, a submission is sent at once and
+// carries the same pending changes (no wait for a save in flight), and the database grades the sheet it holds once they
+// are laid over it; at time up every hand-in, automatic or tapped, waits for the server's deadline. Once the student
+// hands the exam in, the answer controls are inert, so the screen cannot drift from what is being graded.
+// Leaving ends the exam: Exit and the back button ask "End exam?", the same as a practice exam, and while the exam is on
+// screen the site's header and footer are hidden. "Saved" is shown only once the server confirmed this tab's latest
+// change.
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { z } from 'zod'
 import { btnGhost, btnNavy } from '@/components/chrome/ui'
+import { EndExamDialog } from '@/components/student/EndExamDialog'
+import { useExamBackGuard } from '@/components/student/exam-back-guard'
+import { tapGuardProps, useTapGuardTimeout } from '@/components/student/tap-guard'
 import { studentAction, studentFocusDark } from '@/components/student/ui'
 import Link from 'next/link'
 import { Lock } from 'lucide-react'
@@ -26,7 +34,7 @@ import { STUDENT_DESTINATIONS } from '@/lib/product/student-navigation'
 import { postDiscoveryCommand } from '@/lib/entitlements/client'
 import { sampleAnswers } from '@/lib/entitlements/discovery-contract'
 import { ExamAutosave } from '@/lib/entitlements/exam-autosave'
-import { ExamClock } from '@/lib/entitlements/exam-clock'
+import { ExamClock, browserDocumentTiming, documentClockSeed } from '@/lib/entitlements/exam-clock'
 import { browserTabOptions, claimExamTabOnce } from '@/lib/entitlements/exam-tab'
 import type { SampleAnswers, SampleQuestion, SampleResult, SavedSheet, SheetDelta } from '@/lib/entitlements/discovery-contract'
 import type { AutosaveSnapshot, SaveOutcome, UnsentSheet } from '@/lib/entitlements/exam-autosave'
@@ -36,10 +44,12 @@ import type { ReactElement } from 'react'
 
 const optionLetter = (index: number) => String.fromCharCode(65 + index)
 const TICK_MS = 1000
-// When time is up, the marked result is fetched again if the network drops, inside the server's replay window.
+// When time is up, the marked result is fetched again if the network drops, inside the server's replay window; a
+// hand-in the student asked for with time left is asked again after the same wait.
 const RETRY_MS = 10_000
 const MAX_AUTO_RETRIES = 10
 const LOW_TIME_MS = 5 * 60_000
+const noSubscription = () => () => {}
 
 const REFUSAL: Record<string, string> = {
   'expired': 'Your free pass has ended, so this exam’s result can no longer be shown.',
@@ -64,7 +74,6 @@ function refusalLine(status: string, from: ExamLine['from']): ExamLine {
   return { text: REFUSAL[status] ?? RETRY, from, action }
 }
 const SUBMITTING = 'Submitting…'
-const CHECKING_CLOCK = 'Checking the time left…'
 const RECONNECTING = 'Reconnecting… Answers can’t be changed until the connection is back.'
 
 function clock(ms: number): string {
@@ -97,29 +106,30 @@ function store(key: string, sheet: UnsentSheet): void {
 }
 
 /** What the student is told about their sheet right now. */
-function saveLine(save: AutosaveSnapshot | null, timeUp: boolean): { text: string; retry: boolean } {
-  if (save === null) return { text: '', retry: false }
+function saveLine(save: AutosaveSnapshot | null, timeUp: boolean): string {
+  if (save === null) return ''
   if (timeUp || save.state === 'closed') {
-    return { text: save.revision === 0 ? 'No answers were chosen before time ran out.'
+    return save.revision === 0 ? 'No answers were chosen before time ran out.'
       : save.savedRevision >= save.revision ? 'Your answers were saved before time ran out.'
-        : 'Your last change may not have been saved before time ran out.', retry: false }
+        : 'Your last change may not have been saved before time ran out.'
   }
   switch (save.state) {
-    case 'saved': return { text: save.savedRevision === 0 ? '' : 'All answers saved.', retry: false }
-    case 'saving': return { text: 'Saving…', retry: false }
-    case 'unsaved': return { text: save.attempts > 0 ? 'Not saved yet. Retrying…' : 'Not saved yet.', retry: false }
-    case 'failed': return save.refusal !== null
-      ? { text: REFUSAL[save.refusal] ?? 'Your answers can’t be saved any more. Submit to see what was marked.', retry: false }
-      : { text: 'We couldn’t save your answers. Check your connection.', retry: true }
+    case 'saved': return save.savedRevision === 0 ? '' : 'All answers saved.'
+    case 'saving': return 'Saving…'
+    // Retried until it is saved, and at once when the connection comes back.
+    case 'unsaved': return 'Not saved yet.'
+    case 'failed': return REFUSAL[save.refusal ?? ''] ?? 'Your answers can’t be saved any more. Submit to see what was marked.'
   }
 }
 
-export function DiscoveryExam({ continuityToken, courseSlug, questions, deadlineAt, serverNow, savedSheet, initialResult,
-  plansOnSale = false }: {
+export function DiscoveryExam({ continuityToken, courseSlug, courseHref, questions, deadlineAt, serverNow, savedSheet,
+  initialResult, plansOnSale = false }: {
   continuityToken: string
   /** The copy switch (plans_on_sale): Subscribe beside the score once plans are on sale. */
   plansOnSale?: boolean
   courseSlug: string
+  /** The course page: Back to course under the result. */
+  courseHref: string
   questions: ReadonlyArray<SampleQuestion>
   deadlineAt: string
   serverNow: string
@@ -128,11 +138,18 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   initialResult: SampleResult | null
 }): ReactElement {
   const storageKey = `discovery-exam:${courseSlug}:${deadlineAt}`
-  // Display only until the clock's own exchange lands: the page's reading of the server clock, as it was rendered.
+  // The countdown from the first render: the page's reading of the server clock, as it was rendered.
   const initialRemaining = Date.parse(deadlineAt) - Date.parse(serverNow)
+  // Rendered on the server and hydrated: the page's own navigation timed that reading. Decided on the first render.
+  const hydrating = useSyncExternalStore(noSubscription, () => false, () => true)
+  const fromDocument = useRef(hydrating)
   const [answers, setAnswers] = useState<SampleAnswers>(() => validAnswers(savedSheet?.answers ?? {}, questions))
   const [index, setIndex] = useState(0)
   const [result, setResult] = useState<SampleResult | null>(initialResult)
+  // A result that replaces the exam under the student's finger ignores taps for a moment (tap-guard.ts); one shown
+  // with the page (initialResult) never does.
+  const [tapGuard, setTapGuard] = useState(false)
+  useTapGuardTimeout(tapGuard, setTapGuard)
   const [remaining, setRemaining] = useState(initialRemaining)
   const [clockState, setClockState] = useState<ClockState>('unsynced')
   const [clockFailures, setClockFailures] = useState(0)
@@ -140,22 +157,28 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   const [busy, setBusy] = useState(false)
   // Time is up here and the hand-in is waiting for the server's deadline (the button says Submitting… meanwhile).
   const [awaitingDeadline, setAwaitingDeadline] = useState(false)
+  // The student handed the exam in (End and see results, or Submit): the answers stay as they are from here on, and
+  // a hand-in that did not go through is asked again.
+  const [ending, setEnding] = useState(false)
+  const [submitFailing, setSubmitFailing] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [endOpen, setEndOpen] = useState(false)
   const [message, setMessage] = useState<ExamLine | null>(null)
   const answersRef = useRef(answers)
   const autosave = useRef<ExamAutosave | null>(null)
   const examClock = useRef<ExamClock | null>(null)
-  // The page clock when the exam mounted, for the display-only countdown before the first exchange lands.
+  // The page clock when the exam mounted, for the countdown until the clock has a trustworthy reading.
   const mounted = useRef<number | null>(null)
   const sending = useRef(false)
   const autoRetries = useRef(0)
+  const exitButton = useRef<HTMLButtonElement>(null)
   const timeUp = remaining <= 0
-  // Answers can change only with a trustworthy clock reading, before the cutoff, and while no submission is in
-  // flight: once Submit is tapped the sheet on screen is the sheet being graded.
-  const canAnswer = clockState === 'synced' && !timeUp && !busy && save?.refusal !== 'too-many-tabs'
+  // Answers can change only with a trustworthy clock reading, before the cutoff, and until the student hands the exam
+  // in: from then on the sheet on screen is the sheet being graded.
+  const canAnswer = clockState === 'synced' && !timeUp && !busy && !ending && save?.refusal !== 'too-many-tabs'
   const answered = Object.keys(answers).length
 
-  // The trustworthy reading when there is one; otherwise the display-only estimate from the rendered values.
+  // The trustworthy reading when there is one; otherwise the countdown from the rendered values.
   const remainingMs = useCallback((): number => {
     const trusted = examClock.current?.remaining() ?? null
     if (trusted !== null) return trusted
@@ -166,6 +189,13 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   // the exam's tab capacity) and never shared with a duplicated tab (lib/entitlements/exam-tab.ts).
   const [identity, setIdentity] = useState<ExamTab | null>(null)
   const tab = identity?.tab ?? null
+  const handingIn = ending || busy || awaitingDeadline || timeUp
+
+  // The back button asks "End exam?" too, while the exam is on screen and not already being handed in.
+  const onBack = useCallback(() => setEndOpen(true), [])
+  const releaseBack = useExamBackGuard(storageKey, result === null, handingIn || identity === null, onBack)
+  useEffect(() => { if (result !== null) releaseBack() }, [result, releaseBack])
+
   useEffect(() => {
     if (initialResult !== null) return
     // Held for the life of the page (claimExamTabOnce), so a remount reuses it and a duplicated tab is still answered.
@@ -174,10 +204,20 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     return () => { live = false }
   }, [initialResult, storageKey])
 
-  // The clock: a fresh exchange on mount, again whenever the page comes back into view, and retried after a failure.
+  // The countdown runs from the first render, before the clock has its own reading.
+  useEffect(() => {
+    if (initialResult !== null) return
+    mounted.current = performance.now()
+    const timer = window.setInterval(() => setRemaining(remainingMs()), TICK_MS)
+    return () => window.clearInterval(timer)
+  }, [initialResult, remainingMs])
+
+  // The clock: seeded with the page's reading when it was rendered on the server, a fresh exchange on mount, again
+  // whenever the page comes back into view, and retried after a failure (at once when the connection comes back).
   useEffect(() => {
     if (initialResult !== null || tab === null) return
-    mounted.current = performance.now()
+    const reading = { serverNow: Date.parse(serverNow), deadline: Date.parse(deadlineAt) }
+    const seed = fromDocument.current ? documentClockSeed(reading, browserDocumentTiming(), performance.now()) : null
     const sync = async (): Promise<ClockReading | null> => {
       const outcome = await postDiscoveryCommand({ action: 'sync-exam', courseSlug, tab }, continuityToken)
       if (outcome.status === 'saved' || outcome.status === 'stale' || outcome.status === 'too-many-tabs') {
@@ -188,14 +228,14 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
         return { serverNow: Date.parse(outcome.now), deadline: Date.parse(outcome.deadlineAt) }
       }
       if (outcome.status === 'ready') {
-        if (outcome.preview.kind === 'cbt' && outcome.preview.result !== null) setResult(outcome.preview.result)
+        if (outcome.preview.kind === 'cbt' && outcome.preview.result !== null) { setResult(outcome.preview.result); setTapGuard(true) }
         return null
       }
       if (outcome.status !== 'unavailable') setMessage(refusalLine(outcome.status, 'sync'))
       return null
     }
     const controller = new ExamClock({
-      monotonic: () => performance.now(), wall: () => Date.now(), sync,
+      monotonic: () => performance.now(), wall: () => Date.now(), sync, seed,
       schedule: (run, ms) => window.setTimeout(run, ms), cancel: handle => window.clearTimeout(handle as number),
       onChange: state => {
         setClockState(state)
@@ -204,18 +244,21 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       },
     })
     examClock.current = controller
+    setClockState(controller.state())
+    setRemaining(remainingMs())
     controller.start()
-    const timer = window.setInterval(() => setRemaining(remainingMs()), TICK_MS)
     // Back into view after being hidden: the device may have slept, so the reading is read again before any tap.
     const visible = () => { if (document.visibilityState === 'visible') controller.invalidate() }
+    const online = () => { if (controller.state() === 'unsynced') controller.resync() }
     document.addEventListener('visibilitychange', visible)
+    window.addEventListener('online', online)
     return () => {
       controller.stop()
       examClock.current = null
-      window.clearInterval(timer)
       document.removeEventListener('visibilitychange', visible)
+      window.removeEventListener('online', online)
     }
-  }, [initialResult, courseSlug, tab, continuityToken, questions, remainingMs])
+  }, [initialResult, courseSlug, tab, continuityToken, questions, remainingMs, serverNow, deadlineAt])
 
   // Saves: numbered, only the questions this tab changed, retried and reported. The sheet starts from the database's
   // copy with any changes this tab kept before a reload laid over it; those are saved at once.
@@ -237,7 +280,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       if (outcome.status === 'unavailable') return { kind: 'failed' }
       if (outcome.status === 'ready') {
         // The deadline passed and the database marked the sheet it had: show that result now.
-        if (outcome.preview.kind === 'cbt' && outcome.preview.result !== null) setResult(outcome.preview.result)
+        if (outcome.preview.kind === 'cbt' && outcome.preview.result !== null) { setResult(outcome.preview.result); setTapGuard(true) }
         return { kind: 'refused', status: 'closed' }
       }
       return { kind: 'refused', status: outcome.status }
@@ -259,15 +302,19 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     const sheet = controller.unsent().answers
     answersRef.current = sheet
     setAnswers(sheet)
-    // Leaving the page or switching apps sends whatever is unsaved (with keepalive, so it completes).
+    // Leaving the page or switching apps sends whatever is unsaved (with keepalive, so it completes); the connection
+    // coming back sends it at once.
     const flush = () => { void controller.flush() }
     const hidden = () => { if (document.visibilityState === 'hidden') void controller.flush() }
+    const online = () => { controller.retry() }
     window.addEventListener('pagehide', flush)
+    window.addEventListener('online', online)
     document.addEventListener('visibilitychange', hidden)
     return () => {
       controller.stop()
       autosave.current = null
       window.removeEventListener('pagehide', flush)
+      window.removeEventListener('online', online)
       document.removeEventListener('visibilitychange', hidden)
     }
   }, [initialResult, savedSheet, storageKey, questions, courseSlug, continuityToken, identity])
@@ -276,6 +323,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     if (sending.current || tab === null) return false
     sending.current = true
     setBusy(true)
+    setSubmitFailing(false)
     setMessage(null)
     // Sent at once, carrying this tab's pending changes under the same contract as a save: nothing waits for a save
     // in flight. The database lays the changes still in time over the sheet it holds, under its lock, and grades that.
@@ -288,13 +336,16 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       setBusy(false)
       setConfirming(false)
       setResult(outcome.preview.result)
+      setTapGuard(true)
       try { window.sessionStorage.removeItem(storageKey) } catch { /* Nothing to clear. */ }
       return true
     }
     sending.current = false
     setBusy(false)
     setConfirming(false)
+    setEndOpen(false)
     if (outcome.status === 'unavailable') {
+      setSubmitFailing(true)
       setMessage({ text: SUBMIT_RETRY, from: 'submit' })
       return false
     }
@@ -303,17 +354,32 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   }, [continuityToken, courseSlug, storageKey, tab])
 
   /**
-   * A hand-in the student asks for: Submit, or See my result. With time left on this device (or no reading to wait
-   * on) it goes at once. Once this device's zero has passed it goes with the time-up hand-in below, which waits for
-   * the server's deadline: sent before it, the exam is still open there and its result would not say that time ran
-   * out. The clock is read at the tap, not from the countdown shown a moment ago, so a tap just after zero waits too;
-   * the countdown is brought up to date, which starts that hand-in.
+   * A hand-in the student asks for: End and see results, Submit, or See your result. From here on the answers stay as
+   * they are. With time left on this device (or no reading to wait on) it goes at once. Once this device's zero has
+   * passed it goes with the time-up hand-in below, which waits for the server's deadline: sent before it, the exam is
+   * still open there and its result would not say that time ran out. The clock is read at the tap, not from the
+   * countdown shown a moment ago, so a tap just after zero waits too; the countdown is brought up to date, which starts
+   * that hand-in.
    */
   const handIn = useCallback((): void => {
+    setEnding(true)
     const left = examClock.current?.remaining() ?? null
     if (left === null || left > 0 || Math.max(0, examClock.current?.untilPassed() ?? 0) === 0) { void submit(); return }
     setRemaining(remainingMs())
   }, [submit, remainingMs])
+
+  // A hand-in the student asked for that did not reach the server, with time left: asked again after a wait, and at
+  // once when the connection comes back. Time running out hands it over to the time-up hand-in below.
+  useEffect(() => {
+    if (!ending || !submitFailing || timeUp || result !== null) return
+    const again = () => { void submit() }
+    const timer = window.setTimeout(again, RETRY_MS)
+    window.addEventListener('online', again)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('online', again)
+    }
+  }, [ending, submitFailing, timeUp, result, submit])
 
   // At this device's zero the answers lock and anything unsaved is sent. The exam is handed in once the deadline has
   // passed on the server too: this device's zero can come up to one clock exchange early, and an exam handed in then
@@ -348,8 +414,8 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
   }, [timeUp, result, submit])
 
   function choose(itemId: string, option: number): void {
-    // Inert while a submission is in flight: the sheet being graded is the one on screen.
-    if (sending.current) return
+    // Inert once the exam is handed in: the sheet being graded is the one on screen.
+    if (sending.current || ending) return
     const next = { ...answersRef.current, [itemId]: option }
     // The controller reads the clock now, not the countdown shown a moment ago: a tap after the cutoff, or without a
     // trustworthy reading, is refused before anything on screen changes, and the countdown is brought up to date.
@@ -359,27 +425,34 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
     setAnswers(next)
   }
 
-  if (result !== null) return <ExamReview result={result} plansOnSale={plansOnSale} />
-  const handingIn = busy || awaitingDeadline
+  if (result !== null) return <ExamReview result={result} plansOnSale={plansOnSale} courseHref={courseHref} tapGuard={tapGuard} />
+  const handInPending = busy || awaitingDeadline
   const question = questions[index]!
   const unanswered = questions.length - answered
-  const saving = saveLine(save, timeUp)
   const clockLine = busy && !timeUp ? SUBMITTING
-    : canAnswer || timeUp || save?.refusal === 'too-many-tabs' ? null : clockFailures > 1 ? RECONNECTING : CHECKING_CLOCK
-  return <div className="grid gap-4">
-    <div className="student-surface grid gap-1" role="timer" aria-live="off"
-      data-urgency={remaining <= LOW_TIME_MS ? 'low' : undefined} data-clock-state={clockState}>
-      <p className="student-detail-kicker">Time left</p>
-      <p className={`text-2xl font-bold tabular-nums ${remaining <= LOW_TIME_MS ? 'text-student-error'
-        : 'text-student-text-primary'}`}>{timeUp ? 'Time is up' : clock(remaining)}</p>
+    : canAnswer || timeUp || ending || save?.refusal === 'too-many-tabs' || clockFailures <= 1 ? null : RECONNECTING
+  const restoreToExit = (event: Event) => {
+    if (exitButton.current?.isConnected && !exitButton.current.disabled) { event.preventDefault(); exitButton.current.focus() }
+  }
+  // data-exam-open: the site's header and footer stay hidden from the first paint (student-app.css).
+  return <div className="grid gap-4" data-exam-open="">
+    <div className="student-surface grid gap-1" data-urgency={remaining <= LOW_TIME_MS ? 'low' : undefined}
+      data-clock-state={clockState}>
+      <div className="flex items-start justify-between gap-3">
+        <div role="timer" aria-live="off">
+          <p className="student-detail-kicker">Time left</p>
+          <p className={`text-2xl font-bold tabular-nums ${remaining <= LOW_TIME_MS ? 'text-student-error'
+            : 'text-student-text-primary'}`}>{timeUp ? 'Time is up' : clock(remaining)}</p>
+        </div>
+        <button ref={exitButton} type="button" aria-haspopup="dialog" disabled={handingIn || identity === null}
+          onClick={() => setEndOpen(true)} className={studentAction(btnGhost, 'bg-student-surface')}>Exit</button>
+      </div>
       <p className="student-meta">{answered} of {questions.length} answered</p>
       <p className="student-meta" role="status" data-save-state={save?.state ?? 'idle'}>
-        {clockLine ?? saving.text}
+        {clockLine ?? saveLine(save, timeUp)}
       </p>
-      {saving.retry && <div><button type="button" onClick={() => autosave.current?.retry()}
-        className={studentAction(btnGhost, 'bg-student-surface')}>Save now</button></div>}
     </div>
-    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer} aria-busy={handingIn || undefined}>
+    <fieldset className="student-surface" key={question.item_id} disabled={!canAnswer} aria-busy={handInPending || undefined}>
       <legend className="student-detail-kicker">Question {index + 1} of {questions.length}</legend>
       <p className="student-practice-prompt mt-2">{question.prompt}</p>
       <div className="student-practice-options mt-3">
@@ -401,11 +474,12 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
         className={studentAction(btnGhost, 'bg-student-surface')}>Next</button>
     </div>
     <nav aria-label="Questions" className="student-surface">
-      <ol className="grid grid-cols-8 gap-1.5 tablet:grid-cols-10">
+      {/* As many columns as fit with every number at least 44 px wide, and each 44 px tall: a touch target at any width. */}
+      <ol className="grid grid-cols-[repeat(auto-fill,minmax(44px,1fr))] gap-1.5">
         {questions.map((item, position) => <li key={item.item_id}>
           <button type="button" onClick={() => setIndex(position)} aria-current={position === index ? 'step' : undefined}
             aria-label={`Question ${position + 1}${answers[item.item_id] === undefined ? ', unanswered' : ', answered'}`}
-            className={`h-9 w-full rounded-md border text-sm font-semibold tabular-nums student-focus-control ${
+            className={`h-11 w-full rounded-md border text-sm font-semibold tabular-nums student-focus-control ${
               position === index ? 'border-student-primary text-student-primary'
                 : answers[item.item_id] !== undefined ? 'border-transparent bg-student-brand-surface text-student-text-primary'
                   : 'border-student-border text-student-text-muted'}`}>{position + 1}</button>
@@ -413,7 +487,7 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
       </ol>
     </nav>
     <div className="grid gap-2">
-      {confirming && !timeUp
+      {confirming && !timeUp && !ending
         ? <>
           <p className="text-sm text-student-text-primary" role="status">
             {unanswered === 1 ? '1 question is' : `${unanswered} questions are`} unanswered. You can only submit once.
@@ -421,24 +495,28 @@ export function DiscoveryExam({ continuityToken, courseSlug, questions, deadline
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setConfirming(false)} className={studentAction(btnGhost, 'bg-student-surface')}>
               Keep going</button>
-            <button type="button" disabled={handingIn} onClick={handIn}
-              className={studentAction(btnNavy, studentFocusDark)}>{handingIn ? SUBMITTING : 'Submit'}</button>
+            <button type="button" disabled={handInPending} onClick={handIn}
+              className={studentAction(btnNavy, studentFocusDark)}>{handInPending ? SUBMITTING : 'Submit'}</button>
           </div>
         </>
-        : <button type="button" disabled={handingIn}
-          onClick={() => { if (unanswered > 0 && !timeUp) setConfirming(true); else handIn() }}
+        : <button type="button" disabled={handInPending}
+          onClick={() => { if (unanswered > 0 && !timeUp && !ending) setConfirming(true); else handIn() }}
           className={studentAction(btnNavy, studentFocusDark, 'w-full tablet:w-auto')}>
-          {handingIn ? SUBMITTING : timeUp ? 'See your result' : 'Submit exam'}
+          {handInPending ? SUBMITTING : timeUp ? 'See your result' : 'Submit exam'}
         </button>}
       {message !== null && <p role="status" className="text-sm text-student-text-secondary">{message.text}
         {message.action ? <> <a href={message.action.href} className={studentAction(btnGhost, 'border-transparent px-2')}>
           {message.action.label}</a></> : null}</p>}
     </div>
+    {/* It stays up, saying Submitting…, until the hand-in is done: the result replaces it, or submit closes it. */}
+    <EndExamDialog open={endOpen} submitting={handInPending} onKeepGoing={() => setEndOpen(false)} onEnd={handIn}
+      onRestoreFocus={restoreToExit} />
   </div>
 }
 
-function ExamReview({ result, plansOnSale }: { result: SampleResult; plansOnSale: boolean }): ReactElement {
-  return <div className="grid gap-4">
+function ExamReview({ result, plansOnSale, courseHref, tapGuard = false }: { result: SampleResult; plansOnSale: boolean
+  courseHref: string; tapGuard?: boolean }): ReactElement {
+  return <div className="grid gap-4" {...tapGuardProps(tapGuard)}>
     <section className="student-surface" aria-label="Exam result">
       <p className="text-xs font-bold uppercase tracking-[0.08em] text-student-text-secondary">Your score</p>
       <p className="mt-2 text-2xl font-bold tabular-nums text-student-text-primary">{result.score} of {result.total} correct</p>
@@ -452,5 +530,8 @@ function ExamReview({ result, plansOnSale }: { result: SampleResult; plansOnSale
       {plansOnSale && <Link href={STUDENT_DESTINATIONS.access.href} prefetch={false}
         className={studentAction(btnNavy, studentFocusDark, 'justify-self-start')}>Subscribe</Link>}
     </section>
+    <Link href={courseHref} prefetch={false} className={studentAction(btnGhost, 'bg-student-surface', 'justify-self-start')}>
+      Back to course
+    </Link>
   </div>
 }

@@ -194,26 +194,26 @@ for (const [status, error] of [
   assert.equal(getSafeReturnPath(`/courses/${COURSE}/quiz?mode=exam`), `/courses/${COURSE}/quiz?mode=exam`, 'sign-in returns there')
 }))
 
-test('a topic while an exam is open: "Finish your exam first.", with Resume exam and no Try again', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
-  f.answers.push({ status: 'exam-open', now: NOW, attempt: openAttempt(ATTEMPT) })
+test('J4: a topic while an exam is open in the course offers that exam instead, as everywhere: its time left and Resume your exam', async () => flow({ kind: 'topic', topic: 'Capital Budgeting' }, async f => {
+  // The database refuses the topic and names the open exam: practice in the course waits for it.
+  const exam = { ...openAttempt(ATTEMPT), questionCount: 50, saved: { revision: 3, answers: { 'q-1': 1 } } }
+  f.answers.push({ status: 'exam-open', now: NOW, attempt: exam })
   f.render()
   await f.settle()
-  const starting = f.render()
+  const offer = f.render()
   assert.equal(f.requests.length, 1, 'refused once, not re-checked')
-  assert.deepEqual(starting.props.error, { title: 'Finish your exam first.', body: '',
-    action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } })
-}))
-
-test('the exam-open notice links to the exam and offers no Try again', async () => withTsx(async () => {
-  const { InstantStarting } = require('./InstantStarting.tsx')
-  const html = renderToStaticMarkup(React.createElement(InstantStarting, { ...identity, topicsHref: `/courses/${COURSE}/practice`,
-    topic: 'Capital Budgeting', busy: false, onRetry() {}, error: { title: 'Finish your exam first.', body: '',
-      action: { label: 'Resume exam', href: `/courses/${COURSE}/quiz?attempt=${ATTEMPT}` } } }))
-  assert.match(text(html), /Capital Budgeting .*Finish your exam first\. Resume exam All topics$/)
-  assert.doesNotMatch(html, /Practice opens again/, 'the title and Resume exam say it')
-  assert.match(html, new RegExp(`href="/courses/${COURSE}/quiz\\?attempt=${ATTEMPT}"`))
-  assert.match(html, new RegExp(`href="/courses/${COURSE}/practice"[^>]*>All topics<`))
-  assert.doesNotMatch(html, /Try again/)
+  assert.equal(offer.type.name, 'ResumeScreen', 'the resume card, never "Finish your exam first"')
+  assert.deepEqual([offer.props.answered, offer.props.total, offer.props.minutesLeft, offer.props.error], [1, 50, 30, null])
+  // Resume your exam opens that exam on its own deadline.
+  f.answers.push({ status: 'ready', now: NOW, attempt: exam })
+  offer.props.onContinue()
+  await f.settle()
+  assert.deepEqual(f.requests.at(-1), { action: 'attempt', attemptId: ATTEMPT })
+  const active = f.render()
+  assert.equal(active.type.name, 'ActiveAttempt')
+  assert.deepEqual([active.props.attempt.deadlineAt, active.props.serverNow], [DEADLINE, NOW])
+  const { PRACTICE_COPY } = require('./practice-presentation.ts')
+  assert.doesNotMatch(Object.values(PRACTICE_COPY).join(' '), /Finish your exam first|Resume exam\b/)
 }))
 
 test('the end of a topic: Practise again draws this topic again, Next topic starts the next one, none after the last', async () => {
@@ -256,7 +256,12 @@ test('resume with no connection: "No connection." with Try again; Try again cont
     resume.props.onRetry()
     await f.settle()
     assert.deepEqual(f.requests.map(request => [request.action, request.attemptId]), [['attempt', ATTEMPT], ['attempt', ATTEMPT]])
-    assert.equal(f.render().type.name, 'ActiveAttempt')
+    const active = f.render()
+    assert.equal(active.type.name, 'ActiveAttempt')
+    // J3: after a closed browser, Resume your exam opens the exam on the server's own deadline and clock (the time kept
+    // running while the student was away), with that reading's timing so answers open at once.
+    assert.deepEqual([active.props.attempt.deadlineAt, active.props.serverNow], [DEADLINE, NOW])
+    assert.ok(active.props.received.receivedAt >= active.props.received.sentAt, 'timed by the request that read it')
   }))
 
 test('resume signed out: "You’ve been signed out." with Sign in back to this attempt, and no Try again', async () => flow(
@@ -285,7 +290,9 @@ test('each problem is its title on screen, with Try again or its one link only w
     // The last notice on the screen is the problem (the first is the attempt in progress).
     assert.match(html, /<h1[^>]*>Exam mode<\/h1>/)
     assert.match(html, /<h2 class="student-notice-title">Exam in progress<\/h2>/, 'a label, so no full stop')
-    assert.match(html, />Continue exam</)
+    // J3: an open exam is offered as "Resume your exam" wherever it is offered.
+    assert.match(html, />Resume your exam</)
+    assert.doesNotMatch(html, /Continue exam/)
     const notice = text(html.match(/<div class="student-notice"[\s\S]*?<\/div><\/div>/g).at(-1))
     assert.ok(notice.startsWith(error.title), notice)
     assert.doesNotMatch(html, /student-notice-text">Reconnect|Sign in again to continue/, 'no instruction under the title')
@@ -299,14 +306,15 @@ test('the briefing says once that the timer keeps running after Start', async ()
   const html = text(renderToStaticMarkup(React.createElement(IntroScreen, { ...identity, courseHref: `/courses/${COURSE}`,
     brief: { questionCount: 50, durationSeconds: 1800 }, starting: false,
     error: null, lastResultHref: null, onStart() {}, onRetry() {} })))
-  const line = 'Once you start, the timer keeps running, even if you leave or lose connection.'
+  // The owner's line: leaving through Exit or the back button ends the exam, so only a dropped connection is named.
+  const line = 'The timer keeps running, even if your connection drops.'
   assert.equal(html.split(line).length - 1, 1)
-  assert.doesNotMatch(html, /keeps running even if you leave this page/)
+  assert.doesNotMatch(html, /even if you leave|keeps running even if you leave this page/)
 }))
 
 test('practice copy is plain: curly apostrophes, save lines from PRACTICE_COPY, none of the retired phrases', () => {
   const { PRACTICE_COPY, saveLineFor } = require('./practice-presentation.ts')
-  assert.equal(PRACTICE_COPY.exitUnsafe, 'Some answers aren’t saved yet. If you leave now, they’ll be lost.')
+  assert.equal(PRACTICE_COPY.notSaved, 'Not saved yet.')
   for (const value of Object.values(PRACTICE_COPY)) assert.doesNotMatch(value, /'/, value)
   const base = { timeUp: false, refusal: null, clockSynced: true, clockFailures: 0, answered: 1 }
   assert.equal(saveLineFor({ ...base, submitFailing: true, save: 'failed' }).text, PRACTICE_COPY.submitFailed)

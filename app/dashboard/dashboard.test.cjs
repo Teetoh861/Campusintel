@@ -434,12 +434,12 @@ test('sprint plan 23 Oct item 2: an open attempt comes first, with the time it h
   const next = continueCard(html)
   assert.match(next, /data-continue="resume"/)
   assert.match(next, /href="\/courses\/course-1\/quiz"/)
-  assert.match(next, />Resume exam: COURSE1, 12 min left</, 'an open exam is never called practice')
+  assert.match(next, />Resume your exam: COURSE1, 12 min left</, 'an open exam is never called practice')
   assert.equal((html.match(/class="dashboard-continue /g) || []).length, 1, 'one next step only')
   assert.doesNotMatch(courseCard(html), FIGURES)
   for (const [minutes, text] of [[60, '1 hr left'], [95, '1 hr 35 min left'], [0.2, '1 min left']]) {
     f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: minutesFromNow(minutes) } }
-    assert.match(continueCard(await f.html()), new RegExp(`>Resume exam: COURSE1, ${text}<`))
+    assert.match(continueCard(await f.html()), new RegExp(`>Resume your exam: COURSE1, ${text}<`))
   }
   f.state.progress = { ...f.state.progress, open: { ...f.state.progress.open, deadlineAt: NOW } }
   assert.match(continueCard(await f.html()), />Continue practising COURSE0</, 'an attempt whose time is up is never offered')
@@ -511,7 +511,7 @@ test('owner content rule: Continue never points at a course that no longer offer
   const resume = continueCard(await f.html())
   assert.match(resume, /data-continue="resume"/)
   assert.match(resume, /href="\/courses\/course-0\/quiz"/)
-  assert.match(resume, />Resume exam: COURSE0, 20 min left</)
+  assert.match(resume, />Resume your exam: COURSE0, 20 min left</)
 }))
 
 test('sprint plan 23 Oct item 2: an unavailable or signed-out practice read shows the day-one list, never guessed figures', async () => fixture(async f => {
@@ -521,7 +521,7 @@ test('sprint plan 23 Oct item 2: an unavailable or signed-out practice read show
     f.state.progress = { status }
     const html = await f.html()
     assert.match(courseCard(html), />1 course · 1 ready to study</)
-    assert.doesNotMatch(html, /Resume practice|Resume exam|Continue practising|practised|Last score/)
+    assert.doesNotMatch(html, /Resume practice|Resume your exam|Resume exam|Continue practising|practised|Last score/)
   }
 }))
 
@@ -542,7 +542,7 @@ test('owner decision D5 (25 Nov 2026): an open attempt off the student\'s list i
   f.state.bySlug = () => ({ status: 'ok', learning: null, practice: null, course: { ...mappedCourse(9, 'ready'),
     code: 'LAG-BUA210', title: 'Business Mathematics', repository: { ...shelved(9), repositoryCourseId: 'repository-lag-bua210' } } })
   const resume = continueCard(await f.html())
-  assert.match(resume, />Resume exam: LAG-BUA210, 20 min left</)
+  assert.match(resume, />Resume your exam: LAG-BUA210, 20 min left</)
   assert.match(resume, />Business Mathematics</)
   assert.match(resume, /href="\/courses\/business-mathematics\/quiz"/)
   assert.deepEqual(f.state.slugReads, [['business-mathematics', { readRepositoryOnly: false }]])
@@ -556,7 +556,7 @@ test('owner decision D5 (25 Nov 2026): an open attempt off the student\'s list i
   // A course on the student's list is named by its own row, with no further read.
   f.state.slugReads = []
   f.state.progress = { ...f.state.progress, open: { courseId: 'repository-0', contentKey: 'course-0', deadlineAt: minutesFromNow(20) } }
-  assert.match(continueCard(await f.html()), />Resume exam: COURSE0, 20 min left</)
+  assert.match(continueCard(await f.html()), />Resume your exam: COURSE0, 20 min left</)
   assert.deepEqual(f.state.slugReads, [])
 }))
 

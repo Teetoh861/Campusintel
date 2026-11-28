@@ -2,12 +2,15 @@
 // mode's start, the resume card, the attempt itself (ActiveAttempt for an exam, InstantAttempt for instant feedback),
 // the result and the review. The server owns every attempt; this file only moves between screens.
 // A start names a fresh attempt id kept on this device until the server answers, so a lost response is retried with
-// the same id and never starts a second attempt. Every attempt has a reloadable URL (?attempt=<id>).
+// the same id and never starts a second attempt. Every attempt has a reloadable URL (?attempt=<id>). Practice in a course
+// waits for its open exam: a topic start the database refuses meanwhile offers that exam instead, as the page does
+// (the resume card: the exam, its time left and Resume your exam).
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { postPracticeCommand } from '@/lib/practice/client'
 import { ActiveAttempt } from './ActiveAttempt'
+import type { ReadingTiming } from './ActiveAttempt'
 import { InstantAttempt } from './InstantAttempt'
 import { InstantResult } from './InstantResult'
 import { IntroScreen } from './IntroScreen'
@@ -24,7 +27,7 @@ import { AUTH_PATHS } from '@/lib/auth/constants'
 import { PRACTICE_COPY, attemptHref, examBriefHref, signInToAttemptHref } from './practice-presentation'
 import { clearPendingStart, markResultSeen, readPendingExamStart, readPendingStart, resultSeen, settlePendingStart,
   writePendingStart } from './practice-storage'
-import type { GradedAttempt, GradedExam, OpenAttempt, PracticeResult } from '@/lib/practice/contract'
+import type { GradedAttempt, GradedExam, OpenAttempt, PracticeAttempt, PracticeResult } from '@/lib/practice/contract'
 import type { ReturnFocus } from './focus-return'
 import type { PendingStart } from './practice-storage'
 import type { PracticeProblem } from './practice-presentation'
@@ -53,11 +56,14 @@ const EXAM_PROBLEMS: Record<string, Problem> = {
   'locked': { title: 'You can’t start a new exam right now.', body: 'Your plan no longer includes this course. Your results are unaffected.' },
 }
 
+/** An open exam offered to resume: how far it got and the whole minutes left on the server's deadline. */
+type ResumeOffer = { attemptId: string; answered: number; total: number; minutesLeft: number }
+
 export type QuizInitial =
   | { kind: 'intro' }
   // Instant feedback on this topic, started as soon as the page opens (from the Practise by topic page).
   | { kind: 'topic'; topic: string }
-  | { kind: 'resume'; attemptId: string; answered: number; total: number; minutesLeft: number }
+  | ({ kind: 'resume' } & ResumeOffer)
   | { kind: 'open'; attempt: OpenAttempt; now: string }
   // `latest`: the course's most recent graded attempt, shown in place of the briefing only if this device has not
   // shown it yet (time ran out while away, or a submission's response was lost).
@@ -89,14 +95,29 @@ export type View =
   // 'intro' is the exam's brief; 'starting' a topic's instant feedback on its way.
   | { screen: 'intro' }
   | { screen: 'starting'; topic: string }
-  | { screen: 'resume' }
-  | { screen: 'active'; attempt: OpenAttempt; now: string }
+  // The course's open exam: from the page, or from a topic start the database refused while it runs.
+  | ({ screen: 'resume' } & ResumeOffer)
+  // `received`: when the request that brought the attempt left and its answer arrived, so the exam's clock can use
+  // the server's reading at once. Absent for an attempt the page itself rendered.
+  | { screen: 'active'; attempt: OpenAttempt; now: string; received?: ReadingTiming }
   | { screen: 'results'; attempt: GradedAttempt; unsent: boolean }
   // Only an exam has a review; a topic's answers were explained as they were picked.
   | { screen: 'review'; attempt: GradedExam; unsent: boolean }
 
+const MS_PER_MINUTE = 60_000
+
+/** The open exam a refused topic start names, offered as the page offers it (whole minutes left, never below zero). */
+function resumeOfferFor(attempt: PracticeAttempt, now: string): ResumeOffer {
+  const left = Date.parse(attempt.deadlineAt) - Date.parse(now)
+  return { attemptId: attempt.id, total: attempt.questionCount, minutesLeft: Math.max(0, Math.floor(left / MS_PER_MINUTE)),
+    answered: attempt.status === 'in_progress' ? Object.keys(attempt.saved.answers).length : 0 }
+}
+
 function initialView(initial: QuizInitial): View {
-  if (initial.kind === 'resume') return { screen: 'resume' }
+  if (initial.kind === 'resume') {
+    const { attemptId, answered, total, minutesLeft } = initial
+    return { screen: 'resume', attemptId, answered, total, minutesLeft }
+  }
   if (initial.kind === 'open') return { screen: 'active', attempt: initial.attempt, now: initial.now }
   if (initial.kind === 'graded') return { screen: 'results', attempt: initial.attempt, unsent: false }
   if (initial.kind === 'topic') return { screen: 'starting', topic: initial.topic }
@@ -137,11 +158,11 @@ export function QuizClient(props: Props): ReactElement | null {
     return () => { document.body.removeAttribute('data-screen') }
   }, [view.screen])
 
-  const show = useCallback((outcome: Extract<PracticeResult, { attempt: unknown }>) => {
+  const show = useCallback((outcome: Extract<PracticeResult, { attempt: unknown }>, received?: ReadingTiming) => {
     const { attempt } = outcome
     window.history.replaceState(null, '', `${window.location.pathname}?attempt=${attempt.id}`)
     setProblem(null)
-    if (attempt.status === 'in_progress') setView({ screen: 'active', attempt, now: outcome.now })
+    if (attempt.status === 'in_progress') setView({ screen: 'active', attempt, now: outcome.now, received })
     else setView({ screen: 'results', attempt, unsent: false })
   }, [])
 
@@ -171,11 +192,14 @@ export function QuizClient(props: Props): ReactElement | null {
     setProblem(null)
     writePendingStart(courseSlug, pending)
     let outcome: PracticeResult = { status: 'unavailable' }
+    let received: ReadingTiming | undefined
     for (let tries = 0; tries < START_TRIES; tries += 1) {
+      const sentAt = performance.now()
       outcome = await postPracticeCommand('mode' in pending
         ? { action: 'start-instant', courseSlug, attemptId: pending.attemptId, topic: pending.topic }
         : { action: 'start', courseSlug, attemptId: pending.attemptId, intent: pending.intent, redoOf: pending.redoOf,
           expected: pending.expected }, continuityToken)
+      received = { sentAt, receivedAt: performance.now() }
       if (outcome.status !== 'unavailable') break
       await new Promise(resolve => setTimeout(resolve, START_RETRY_MS * (tries + 1)))
     }
@@ -190,11 +214,14 @@ export function QuizClient(props: Props): ReactElement | null {
     }
     retryStart.current = null
     clearPendingStart(courseSlug)
-    if (outcome.status === 'ready' || outcome.status === 'in-progress' || outcome.status === 'graded') { show(outcome); return }
-    // An exam is open in this course: practice waits, and the exam is one tap away.
+    if (outcome.status === 'ready' || outcome.status === 'in-progress' || outcome.status === 'graded') {
+      show(outcome, received)
+      return
+    }
+    // An exam is open in this course: practice waits, and the exam is offered as the page offers it.
     if (outcome.status === 'exam-open') {
-      setProblem({ title: PRACTICE_COPY.examOpenTitle, body: '',
-        action: { label: PRACTICE_COPY.resumeExam, href: attemptHref(props.courseHref, outcome.attempt.id) } })
+      setProblem(null)
+      setView({ screen: 'resume', ...resumeOfferFor(outcome.attempt, outcome.now) })
       return
     }
     if (outcome.status === 'policy-changed') {
@@ -243,22 +270,27 @@ export function QuizClient(props: Props): ReactElement | null {
     const kept = examEntry ? readPendingExamStart(courseSlug) : readPendingStart(courseSlug)
     if (kept === null) return
     void (async () => {
+      const sentAt = performance.now()
       const outcome = await postPracticeCommand({ action: 'attempt', attemptId: kept.attemptId }, continuityToken)
-      if (outcome.status === 'ready' || outcome.status === 'graded') { clearPendingStart(courseSlug); show(outcome) }
+      const received = { sentAt, receivedAt: performance.now() }
+      if (outcome.status === 'ready' || outcome.status === 'graded') { clearPendingStart(courseSlug); show(outcome, received) }
       else if (outcome.status === 'not-found') clearPendingStart(courseSlug)
     })()
   }, [initial, courseSlug, continuityToken, show])
 
+  const resumeId = view.screen === 'resume' ? view.attemptId : null
   const resume = useCallback(async () => {
-    if (initial.kind !== 'resume') return
+    if (resumeId === null) return
     setBusy(true)
     setProblem(null)
-    const outcome = await postPracticeCommand({ action: 'attempt', attemptId: initial.attemptId }, continuityToken)
+    const sentAt = performance.now()
+    const outcome = await postPracticeCommand({ action: 'attempt', attemptId: resumeId }, continuityToken)
+    const received = { sentAt, receivedAt: performance.now() }
     setBusy(false)
-    if (outcome.status === 'ready' || outcome.status === 'graded') show(outcome)
+    if (outcome.status === 'ready' || outcome.status === 'graded') show(outcome, received)
     else if (outcome.status === 'unavailable') setProblem(PROBLEMS['no-connection']!)
-    else setProblem(problemFor(outcome.status, props.courseHref, initial.attemptId, false) ?? PROBLEMS['resume-failed']!)
-  }, [initial, continuityToken, show, props.courseHref])
+    else setProblem(problemFor(outcome.status, props.courseHref, resumeId, false) ?? PROBLEMS['resume-failed']!)
+  }, [resumeId, continuityToken, show, props.courseHref])
 
   const onGraded = useCallback((attempt: GradedAttempt, unsent: boolean) => {
     setView({ screen: 'results', attempt, unsent })
@@ -275,11 +307,11 @@ export function QuizClient(props: Props): ReactElement | null {
   }
   if (view.screen === 'active') {
     return <ActiveAttempt key={view.attempt.id} {...identity} continuityToken={continuityToken} courseHref={props.courseHref}
-      attempt={view.attempt} serverNow={view.now} onGraded={onGraded} />
+      attempt={view.attempt} serverNow={view.now} received={view.received ?? null} onGraded={onGraded} />
   }
-  if (view.screen === 'resume' && initial.kind === 'resume') {
-    return <ResumeScreen {...identity} courseHref={props.courseHref} answered={initial.answered} total={initial.total}
-      minutesLeft={initial.minutesLeft} opening={busy} error={problem} onContinue={() => { void resume() }}
+  if (view.screen === 'resume') {
+    return <ResumeScreen {...identity} courseHref={props.courseHref} answered={view.answered} total={view.total}
+      minutesLeft={view.minutesLeft} opening={busy} error={problem} onContinue={() => { void resume() }}
       onRetry={() => { void resume() }} />
   }
   if (view.screen === 'review') {
